@@ -108,6 +108,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | 우선 | 항목 | 메모 |
 |---|---|---|
 | **S0 마감** | **G3 결정** → `feat/s0-skeleton` push(승인) → CI(windows 잡·`setup-guide` 잡) 녹색 확인 → Windows PC에서 [setup/windows.md](setup/windows.md)대로 로그인 → 빈 허브 확인 → `main` 병합(**merge commit `--no-ff`**)·태그 `s0-done` | 사용자 승인 필요 |
+| 조사 | **회사 PC에서 저장소 받기**: 저장소를 public으로 두는 이유 — 회사에서 GitHub 로그인이 안 됨. 대안 조사 필요(읽기 전용 fine-grained PAT·deploy key·release zip·사내 미러) — 회사 망에서 github.com 도달 여부부터 확인 | 사용자 (2026-09-28) |
 | S4 설계 | 코드 관리(D35) — assistant 관리 구분(1·2단계)·상태 코드 테이블, 관리 화면·API 형태 논의 | PRD FR-63 |
 | **남은 위험** | ① 실제 Windows 실기 미확인(문서 명령은 PowerShell 7.6으로 검증, CI windows 잡은 push 후) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
 | **다음(S1)** | 서버 대리 호출(채팅·파일·모델 목록 U6) — 가짜 OpenWebUI + OpenAI 호환 API 전환 프리셋(D31). 실환경 확인은 사내에서 사용자가 수행(킵) | `LlmPorts` 구현(DB 어댑터)·`FileStorageService` 시작 |
