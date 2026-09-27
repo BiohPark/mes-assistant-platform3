@@ -1,0 +1,56 @@
+{
+  "realm": "mes-dev",
+  "enabled": true,
+  "displayName": "MES Agent Hub (개발용 SSO 대역)",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "sslRequired": "none",
+  "clients": [
+    {
+      "clientId": "mes-agent-hub",
+      "name": "MES Agent Hub",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${OIDC_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["${APP_ORIGIN}/api/auth/callback"],
+      "webOrigins": ["${APP_ORIGIN}"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${APP_ORIGIN}/*"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "dev-owner",
+      "email": "dev-owner@example.com",
+      "emailVerified": true,
+      "firstName": "운영",
+      "lastName": "김",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "${DEV_USER_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "dev-member",
+      "email": "dev-member@example.com",
+      "emailVerified": true,
+      "firstName": "담당",
+      "lastName": "이",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "${DEV_USER_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "dev-requester",
+      "email": "dev-requester@example.com",
+      "emailVerified": true,
+      "firstName": "요청",
+      "lastName": "박",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "${DEV_USER_PASSWORD}", "temporary": false }]
+    }
+  ]
+}
