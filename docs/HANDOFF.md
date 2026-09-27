@@ -112,6 +112,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | S4 설계 | 코드 관리(D35) — assistant 관리 구분(1·2단계)·상태 코드 테이블, 관리 화면·API 형태 논의 | PRD FR-63 |
 | **남은 위험** | ① 실제 Windows 실기 미확인(문서 명령은 PowerShell 7.6으로 검증, CI windows 잡은 push 후) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
 | **다음(S1)** | 서버 대리 호출(채팅·파일·모델 목록 U6) — 가짜 OpenWebUI + OpenAI 호환 API 전환 프리셋(D31). 실환경 확인은 사내에서 사용자가 수행(킵) | `LlmPorts` 구현(DB 어댑터)·`FileStorageService` 시작 |
+| **S1 ② 구현 완료** | 서버 대리 호출 기반 `feat/s1-llm-proxy` — `LLM_MODE`·`LLM_PRESET`(openwebui/openai-compatible)·`GET /api/llm/models`·`/status`, `LlmPorts` DB 어댑터 1차, `FileStorageService`, 웹 모델 목록·SO 배지. 검증 단위 156·DB 14·E2E 2. codex-critic 리뷰 → CI → 병합. **OpenAI 실키 수동 확인은 사용자 키 필요** | tasks/s1-llm-proxy |
 | **S1 ① 완료** | 앱 자체 로그인·회원가입(D34) `feat/s1-auth-local` — codex-main 구현 + codex-critic 리뷰 4건 반영. 검증 단위 142·DB 9·E2E 2. CI 녹색 확인 후 `main` 병합(사용자 승인) | tasks/s1-auth-local · [요구사항 검토](status/requirements-review-2026-09-28.md) |
 | 착수 전 확인 | OpenWebUI 버전(사용자 추후 회신), 비기능 제안값(PRD §6) | next-project/README |
 | 중간 | IdP 로그아웃, 요청자 역할 저장 | [KNOWN_ISSUES](../KNOWN_ISSUES.md) KI-1·KI-2 |
