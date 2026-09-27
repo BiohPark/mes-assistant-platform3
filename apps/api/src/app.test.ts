@@ -51,7 +51,6 @@ describe('api 골격', () => {
     upsertFromClaims: vi.fn(async () => member),
     createLocal: vi.fn(async () => null),
     findByLoginId: vi.fn(async () => null),
-    grantSystemOwner: vi.fn(async () => owner),
   }
 
   beforeEach(async () => {

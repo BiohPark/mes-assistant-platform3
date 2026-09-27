@@ -1,6 +1,6 @@
-import { BadRequestException, Body, ConflictException, Controller, Get, HttpCode, Inject, NotFoundException, Post, Req, Res, UnauthorizedException } from '@nestjs/common'
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Post, Req, Res, UnauthorizedException } from '@nestjs/common'
 import { CredentialsSchema, type Me } from '@mes/contracts'
-import type { CookieOptions, Response } from 'express'
+import type { CookieOptions, Request, Response } from 'express'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import type { AuthedRequest } from './guards.js'
 import { OIDC, type OidcPort, type PendingLogin } from './oidc.service.js'
@@ -11,6 +11,7 @@ import { SESSION_COOKIE, SESSION_STORE, type SessionStore } from './session.serv
 import { USER_DIRECTORY, type UserDirectory } from './users.service.js'
 
 const PENDING_COOKIE = 'mes_oidc'
+const dummyHash = hashPassword('dummy')
 
 @Controller()
 export class AuthController {
@@ -29,6 +30,12 @@ export class AuthController {
     if (this.config.authMode !== 'local') throw new NotFoundException('앱 자체 로그인이 비활성입니다')
   }
 
+  private checkOrigin(req: Request) {
+    if ((req.get('Origin') !== undefined && req.get('Origin') !== this.config.appOrigin) || req.get('Sec-Fetch-Site') === 'cross-site') {
+      throw new ForbiddenException('허용되지 않은 출처입니다')
+    }
+  }
+
   private async respondWithSession(user: { id: string; name: string; role: string; isSystemOwner: boolean }, res: Response): Promise<Me> {
     const { token, expiresAt } = await this.sessions.create(user.id)
     res.cookie(SESSION_COOKIE, token, this.cookie({ expires: expiresAt }))
@@ -41,11 +48,13 @@ export class AuthController {
 
   @Post('auth/signup')
   @Public()
-  async signup(@Body() body: unknown, @Res({ passthrough: true }) res: Response): Promise<Me> {
+  async signup(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<Me> {
     this.ensureLocal()
+    this.checkOrigin(req)
     const parsed = CredentialsSchema.safeParse(body)
     if (!parsed.success) throw new BadRequestException('ID 또는 비밀번호 형식이 올바르지 않습니다')
     const { loginId, password } = parsed.data
+    if (await this.users.findByLoginId(loginId)) throw new ConflictException('이미 사용 중인 ID입니다')
     const user = await this.users.createLocal(loginId, await hashPassword(password))
     if (!user) throw new ConflictException('이미 사용 중인 ID입니다')
     return this.respondWithSession(user, res)
@@ -54,16 +63,19 @@ export class AuthController {
   @Post('auth/login')
   @Public()
   @HttpCode(200)
-  async localLogin(@Body() body: unknown, @Res({ passthrough: true }) res: Response): Promise<Me> {
+  async localLogin(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<Me> {
     this.ensureLocal()
+    this.checkOrigin(req)
     const parsed = CredentialsSchema.safeParse(body)
     if (!parsed.success) throw new BadRequestException('ID 또는 비밀번호 형식이 올바르지 않습니다')
     const { loginId, password } = parsed.data
     const found = await this.users.findByLoginId(loginId)
-    if (!found || !found.active || !await verifyPassword(password, found.hash)) throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다')
-    const user = this.config.initialSystemOwners.includes(loginId) && !found.user.isSystemOwner
-      ? await this.users.grantSystemOwner(loginId) : found.user
-    return this.respondWithSession(user, res)
+    if (!found || !found.active) {
+      await verifyPassword(password, await dummyHash)
+      throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다')
+    }
+    if (!await verifyPassword(password, found.hash)) throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다')
+    return this.respondWithSession(found.user, res)
   }
 
   @Get('auth/login')

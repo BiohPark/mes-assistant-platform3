@@ -41,8 +41,9 @@ test.describe('local 로그인 → 빈 허브', () => {
     if (await page.getByRole('alert').isVisible()) {
       await expect(page.getByRole('alert')).toHaveText('이미 사용 중인 ID입니다')
       await page.getByRole('link', { name: '로그인' }).click()
+      await expect(page).toHaveURL(/\/login$/)
       await page.getByLabel('ID').fill('dev-owner')
-      await page.getByLabel('비밀번호').fill(password)
+      await page.getByLabel('비밀번호', { exact: true }).fill(password)
       await page.getByRole('button', { name: '로그인' }).click()
     }
     await expect(page.getByText('등록된 에이전트가 없습니다')).toBeVisible()

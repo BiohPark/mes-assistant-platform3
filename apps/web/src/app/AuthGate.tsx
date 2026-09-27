@@ -25,7 +25,10 @@ export function AuthGate({ children, redirectToLogin, retryDelayMs = 1000 }: Aut
     staleTime: 60_000,
   })
   const unauthorized = isUnauthorized(error)
-  const { data: mode } = useQuery({ queryKey: ['auth-mode'], queryFn: fetchAuthMode, staleTime: Infinity, enabled: unauthorized })
+  const { data: mode, error: modeError, refetch: refetchMode, isFetching: isFetchingMode } = useQuery({
+    queryKey: ['auth-mode'], queryFn: fetchAuthMode, staleTime: Infinity, enabled: unauthorized,
+    retry: (failures) => failures < 5, retryDelay: retryDelayMs,
+  })
 
   useEffect(() => {
     if (!unauthorized || !mode) return
@@ -36,12 +39,12 @@ export function AuthGate({ children, redirectToLogin, retryDelayMs = 1000 }: Aut
   }, [unauthorized, mode, redirectToLogin, navigate])
 
   if (data) return <MeContext value={data}>{children}</MeContext>
-  if (error && !unauthorized) {
+  if ((error && !unauthorized) || modeError) {
     return (
       <div role="alert" className="p-8 text-sm">
         <h1 className="mb-2 text-lg font-semibold">서버에 연결할 수 없습니다</h1>
         <p className="mb-3 text-muted-foreground">잠시 뒤 다시 시도하세요. 계속되면 관리자에게 알려 주세요.</p>
-        <Button size="sm" variant="outline" disabled={isFetching} onClick={() => void refetch()}>
+        <Button size="sm" variant="outline" disabled={isFetching || isFetchingMode} onClick={() => void (modeError ? refetchMode() : refetch())}>
           다시 시도
         </Button>
       </div>

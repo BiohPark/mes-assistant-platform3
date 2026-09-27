@@ -89,6 +89,7 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
   })
 
   it('주체는 (issuer, sub)로 식별 — IdP를 바꾸면 같은 sub라도 다른 사용자 (권한을 이어받지 않음)', async () => {
+    await db.update(appUser).set({ isSystemOwner: false })
     const other = { ...config, oidc: { ...config.oidc!, issuer: 'https://idp.example.com/realms/other' } }
     const a = await new DbUserDirectory(db, config).upsertFromClaims({ sub: 'kc-dup', preferred_username: 'dev-owner', name: '김운영' })
     const b = await new DbUserDirectory(db, { ...other, initialSystemOwners: [] }).upsertFromClaims({ sub: 'kc-dup', name: '다른 사람' })
@@ -98,6 +99,7 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
   })
 
   it('INITIAL_SYSTEM_OWNERS에 있는 주체는 SO가 된다', async () => {
+    await db.update(appUser).set({ isSystemOwner: false })
     const users = new DbUserDirectory(db, config)
     const so = await users.upsertFromClaims({ sub: 'kc-200', preferred_username: 'dev-owner', name: '김운영' })
     expect(so.isSystemOwner).toBe(true)
@@ -118,5 +120,41 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
     const expired = await store.create(u.id)
     await db.update(appSession).set({ expiresAt: new Date(Date.now() - 1000) })
     expect(await store.resolve(expired.token)).toBeNull()
+  })
+
+  it('DB SO 부트스트랩은 한 번만 되고 dev-owner 중복 가입은 409', async () => {
+    await db.update(appUser).set({ isSystemOwner: false })
+    const local = { ...config, authMode: 'local' as const, oidc: undefined, initialSystemOwners: ['dev-owner', 'second-owner'] }
+    const apiClient = postgres(temp.url, { max: 2, onnotice: () => undefined })
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(CONFIG).useValue(local)
+      .overrideProvider(DB_CLIENT).useValue(apiClient)
+      .overrideProvider(DB).useValue(drizzle(apiClient))
+      .compile()
+    const app = configureApp(moduleRef.createNestApplication(), local)
+    try {
+      await app.init()
+      const first = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(201)
+      expect(first.body.roles).toEqual(['member', 'system_owner'])
+      await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(409)
+      const second = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'second-owner', password: 'password-1234' }).expect(201)
+      expect(second.body.roles).toEqual(['member'])
+      const oidc = new DbUserDirectory(db, { ...config, initialSystemOwners: ['late-oidc-owner'] })
+      const late = await oidc.upsertFromClaims({ sub: 'late-oidc-owner' })
+      expect(late.isSystemOwner).toBe(false)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('동시 가입에서도 SO는 한 명만 생성된다', async () => {
+    await db.update(appUser).set({ isSystemOwner: false })
+    const local = { ...config, authMode: 'local' as const, oidc: undefined, initialSystemOwners: ['parallel-a', 'parallel-b'] }
+    const users = new DbUserDirectory(db, local)
+    const created = await Promise.all([
+      users.createLocal('parallel-a', 'hash-for-test'),
+      users.createLocal('parallel-b', 'hash-for-test'),
+    ])
+    expect(created.filter((user) => user?.isSystemOwner)).toHaveLength(1)
   })
 })

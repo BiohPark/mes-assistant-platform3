@@ -49,6 +49,20 @@ describe('AuthGate', () => {
     expect(await screen.findByText('안녕하세요 이담당')).toBeInTheDocument()
   })
 
+  it('모드 조회가 계속 실패하면 오류와 다시 시도 버튼을 보여준다', async () => {
+    const fetchMock = vi.fn(async (url: string) => url === '/api/me' ? jsonResponse(401) : jsonResponse(503))
+    vi.stubGlobal('fetch', fetchMock)
+    const redirect = vi.fn()
+    renderWithProviders(<AuthGate redirectToLogin={redirect} retryDelayMs={1}><Who /></AuthGate>)
+    expect(await screen.findByRole('alert')).toHaveTextContent('서버에 연결할 수 없습니다')
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(7)
+    expect(redirect).not.toHaveBeenCalled()
+    fetchMock.mockImplementation(async (url: string) => url === '/api/me' ? jsonResponse(401) : jsonResponse(200, { mode: 'local' }))
+    await userEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+    await waitFor(() => expect(redirect).toHaveBeenCalledWith('/login'))
+  })
+
   it('api가 잠깐 내려가 있어도(개발 서버 재시작 등) 다시 시도해서 들어간다', async () => {
     const fetchMock = vi
       .fn()
