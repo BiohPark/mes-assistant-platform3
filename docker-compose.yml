@@ -31,6 +31,13 @@ services:
       KC_HEALTH_ENABLED: "true"
     ports:
       - "${KEYCLOAK_PORT:-8180}:8080"
+    healthcheck:
+      # 이미지에 curl이 없어 컨테이너 안 bash로 관리 포트(9000)의 준비 상태를 본다
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
     volumes:
       - ./docker/keycloak:/opt/keycloak/data/import:ro
 

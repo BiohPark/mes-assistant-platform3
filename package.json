@@ -14,7 +14,7 @@
     "services:down": "docker compose down",
     "typecheck": "pnpm -r --parallel typecheck",
     "test": "pnpm -r test",
-    "lint": "oxlint",
+    "lint": "oxlint --deny-warnings --format default",
     "build": "pnpm -r build",
     "dev": "concurrently -k -n api,web \"pnpm --filter @mes/api dev\" \"pnpm --filter @mes/web dev\"",
     "db:migrate": "pnpm --filter \"@mes/api...\" build && pnpm --filter @mes/api db:migrate",
