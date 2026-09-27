@@ -32,3 +32,13 @@ _local/*
 .claude/settings.local.json
 threads/
 .agentlayer/
+
+# Node / 빌드 산출물
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+playwright-report/
+test-results/
+.env.local
+storage/

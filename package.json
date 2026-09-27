@@ -1,0 +1,23 @@
+{
+  "name": "mes-agent-hub",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=22.12 <23",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r --parallel typecheck",
+    "test": "pnpm -r test",
+    "lint": "oxlint",
+    "build": "pnpm -r build"
+  },
+  "devDependencies": {
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vitest": "^5.0.1",
+    "@types/node": "^22.19.0"
+  }
+}

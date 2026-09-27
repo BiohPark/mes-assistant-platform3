@@ -270,6 +270,14 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 - PostgreSQL 16 + Drizzle(`postgres-draft.sql`과 1:1) · TanStack Query + SSE · vitest + Playwright
 - 개발 환경: Docker Compose(PostgreSQL · Keycloak(SSO 대역) · 가짜 OpenWebUI). 인증은 사내 SSO(OIDC/SAML) **수신 측만** 구현, 역할은 앱이 관리.
 
+### 크로스플랫폼 원칙 (최종 실행 환경 = Windows, 개발 = macOS — S0부터 적용)
+- Docker는 개발용 의존 서비스(PostgreSQL·Keycloak·가짜 OpenWebUI)에만 쓴다. api·web은 Docker 없이 Windows에서 Node로 직접 빌드·실행 가능해야 한다. 운영 배포(Windows 서비스 네이티브 / 컨테이너)는 S5에서 정하고, 그 전까지 둘 다 가능하게 둔다. compose는 OrbStack 전용 기능 없이 Docker Desktop(Windows)에서 그대로 돌아야 한다.
+- package.json 스크립트에 bash 문법·`rm -rf`·`export`·`VAR=값` 접두 금지 → node 스크립트·cross-env·rimraf. 개발 흐름에 `.sh` 필수 단계 금지(컨테이너 내부 스크립트는 예외).
+- 경로는 `path.join`/`path.resolve`만. 파일 `storage_key`는 OS 무관 `/` 구분 상대 키, 실제 경로 변환은 `FileStorageService` 한 곳에서만(드라이브·UNC 대비). 파일명에 Windows 금지 문자·예약어 금지.
+- `.gitattributes`로 LF 정규화. import 경로 대소문자는 실제 파일명과 정확히 일치.
+- 네이티브 빌드 npm 패키지는 피하고, 불가피하면 Windows 사전 빌드 여부를 확인해 사용자에게 알린다.
+- CI는 ubuntu-latest·windows-latest 두 곳에서 typecheck·test·lint. E2E의 Windows 실행은 S1 이후.
+
 ### 데모 소스 재사용
 - 데모 저장소: `~/workspace/github/work/mes-assistant-platform2` — **읽기 전용 참조. 절대 수정·커밋하지 않는다.**
 - 옮길 때는 architecture §3 재사용 지도를 따른다(도메인 규칙은 거의 그대로, `db` 직접 조회는 저장소 인터페이스 주입으로, `useLiveQuery`는 TanStack Query로).
