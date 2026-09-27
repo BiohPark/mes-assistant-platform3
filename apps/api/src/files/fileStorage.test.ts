@@ -1,6 +1,6 @@
-import { mkdtemp, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { FileStorageService, createStorageKey, isWindowsReservedName, sha256 } from './fileStorage.service.js'
 
@@ -36,6 +36,13 @@ describe('FileStorageService', () => {
     await store.remove('2026/09/test.txt')
     expect(await store.exists('2026/09/test.txt')).toBe(false)
   })
+  it('없는 저장 루트를 생성한 뒤 실제 경로를 사용한다', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'mes-files-'))
+    roots.push(parent)
+    const root = join(parent, 'new', 'root')
+    const store = new FileStorageService(root)
+    expect(store.resolvePath('2026/09/a.txt')).toBe(join(await realpath(root), '2026', '09', 'a.txt'))
+  })
   it.skipIf(process.platform === 'win32')('루트 안 심볼릭 링크를 통한 탈출을 거부한다', async () => {
     const root = await mkdtemp(join(tmpdir(), 'mes-files-'))
     const outside = await mkdtemp(join(tmpdir(), 'mes-outside-'))
@@ -43,5 +50,21 @@ describe('FileStorageService', () => {
     await symlink(outside, join(root, 'link'))
     const store = new FileStorageService(root)
     await expect(store.write('link/escape.txt', new Uint8Array([1]))).rejects.toThrow(/심볼릭 링크/)
+  })
+  it.skipIf(process.platform === 'win32')('링크 루트는 실제 경로로 해석하고 내부 링크는 거부한다', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'mes-files-'))
+    roots.push(parent)
+    const actual = join(parent, 'actual')
+    const link = join(parent, 'root-link')
+    await mkdir(actual)
+    await symlink(actual, link)
+    const store = new FileStorageService(link)
+    const key = '2026/09/test.txt'
+    expect(store.resolvePath(key).startsWith(`${await realpath(actual)}${sep}`)).toBe(true)
+    const bytes = new Uint8Array([1, 2, 3])
+    await store.write(key, bytes)
+    expect(await store.read(key)).toEqual(bytes)
+    await symlink(parent, join(actual, 'inner'))
+    await expect(store.write('inner/escape.txt', bytes)).rejects.toThrow(/심볼릭 링크/)
   })
 })

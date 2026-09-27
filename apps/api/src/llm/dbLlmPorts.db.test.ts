@@ -40,4 +40,11 @@ describe('DbLlmPorts', () => {
     expect((await ports.getTasks(['missing', 't1']))[1]).toMatchObject({ id: 't1', outputFileIds: ['f1'] })
     expect((await ports.getFiles(['missing', 'f1']))[1]).toMatchObject({ id: 'f1', name: 'result.txt', size: 5, source: 'assistant' })
   })
+  it('삭제된 파일은 입력 ID 위치에 undefined로 반환한다', async () => {
+    await db.insert(fileObject).values({ id: 'f2', kind: 'task_file', originTaskId: 't1', originalName: 'deleted.txt', mime: 'text/plain', sizeBytes: 3, sha256: 'b'.repeat(64), storageKey: '2026/09/f2.txt', source: 'upload', version: 1, uploadedBy: 'u1', deletedAt: new Date() })
+    const ports = new DbLlmPorts(db, config, 'u1')
+    const files = await ports.getFiles(['f1', 'f2'])
+    expect(files[0]).toMatchObject({ id: 'f1' })
+    expect(files[1]).toBeUndefined()
+  })
 })

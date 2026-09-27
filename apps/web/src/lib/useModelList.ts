@@ -11,5 +11,5 @@ export function useModelList() {
       return LlmModelsSchema.parse(await response.json()).models
     },
   })
-  return { models: query.data ?? [], loading: query.isPending, reload: async () => { await query.refetch() } }
+  return { models: query.data ?? [], error: query.error, loading: query.isPending, reload: async () => { await query.refetch() } }
 }

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile, access, lstat } from 'node:fs/promises'
+import { mkdirSync, realpathSync } from 'node:fs'
 import { extname, posix, win32, resolve as nativeResolve, sep as nativeSep } from 'node:path'
 
 const invalidWindows = /[<>:"\\|?*]/
@@ -26,7 +27,13 @@ export class FileStorageService {
 
   constructor(root: string, platform: 'native' | 'win32' = 'native') {
     this.path = platform === 'win32' || (platform === 'native' && nativeSep === '\\') ? win32 : posix
-    this.root = platform === 'native' && nativeSep !== '\\' ? nativeResolve(root) : this.path.resolve(root)
+    if (platform === 'native') {
+      const resolved = nativeResolve(root)
+      mkdirSync(resolved, { recursive: true })
+      this.root = realpathSync(resolved)
+    } else {
+      this.root = this.path.resolve(root)
+    }
   }
 
   resolvePath(key: string): string {
@@ -39,6 +46,7 @@ export class FileStorageService {
   }
 
   private async rejectSymlinks(key: string): Promise<void> {
+    // 저장 루트는 서버 전용 디렉터리다. 검사와 파일 작업 사이의 링크 교체(TOCTOU)는 여기서 막지 않는다.
     let current = this.root
     for (const part of key.split('/')) {
       current = this.path.join(current, part)

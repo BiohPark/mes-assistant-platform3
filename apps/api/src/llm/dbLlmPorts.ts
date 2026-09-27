@@ -1,4 +1,4 @@
-import { inArray } from 'drizzle-orm'
+import { and, inArray, isNull } from 'drizzle-orm'
 import type { Assistant, FileAsset, Settings, Task, User } from '@mes/domain'
 import type { LlmPorts } from '@mes/llm'
 import type { AppConfig } from '../config/config.js'
@@ -86,7 +86,7 @@ export class DbLlmPorts implements LlmPorts {
 
   async getFiles(ids: string[]): Promise<(FileAsset | undefined)[]> {
     if (!ids.length) return []
-    const rows = await this.db.select().from(fileObject).where(inArray(fileObject.id, ids))
+    const rows = await this.db.select().from(fileObject).where(and(inArray(fileObject.id, ids), isNull(fileObject.deletedAt)))
     const byId = new Map(rows.map((row): [string, FileAsset] => [row.id, {
       id: row.id, ...(row.originTaskId ? { originTaskId: row.originTaskId } : {}),
       ...(row.originSrId ? { originSrId: row.originSrId } : {}), name: row.originalName,

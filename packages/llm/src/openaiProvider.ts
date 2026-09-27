@@ -11,6 +11,12 @@ function errorMessage(e: unknown): string {
   return 'LLM 서비스 연결 오류'
 }
 
+function parseModelIds(body: unknown): string[] {
+  const data = body !== null && typeof body === 'object' ? (body as { data?: unknown }).data : undefined
+  if (!Array.isArray(data) || !data.every((m) => m !== null && typeof m === 'object' && typeof m.id === 'string')) throw new Error('응답 형식 오류')
+  return data.map((m) => m.id)
+}
+
 /** OpenAI-compatible /chat/completions 스트리밍 클라이언트 (OpenWebUI 포함) */
 export class OpenAICompatibleProvider implements ChatProvider {
   readonly kind = 'live' as const
@@ -30,10 +36,10 @@ export class OpenAICompatibleProvider implements ChatProvider {
     try {
       const res = await fetch(joinUrl(this.settings.baseUrl, 'models'), { headers: this.headers() })
       if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` }
-      const body = (await res.json()) as { data?: Array<{ id: string }> }
-      const ids = body.data?.map((m) => m.id) ?? []
+      const ids = parseModelIds(await res.json())
       return { ok: true, detail: ids.length ? `모델 ${ids.length}개 확인` : '연결 성공' }
     } catch (e) {
+      if (e instanceof Error && e.message === '응답 형식 오류') return { ok: false, detail: '응답 형식 오류' }
       return { ok: false, detail: errorMessage(e) }
     }
   }
@@ -42,9 +48,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
     try {
       const res = await fetch(joinUrl(this.settings.baseUrl, 'models'), { headers: this.headers() })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const body = (await res.json()) as { data?: Array<{ id: string }> }
-      if (!Array.isArray(body.data) || !body.data.every((m) => typeof m.id === 'string')) throw new Error('응답 형식 오류')
-      return body.data.map((m) => m.id)
+      return parseModelIds(await res.json())
     } catch (error) {
       if (error instanceof Error && /^HTTP \d+$|^응답 형식 오류$/.test(error.message)) throw error
       throw new Error('모델 목록 네트워크 오류')
