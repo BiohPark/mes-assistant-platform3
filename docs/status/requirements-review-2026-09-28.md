@@ -65,7 +65,7 @@
 
 ### 1.5 데모 대응표 (parity-matrix, 126행)
 
-✅ 25 (S0: 라우트 셸·domain 61테스트·llm 41테스트·앱 셸·로그인) / ⬜ 101. 잔여 분포: **S4 32 · S2 30 · S3 11 · S2·S3 겹침 5 · S1 1 · S5 1 · 스프린트 미기재 19**(대부분 E2E 시나리오 §9와 설정 항목 §8 — 각각 S2–S4·S1/S4에 귀속). U1–U9 "결정 필요" 표기는 0으로 정리됐다.
+✅ 26 (S0: 라우트 셸·domain 61테스트·llm 41테스트·앱 셸·로그인/회원가입) / ⬜ 101. 잔여 분포(표별 열 구조를 맞춰 집계): **S2 34 · S4 33 · S3 22 · S2·S3 겹침 3 · S2·S4 2 · S2–S4 1 · S1 1 · S5 1 · 기타 4**(셸→S2 1, §8 설정 항목 3 — S1/S4). U1–U9 "결정 필요" 표기는 0으로 정리됐다.
 
 ## 2. 스프린트 계획과 요구사항 연결 (architecture §9 기준, D31·D34로 S1 재정의)
 
@@ -81,7 +81,7 @@
 
 ## 3. 진행 상황 요약 (2026-09-28 08:30)
 
-- 원격: `main`(초기 커밋) · `feat/s0-skeleton`(S0 전체) push 완료. S0 CI: ubuntu·windows typecheck/lint/test · DB · E2E 통과, `setup-guide`(Windows에서 설치 문서 명령 실행) 잡만 `psql -U postgres -h localhost` 단계에서 33분 정지 → 취소, 원인 진단용 임시 워크플로(`chore/ci-psql-probe`) 실행 중.
+- 원격: `main`(초기 커밋) · `feat/s0-skeleton` · `feat/s1-auth-local` push 완료. S0 CI: `setup-guide` 잡이 `psql -U postgres -h localhost`에서 33분 정지 → 진단(Windows 러너의 action-setup-postgres가 PG* 환경을 덮어써 `PGPASSWORD`가 비고 psql이 비밀번호 프롬프트 대기) → 스텝 env 재지정(`bbaccf8`) → **재실행 5개 잡 전부 녹색**(run 36358525856). KI-4 해소. `main` 병합은 사용자 승인 대기.
 - `feat/s1-auth-local`: feat(auth)·docs 커밋 2개. 리뷰 반영(F1 최초 SO 부트스트랩 한정, F2 로그인 CSRF Origin 검사, F3 중복 ID 해시 전 조회, F4 실패 경로 타이밍 균일화, F5 AuthGate 모드 조회 오류 화면)을 codex-main이 수행 중.
 - 미회신: OpenWebUI 버전, 비기능 제안값, 회사 망에서 github.com 접근 여부.
 
@@ -93,25 +93,24 @@
 | **G2** | **SSO 문구 잔존**: architecture §5·표 "인증=SSO", PRD §2 "로그인은 사내 SSO", PRD §7 범위 "SSO 로그인" 포함, D21. 실제는 D32·D34(앱 로그인, SSO는 후속) | 새로 읽는 사람이 계획을 오해. 정본 충돌은 "번호 큰 결정 우선"으로 해소되지만 문서가 따라가야 함 | architecture §5 머리에 "이번 페이즈는 `AUTH_MODE=local`(D34), SSO 연계는 후속" 추가, PRD §7 범위에서 SSO를 후속으로 이동, D21에 "D32·D34로 대체" 표기 (docs 커밋 1건) |
 | **G3** | **FR-63 코드 관리 설계 없음**. DDL의 `assistant.level1/level2`·각종 `status` check 제약은 하드코딩. 사용자는 "관리가 필요한 병렬 단계·상태는 코드로" | S2에서 에이전트 API를 만들 때 level1/level2를 자유 텍스트로 굳히면 S4에서 마이그레이션 | **S2 착수 전** 최소 설계 결정: 코드 그룹 테이블(`code_group`·`code`) + assistant.level1/level2를 코드 참조로. 사용자와 "코드로 관리할 대상 목록"을 먼저 합의(사용자도 "구체는 구현 때 논의"라 함) |
 | **G4** | **BO(요청자) 역할 저장 없음**(KI-2). `app_user.role`은 표시용 직책 문자열, `is_system_owner`만 권한 | FR-51 요청자 공개 범위 서버 강제(S4)와 SR 접수 화면 권한 불가 | G3와 함께: `app_user.role_code`(코드 테이블 참조: member/system_owner/business_owner) 또는 `is_business_owner` 불리언. S4 전 DDL 결정 |
-| **G5** | **Windows 실기 미확인** + CI `setup-guide` 잡 psql 정지 | S0 완료 기준(문서대로 Windows 설치 → 로그인) 미충족 | 진단 결과로 문서 명령 또는 CI 잡 수정 → 재실행. 실기 확인은 사용자 Windows PC에서 1회 |
+| **G5** | **Windows 실기 미확인**. CI `setup-guide` 잡 정지는 원인 규명·수정 후 녹색(KI-4 해소) | S0 완료 기준 중 "사람이 Windows PC에서 문서대로 로그인"만 남음 | 사용자 Windows PC에서 1회 확인(문서 명령은 CI가 대신 검증). S1 ① 병합 뒤 앱 로그인으로 한 번에 |
 | **G6** | 비기능 제안값 미확정 | S3 상수(요청 한도·시간 제한)·S5 | PRD §6 표를 그대로 승인/수정 회신 요청 |
 | **G7** | 회사 PC에서 저장소 수신 방법 미정(public 유지 사유) | 배포 절차(S5) | 회사 망에서 `git clone https://github.com/BiohPark/mes-assistant-platform3` 1회 시험 → 결과에 따라 PAT/deploy key/zip 중 선택 |
 | **G8** | 회원가입 공개(KI-5): 횟수 제한·비밀번호 변경·재설정 없음 | 사내망 전제라 낮음 | S4 계정 관리 화면과 함께. 리버스 프록시 제한은 S5 |
 | **G9** | U7 데모 데이터 이관 도구(S5 선택) — 실데이터 이관 필요 여부 미정 | S5 범위 | 데모에 실업무 데이터가 있는지 사용자 확인 |
-| **G10** | 대응표 19행이 스프린트 미기재(E2E §9·설정 §8) | 잔여 집계 흐림 | parity §8·§9 행에 스프린트 열 값 채움(docs 커밋) |
+| ~~G10~~ | (철회) 대응표 19행이 스프린트 미기재로 보였던 것은 §9 E2E 표가 4열이라 집계 스크립트가 열을 잘못 읽은 것. 실제로는 모두 스프린트가 있다 | — | 집계는 표별 열 구조로 다시 계산(§1.5) |
 
 모순 점검: 원칙(HANDOFF §2) 위반은 없다. D6(직접 태그만)·D15(자동 절단·요약 금지)·FR-36은 이식된 domain·llm 테스트가 지킨다. D24(최초 SO 부여만)는 리뷰 F1로 "부트스트랩 1회"로 좁혀지며 D24와 충돌하지 않는다(부여만·해제 없음 유지).
 
 ## 5. 권고 순서
 
 1. S0 마감: psql 진단 → 수정 → CI 녹색 → `main` 병합(--no-ff)·`s0-done`. (사용자 승인)
-2. S1 ① 리뷰 반영 검증 → 커밋 → `main` 병합. 문서 정합(G2·G10) 같은 커밋 묶음.
+2. S1 ① CI 녹색 확인 → `main` 병합. 문서 정합(G2)은 반영 완료(`7f5bc2d`).
 3. S1 ② 착수(명세 확정). 병행: 사용자 회신 — 비기능(G6)·OpenWebUI 버전·회사 망 clone 시험(G7)·코드 관리 대상 목록(G3)·BO 저장(G4).
 4. S2 착수 전 G3·G4 DDL 결정 반영(마이그레이션 1건).
 5. S3 착수 전 사내 real-env-verification 결과 수령(G1).
 
 ## 6. 문서 정합 갱신 목록 (이 검토로 생긴 할 일)
 
-- architecture.md §5·표(인증) · PRD §2·§7 · D21 표기 → D32·D34 반영 (G2)
-- parity-matrix §8·§9 스프린트 열 (G10)
+- ~~architecture.md §5·표(인증) · PRD §2·§7 · D21 표기 → D32·D34 반영 (G2)~~ 완료 `7f5bc2d`
 - PRD FR-63·KI-2 → S4 설계 메모(G3·G4) — 결정 후
