@@ -312,6 +312,13 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 - DB 마이그레이션 생성 `pnpm --filter @mes/api db:generate` · 적용 `pnpm db:migrate`
 - Node는 22 고정(mise·`.nvmrc`) — 이 Mac에서는 `mise exec -- pnpm …`
 
+### git 관리 기준 (정본: `docs/git-policy.md`)
+- `main`은 항상 동작. 작업은 `feat/*`·`fix/*`·`docs/*`·`chore/*`. 스프린트 병합 뒤 태그 `s<N>-done`.
+- Conventional Commits(`feat:` `fix:` `docs:` `test:` `refactor:` `chore:`), 작게·한 커밋 한 목적. `pnpm-lock.yaml`은 항상 커밋, 의존성 변경은 별도 커밋.
+- 병합 조건: CI(ubuntu+windows) 녹색 + 테스트 통과 + **사용자 승인**. push·`main` 병합은 사용자 확인 후.
+- 커밋 금지: `.env`·키·토큰, 사내 주소·실명·사내 자료, 로컬 산출물(node_modules·dist·.pnpm-store·로그·스크린샷). 커밋 전 git-policy §6 점검.
+- 설치 가이드 `docs/setup/windows.md`(기준)·`macos.md`: 명령이 바뀌면 **같은 커밋에서** 갱신. ` ```powershell ci ` 블록은 CI `setup-guide` 잡이 그대로 실행한다.
+
 ### 공개 저장소 규칙 (GitHub PUBLIC — HANDOFF §7)
 - 사내 주소·사내 AI 포털 주소·양식 번호·참고 이미지·이미지에서 옮긴 문구·실명 추가 금지(시드·테스트는 가상 데이터). 비밀값(키·client secret·`.env`)은 커밋하지 않고 `.env.example`만 둔다.
 - 커밋 전 `git grep`으로 민감 문자열 점검. `feat/*` 브랜치 커밋은 자유, **push·`main` 병합은 사용자 승인 후에만.**

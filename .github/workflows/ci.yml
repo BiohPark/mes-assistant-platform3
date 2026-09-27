@@ -28,6 +28,26 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
 
+  setup-guide:
+    # docs/setup/windows.md의 ```powershell ci 블록을 그대로 실행 — 문서와 실제가 어긋나면 실패
+    # (PostgreSQL은 문서 4장 (b) "직접 설치" 경로. Windows 러너는 리눅스 컨테이너를 못 돌려 Keycloak·E2E는 제외)
+    name: 설치 가이드 검증 (windows.md)
+    runs-on: windows-latest
+    env:
+      PGPASSWORD: postgres
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: ikalnytskyi/action-setup-postgres@v7
+        with:
+          postgres-version: '16'
+          username: postgres
+          password: postgres
+      - run: node scripts/run-doc-commands.mjs docs/setup/windows.md
+
   db:
     name: DB 통합 테스트 (PostgreSQL 16)
     runs-on: ubuntu-latest

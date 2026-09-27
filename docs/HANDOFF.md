@@ -31,7 +31,7 @@
 - web: React 19 · Vite 8 · Tailwind v4 · shadcn/ui · react-router 8 · TanStack Query
 - api: NestJS 12(ESM) · Drizzle(postgres.js) · openid-client 6 · zod 4
 - 개발 의존 서비스: `docker-compose.yml` — PostgreSQL 16, Keycloak 26(realm `mes-dev`, 가상 사용자 3명), 가짜 OpenWebUI(`docker/fake-openwebui/server.mjs`)
-- 실행·명령: [README](../README.md) "개발 환경"·"명령"
+- 실행·명령: 설치 가이드 [setup/windows.md](setup/windows.md)(기준)·[setup/macos.md](setup/macos.md), 요약은 [README](../README.md). git 규칙 [git-policy.md](git-policy.md)
 
 ## 4. 구조
 
@@ -99,7 +99,8 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 
 | 우선 | 항목 | 메모 |
 |---|---|---|
-| **S0 마감** | push 후 CI windows 잡 녹색 확인 → `main` 병합 | 사용자 승인 필요 |
+| **S0 마감** | push 후 CI(windows 잡·`setup-guide` 잡) 녹색 확인 → Windows PC에서 [setup/windows.md](setup/windows.md)대로 로그인 → 빈 허브 확인 → `main` 병합·태그 `s0-done` | 사용자 승인 필요 |
+| 결정 대기 | git G1 병합 방식·G2 커밋 언어·G3 운영 파일 위치, 대응표 U1–U9 | [git-policy.md](git-policy.md) · [parity-matrix.md](next-project/parity-matrix.md) §10 |
 | **다음(S1)** | **실제 사내 OpenWebUI 확인**([evaluation/real-env-verification.md](evaluation/real-env-verification.md) 절차) + 서버 대리 호출(채팅·파일) | `LlmPorts` 구현(DB 어댑터)·`FileStorageService` 시작 |
 | 착수 전 확인 | 사내 SSO 방식(OIDC/SAML)·앱 등록, OpenWebUI 버전, 배포 환경·PostgreSQL, 비기능 제안값(PRD §6) | next-project/README |
 | 중간 | IdP 로그아웃, 요청자 역할 저장 | [KNOWN_ISSUES](../KNOWN_ISSUES.md) KI-1·KI-2 |

@@ -20,7 +20,9 @@ docker/             개발용 의존 서비스 설정 (Keycloak realm, 가짜 Op
 
 ## 개발 환경
 
-최종 실행 환경은 **Windows**, 개발은 macOS·Windows 어디서나 한다. 아래 명령은 셸 종류(bash·PowerShell·cmd)와 무관하다.
+**처음이면 설치 가이드를 따라 한다 → [Windows (기준)](docs/setup/windows.md) · [macOS](docs/setup/macos.md).** git 규칙은 [docs/git-policy.md](docs/git-policy.md).
+
+최종 실행 환경은 **Windows**, 개발은 macOS·Windows 어디서나 한다. 아래는 요약이며, 명령은 셸 종류(bash·PowerShell·cmd)와 무관하다.
 
 필요한 것: Node 22 (`.nvmrc`), pnpm 10, Docker(Docker Desktop·OrbStack 등 — 개발용 의존 서비스에만 사용)
 
