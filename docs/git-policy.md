@@ -91,5 +91,5 @@ git diff --cached --name-only
 
 ## 7. 멀티에이전트 운영 파일
 
-`CLAUDE.md`, `_shared/`, `_templates/`는 AI 오케스트레이션 규칙이다. 제품 코드가 아니다. 공개 여부는 **첫 push 전 사용자 결정 G3 대기** — (a) 저장소를 private로 전환 (b) 운영 파일을 git에서 빼고 push 전 이력 정리 (c) 민감 항목만 지우고 공개 유지. 결정 전에는 push하지 않는다.
+`CLAUDE.md`, `_shared/`, `_templates/`는 AI 오케스트레이션 규칙이다. 제품 코드가 아니다. **공개 저장소에 그대로 둔다** _(사용자 결정 G3, 2026-09-28 — 회사 민감 자료는 이미 제외)_. 봇 ID 같은 이 환경 고유 값은 `CLAUDE.local.md`(무시됨)에만 적는다.
 작업 기록 `tasks/`, `_local/`, `threads/`는 추적하지 않는다(`.gitignore`).

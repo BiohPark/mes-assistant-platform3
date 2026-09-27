@@ -30,6 +30,7 @@ _local/*
 .discord-state/
 .bot-token*
 .claude/settings.local.json
+CLAUDE.local.md
 threads/
 .agentlayer/
 
