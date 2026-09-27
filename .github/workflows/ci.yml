@@ -46,7 +46,11 @@ jobs:
           postgres-version: '16'
           username: postgres
           password: postgres
+      # action-setup-postgres가 PG* 환경을 덮어써 잡 env의 PGPASSWORD가 비어 있게 된다 → psql이 비밀번호 프롬프트에서 멈춘다(run 36355928533).
+      # 스텝 env가 우선하므로 여기서 다시 준다. 문서의 사람용 절차는 4장 (b)의 $env:PGPASSWORD 줄이 같은 역할.
       - run: node scripts/run-doc-commands.mjs docs/setup/windows.md
+        env:
+          PGPASSWORD: postgres
 
   db:
     name: DB 통합 테스트 (PostgreSQL 16)
