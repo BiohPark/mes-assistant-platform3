@@ -1,4 +1,4 @@
--- MES Agent Hub — PostgreSQL DDL 초안 (새 저장소용, 실행 검증 안 함)
+-- MES Agent Hub — PostgreSQL DDL 초안 (새 저장소용). apps/api/src/db/schema.ts(Drizzle)와 1:1 — schema-parity 테스트가 대조한다.
 -- 기준: docs/architecture/data-contract.md. 데모 IndexedDB v4의 엔티티를 관계형으로 펼친 것.
 -- 원칙: 파일 바이트는 DB에 두지 않는다(storage_key만). 비밀값(API 키)은 DB에 두지 않는다.
 -- ID: 데모 가져오기를 위해 문자열 PK를 그대로 받는다. 새 행은 서버가 UUID 문자열로 발급.
@@ -363,3 +363,12 @@ create table app_setting (                          -- 전역 설정만. API 키
   key   text primary key,                           -- 예: default_model, file_delivery, request_budget_bytes, sr_intake_assistant_id
   value jsonb not null
 );
+
+-- ── 인증 세션 (S0 추가 — architecture §5 "서버 세션") ──────────────────────
+create table app_session (                          -- id = 세션 쿠키 토큰의 SHA-256 (토큰 원문은 저장하지 않음)
+  id         text primary key,
+  user_id    text not null references app_user(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null
+);
+create index app_session_user on app_session(user_id);
