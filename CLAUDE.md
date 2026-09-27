@@ -296,7 +296,9 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 - 스프린트가 끝나면 이 블록의 "현재 위치"와 아래 "명령"을 갱신한다.
 
 ### 작업 방식 (사용자 지시 — 매 세션 적용)
+- 오케스트레이터(이 세션)는 계획·판단·통합·검증·소통만 한다. **구현은 워커에 위임**(codex-main·claude-main) — 작업 단위와 write_scope를 좁혀 승인을 요청하고, 결과는 테스트·scope_check로 검증한 뒤 `[VERIFICATION]`을 기록한다. 문서·기록 갱신은 오케스트레이터가 직접 한다.
 - 시작 전에 이번 세션 계획(파일 구조와 순서)을 보여 주고 **승인을 받는다**(워커셋·write_scope 승인과 함께).
+- 스프린트마다 계획 → 승인 → 워커 위임 → 검증 → 대응표(`parity-matrix.md`) ✅ 갱신 → 사용자 확인. **매 보고에 대응표의 남은 항목 수(⬜)를 적는다.**
 - 기능 브랜치(`feat/*`)에서 작업, **테스트를 먼저** 쓰고, 단계별로 **작게 커밋**한다. **push와 `main` 병합은 사용자 확인 후.**
 - 사용자 판단이 꼭 필요한 결정만 선택지로 질문한다. 나머지는 합리적인 기본값으로 진행하고 알려 준다.
 - 세션이 끝나면 `docs/HANDOFF.md`에 상태·결정·다음 단계를 기록한다.
@@ -313,7 +315,7 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 - Node는 22 고정(mise·`.nvmrc`) — 이 Mac에서는 `mise exec -- pnpm …`
 
 ### git 관리 기준 (정본: `docs/git-policy.md`)
-- `main`은 항상 동작. 작업은 `feat/*`·`fix/*`·`docs/*`·`chore/*`. 스프린트 병합 뒤 태그 `s<N>-done`.
+- `main`은 항상 동작. 작업은 `feat/*`·`fix/*`·`docs/*`·`chore/*`. 병합은 **merge commit(`--no-ff`)**, squash 금지. 스프린트 병합 뒤 태그 `s<N>-done`.
 - Conventional Commits(`feat:` `fix:` `docs:` `test:` `refactor:` `chore:`), 작게·한 커밋 한 목적. `pnpm-lock.yaml`은 항상 커밋, 의존성 변경은 별도 커밋.
 - 병합 조건: CI(ubuntu+windows) 녹색 + 테스트 통과 + **사용자 승인**. push·`main` 병합은 사용자 확인 후.
 - 커밋 금지: `.env`·키·토큰, 사내 주소·실명·사내 자료, 로컬 산출물(node_modules·dist·.pnpm-store·로그·스크린샷). 커밋 전 git-policy §6 점검.

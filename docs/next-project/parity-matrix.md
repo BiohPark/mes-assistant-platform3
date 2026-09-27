@@ -5,7 +5,7 @@
 
 - 작성: 2026-09-28, 데모 소스 직접 조사(`src/features`·`src/app`·`src/llm`·`src/db/repositories`·`src/components`·`src/lib`·`e2e/`)
 - 스프린트: architecture §9 — S1 OpenWebUI 대리 호출 · S2 에이전트·대화·태그·파일·입력 선택 API + 웹 저장소 함수 교체 · S3 참조 대화·요청 서비스·추정 API·SSE · S4 SR·체크리스트·노트·알림·리포트·설정·권한 전체 · S5 비기능·배포·이관 도구
-- 이식 방식: **그대로**(코드·테스트 거의 그대로) · **변경**(서버 이전·저장소 교체·권한 등 명시한 점만 바뀜) · **제외**(대체 수단 명시) · **결정 필요**(PRD에 없음 — 아래 "사용자 결정 필요" 목록)
+- 이식 방식: **그대로**(코드·테스트 거의 그대로) · **변경**(서버 이전·저장소 교체·권한 등 명시한 점만 바뀜) · **제외**(대체 수단 명시) · **결정 필요**(PRD에 없음 — §10에서 2026-09-28 모두 확정, 본문에는 `U<n>(a)`로 표기)
 - 상태: ✅ S0 이식 완료 · ⬜ 미착수
 
 ## 1. 라우트
@@ -32,7 +32,7 @@
 | `chatRunner.ts` (+test) | 요청 실행기: 활성 1건·생존 신호·시간 제한·재시도·중지·끊긴 응답 정리 | FR-33 | S3 | 변경(서버 RequestService, `lease_until`·주기 작업) — 테스트 먼저 이식 | ⬜ |
 | `hooks.ts` | 현재 사용자·설정·사용자 목록 훅 | — | S2 | 변경(TanStack Query) | ⬜ |
 | `NotificationBell.tsx` | 알림 종(읽음 처리 후 이동) | FR-41 | S4 | 변경(API·SSE) | ⬜ |
-| `presence.ts` | 같은 브라우저 탭 간 "입력 중" 표시(BroadcastChannel) | — | — | **결정 필요 U5** | ⬜ |
+| `presence.ts` | 같은 브라우저 탭 간 "입력 중" 표시(BroadcastChannel) | — | S3 | 변경(U5(a): SSE 이벤트로 다른 PC까지, 휘발성·DB 저장 없음) | ⬜ |
 | `router.tsx` | 라우트·리포트 지연 로딩 | — | S0 → 화면별 | 그대로 | ✅ 일부 |
 | `tabUser.ts` | 탭별 사용자 전환(시연용) | — | — | **제외** — 로그인 사용자로 대체(architecture §3) | — |
 | `uiStore.ts` | 홈 필터·칸반 빈 열 접기·서랍 열림(브라우저 저장) | 화면 §3 | S2 | 그대로(개인 화면 설정은 브라우저) | ⬜ |
@@ -47,7 +47,7 @@
 | `HomePage.tsx` | 카드↔칸반 세그먼트 토글(URL `view`) | 화면 §3 | S2 | 변경(API) | ⬜ (빈 허브 ✅) |
 | `AssistantCard.tsx` | 에이전트 카드 본문 | 화면 §3 | S2 | 그대로 | ⬜ |
 | `SortableAssistantGrid.tsx` | SO 편집 모드 드래그 순서(저장/취소, 필터 중 차단) | FR-60 | S2(표시)·S4(편집 권한) | 변경(충돌 검사 `revision`) | ⬜ |
-| `CardMapFilterBar.tsx` | 카드 검색·Lv1/Lv2 필터·중단 에이전트 보기 | — | S2 | **결정 필요 U4** | ⬜ |
+| `CardMapFilterBar.tsx` | 카드 검색·Lv1/Lv2 필터·중단 에이전트 보기 | — | S2 | 그대로(U4(a)) | ⬜ |
 | `useAssistantStats.ts` | 카드별 대화 집계 | 화면 §3 | S2 | 변경(서버 집계) | ⬜ |
 | `ConversationKanban.tsx` | 전체 대화 칸반(열=에이전트, 필터 URL 공유) | 화면 §3, D3 | S2 | 변경(API) | ⬜ |
 | `ConversationCard.tsx` | 칸반 카드(완료는 대화 화면에서만) | FR-01 | S2 | 그대로 | ⬜ |
@@ -58,7 +58,7 @@
 | `conversation/DraftConversationPage.tsx` | 초안 대화, 첫 전송·첨부 때 생성, `?tag=`·`?ref=` 미리 채움, 추천 질문 칩 | FR-01·02·20 | S2 | 변경(API) · 추천 칩은 U2 | ⬜ |
 | `task/TaskPage.tsx` | 대화 화면 진입, 초안 첫 메시지 인계(중복 전송 방지) | FR-01 | S2 | 그대로 | ⬜ |
 | `task/TaskHeader.tsx` | 제목·상태·태그·연결된 대화·재개 사유 | FR-01·02·03 | S2 | 변경(API) | ⬜ |
-| `task/RelatedStrip.tsx` | 태그를 직접 공유하는 다른 대화 줄(최근 활동순) | — | S2 | **결정 필요 U3** | ⬜ |
+| `task/RelatedStrip.tsx` | 태그를 직접 공유하는 다른 대화 줄(최근 활동순) | — | S2 | 그대로(U3(a): 직접 공유만, 태그 떼면 사라짐) | ⬜ |
 | `task/TaskBody.tsx` | 채팅 + 오른쪽 [자료·체크·노트·이력], 좁은 화면 탭 | 화면 §3 | S2 | 그대로 | ⬜ |
 | `task/useTaskData.ts` | 같은 태그 대화 후보 + 원문 규모 | FR-20 | S2·S3 | 변경(API) | ⬜ |
 | `task/MaterialsPanel.tsx` | 자료함: AI 입력·공유 자료함·SR 첨부·이 대화 파일 | FR-10·12 | S2 | 변경(API) | ⬜ |
@@ -86,7 +86,7 @@
 | `requestLabels.ts` | 전달 방식 표기(트레이·사용한 자료 공통) | FR-30·34 | S3 | 그대로 | ⬜ |
 | `ModelPicker.tsx` | 대화/스레드 모델 지정(서버 모델 목록 자동완성) | FR-35 | S2 | 변경(API) · 목록은 U6 | ⬜ |
 | `SaveAsOutputDialog.tsx` | 답변 → 산출물(기본 이름 규칙·버전) | FR-13 | S2 | 변경(API) | ⬜ |
-| `suggestions.ts` | 사용 예시에서 추천 질문 칩 추출 | — | S2 | **결정 필요 U2** | ⬜ |
+| `suggestions.ts` | 사용 예시에서 추천 질문 칩 추출 | — | S2 | 그대로(U2(a): 사람이 누르는 입력 도우미) | ⬜ |
 | `useChat.ts` | 실행기 래퍼(전송·중지·재시도) | FR-33 | S3 | 변경(API·SSE) | ⬜ |
 
 ### sr · assistants · reports · settings · system-assistant
@@ -107,8 +107,8 @@
 | `reports/ReportsPage.tsx` | 완료 추이·에이전트별 리드타임·사용자별 활동·SR 상태·자료 흐름·태그별 대화·에이전트별 현황·피드백 다이제스트 | FR-62 | S4 | 변경(서버 집계, 완료 이벤트 시각 기준) | ⬜ |
 | `reports/charts.tsx` | 차트 팔레트 | FR-62 | S4 | 그대로 | ⬜ |
 | `settings/SettingsPage.tsx` | 아래 "설정 항목" 표 | FR-61 | S4 | 변경 | ⬜ |
-| `system-assistant/SystemAssistantDrawer.tsx` | 플랫폼 조작용 시스템 assistant(제안 카드 → 확인 후 적용) | — | — | **결정 필요 U1** | ⬜ |
-| `system-assistant/actions.ts` | 도구 호출 → 제안 변환 | — | — | U1 | ⬜ |
+| `system-assistant/SystemAssistantDrawer.tsx` | 플랫폼 조작용 시스템 assistant(제안 카드 → 확인 후 적용) | — | S4 | 변경(U1(a): 서버 대리 호출, 제안 카드 → 사용자 확인 → 기존 API·권한 그대로) | ⬜ |
+| `system-assistant/actions.ts` | 도구 호출 → 제안 변환 | — | S4 | U1(a) | ⬜ |
 
 ## 4. `src/llm`
 
@@ -126,7 +126,7 @@
 | `mockProvider.ts` · `mockScenarios.ts` (+test) | Mock 대역 응답(개발·E2E) | — | S0 | 그대로(개발·E2E용) | ✅ |
 | `mockSystemAssistant.ts` | 규칙 기반 시스템 assistant | — | S0(코드만) | U1 | ✅ 코드 |
 | `tools.ts` | 시스템 assistant 도구 3종(start_conversation·create_assistant·add_tag) | — | S0(코드만) | U1 | ✅ 코드 |
-| `useModelList.ts` | 모델 목록(Live `/models`, Mock 예시) | FR-35 | — | **결정 필요 U6** (S0 이식 제외) | ⬜ |
+| `useModelList.ts` | 모델 목록(Live `/models`, Mock 예시) | FR-35 | S1 | 변경(U6(a): 서버가 OpenWebUI `/api/models` 대리 조회, 키는 서버) | ⬜ |
 
 ## 5. `src/db/repositories` (→ api 서비스 + web API 클라이언트, **같은 함수 이름·인자**, data-contract §6)
 
@@ -146,7 +146,7 @@
 | `settings.ts` | `DEFAULT_USER_ID` `setCurrentUser` | — | — | **제외** — 로그인 사용자 | — |
 | `conversations.test.ts` | 대화 생성·태그·입력 규칙 테스트 | FR-01·02·10 | S2 | 테스트 먼저 이식 | ⬜ |
 | (db) `schema.ts` · `migrations/*` · `seed/*` | Dexie 스키마·시드 | — | S0 | **제외** — Drizzle(✅), 시드는 개발 픽스처로만 | ✅ |
-| (db) `exportImport.ts` (+test) | JSON 내보내기·가져오기(비밀값 제외) | — | — | **결정 필요 U7** | ⬜ |
+| (db) `exportImport.ts` (+test) | JSON 내보내기·가져오기(비밀값 제외) | — | S5 | 변경(U7(a): 가져오기만 S5 "데모 데이터 이관 도구"로 · 내보내기는 **제외** — 서버 DB 백업으로 대체) | ⬜ |
 
 ## 6. `src/domain` (S0 이식 완료 — 61개 테스트)
 
@@ -172,14 +172,14 @@
 
 | 데모 항목 | FR | 스프린트 | 방식 |
 |---|---|---|---|
-| LLM 모드 Mock / Live | — | S1 | **결정 필요 U8** |
+| LLM 모드 Mock / Live | — | S1 | 변경(U8(a): 서버 배포 설정 — 개발·E2E는 Mock, 운영은 Live. 화면 전환 없음) |
 | 사내 API 프리셋 · Base URL · API Key 입력 | FR-61 | S1 | **제외** — 서버 비밀 저장소·배포 설정(키를 화면에 두지 않음) |
 | 기본 모델 | FR-61·35 | S4 | 변경(SO 전용 전역 설정) |
 | 입력 파일 전달 방식(OpenWebUI 첨부 / 본문) | FR-61 | S4 | 변경(SO 전용) |
 | 요청 크기 한도(KB) | FR-61·31 | S4 | 변경(SO 전용) |
 | SR 접수 에이전트 | FR-61·50 | S4 | 변경(SO 전용) |
-| 링크1 기본 규칙(링크1 미입력 시) | — | S4 | **결정 필요 U9** |
-| JSON 내보내기 · 가져오기 · 시드로 초기화 | — | — | **결정 필요 U7** |
+| 링크1 기본 규칙(링크1 미입력 시) | — | S4 | 변경(U9(a): SO 전역 설정) |
+| JSON 내보내기 · 가져오기 · 시드로 초기화 | — | S5 | 변경(U7(a): 가져오기 → S5 이관 도구 · 내보내기·시드 초기화 **제외** — 서버 DB 백업·마이그레이션으로 대체) |
 
 ## 9. E2E 시나리오 (데모 `e2e/`) — 같은 기준으로 새 저장소에서 통과시킨다
 
@@ -206,16 +206,18 @@
 
 > 평가 문서 [../evaluation/context-flow.md](../evaluation/context-flow.md) 기준: **E1 = S1–S8**(`context-flow.spec.ts`), **E2–E4·E6** = `conversation-context.spec.ts`, **E5** = 요청 실행기 보호(단위 테스트). architecture §9의 "S2: 데모 E1 S1–S5", "S3: E2–E5"와 위 배정이 같다(S6–S8은 요청 실행기라 S3).
 
-## 10. 사용자 결정 필요 (PRD에 없는 데모 기능)
+## 10. 사용자 결정 (2026-09-28 확정)
 
-| # | 데모 기능 | 선택지 (추천 먼저) |
-|---|---|---|
-| U1 | 시스템 assistant 서랍 + 도구 3종(대화 시작·에이전트 등록·태그 추가), 규칙 기반 대역 | (a) S4 수용: 서버 대리 호출, 도구는 제안 카드 → 사용자 확인 → 기존 API 호출(권한 그대로 적용) · (b) 제외 · (c) 후속(범위 밖) |
-| U2 | 추천 질문 칩(에이전트 사용 예시의 `- "…"` 줄 + "시작") | (a) S2 수용 그대로 — 업무 절차 주입이 아니라 사람이 누르는 입력 도우미 · (b) 제외 |
-| U3 | RelatedStrip(대화 머리의 "같은 태그 대화" 줄) | (a) S2 수용 그대로(직접 공유만, 태그 떼면 사라짐 — D6과 일치) · (b) 제외 |
-| U4 | 카드 지도 필터(이름 검색·Lv1/Lv2·중단 에이전트 보기, 브라우저 저장) | (a) S2 수용 그대로 · (b) 제외 |
-| U5 | presence "입력 중" 표시 | (a) S3 수용: SSE 이벤트로 다른 PC까지(휘발성, DB 저장 없음) · (b) 같은 브라우저 탭만(데모 그대로) · (c) 제외 |
-| U6 | 모델 목록(Live `/models` 자동완성, Mock 예시) | (a) S1 수용: 서버가 OpenWebUI `/api/models` 대리 조회(키는 서버) · (b) 제외(모델 ID 직접 입력) |
-| U7 | JSON 내보내기·가져오기·시드로 초기화 | (a) 가져오기는 S5 "데모 데이터 이관 도구"(PRD §7 선택)로, 내보내기·초기화는 제외(서버 DB 백업으로 대체) · (b) 셋 다 SO 관리 기능으로 수용 · (c) 전부 제외 |
-| U8 | LLM 모드 Mock/Live 전환 | (a) 서버 배포 설정(개발·E2E는 Mock, 운영은 Live) — 화면 전환 없음 · (b) SO 전역 설정 화면에서 전환 수용 |
-| U9 | 링크1 기본 규칙(링크1 미입력 시 `{OpenWebUI}/?model={모델 ID}`) | (a) S4 수용: SO 전역 설정 · (b) 고정 규칙(설정 없음) |
+PRD에 없는 데모 기능 9건. 사용자 회신: **모두 (a)** — 목표는 데모 기능 100% 수용이며, U7만 서버 구조상 의도적 대체다. 본문 표에는 `U<n>(a)`로 표기했다.
+
+| # | 데모 기능 | 결정 | 근거 | 스프린트 |
+|---|---|---|---|---|
+| U1 | 시스템 assistant 서랍 + 도구 3종(대화 시작·에이전트 등록·태그 추가) | (a) 수용: 서버 대리 호출, 도구는 제안 카드 → 사용자 확인 → 기존 API 호출 | 플랫폼 조작 보조이지 업무 절차 주입이 아님. 권한은 기존 API가 그대로 강제(D19) | S4 |
+| U2 | 추천 질문 칩 | (a) 수용 그대로 | 사람이 누르는 입력 도우미 — 자동 전송·절차 지시 없음(HANDOFF §2) | S2 |
+| U3 | RelatedStrip(같은 태그 대화 줄) | (a) 수용 그대로 | 직접 공유만 보이고 태그를 떼면 사라짐 — D6과 일치 | S2 |
+| U4 | 카드 지도 필터(검색·Lv1/Lv2·중단 보기, 브라우저 저장) | (a) 수용 그대로 | 개인 화면 편의, 서버 상태 없음 | S2 |
+| U5 | presence "입력 중" | (a) SSE 이벤트로 다른 PC까지 | 서버 기반이 되면 탭 간 표시만으론 부족. 휘발성, DB 저장 없음 | S3 |
+| U6 | 모델 목록 자동완성 | (a) 서버가 OpenWebUI `/api/models` 대리 조회 | 키는 서버에만(D12·HANDOFF §2). 모델 ID 오타 방지 | S1 |
+| U7 | JSON 내보내기·가져오기·시드 초기화 | (a) **가져오기**만 S5 "데모 데이터 이관 도구"(PRD §7 선택)로 수용. **내보내기·초기화는 제외** — 서버 DB 백업·마이그레이션으로 대체 | 데모의 브라우저 DB 백업 수단이 서버 구조에서는 불필요. **유일한 의도적 대체** | S5 |
+| U8 | LLM 모드 Mock/Live 전환 | (a) 서버 배포 설정(개발·E2E Mock, 운영 Live), 화면 전환 없음 | 운영 중 사용자가 Mock으로 바꾸는 상황이 없음. 설정은 코드·환경에 | S1 |
+| U9 | 링크1 기본 규칙(`{OpenWebUI}/?model={모델 ID}`) | (a) SO 전역 설정 | OpenWebUI 주소·경로는 배포마다 다름(D12) | S4 |

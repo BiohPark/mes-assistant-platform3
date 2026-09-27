@@ -86,6 +86,9 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | D25 | 라이선스 UNLICENSED, LICENSE 파일 제거. NOTICE는 오케스트레이션 규칙의 제3자 고지로 유지 | 사용자 (2026-09-28) |
 | D26 | api는 ESM + tsc 빌드(데코레이터 메타데이터), DI는 모두 명시적 `@Inject(토큰)` — 테스트 변환기(oxc)와 무관하게 동작 | S0 기본값 |
 | D27 | SSO 사용자 식별은 `(issuer, sub)` — `app_user.sso_subject`에 `{issuer}#{sub}`로 저장(IdP 교체 시 권한 승계 방지) | codex-critic 리뷰 반영 (2026-09-28) |
+| D28 | 대응표 U1–U9 **모두 (a)** — 데모 기능 100% 수용. U7(JSON 내보내기·초기화)만 서버 DB 백업으로 의도적 대체, 가져오기는 S5 이관 도구. 근거는 [parity-matrix §10](next-project/parity-matrix.md) | 사용자 (2026-09-28) |
+| D29 | git: 병합은 **merge commit(`--no-ff`)**, squash 금지(테스트 먼저·작은 커밋 이력 보존) · 커밋 언어 한국어(접두 영어) · G3(운영 파일 공개 여부)는 첫 push 전 결정 | 사용자 (2026-09-28) |
+| D30 | 오케스트레이터(Fable 5.1)는 계획·판단·통합·검증·소통만, 구현은 워커(codex-main·claude-main) 위임. 작업 단위·write_scope를 좁혀 승인, 결과는 테스트·scope_check 검증 후 `[VERIFICATION]` | 사용자 (2026-09-28) |
 
 ## 6. 진행 현황
 
@@ -99,8 +102,9 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 
 | 우선 | 항목 | 메모 |
 |---|---|---|
-| **S0 마감** | push 후 CI(windows 잡·`setup-guide` 잡) 녹색 확인 → Windows PC에서 [setup/windows.md](setup/windows.md)대로 로그인 → 빈 허브 확인 → `main` 병합·태그 `s0-done` | 사용자 승인 필요 |
-| 결정 대기 | git G1 병합 방식·G2 커밋 언어·G3 운영 파일 위치, 대응표 U1–U9 | [git-policy.md](git-policy.md) · [parity-matrix.md](next-project/parity-matrix.md) §10 |
+| **S0 마감** | **G3 결정** → `feat/s0-skeleton` push(승인) → CI(windows 잡·`setup-guide` 잡) 녹색 확인 → Windows PC에서 [setup/windows.md](setup/windows.md)대로 로그인 → 빈 허브 확인 → `main` 병합(**merge commit `--no-ff`**)·태그 `s0-done` | 사용자 승인 필요 |
+| 결정 대기 | **G3** 운영 파일(`CLAUDE.md`·`_shared/`·`_templates/`) 공개 여부 — 초기 커밋에 봇 ID 포함, 첫 push 전 필수 | [git-policy.md](git-policy.md) §7. U1–U9·G1·G2는 확정(D28·D29) |
+| **남은 위험** | ① 실제 Windows 실기 미확인(문서 명령은 PowerShell 7.6으로 검증, CI windows 잡은 push 후) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
 | **다음(S1)** | **실제 사내 OpenWebUI 확인**([evaluation/real-env-verification.md](evaluation/real-env-verification.md) 절차) + 서버 대리 호출(채팅·파일) | `LlmPorts` 구현(DB 어댑터)·`FileStorageService` 시작 |
 | 착수 전 확인 | 사내 SSO 방식(OIDC/SAML)·앱 등록, OpenWebUI 버전, 배포 환경·PostgreSQL, 비기능 제안값(PRD §6) | next-project/README |
 | 중간 | IdP 로그아웃, 요청자 역할 저장 | [KNOWN_ISSUES](../KNOWN_ISSUES.md) KI-1·KI-2 |
