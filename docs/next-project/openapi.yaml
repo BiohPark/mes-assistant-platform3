@@ -1,0 +1,650 @@
+openapi: 3.1.0
+info:
+  title: MES Agent Hub API (초안)
+  version: 0.1.0-draft
+  description: |
+    새 저장소 서버 API 초안. 데모의 저장소 함수(src/db/repositories/*)와 1:1로 대응한다(docs/architecture/data-contract.md §6).
+    인증은 사내 SSO 세션 쿠키. 역할: member(담당자), system_owner, requester.
+    오류는 공통 Problem 형식. 409는 규칙 위반(진행 중 요청, 참조 중 삭제, 완료된 대화 변경 등).
+servers:
+  - url: /api
+security:
+  - session: []
+
+tags:
+  - name: auth
+  - name: assistants
+  - name: tasks
+  - name: materials
+  - name: requests
+  - name: files
+  - name: service-requests
+  - name: misc
+
+paths:
+  /auth/login:
+    get:
+      tags: [auth]
+      summary: SSO 로그인 시작 (IdP로 리다이렉트)
+      security: []
+      responses:
+        '302': { description: IdP로 이동 }
+  /auth/callback:
+    get:
+      tags: [auth]
+      summary: SSO 콜백 → 세션 쿠키 발급 (OIDC 코드 또는 SAML POST는 서버 설정에 따름)
+      security: []
+      responses:
+        '302': { description: 앱으로 이동 }
+  /auth/logout:
+    post:
+      tags: [auth]
+      responses:
+        '204': { description: 로그아웃 }
+  /me:
+    get:
+      tags: [auth]
+      summary: 현재 사용자와 역할
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+
+  /users:
+    get:
+      tags: [misc]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/User' } } } } }
+  /users/{userId}/system-owner:
+    put:
+      tags: [misc]
+      summary: SO 지정·해제 (SO 전용)
+      parameters: [{ $ref: '#/components/parameters/userId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [value], properties: { value: { type: boolean } } } } } }
+      responses:
+        '204': { description: 변경됨 }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /assistants:
+    get:
+      tags: [assistants]
+      summary: 에이전트 카탈로그 (공통 순서)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Assistant' } } } } }
+    post:
+      tags: [assistants]
+      summary: 에이전트 추가 (SO 전용)
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/AssistantInput' } } } }
+      responses:
+        '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/Assistant' } } } }
+        '403': { $ref: '#/components/responses/Problem' }
+  /assistants/{assistantId}:
+    patch:
+      tags: [assistants]
+      summary: 에이전트 수정 (SO 전용)
+      parameters: [{ $ref: '#/components/parameters/assistantId' }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/AssistantInput' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Assistant' } } } }
+    delete:
+      tags: [assistants]
+      summary: 삭제 (SO 전용, 대화가 있거나 SR 접수 에이전트면 409)
+      parameters: [{ $ref: '#/components/parameters/assistantId' }]
+      responses:
+        '204': { description: 삭제 }
+        '409': { $ref: '#/components/responses/Problem' }
+  /assistants/order:
+    put:
+      tags: [assistants]
+      summary: 공통 순서 저장 (SO 전용, revision 충돌 시 409)
+      requestBody: { content: { application/json: { schema: { type: object, required: [ids, revision], properties: { ids: { type: array, items: { type: string } }, revision: { type: integer } } } } } }
+      responses:
+        '204': { description: 저장 }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /tasks:
+    get:
+      tags: [tasks]
+      summary: 대화 목록 (칸반·검색)
+      parameters:
+        - { name: assistantId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: array, items: { $ref: '#/components/schemas/TaskStatus' } } }
+        - { name: tag, in: query, schema: { type: array, items: { type: string } } }
+        - { name: mine, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Task' } } } } }
+    post:
+      tags: [tasks]
+      summary: 대화 시작 (첫 전송·첨부 때 호출, 코드는 서버 발급)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assistantId]
+              properties:
+                assistantId: { type: string }
+                tags: { type: array, items: { type: string } }
+                title: { type: string }
+                inputFileIds: { type: array, items: { type: string } }
+                referenceTaskId: { type: string, description: '?ref= — 이 대화를 ★ 참조 대화로 미리 선택' }
+      responses:
+        '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }
+  /tasks/{taskId}:
+    get:
+      tags: [tasks]
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }
+    patch:
+      tags: [tasks]
+      summary: 제목·요약·우선순위·기한·담당자 (수동 제목은 AI가 덮어쓰지 않음)
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/TaskPatch' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }
+    delete:
+      tags: [tasks]
+      summary: 삭제 (파일·대화가 다른 대화에서 쓰이면 409)
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses:
+        '204': { description: 삭제 }
+        '409': { $ref: '#/components/responses/Problem' }
+  /tasks/{taskId}/status:
+    post:
+      tags: [tasks]
+      summary: 상태 변경 (완료는 리포트 저장·진행 중 요청 있으면 409, 재개는 사유 필수)
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [status], properties: { status: { $ref: '#/components/schemas/TaskStatus' }, reason: { type: string } } } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }
+        '409': { $ref: '#/components/responses/Problem' }
+  /tasks/{taskId}/tags/{tag}:
+    put:
+      tags: [tasks]
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { name: tag, in: path, required: true, schema: { type: string } }]
+      responses: { '204': { description: 추가(정규화·중복 무시) } }
+    delete:
+      tags: [tasks]
+      summary: 태그 제거 (이미 고른 입력은 유지)
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { name: tag, in: path, required: true, schema: { type: string } }]
+      responses: { '204': { description: 제거 } }
+
+  /tasks/{taskId}/candidates:
+    get:
+      tags: [materials]
+      summary: 같은 태그를 직접 공유하는 대화의 파일·대화 후보 (간접 연결 제외, 대화는 최근 활동순)
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files: { type: array, items: { $ref: '#/components/schemas/PoolItem' } }
+                  conversations: { type: array, items: { $ref: '#/components/schemas/ConversationCandidate' } }
+  /tasks/{taskId}/inputs/{fileId}:
+    put:
+      tags: [materials]
+      summary: 파일을 입력으로 선택·등급 변경 (특정 버전 고정)
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { $ref: '#/components/parameters/fileId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [weight], properties: { weight: { $ref: '#/components/schemas/InputWeight' } } } } } }
+      responses:
+        '204': { description: 선택 }
+        '409': { $ref: '#/components/responses/Problem' }
+    delete:
+      tags: [materials]
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { $ref: '#/components/parameters/fileId' }]
+      responses: { '204': { description: 해제 } }
+  /tasks/{taskId}/inputs/{fileId}/switch-version:
+    post:
+      tags: [materials]
+      summary: 선택을 다른 버전으로 (사람이 누를 때만)
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { $ref: '#/components/parameters/fileId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [toFileId], properties: { toFileId: { type: string } } } } } }
+      responses: { '204': { description: 변경 } }
+  /tasks/{taskId}/conversation-inputs:
+    get:
+      tags: [materials]
+      summary: 고른 참조 대화 (스냅샷·새 메시지 수·태그 해제 여부·크기)
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ConversationInput' } } } } }
+  /tasks/{taskId}/conversation-inputs/{sourceTaskId}:
+    put:
+      tags: [materials]
+      summary: 참조 대화 선택 (전체·메시지 선택·요약). 같은 쌍은 스냅샷만 교체
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { $ref: '#/components/parameters/sourceTaskId' }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/ConversationInputRequest' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ConversationInput' } } } }
+        '409': { $ref: '#/components/responses/Problem' }
+    patch:
+      tags: [materials]
+      summary: 등급 변경
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { $ref: '#/components/parameters/sourceTaskId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [weight], properties: { weight: { $ref: '#/components/schemas/InputWeight' } } } } } }
+      responses: { '204': { description: 변경 } }
+    delete:
+      tags: [materials]
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { $ref: '#/components/parameters/sourceTaskId' }]
+      responses: { '204': { description: 해제 (스냅샷은 요청 기록을 위해 보존) } }
+  /tasks/{taskId}/conversation-inputs/{sourceTaskId}/refresh:
+    post:
+      tags: [materials]
+      summary: 전체 원문 모드를 새 메시지까지 다시 고정
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { $ref: '#/components/parameters/sourceTaskId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ConversationInput' } } } }
+  /tasks/{taskId}/conversation-inputs/{sourceTaskId}/summary-draft:
+    post:
+      tags: [materials]
+      summary: 요약 초안 생성 (보조 요청, 적용 전 사람이 확인·수정). 원문이 한도를 넘으면 413
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { $ref: '#/components/parameters/sourceTaskId' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { messageIds: { type: array, items: { type: string } } } } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { text: { type: string }, source: { enum: [ai, rule] }, model: { type: string } } } } } }
+        '413': { $ref: '#/components/responses/Problem' }
+
+  /threads/{threadId}/messages:
+    get:
+      tags: [requests]
+      parameters: [{ $ref: '#/components/parameters/threadId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Message' } } } } }
+    post:
+      tags: [requests]
+      summary: 팀 의견 (AI에 보내지 않음)
+      parameters: [{ $ref: '#/components/parameters/threadId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [content], properties: { content: { type: string }, attachmentIds: { type: array, items: { type: string } } } } } } }
+      responses:
+        '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /threads/{threadId}/requests/estimate:
+    post:
+      tags: [requests]
+      summary: 지금 보내면 AI가 받을 것 (트레이) — 실제 전송과 같은 조립, 업로드 없이 첨부 예정으로 계산
+      parameters: [{ $ref: '#/components/parameters/threadId' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { draft: { type: string }, oneShotFileIds: { type: array, items: { type: string } } } } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/RequestInfo' } } } }
+  /threads/{threadId}/requests:
+    post:
+      tags: [requests]
+      summary: AI 요청 시작 — 응답은 SSE. 진행 중 요청이 있으면 409, 완료된 대화면 409, 한도 초과면 413
+      parameters: [{ $ref: '#/components/parameters/threadId' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string }
+                attachmentIds: { type: array, items: { type: string } }
+                oneShotFileIds: { type: array, items: { type: string }, description: 대화 입력으로 고정하지 않는 첨부 }
+      responses:
+        '200':
+          description: |
+            text/event-stream. 이벤트: `started`({requestId, replyMessageId}), `phase`({text}), `delta`({text}),
+            `completed`({requestInfo}), `failed`({error, requestInfo}) — failed의 requestInfo.inputs에 전달 실패 항목
+          content: { text/event-stream: { schema: { type: string } } }
+        '409': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+  /requests/{requestId}:
+    get:
+      tags: [requests]
+      summary: 전송 기록 (사용한 자료·전달 방식·크기·모델)
+      parameters: [{ $ref: '#/components/parameters/requestId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/RequestRecord' } } } }
+  /requests/{requestId}/snapshot:
+    get:
+      tags: [requests]
+      summary: 원본 요청 JSON (키 제외)
+      parameters: [{ $ref: '#/components/parameters/requestId' }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: object } } } } }
+  /requests/{requestId}/retry:
+    post:
+      tags: [requests]
+      summary: 같은 사용자 메시지로 다시 요청 (가장 최근 실패 답변만). 현재 선택 기준
+      parameters: [{ $ref: '#/components/parameters/requestId' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                excludeFileIds: { type: array, items: { type: string }, description: 입력에서 빼고 다시 }
+                forceInlineFileIds: { type: array, items: { type: string }, description: 텍스트로 보내기 (텍스트 파일만) }
+      responses:
+        '200': { description: text/event-stream (시작과 같음), content: { text/event-stream: { schema: { type: string } } } }
+        '409': { $ref: '#/components/responses/Problem' }
+  /requests/{requestId}/cancel:
+    post:
+      tags: [requests]
+      parameters: [{ $ref: '#/components/parameters/requestId' }]
+      responses: { '204': { description: 중지 (부분 응답 보존) } }
+
+  /files:
+    post:
+      tags: [files]
+      summary: 업로드 (같은 대화·같은 이름이면 새 버전). 서버가 storage_key 생성
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                taskId: { type: string }
+                srId: { type: string }
+      responses:
+        '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/FileMeta' } } } }
+        '413': { $ref: '#/components/responses/Problem' }
+  /files/{fileId}:
+    patch:
+      tags: [files]
+      summary: 산출물 표시
+      parameters: [{ $ref: '#/components/parameters/fileId' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { isOutput: { type: boolean } } } } } }
+      responses: { '204': { description: 변경 } }
+    delete:
+      tags: [files]
+      summary: 소프트 삭제 (다른 대화가 입력으로 쓰면 409)
+      parameters: [{ $ref: '#/components/parameters/fileId' }]
+      responses:
+        '204': { description: 삭제 }
+        '409': { $ref: '#/components/responses/Problem' }
+  /files/{fileId}/content:
+    get:
+      tags: [files]
+      summary: 원본 다운로드 (스트리밍)
+      parameters: [{ $ref: '#/components/parameters/fileId' }]
+      responses: { '200': { description: 파일, content: { application/octet-stream: { schema: { type: string, format: binary } } } } }
+  /files/{fileId}/versions:
+    get:
+      tags: [files]
+      parameters: [{ $ref: '#/components/parameters/fileId' }]
+      responses:
+        '200': { description: 최신 → 과거, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/FileMeta' } } } } }
+  /tasks/{taskId}/outputs:
+    post:
+      tags: [files]
+      summary: 답변을 마크다운 산출물로 저장 (같은 이름이면 새 버전)
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [name, messageId], properties: { name: { type: string }, messageId: { type: string } } } } } }
+      responses:
+        '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/FileMeta' } } } }
+
+  /service-requests:
+    get:
+      tags: [service-requests]
+      summary: 목록 (요청자는 자기 것만)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ServiceRequest' } } } } }
+    post:
+      tags: [service-requests]
+      summary: 접수 대화 시작 (draft, 코드 없음)
+      responses:
+        '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }
+  /service-requests/{srId}/submit:
+    post:
+      tags: [service-requests]
+      summary: 접수로 전환 (코드 발급·태그·알림)
+      parameters: [{ $ref: '#/components/parameters/srId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [title, body], properties: { title: { type: string }, titleSource: { enum: [ai, manual] }, body: { type: string }, attachmentIds: { type: array, items: { type: string } } } } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }
+  /service-requests/{srId}/tasks:
+    post:
+      tags: [service-requests]
+      summary: 연결 업무 시작 (진행 중 대화가 있으면 이어가기 후보를 먼저 돌려줌)
+      parameters: [{ $ref: '#/components/parameters/srId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [assistantId], properties: { assistantId: { type: string }, forceNew: { type: boolean } } } } } }
+      responses:
+        '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }
+  /service-requests/{srId}/results:
+    post:
+      tags: [service-requests]
+      summary: 요청자에게 결과 공유 (텍스트 + 열람 가능한 산출물). 내부 대화는 공유되지 않음
+      parameters: [{ $ref: '#/components/parameters/srId' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { taskId: { type: string }, text: { type: string }, fileIds: { type: array, items: { type: string } } } } } } }
+      responses: { '201': { description: 공유 } }
+
+  /events:
+    get:
+      tags: [misc]
+      summary: 사용자별 변경 알림 SSE (task.updated, message.appended, request.updated, notification.created)
+      responses: { '200': { description: text/event-stream, content: { text/event-stream: { schema: { type: string } } } } }
+  /settings:
+    get:
+      tags: [misc]
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Settings' } } } } }
+    patch:
+      tags: [misc]
+      summary: 전역 설정 (SO 전용). OpenWebUI 키는 여기서 다루지 않음(서버 비밀)
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Settings' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Settings' } } } }
+        '403': { $ref: '#/components/responses/Problem' }
+
+components:
+  securitySchemes:
+    session: { type: apiKey, in: cookie, name: hub_session }
+  parameters:
+    userId: { name: userId, in: path, required: true, schema: { type: string } }
+    assistantId: { name: assistantId, in: path, required: true, schema: { type: string } }
+    taskId: { name: taskId, in: path, required: true, schema: { type: string } }
+    sourceTaskId: { name: sourceTaskId, in: path, required: true, schema: { type: string } }
+    threadId: { name: threadId, in: path, required: true, schema: { type: string } }
+    requestId: { name: requestId, in: path, required: true, schema: { type: string } }
+    fileId: { name: fileId, in: path, required: true, schema: { type: string } }
+    srId: { name: srId, in: path, required: true, schema: { type: string } }
+  responses:
+    Problem:
+      description: 오류 (RFC 9457)
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+  schemas:
+    Problem:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string, description: 화면에 그대로 보여 줄 한국어 설명 }
+        code: { type: string, enum: [active_request, task_done, in_use, budget_exceeded, delivery_failed, forbidden, conflict, not_found, validation] }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        role: { type: string }
+        roles: { type: array, items: { enum: [member, system_owner, requester] } }
+    InputWeight: { type: string, enum: [main, reference] }
+    ContextMode: { type: string, enum: [full, messages, summary] }
+    TaskStatus: { type: string, enum: [todo, in_progress, on_hold, done] }
+    Assistant:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        level1: { type: string }
+        level2: { type: string }
+        summary: { type: string }
+        order: { type: integer }
+        modelId: { type: string }
+        link1: { type: string }
+        docUrl: { type: string }
+        ownerId: { type: string }
+        status: { enum: [open, developing, testing, retired] }
+        usageExample: { type: string }
+        imageFileId: { type: string }
+        expectedInputs: { type: array, items: { type: string } }
+        expectedOutputs: { type: array, items: { type: string } }
+        checklistTemplate: { type: array, items: { type: object, properties: { id: { type: string }, label: { type: string }, required: { type: boolean } } } }
+    AssistantInput:
+      allOf: [{ $ref: '#/components/schemas/Assistant' }]
+    Task:
+      type: object
+      properties:
+        id: { type: string }
+        code: { type: string }
+        assistantId: { type: string }
+        title: { type: string }
+        titleSource: { enum: [default, ai, manual] }
+        summary: { type: string }
+        status: { $ref: '#/components/schemas/TaskStatus' }
+        ownerId: { type: string }
+        assigneeIds: { type: array, items: { type: string } }
+        priority: { enum: [low, normal, high, urgent] }
+        dueDate: { type: string, format: date }
+        tags: { type: array, items: { type: string } }
+        inputs: { type: array, items: { type: object, properties: { fileId: { type: string }, weight: { $ref: '#/components/schemas/InputWeight' }, selectedAt: { type: string, format: date-time }, selectedBy: { type: string } } } }
+        threadId: { type: string }
+        modelId: { type: string }
+        lastActivityAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+    TaskPatch:
+      type: object
+      properties:
+        title: { type: string }
+        summary: { type: string }
+        priority: { enum: [low, normal, high, urgent] }
+        dueDate: { type: string, format: date }
+        assigneeIds: { type: array, items: { type: string } }
+        modelId: { type: string }
+    FileMeta:
+      type: object
+      properties:
+        id: { type: string }
+        kind: { enum: [task_file, sr_attachment, assistant_image] }
+        originTaskId: { type: string }
+        originSrId: { type: string }
+        name: { type: string }
+        mime: { type: string }
+        size: { type: integer }
+        sha256: { type: string }
+        source: { enum: [upload, assistant] }
+        isOutput: { type: boolean }
+        version: { type: integer }
+        previousId: { type: string }
+        uploadedBy: { type: string }
+        uploadedAt: { type: string, format: date-time }
+    PoolItem:
+      type: object
+      properties:
+        file: { $ref: '#/components/schemas/FileMeta' }
+        sourceTaskId: { type: string }
+        viaTags: { type: array, items: { type: string } }
+        role: { enum: [output, upload] }
+        newerVersionId: { type: string }
+        olderVersionIds: { type: array, items: { type: string } }
+    ConversationCandidate:
+      type: object
+      properties:
+        task: { $ref: '#/components/schemas/Task' }
+        viaTags: { type: array, items: { type: string } }
+        messageCount: { type: integer }
+        bytes: { type: integer }
+    ConversationInputRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode: { $ref: '#/components/schemas/ContextMode' }
+        weight: { $ref: '#/components/schemas/InputWeight' }
+        messageIds: { type: array, items: { type: string }, description: 'messages: 전달할 메시지, summary: 요약에 쓴 원본' }
+        summary: { type: object, properties: { text: { type: string }, source: { enum: [ai, rule] }, model: { type: string } } }
+    ConversationInput:
+      type: object
+      properties:
+        id: { type: string }
+        taskId: { type: string }
+        sourceTaskId: { type: string }
+        weight: { $ref: '#/components/schemas/InputWeight' }
+        mode: { $ref: '#/components/schemas/ContextMode' }
+        snapshotId: { type: string }
+        messageCount: { type: integer }
+        newMessages: { type: integer, description: 선택 이후 원본에 생긴 메시지 수 (갱신 안내) }
+        detached: { type: boolean, description: 공유 태그가 없어졌지만 선택은 유지 }
+        bytes: { type: integer }
+        summaryText: { type: string }
+    Message:
+      type: object
+      properties:
+        id: { type: string }
+        threadId: { type: string }
+        seq: { type: integer }
+        role: { enum: [system, user, assistant] }
+        kind: { enum: [discussion] }
+        content: { type: string }
+        authorId: { type: string }
+        status: { enum: [streaming, done, error] }
+        error: { type: string }
+        attachmentIds: { type: array, items: { type: string } }
+        requestId: { type: string }
+        createdAt: { type: string, format: date-time }
+    RequestInput:
+      type: object
+      properties:
+        kind: { enum: [file, conversation] }
+        weight: { $ref: '#/components/schemas/InputWeight' }
+        fileId: { type: string }
+        name: { type: string }
+        version: { type: integer }
+        source: { type: string }
+        oneShot: { type: boolean }
+        delivery: { enum: [attached, inline, metadata_only, failed] }
+        text: { type: boolean, description: 텍스트 파일이면 "텍스트로 보내기" 가능 }
+        remoteId: { type: string }
+        error: { type: string }
+        sourceTaskId: { type: string }
+        code: { type: string }
+        mode: { $ref: '#/components/schemas/ContextMode' }
+        snapshotId: { type: string }
+        messageCount: { type: integer }
+        bytes: { type: integer }
+    RequestInfo:
+      type: object
+      properties:
+        provider: { enum: [mock, live] }
+        transport: { enum: [inline, openwebui] }
+        model: { type: string }
+        bytes: { type: integer }
+        limitBytes: { type: integer }
+        srCodes: { type: array, items: { type: string } }
+        inputs: { type: array, items: { $ref: '#/components/schemas/RequestInput' } }
+    RequestRecord:
+      allOf:
+        - { $ref: '#/components/schemas/RequestInfo' }
+        - type: object
+          properties:
+            id: { type: string }
+            threadId: { type: string }
+            userMessageId: { type: string }
+            replyMessageId: { type: string }
+            requestedBy: { type: string }
+            retryOf: { type: string }
+            status: { enum: [pending, streaming, succeeded, failed, cancelled, interrupted] }
+            error: { type: string }
+            createdAt: { type: string, format: date-time }
+            finishedAt: { type: string, format: date-time }
+    ServiceRequest:
+      type: object
+      properties:
+        id: { type: string }
+        code: { type: string }
+        requesterId: { type: string }
+        title: { type: string }
+        titleSource: { enum: [default, ai, manual] }
+        body: { type: string }
+        status: { enum: [draft, submitted, reviewing, in_progress, responded, done, rejected] }
+        threadId: { type: string }
+        results: { type: array, items: { type: object, properties: { id: { type: string }, taskId: { type: string }, text: { type: string }, fileIds: { type: array, items: { type: string } }, by: { type: string }, at: { type: string, format: date-time } } } }
+    Settings:
+      type: object
+      properties:
+        defaultModel: { type: string }
+        fileDelivery: { enum: [inline, openwebui] }
+        requestBudgetBytes: { type: integer, minimum: 1024, maximum: 16777216 }
+        srIntakeAssistantId: { type: string }
