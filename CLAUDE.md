@@ -292,7 +292,7 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 - 스프린트 = architecture §9의 S0–S5. 태스크 폴더는 `tasks/s<N>-<주제>/`. 각 스프린트의 **완료 기준**이 Verification의 기준이다.
 - 현재 위치: **S0 완료(`feat/s0-skeleton`, push·`main` 병합 대기) → 다음 S1**. S0 기록: `tasks/s0-skeleton/`, `docs/HANDOFF.md` 6장. S0 지시서는 `docs/next-project/S0-kickoff.md`(완료).
 - S1의 실환경 확인(`docs/evaluation/real-env-verification.md`)은 **이 환경에서 불가(D31)** — 사용자가 사내에서 수행. 개발은 가짜 OpenWebUI + OpenAI 호환 API 전환 프리셋으로 진행하고, 사내 연동 결과가 오면 어댑터를 맞춘다.
-- 확정: 배포 Windows 서버 + PostgreSQL 설치(D32), 이번 페이즈 SSO 미연계(대체 인증 A1 결정 대기 — HANDOFF §6). 남은 확인: OpenWebUI 버전, 비기능 제안값(PRD §6).
+- 확정: 배포 Windows 서버 + PostgreSQL 설치(D32), 이번 페이즈 SSO 미연계 → **앱 자체 로그인**(D34), 병렬 단계·상태는 **코드 데이터로 관리**(D35). 남은 확인: OpenWebUI 버전, 비기능 제안값(PRD §6).
 - 스프린트가 끝나면 이 블록의 "현재 위치"와 아래 "명령"을 갱신한다.
 
 ### 작업 방식 (사용자 지시 — 매 세션 적용)
@@ -326,5 +326,6 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 - 커밋 전 `git grep`으로 민감 문자열 점검. `feat/*` 브랜치 커밋은 자유, **push·`main` 병합은 사용자 승인 후에만.**
 
 ### 이 봇 자신의 멘션 (디스코드)
+- 이 봇 자신의 사용자 ID는 `CLAUDE.local.md`(git 무시)에 있다. 메시지에 그 멘션만 있으면 사용자가 봇을 부른 것이므로 평소처럼 응답한다.
 - 위 "다른 사람이 함께 있는 채널" 규칙은 이 봇 **이외의** `<@…>` 멘션에만 적용한다.
 <!-- store:project:end -->

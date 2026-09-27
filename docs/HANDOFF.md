@@ -91,6 +91,8 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | D30 | 오케스트레이터(Fable 5.1)는 계획·판단·통합·검증·소통만, 구현은 워커(codex-main·claude-main) 위임. 작업 단위·write_scope를 좁혀 승인, 결과는 테스트·scope_check 검증 후 `[VERIFICATION]` | 사용자 (2026-09-28) |
 | D31 | **실제 사내 OpenWebUI 연동·실제 데이터 테스트는 사내에서만** 가능(이 개발 환경에서는 접속 불가). S1의 실환경 확인([real-env-verification](evaluation/real-env-verification.md))은 킵하고 사용자가 사내에서 수행. 개발·검증은 가짜 OpenWebUI + **OpenAI 등 다른 OpenAI 호환 API로 전환 가능한 프리셋**(base URL·키는 서버 설정)으로 진행 | 사용자 (2026-09-28) |
 | D32 | 배포는 **Windows 서버**, PostgreSQL은 필요 시 설치해 사용. 이번 목표 페이즈에서 **SSO는 미연계** — 대체 인증 방식은 결정 대기(§6) | 사용자 (2026-09-28) |
+| D34 | **인증(A1)**: 앱 자체 로그인. 로그인 ID = 계정 식별자(별도 이메일·사번 없음), 비밀번호는 argon2 해시. **회원가입은 아주 단순하게**(ID·비밀번호만) → 가입 직후 기본 사용자, SO·BO는 SO가 부여(최초 SO는 `INITIAL_SYSTEM_OWNERS`=ID). S0의 OIDC 경로는 `AUTH_MODE=oidc` 설정 선택으로 남기고 기본은 `local`(후속 페이즈 SSO 연계용). 세션 쿠키·`app_session`은 그대로 | 사용자 (2026-09-28) |
+| D35 | **코드 관리**: 관리가 필요한 병렬 단계·병렬 상태는 하드코딩하지 않고 **코드(공통 코드) 데이터로 관리**한다. 최소 대상: assistant 관리 구분(1단계·2단계 각각), 그 외 상태 관련 정보. 코드 관리 화면·API의 구체 형태는 구현 시점(S4)에 사용자와 논의. PRD FR-63 | 사용자 (2026-09-28) |
 | D33 | 역할 호칭: **SO = System Owner, BO = Business Owner(= PRD의 요청자, SR 접수 현업)**. "담당자"는 에이전트를 컨트롤하는 사람이라는 뜻일 뿐 권한 등급이 아님 → 로그인한 기본 사용자(`member`). 권한 등급은 기본 사용자·SO·BO 셋 | 사용자 (2026-09-28) |
 
 ## 6. 진행 현황
@@ -106,10 +108,10 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | 우선 | 항목 | 메모 |
 |---|---|---|
 | **S0 마감** | **G3 결정** → `feat/s0-skeleton` push(승인) → CI(windows 잡·`setup-guide` 잡) 녹색 확인 → Windows PC에서 [setup/windows.md](setup/windows.md)대로 로그인 → 빈 허브 확인 → `main` 병합(**merge commit `--no-ff`**)·태그 `s0-done` | 사용자 승인 필요 |
-| 결정 대기 | **G3** 운영 파일(`CLAUDE.md`·`_shared/`·`_templates/`) 공개 여부 — 초기 커밋에 봇 ID 포함, 첫 push 전 필수 | [git-policy.md](git-policy.md) §7. U1–U9·G1·G2는 확정(D28·D29) |
+| S4 설계 | 코드 관리(D35) — assistant 관리 구분(1·2단계)·상태 코드 테이블, 관리 화면·API 형태 논의 | PRD FR-63 |
 | **남은 위험** | ① 실제 Windows 실기 미확인(문서 명령은 PowerShell 7.6으로 검증, CI windows 잡은 push 후) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
 | **다음(S1)** | 서버 대리 호출(채팅·파일·모델 목록 U6) — 가짜 OpenWebUI + OpenAI 호환 API 전환 프리셋(D31). 실환경 확인은 사내에서 사용자가 수행(킵) | `LlmPorts` 구현(DB 어댑터)·`FileStorageService` 시작 |
-| **결정 대기** | **인증(A1)**: SSO 미연계 페이즈의 로그인 방식 — (a) Keycloak을 운영 IdP로 그대로 배포 (b) 앱 자체 로그인(ID·비밀번호, SO가 계정·역할 관리) + OIDC는 설정 선택 (c) 둘 다. 역할 호칭은 D33으로 확정 | D32 |
+| **S1 추가** | 앱 자체 로그인·단순 회원가입(D34) — E2E 로그인도 local 모드로, Keycloak은 `oidc` 모드 검증용으로만 | D34 |
 | 착수 전 확인 | OpenWebUI 버전(사용자 추후 회신), 비기능 제안값(PRD §6) | next-project/README |
 | 중간 | IdP 로그아웃, 요청자 역할 저장 | [KNOWN_ISSUES](../KNOWN_ISSUES.md) KI-1·KI-2 |
 
