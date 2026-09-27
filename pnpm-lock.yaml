@@ -21,6 +21,18 @@ importers:
         specifier: ^5.0.1
         version: 5.0.2(@types/node@22.20.4)(vite@8.3.1(@types/node@22.20.4))
 
+  packages/domain:
+    dependencies:
+      date-fns:
+        specifier: ^4.1.0
+        version: 4.4.0
+
+  packages/llm:
+    dependencies:
+      '@mes/domain':
+        specifier: workspace:*
+        version: link:../domain
+
 packages:
 
   '@jridgewell/resolve-uri@3.1.2':
@@ -290,6 +302,9 @@ packages:
   chai@6.2.2:
     resolution: {integrity: sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==}
     engines: {node: '>=18'}
+
+  date-fns@4.4.0:
+    resolution: {integrity: sha512-+1UMbeh68lH1SegH83CGWwpb6OHHbpSgr3+s5Eww5M4CAgswBpoWS0AjTOfEJ33HiYKz1hdj/KTFprzXHmq/6w==}
 
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
@@ -694,6 +709,8 @@ snapshots:
   assertion-error@2.0.1: {}
 
   chai@6.2.2: {}
+
+  date-fns@4.4.0: {}
 
   detect-libc@2.1.2: {}
 
