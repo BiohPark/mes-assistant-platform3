@@ -146,7 +146,7 @@ pnpm db:migrate
 이번 페이즈는 사내 SSO를 연계하지 않는다(HANDOFF D32·D34). 앱이 ID·비밀번호를 직접 관리한다.
 
 - 첫 화면에서 **회원가입** → ID(소문자·숫자·`.`·`_`·`-` 3~32자)와 비밀번호(8자 이상) → 가입 즉시 로그인된다.
-- 가입한 ID가 `.env`의 `INITIAL_SYSTEM_OWNERS`에 있으면(기본 `dev-owner`) System Owner가 된다. 그 밖은 기본 사용자. SO·BO 지정 화면은 S4.
+- **첫 System Owner**: 아직 SO가 한 명도 없을 때 `.env`의 `INITIAL_SYSTEM_OWNERS`(기본 `dev-owner`)에 있는 ID로 가입하면 SO가 된다. SO가 생긴 뒤에는 이 목록이 적용되지 않으므로 **배포 직후 관리자가 먼저 가입**한다. 그 밖은 기본 사용자. SO·BO 지정 화면은 S4.
 - 비밀번호는 Node 내장 scrypt로 해시해 저장한다. 별도 설정·서비스가 필요 없다.
 
 ### 선택 — SSO(OIDC) 모드 (`AUTH_MODE=oidc`)
