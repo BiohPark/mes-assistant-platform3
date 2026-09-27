@@ -47,4 +47,12 @@ describe('loadConfig', () => {
     expect(c.fileStorageRoot).toMatch(/storage$/)
     expect(c.fileStorageRoot).not.toBe('storage')
   })
+
+  it('LLM은 기본적으로 mock이며 live에는 URL과 키가 필요하다', () => {
+    expect(loadConfig(base).llm).toEqual({ mode: 'mock', preset: 'openwebui', baseUrl: '', apiKey: '', defaultModel: undefined })
+    expect(() => loadConfig({ ...base, LLM_MODE: 'live' })).toThrow(/LLM_BASE_URL.*LLM_API_KEY/)
+    expect(() => loadConfig({ ...base, LLM_MODE: 'live', LLM_BASE_URL: 'invalid', LLM_API_KEY: 'secret' })).toThrow(/LLM_BASE_URL/)
+    expect(() => loadConfig({ ...base, LLM_MODE: 'live', LLM_BASE_URL: 'http://localhost:3101/api', LLM_API_KEY: 'secret' })).toThrow(/LLM_BASE_URL/)
+    expect(loadConfig({ ...base, LLM_MODE: 'live', LLM_PRESET: 'openai-compatible', LLM_BASE_URL: 'https://api.openai.com/v1', LLM_API_KEY: 'secret' }).llm.preset).toBe('openai-compatible')
+  })
 })

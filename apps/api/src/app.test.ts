@@ -87,6 +87,11 @@ describe('api 골격', () => {
     expect(MeSchema.parse(res.body)).toEqual({ id: 'u-owner', name: '김운영', role: '', roles: ['member', 'system_owner'] })
   })
 
+  it('mock 모드 모델 목록은 예시 모델을 서버에서 반환한다', async () => {
+    const res = await request(app.getHttpServer()).get('/api/llm/models').set('Cookie', 'mes_session=member').expect(200)
+    expect(res.body.models).toContain('glm-5.2')
+  })
+
   it('역할 가드 — SO 전용 경로는 담당자에게 403', async () => {
     await request(app.getHttpServer()).get('/api/test/so').set('Cookie', 'mes_session=member').expect(403)
     await request(app.getHttpServer()).get('/api/test/so').set('Cookie', 'mes_session=owner').expect(200)

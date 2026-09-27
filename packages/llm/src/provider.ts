@@ -54,6 +54,6 @@ export interface ChatProvider {
   stream(req: ChatRequest): AsyncIterable<ChatChunk>
   /** 연결 확인. 실패 시 이유 반환 */
   ping(): Promise<{ ok: boolean; detail: string }>
-  /** 사용 가능한 모델 ID 목록 (실패 시 빈 배열) */
+  /** 사용 가능한 모델 ID 목록 (실패 시 오류) */
   listModels(): Promise<string[]>
 }

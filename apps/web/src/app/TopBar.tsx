@@ -1,5 +1,7 @@
 import { ChevronDown, LogOut } from 'lucide-react'
 import { toast } from 'sonner'
+import { useQuery } from '@tanstack/react-query'
+import { LlmStatusSchema } from '@mes/contracts'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -23,11 +25,21 @@ const goToLoggedOut = () => window.location.assign('/logged-out')
 export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarProps) {
   const me = useMe()
   const isOwner = me.roles.includes('system_owner')
+  const llmStatus = useQuery({
+    queryKey: ['llm', 'status'],
+    enabled: isOwner,
+    queryFn: async () => {
+      const response = await fetch('/api/llm/status', { credentials: 'same-origin' })
+      if (!response.ok) throw new Error(`LLM 상태 조회 실패 (HTTP ${response.status})`)
+      return LlmStatusSchema.parse(await response.json())
+    },
+  })
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-background px-4">
       <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h1>
       {actions}
+      {isOwner && llmStatus.data && <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{llmStatus.data.mode === 'mock' ? 'Mock' : 'Live'}</span>}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="sm" className="gap-2 pl-1.5">
