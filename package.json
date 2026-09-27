@@ -15,10 +15,15 @@
     "typecheck": "pnpm -r --parallel typecheck",
     "test": "pnpm -r test",
     "lint": "oxlint",
-    "build": "pnpm -r build"
+    "build": "pnpm -r build",
+    "dev": "concurrently -k -n api,web \"pnpm --filter @mes/api dev\" \"pnpm --filter @mes/web dev\"",
+    "db:migrate": "pnpm --filter \"@mes/api...\" build && pnpm --filter @mes/api db:migrate",
+    "test:db": "pnpm --filter @mes/api test:db",
+    "test:e2e": "pnpm --filter @mes/e2e test:e2e"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",
+    "concurrently": "^10.0.5",
     "oxlint": "^1.81.0",
     "typescript": "~6.0.2",
     "vite": "^8.3.1",
