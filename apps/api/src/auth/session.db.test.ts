@@ -42,8 +42,17 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
     expect(b.name).toBe('이담당2')
     expect(a.isSystemOwner).toBe(false)
     const [row] = await db.select().from(appUser).where(eq(appUser.id, a.id))
-    expect(row?.ssoSubject).toBe('kc-100')
+    expect(row?.ssoSubject).toBe('http://localhost:8180/realms/mes-dev#kc-100')
     expect(row?.initials.length).toBeGreaterThan(0)
+  })
+
+  it('주체는 (issuer, sub)로 식별 — IdP를 바꾸면 같은 sub라도 다른 사용자 (권한을 이어받지 않음)', async () => {
+    const other = { ...config, oidc: { ...config.oidc, issuer: 'https://idp.example.com/realms/other' } }
+    const a = await new DbUserDirectory(db, config).upsertFromClaims({ sub: 'kc-dup', preferred_username: 'dev-owner', name: '김운영' })
+    const b = await new DbUserDirectory(db, { ...other, initialSystemOwners: [] }).upsertFromClaims({ sub: 'kc-dup', name: '다른 사람' })
+    expect(b.id).not.toBe(a.id)
+    expect(a.isSystemOwner).toBe(true)
+    expect(b.isSystemOwner).toBe(false)
   })
 
   it('INITIAL_SYSTEM_OWNERS에 있는 주체는 SO가 된다', async () => {

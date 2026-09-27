@@ -84,6 +84,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | D23 | 서버 세션은 DB `app_session`(쿠키 토큰의 SHA-256만 저장, 기본 12시간). DDL 초안에 추가해 1:1 유지 | S0 기본값 (2026-09-28) |
 | D24 | 최초 SO는 `INITIAL_SYSTEM_OWNERS`(SSO `sub` 또는 `preferred_username`) — 로그인 때 부여만 하고 해제하지 않음 | PRD §2 · S0 기본값 |
 | D25 | 라이선스 UNLICENSED, LICENSE 파일 제거. NOTICE는 오케스트레이션 규칙의 제3자 고지로 유지 | 사용자 (2026-09-28) |
+| D27 | SSO 사용자 식별은 `(issuer, sub)` — `app_user.sso_subject`에 `{issuer}#{sub}`로 저장(IdP 교체 시 권한 승계 방지) | codex-critic 리뷰 반영 (2026-09-28) |
 | D26 | api는 ESM + tsc 빌드(데코레이터 메타데이터), DI는 모두 명시적 `@Inject(토큰)` — 테스트 변환기(oxc)와 무관하게 동작 | S0 기본값 |
 
 ## 6. 진행 현황
@@ -91,7 +92,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 ### 완료 — S0 뼈대 (2026-09-28)
 
 - 커밋(`feat/s0-skeleton`): 루트 설정 → domain·llm 이식(codex-main) → compose → contracts → Drizzle 스키마·마이그레이션 → api 골격 → web 셸 → e2e → CI → 문서
-- 검증: 단위 123개(domain 61 · llm 41 · contracts 3 · api 13 · web 5) · DB 통합 4개(스키마 대조 포함) · E2E 2개(실제 Keycloak 로그인 → 빈 허브 → 로그아웃, SO 역할) · typecheck · lint 녹색 (macOS)
+- 검증: 단위 125개(domain 61 · llm 41 · contracts 3 · api 14 · web 6) · DB 통합 5개(초안 SQL ↔ 마이그레이션 대조 포함, schema.ts ↔ 마이그레이션 드리프트는 단위) · E2E 2개(실제 Keycloak 로그인 → 빈 허브 → 로그아웃, SO 역할) · typecheck · lint 녹색 (macOS)
 - 네이티브 의존: node-gyp 빌드 없음. 플랫폼 바이너리(rolldown·lightningcss·tailwind oxide·oxlint·esbuild)는 모두 Windows x64 사전 빌드 제공
 
 ### 남은 일
@@ -114,6 +115,8 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 - Keycloak realm의 `${ENV}` 자리는 컨테이너 환경 변수로 치환된다. realm을 바꾸면 컨테이너를 다시 만들어야(`docker compose up -d --force-recreate keycloak`) 다시 임포트된다
 - Keycloak 사용자 프로필 검증은 이름에 괄호 등 특수문자를 막는다 — 걸리면 로그인 뒤 "프로필 수정" 화면이 끼어 E2E가 멈춘다. `name` 클레임은 `firstName lastName` 순서
 - 웹은 `/api/me`의 401이 아닌 오류를 두 번 재시도한다(api `dev` watch 재시작 중 502 대비)
+- `sso_subject` 형식을 `{issuer}#{sub}`로 바꾸기 전에 로그인한 개발 DB 사용자는 다음 로그인 때 새 사용자로 생긴다 — 개발 DB는 `docker compose down -v`로 초기화
+- 기능 대응표 [next-project/parity-matrix.md](next-project/parity-matrix.md)가 데모 수용 범위의 정본 — 이식할 때 데모 소스를 직접 연다
 - 데모 저장소는 읽기 전용 — 수정·커밋 금지
 - 요청은 서버 RequestService만 보낸다(S3). 트레이 추정은 `buildChatRequest({ dryRun: true })` — 실제 전송과 같은 함수
 

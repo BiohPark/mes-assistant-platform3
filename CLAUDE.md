@@ -282,6 +282,11 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 - 데모 저장소: `~/workspace/github/work/mes-assistant-platform2` — **읽기 전용 참조. 절대 수정·커밋하지 않는다.**
 - 옮길 때는 architecture §3 재사용 지도를 따른다(도메인 규칙은 거의 그대로, `db` 직접 조회는 저장소 인터페이스 주입으로, `useLiveQuery`는 TanStack Query로).
 - 워커 brief에는 데모 파일 **경로**를 적는다(내용 inline 금지 — 위 Context Rules).
+- **이식 원칙**: 기능을 옮길 때는 데모 소스를 직접 열어 동작·엣지케이스를 확인하고, 데모 테스트가 있으면 **먼저 이식해 통과**시킨 뒤 구현한다. 요약 문서(HANDOFF·PRD 등)만 보고 재구현하지 않는다. 목표는 데모 기능 100% 수용(명시적으로 제외한 것만 빼고) — 대응표 정본 `docs/next-project/parity-matrix.md`.
+
+### 워커 실행 규칙 (이 프로젝트)
+- 디스패처를 우회해 워커를 직접 실행하면 출력을 `tasks/<task>/artifacts/<role>.stdout.log`에 남기고, 시작·종료를 디스코드 채널에 한 줄씩 알린다(agentlayer에 안 보이므로).
+- gemini(agy) 모델: 전역 기본 `gemini-3.8-flash-high`. 긴 문서·제3자 검토처럼 Pro가 필요한 호출은 `--model gemini-3.1-pro-high`를 호출별로 붙인다(최신 agy는 `--model` 지원 — `_shared/routing.md`의 "per-call 핀 불가·전역 pro-high"는 옛 정보, 이 규칙이 우선).
 
 ### 진행 방식
 - 스프린트 = architecture §9의 S0–S5. 태스크 폴더는 `tasks/s<N>-<주제>/`. 각 스프린트의 **완료 기준**이 Verification의 기준이다.

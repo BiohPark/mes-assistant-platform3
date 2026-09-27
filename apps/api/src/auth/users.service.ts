@@ -20,6 +20,9 @@ export interface UserDirectory {
 
 export const USER_DIRECTORY = Symbol('USER_DIRECTORY')
 
+/** sub는 발급자(IdP) 안에서만 유일하다 — 저장 키는 `{issuer}#{sub}` (IdP를 바꿔도 남의 계정·권한을 이어받지 않게) */
+export const ssoSubjectKey = (issuer: string, sub: string) => `${issuer}#${sub}`
+
 @Injectable()
 export class DbUserDirectory implements UserDirectory {
   constructor(
@@ -35,7 +38,7 @@ export class DbUserDirectory implements UserDirectory {
     const id = randomUUID()
     const [row] = await this.db
       .insert(appUser)
-      .values({ id, ssoSubject: claims.sub, name, initials: initialsOf(name), color: pickColor(id), isSystemOwner: initialOwner })
+      .values({ id, ssoSubject: ssoSubjectKey(this.config.oidc.issuer, claims.sub), name, initials: initialsOf(name), color: pickColor(id), isSystemOwner: initialOwner })
       .onConflictDoUpdate({
         target: appUser.ssoSubject,
         // 최초 SO 목록은 부여만 한다 (앱에서 해제한 SO를 되살리지 않도록 목록에서 빼면 된다)
