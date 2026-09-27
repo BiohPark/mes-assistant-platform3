@@ -24,10 +24,10 @@ Spring을 처음 권했던 것은 사용자의 Java 경험 때문이었다. 재�
 | ORM·마이그레이션 | Drizzle + drizzle-kit | SQL에 가까운 스키마(`postgres-draft.sql`과 1:1), TS 타입 공유. 대안: Prisma |
 | 검증·계약 | zod 스키마 → OpenAPI | 웹·서버 공용 |
 | 데이터 가져오기(웹) | TanStack Query + SSE 무효화 | 데모의 `useLiveQuery` 대체 |
-| 인증 | 사내 SSO (OIDC 또는 SAML), 서버 세션 쿠키 | §5 |
+| 인증 | **이번 페이즈: 앱 자체 로그인**(`AUTH_MODE=local`, D32·D34) + 서버 세션 쿠키. 사내 SSO(OIDC/SAML)는 후속 페이즈에 `AUTH_MODE=oidc`로 | §5 |
 | 파일 | 로컬 디스크·NAS `FileStorageService` | data-contract §4 |
 | 테스트 | vitest(단위·서버) + Playwright(E2E, 데모 시나리오 이식) | |
-| 개발 환경 | Docker Compose: PostgreSQL + Keycloak(SSO 대역) + 가짜 OpenWebUI | |
+| 개발 환경 | Docker Compose: PostgreSQL + 가짜 OpenWebUI (+ Keycloak은 `--profile oidc`, SSO 대역) | |
 
 ## 2. 저장소 구조
 
@@ -79,6 +79,8 @@ docs/              데모 docs/next-project·architecture·evaluation 이관
 4. 끝나면 답변·`chat_request_input` 확정. 서버 재시작 시 만료된 요청은 `interrupted`
 
 ## 5. 사내 SSO
+
+> **이번 목표 페이즈는 SSO를 연계하지 않는다(D32).** 로그인은 앱 자체(ID·비밀번호, 단순 회원가입 — D34, `AUTH_MODE=local`)이며, 아래 SSO 설계는 후속 페이즈에 `AUTH_MODE=oidc`로 켜는 경로다. 코드는 S0에 만들어 두었고 Keycloak은 compose `oidc` 프로필로만 뜬다.
 
 사내 SSO 구조를 몰라도 설계할 수 있다. 사내 SSO는 거의 모두 **OIDC** 또는 **SAML 2.0**을 지원하므로 앱은 이 표준의 "로그인 받는 쪽(Relying Party / Service Provider)"만 구현하고, 사내 값은 설정으로 넣는다.
 
@@ -142,4 +144,4 @@ API: 서명 검증 → 사용자 정보(주체 ID·이름·이메일·부서) �
 | D18 | 미확정 정책 12개를 추천값대로 확정 (PRD §5) | 2026-09-27 |
 | D19 | 에이전트 관리(추가·수정·삭제·순서)와 전역 설정은 System Owner만 | 2026-09-27 |
 | D20 | 새 저장소 스택: TypeScript 풀스택 (React + NestJS + PostgreSQL + Drizzle) — 데모 소스 재사용 우선 | 2026-09-27 |
-| D21 | 인증: 사내 SSO(OIDC/SAML 표준), 역할은 앱 관리, 개발은 Keycloak 대역 | 2026-09-27 |
+| D21 | 인증: 사내 SSO(OIDC/SAML 표준), 역할은 앱 관리, 개발은 Keycloak 대역 — **이번 페이즈는 HANDOFF D32·D34(앱 자체 로그인)로 대체**, SSO는 후속 | 2026-09-27 |

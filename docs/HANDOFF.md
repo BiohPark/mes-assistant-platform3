@@ -132,6 +132,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 - 가입·로그인 POST는 `Origin`이 `APP_ORIGIN`과 다르거나 `Sec-Fetch-Site: cross-site`면 403(로그인 CSRF 방지). 프록시 뒤에서 `APP_ORIGIN`이 실제 브라우저 주소와 다르면 로그인이 막힌다
 - `sso_subject` 형식을 `{issuer}#{sub}`로 바꾸기 전에 로그인한 개발 DB 사용자는 다음 로그인 때 새 사용자로 생긴다 — 개발 DB는 `docker compose down -v`로 초기화
 - 기능 대응표 [next-project/parity-matrix.md](next-project/parity-matrix.md)가 데모 수용 범위의 정본 — 이식할 때 데모 소스를 직접 연다
+- CI Windows 러너의 `ikalnytskyi/action-setup-postgres`는 PG* 환경 변수를 덮어써 잡 env의 `PGPASSWORD`가 비게 된다 — psql이 비밀번호 프롬프트에서 무한 대기(setup-guide 잡 33분 정지). 스텝 env로 다시 준다
 - 데모 저장소는 읽기 전용 — 수정·커밋 금지
 - 요청은 서버 RequestService만 보낸다(S3). 트레이 추정은 `buildChatRequest({ dryRun: true })` — 실제 전송과 같은 함수
 
