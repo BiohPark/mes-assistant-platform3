@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { HttpError, MeContext, fetchMe } from './auth'
 
 const goToLogin = () => window.location.assign('/api/auth/login')
+const isUnauthorized = (err: unknown) => err instanceof HttpError && err.status === 401
 
 interface AuthGateProps {
   children: ReactNode
@@ -11,8 +12,15 @@ interface AuthGateProps {
 
 /** 로그인 사용자를 확인하고, 세션이 없으면 SSO 로그인으로 보낸다 */
 export function AuthGate({ children, redirectToLogin = goToLogin }: AuthGateProps) {
-  const { data, error } = useQuery({ queryKey: ['me'], queryFn: fetchMe, retry: false, staleTime: 60_000 })
-  const unauthorized = error instanceof HttpError && error.status === 401
+  const { data, error } = useQuery({
+    queryKey: ['me'],
+    queryFn: fetchMe,
+    // 401은 곧바로 로그인으로. 그 밖의 오류(api 재시작 중 등)는 두 번 더 시도한 뒤 알린다
+    retry: (failures, err) => !isUnauthorized(err) && failures < 2,
+    retryDelay: 500,
+    staleTime: 60_000,
+  })
+  const unauthorized = isUnauthorized(error)
 
   useEffect(() => {
     if (unauthorized) redirectToLogin()

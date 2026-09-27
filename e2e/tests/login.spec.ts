@@ -23,7 +23,7 @@ test.describe('S0 — 로그인 → 빈 허브', () => {
     expect(me.status()).toBe(200)
     expect((await me.json()).roles).toEqual(['member'])
 
-    await page.getByRole('button', { name: /담당/ }).click()
+    await page.getByRole('button', { name: /이담당/ }).click()
     await page.getByRole('menuitem', { name: '로그아웃' }).click()
     await expect(page.getByRole('heading', { name: '로그아웃했습니다' })).toBeVisible()
     expect((await page.request.get('/api/me')).status()).toBe(401)

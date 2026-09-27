@@ -26,11 +26,23 @@ describe('AuthGate', () => {
     expect(await screen.findByText('안녕하세요 이담당')).toBeInTheDocument()
   })
 
-  it('서버 오류는 로그인으로 보내지 않고 알린다', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(503)))
+  it('서버 오류는 몇 번 다시 시도한 뒤 알리고, 로그인으로 보내지 않는다', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(503))
+    vi.stubGlobal('fetch', fetchMock)
     const redirect = vi.fn()
     renderWithProviders(<AuthGate redirectToLogin={redirect}><Who /></AuthGate>)
-    expect(await screen.findByRole('alert')).toHaveTextContent('서버에 연결할 수 없습니다')
+    expect(await screen.findByRole('alert', {}, { timeout: 5000 })).toHaveTextContent('서버에 연결할 수 없습니다')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(redirect).not.toHaveBeenCalled()
+  })
+
+  it('api가 잠깐 내려가 있어도(개발 서버 재시작 등) 다시 시도해서 들어간다', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(502))
+      .mockResolvedValueOnce(jsonResponse(200, { id: 'u1', name: '이담당', role: '', roles: ['member'] }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithProviders(<AuthGate redirectToLogin={vi.fn()}><Who /></AuthGate>)
+    expect(await screen.findByText('안녕하세요 이담당', {}, { timeout: 5000 })).toBeInTheDocument()
   })
 })

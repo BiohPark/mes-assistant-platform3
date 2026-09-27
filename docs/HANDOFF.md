@@ -112,6 +112,8 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 - 워크스페이스 패키지를 런타임(node)에서 쓰려면 `dist`가 있어야 한다 — `pnpm build` 또는 api `dev`(선행 빌드 포함)
 - Vite `resolve.conditions`만으로는 vitest(SSR 환경)에 안 먹는다 — `vitest.shared.ts`의 `ssr.resolve.conditions`까지 써야 한다
 - Keycloak realm의 `${ENV}` 자리는 컨테이너 환경 변수로 치환된다. realm을 바꾸면 컨테이너를 다시 만들어야(`docker compose up -d --force-recreate keycloak`) 다시 임포트된다
+- Keycloak 사용자 프로필 검증은 이름에 괄호 등 특수문자를 막는다 — 걸리면 로그인 뒤 "프로필 수정" 화면이 끼어 E2E가 멈춘다. `name` 클레임은 `firstName lastName` 순서
+- 웹은 `/api/me`의 401이 아닌 오류를 두 번 재시도한다(api `dev` watch 재시작 중 502 대비)
 - 데모 저장소는 읽기 전용 — 수정·커밋 금지
 - 요청은 서버 RequestService만 보낸다(S3). 트레이 추정은 `buildChatRequest({ dryRun: true })` — 실제 전송과 같은 함수
 

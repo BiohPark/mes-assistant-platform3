@@ -16,8 +16,12 @@
       "secret": "${OIDC_CLIENT_SECRET}",
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
-      "redirectUris": ["${APP_ORIGIN}/api/auth/callback"],
-      "webOrigins": ["${APP_ORIGIN}"],
+      "redirectUris": [
+        "${APP_ORIGIN}/api/auth/callback"
+      ],
+      "webOrigins": [
+        "${APP_ORIGIN}"
+      ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "${APP_ORIGIN}/*"
@@ -29,28 +33,46 @@
       "username": "dev-owner",
       "email": "dev-owner@example.com",
       "emailVerified": true,
-      "firstName": "운영",
-      "lastName": "김",
+      "firstName": "김운영",
+      "lastName": "Dev",
       "enabled": true,
-      "credentials": [{ "type": "password", "value": "${DEV_USER_PASSWORD}", "temporary": false }]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEV_USER_PASSWORD}",
+          "temporary": false
+        }
+      ]
     },
     {
       "username": "dev-member",
       "email": "dev-member@example.com",
       "emailVerified": true,
-      "firstName": "담당",
-      "lastName": "이",
+      "firstName": "이담당",
+      "lastName": "Dev",
       "enabled": true,
-      "credentials": [{ "type": "password", "value": "${DEV_USER_PASSWORD}", "temporary": false }]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEV_USER_PASSWORD}",
+          "temporary": false
+        }
+      ]
     },
     {
       "username": "dev-requester",
       "email": "dev-requester@example.com",
       "emailVerified": true,
-      "firstName": "요청",
-      "lastName": "박",
+      "firstName": "박요청",
+      "lastName": "Dev",
       "enabled": true,
-      "credentials": [{ "type": "password", "value": "${DEV_USER_PASSWORD}", "temporary": false }]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEV_USER_PASSWORD}",
+          "temporary": false
+        }
+      ]
     }
   ]
 }
