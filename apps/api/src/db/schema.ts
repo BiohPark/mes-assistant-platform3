@@ -34,6 +34,8 @@ export const appUser = pgTable('app_user', {
   isSystemOwner: boolean('is_system_owner').notNull().default(false),
   active: boolean('active').notNull().default(true),
   createdAt: tz('created_at').notNull().defaultNow(),
+  loginId: text('login_id').unique('app_user_login_id_key'),
+  passwordHash: text('password_hash'),
 })
 
 export const fileObject = pgTable(

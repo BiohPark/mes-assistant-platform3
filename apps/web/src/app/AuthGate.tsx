@@ -1,20 +1,21 @@
 import { useEffect, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
-import { HttpError, MeContext, fetchMe } from './auth'
+import { HttpError, MeContext, fetchAuthMode, fetchMe } from './auth'
 
-const goToLogin = () => window.location.assign('/api/auth/login')
 const isUnauthorized = (err: unknown) => err instanceof HttpError && err.status === 401
 
 interface AuthGateProps {
   children: ReactNode
-  redirectToLogin?: () => void
+  redirectToLogin?: (url: string) => void
   /** 401이 아닌 오류의 재시도 간격 (기본 1초 × 5회 ≈ api 기동 시간) */
   retryDelayMs?: number
 }
 
-/** 로그인 사용자를 확인하고, 세션이 없으면 SSO 로그인으로 보낸다 */
-export function AuthGate({ children, redirectToLogin = goToLogin, retryDelayMs = 1000 }: AuthGateProps) {
+/** 로그인 사용자를 확인하고, 세션이 없으면 설정된 로그인 화면으로 보낸다 */
+export function AuthGate({ children, redirectToLogin, retryDelayMs = 1000 }: AuthGateProps) {
+  const navigate = useNavigate()
   const { data, error, refetch, isFetching } = useQuery({
     queryKey: ['me'],
     queryFn: fetchMe,
@@ -24,10 +25,15 @@ export function AuthGate({ children, redirectToLogin = goToLogin, retryDelayMs =
     staleTime: 60_000,
   })
   const unauthorized = isUnauthorized(error)
+  const { data: mode } = useQuery({ queryKey: ['auth-mode'], queryFn: fetchAuthMode, staleTime: Infinity, enabled: unauthorized })
 
   useEffect(() => {
-    if (unauthorized) redirectToLogin()
-  }, [unauthorized, redirectToLogin])
+    if (!unauthorized || !mode) return
+    const url = mode === 'local' ? '/login' : '/api/auth/login'
+    if (redirectToLogin) redirectToLogin(url)
+    else if (mode === 'local') void navigate(url, { replace: true })
+    else window.location.assign(url)
+  }, [unauthorized, mode, redirectToLogin, navigate])
 
   if (data) return <MeContext value={data}>{children}</MeContext>
   if (error && !unauthorized) {

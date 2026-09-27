@@ -12,12 +12,25 @@ const base = {
 
 describe('loadConfig', () => {
   it('기본값을 채우고 목록형 값을 나눈다', () => {
-    const c = loadConfig({ ...base, INITIAL_SYSTEM_OWNERS: ' dev-owner , other ,' })
+    const c = loadConfig({ ...base, AUTH_MODE: 'oidc', INITIAL_SYSTEM_OWNERS: ' dev-owner , other ,' })
     expect(c.port).toBe(3000)
     expect(c.initialSystemOwners).toEqual(['dev-owner', 'other'])
-    expect(c.oidc.redirectUri).toBe('http://localhost:5173/api/auth/callback')
+    expect(c.oidc?.redirectUri).toBe('http://localhost:5173/api/auth/callback')
     expect(c.cookieSecure).toBe(false)
     expect(c.sessionTtlHours).toBe(12)
+  })
+
+  it('기본 local 모드는 OIDC 설정 없이 시작한다', () => {
+    const { OIDC_ISSUER: _issuer, OIDC_CLIENT_ID: _id, OIDC_CLIENT_SECRET: _secret, ...local } = base
+    const c = loadConfig(local)
+    expect(c.authMode).toBe('local')
+    expect(c.oidc).toBeUndefined()
+  })
+
+  it('oidc 모드에는 모든 OIDC 설정이 필요하다', () => {
+    expect(() => loadConfig({ ...base, AUTH_MODE: 'oidc', OIDC_ISSUER: undefined })).toThrow(/OIDC_ISSUER/)
+    expect(() => loadConfig({ ...base, AUTH_MODE: 'oidc', OIDC_CLIENT_ID: undefined })).toThrow(/OIDC_CLIENT_ID/)
+    expect(() => loadConfig({ ...base, AUTH_MODE: 'oidc', OIDC_CLIENT_SECRET: undefined })).toThrow(/OIDC_CLIENT_SECRET/)
   })
 
   it('https 앱 주소면 Secure 쿠키', () => {

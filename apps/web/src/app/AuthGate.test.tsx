@@ -14,11 +14,18 @@ describe('AuthGate', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('세션이 없으면(401) SSO 로그인으로 보낸다', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(401)))
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/auth/mode' ? jsonResponse(200, { mode: 'oidc' }) : jsonResponse(401)))
     const redirect = vi.fn()
     renderWithProviders(<AuthGate redirectToLogin={redirect}><Who /></AuthGate>)
-    await waitFor(() => expect(redirect).toHaveBeenCalledOnce())
+    await waitFor(() => expect(redirect).toHaveBeenCalledWith('/api/auth/login'))
     expect(screen.queryByText(/안녕하세요/)).not.toBeInTheDocument()
+  })
+
+  it('local 모드에서 401이면 /login으로 보낸다', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/auth/mode' ? jsonResponse(200, { mode: 'local' }) : jsonResponse(401)))
+    const redirect = vi.fn()
+    renderWithProviders(<AuthGate redirectToLogin={redirect}><Who /></AuthGate>)
+    await waitFor(() => expect(redirect).toHaveBeenCalledWith('/login'))
   })
 
   it('로그인 사용자를 아래 화면에 넘긴다', async () => {

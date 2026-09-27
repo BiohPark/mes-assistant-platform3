@@ -13,7 +13,10 @@ create table app_user (
   color           text not null,
   is_system_owner boolean not null default false,
   active          boolean not null default true,
-  created_at      timestamptz not null default now()
+  created_at      timestamptz not null default now(),
+  -- 앱 자체 로그인 (D34)
+  login_id        text unique,
+  password_hash   text
 );
 
 create table file_object (

@@ -1,8 +1,15 @@
+import 'reflect-metadata'
+import { Test } from '@nestjs/testing'
+import request from 'supertest'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { loadConfig } from '../config/config.js'
+import { CONFIG } from '../config/config.js'
+import { AppModule } from '../app.module.js'
+import { configureApp } from '../app.factory.js'
+import { DB, DB_CLIENT } from '../db/db.module.js'
 import { appSession, appUser } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -14,6 +21,7 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
   let client: postgres.Sql
   let db: ReturnType<typeof drizzle>
   const config = loadConfig({
+    AUTH_MODE: 'oidc',
     DATABASE_URL: 'postgres://unused',
     SESSION_SECRET: 's'.repeat(32),
     APP_ORIGIN: 'http://localhost:5173',
@@ -21,6 +29,40 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
     OIDC_CLIENT_ID: 'c',
     OIDC_CLIENT_SECRET: 's',
     INITIAL_SYSTEM_OWNERS: 'dev-owner',
+  })
+
+  it('local 회원가입 → 비밀번호 조회 → 로그인 세션 resolve', async () => {
+    const local = { ...config, authMode: 'local' as const, oidc: undefined }
+    const users = new DbUserDirectory(db, local)
+    const created = await users.createLocal('local-member', 'hash-for-test')
+    expect(created?.name).toBe('local-member')
+    expect(await users.createLocal('local-member', 'another-hash')).toBeNull()
+    expect((await users.findByLoginId('local-member'))?.hash).toBe('hash-for-test')
+    const store = new DbSessionStore(db, local)
+    const session = await store.create(created!.id)
+    expect((await store.resolve(session.token))?.id).toBe(created!.id)
+  })
+
+  it('실제 DB에서 signup → login → 세션 resolve', async () => {
+    const local = { ...config, authMode: 'local' as const, oidc: undefined }
+    const apiClient = postgres(temp.url, { max: 2, onnotice: () => undefined })
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(CONFIG).useValue(local)
+      .overrideProvider(DB_CLIENT).useValue(apiClient)
+      .overrideProvider(DB).useValue(drizzle(apiClient))
+      .compile()
+    const app = configureApp(moduleRef.createNestApplication(), local)
+    try {
+      await app.init()
+      const signup = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'api-local-member', password: 'password-1234' }).expect(201)
+      expect(signup.body.roles).toEqual(['member'])
+      const login = await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'api-local-member', password: 'password-1234' }).expect(200)
+      const cookie = String(login.headers['set-cookie']).split(';')[0]!
+      const me = await request(app.getHttpServer()).get('/api/me').set('Cookie', cookie).expect(200)
+      expect(me.body.id).toBe(signup.body.id)
+    } finally {
+      await app.close()
+    }
   })
 
   beforeAll(async () => {
@@ -47,7 +89,7 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
   })
 
   it('주체는 (issuer, sub)로 식별 — IdP를 바꾸면 같은 sub라도 다른 사용자 (권한을 이어받지 않음)', async () => {
-    const other = { ...config, oidc: { ...config.oidc, issuer: 'https://idp.example.com/realms/other' } }
+    const other = { ...config, oidc: { ...config.oidc!, issuer: 'https://idp.example.com/realms/other' } }
     const a = await new DbUserDirectory(db, config).upsertFromClaims({ sub: 'kc-dup', preferred_username: 'dev-owner', name: '김운영' })
     const b = await new DbUserDirectory(db, { ...other, initialSystemOwners: [] }).upsertFromClaims({ sub: 'kc-dup', name: '다른 사람' })
     expect(b.id).not.toBe(a.id)
