@@ -1,2 +1,4 @@
 import { defineConfig } from 'vitest/config'
-export default defineConfig({ resolve: { conditions: ['source'] } })
+import { sourceConditions } from '../../vitest.shared.js'
+
+export default defineConfig({ ...sourceConditions })

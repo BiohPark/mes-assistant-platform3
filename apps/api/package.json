@@ -34,7 +34,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file-if-exists=../../.env dist/db/migrate.js",
     "start": "node --env-file-if-exists=../../.env dist/main.js",
-    "dev": "concurrently -k -n tsc,api \"tsc -p tsconfig.build.json --watch --preserveWatchOutput\" \"node --env-file-if-exists=../../.env --watch-path=dist dist/main.js\""
+    "dev": "pnpm --filter \"@mes/api^...\" build && concurrently -k -n tsc,api \"tsc -p tsconfig.build.json --watch --preserveWatchOutput\" \"node --env-file-if-exists=../../.env --watch-path=dist dist/main.js\""
   },
   "engines": {
     "node": ">=22.12 <23"
