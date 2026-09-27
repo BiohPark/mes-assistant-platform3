@@ -285,7 +285,7 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 
 ### 진행 방식
 - 스프린트 = architecture §9의 S0–S5. 태스크 폴더는 `tasks/s<N>-<주제>/`. 각 스프린트의 **완료 기준**이 Verification의 기준이다.
-- 현재 위치: **S0 착수 전**. 이번 세션의 정본 지시서 = **`docs/next-project/S0-kickoff.md`** (범위·완료 기준·착수 전 환경 점검). "S0 시작" 류 요청을 받으면 그 문서부터 읽는다.
+- 현재 위치: **S0 완료(`feat/s0-skeleton`, push·`main` 병합 대기) → 다음 S1**. S0 기록: `tasks/s0-skeleton/`, `docs/HANDOFF.md` 6장. S0 지시서는 `docs/next-project/S0-kickoff.md`(완료).
 - S1은 반드시 `docs/evaluation/real-env-verification.md` 절차로 **실제 사내 OpenWebUI 확인**부터 한다.
 - 착수 전 사용자 확인 항목(next-project/README): 사내 SSO 방식·앱 등록, OpenWebUI 버전, 배포 환경·PostgreSQL 사용 가능 여부, 비기능 제안값(PRD §6).
 - 스프린트가 끝나면 이 블록의 "현재 위치"와 아래 "명령"을 갱신한다.
@@ -300,8 +300,12 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 - `target_repo`: 이 저장소 루트. 제안 `write_scope`: `apps/**`, `packages/**`, `e2e/**`, `docker/**`, 루트 설정 파일(`package.json`, `pnpm-workspace.yaml`, `tsconfig*.json`, `docker-compose*.yml`, `.github/**`) — 태스크별로 좁혀서 승인받는다.
 - `CLAUDE.md`, `_shared/**`, `_templates/**`는 워커 쓰기 범위에 넣지 않는다. `docs/**`는 README·HANDOFF 작성 태스크에서만 해당 파일로 좁혀 승인받는다.
 
-### 명령 (S0에서 확정 후 채운다)
-- 설치 / 개발 서버 / typecheck / 단위 테스트 / E2E / DB 마이그레이션: _미정_
+### 명령 (S0 확정 — 상세는 README)
+- 설치 `pnpm install` · 환경 `pnpm setup:env` · 의존 서비스 `docker compose up -d --wait`
+- 개발 서버 `pnpm dev` (api :3000 · web :5173) · 빌드 `pnpm build`
+- typecheck `pnpm typecheck` · 린트 `pnpm lint` · 단위 `pnpm test` · DB 통합 `pnpm test:db` · E2E `pnpm test:e2e`
+- DB 마이그레이션 생성 `pnpm --filter @mes/api db:generate` · 적용 `pnpm db:migrate`
+- Node는 22 고정(mise·`.nvmrc`) — 이 Mac에서는 `mise exec -- pnpm …`
 
 ### 공개 저장소 규칙 (GitHub PUBLIC — HANDOFF §7)
 - 사내 주소·사내 AI 포털 주소·양식 번호·참고 이미지·이미지에서 옮긴 문구·실명 추가 금지(시드·테스트는 가상 데이터). 비밀값(키·client secret·`.env`)은 커밋하지 않고 `.env.example`만 둔다.

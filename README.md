@@ -1,96 +1,64 @@
-# MultiAgent — Claude · Codex · Gemini Orchestration Starter
+# MES Agent Hub
 
-Claude Code를 오케스트레이터로 두고 Claude·Codex·Gemini를 워커로 호출하는 **파일 기반 멀티에이전트 시스템**.
+사내 AI 에이전트(OpenWebUI assistant)를 카드로 골라 대화하고, 대화끼리 태그로 느슨하게 이어 파일과 대화를 주고받는 업무 플랫폼.
+데모(`mes-assistant-platform2`, 태그 `demo-final`)에서 검증한 동작을 서버 기반(서버·DB·파일 저장·SSO)으로 옮긴 실제 제품이다.
 
-## 핵심 아이디어
+- 요구사항: [docs/next-project/PRD.md](docs/next-project/PRD.md) · 설계: [docs/next-project/architecture.md](docs/next-project/architecture.md) · API: [docs/next-project/openapi.yaml](docs/next-project/openapi.yaml)
+- 현재 상태·결정·다음 단계: [docs/HANDOFF.md](docs/HANDOFF.md)
 
-- **Orchestrator = Claude Code 세션** (이 폴더 안에서 실행 시 `CLAUDE.md` 자동 적용)
-- **Workers** = 외부 모델 호출. 모두 승인 게이트 통과 필요.
-  - `claude-main` — [strategist] 기획·설계·아키텍처·전략·디자인 방향·문체 글쓰기
-  - `codex-main` — [engineer·computer-use] 대규모 구현·테스트·로컬 검증·브라우저 자동화·이미지 생성
-  - `codex-critic` — [reviewer] 산출물 리뷰·비평 (Codex의 주된 역할)
-  - `gemini` — [multimodal] 이미지·긴 문서·제3자 시각의 검토
-
-  슬롯→워커 배정의 정본은 `_shared/capability-profile.md`(가변층) — 신모델 출시 시 프로필만 갱신.
-- **Memory = filesystem.** 런타임 상태 없음. 모든 결정·승인·검증이 파일로 남는다.
-
-## 폴더 구조
+## 구성
 
 ```
-<설치한-폴더>/
-├── CLAUDE.md              # 운영 규칙 전문 (이 폴더 안에서 claude 실행 시만 적용)
-├── _shared/
-│   ├── routing.md             # worker 선택 decision tree + 호출 명령
-│   ├── approval-policy.md     # 승인 게이트 정책 (claude-main 포함)
-│   ├── orchestrator-rules.md  # 세션 시작 시 자체 점검 규칙
-│   └── learnings.md           # 시스템 일반 재사용 교훈 (추적·공개, append-only)
-├── _templates/
-│   ├── task.md            # status, goal, constraints, planned_workers, workers_approved
-│   ├── context.md         # 현재 스냅샷 ≤ 1500자 / 300단어
-│   ├── worker-brief.md    # ≤ 1200자 / 240단어, target_repo + write_scope
-│   ├── worker-result.md   # Verification Checklist 포함
-│   ├── log.md             # append-only 이력
-│   └── task-folder.md     # 새 작업 폴더 생성 가이드
-└── tasks/                 # 작업별 폴더 (동적 생성)
-    └── <task-name>/
-        ├── task.md
-        ├── context.md
-        ├── log.md
-        ├── sources/       # 원본 자료 (선택)
-        ├── workers/<role>/
-        │   ├── brief.md
-        │   └── result.md
-        └── artifacts/     # 산출물 원본 (선택)
+apps/web            React 19 + Vite + shadcn/ui (데모 화면 이식)
+apps/api            NestJS (Node 22) + Drizzle — 인증·세션·API
+packages/domain     도메인 규칙 (데모 src/domain 이식)
+packages/llm        요청 조립·OpenWebUI 호출 (데모 src/llm 이식, 저장소는 포트 주입)
+packages/contracts  API 계약 (zod)
+e2e/                Playwright
+docker/             개발용 의존 서비스 설정 (Keycloak realm, 가짜 OpenWebUI)
 ```
 
-> `_local/` (git 추적 안 함, clone 시 빈 폴더): 작성자의 **프로젝트 특화** 교훈
-> (`_local/learnings.md`)이 여기 쌓인다. 공개 starter에는 **시스템 일반** 교훈만
-> `_shared/learnings.md`로 배포된다. 분류 규칙은 `_shared/learnings.md` 헤더 참조.
+## 개발 환경
 
-## 사용 시작
+최종 실행 환경은 **Windows**, 개발은 macOS·Windows 어디서나 한다. 아래 명령은 셸 종류(bash·PowerShell·cmd)와 무관하다.
+
+필요한 것: Node 22 (`.nvmrc`), pnpm 10, Docker(Docker Desktop·OrbStack 등 — 개발용 의존 서비스에만 사용)
 
 ```bash
-cd <설치한-폴더>
-claude
+pnpm install
+pnpm setup:env          # .env.example → .env (로컬 개발용 가상 값)
+docker compose up -d --wait   # PostgreSQL 16 · Keycloak(SSO 대역) · 가짜 OpenWebUI
+pnpm db:migrate
+pnpm dev                # api http://localhost:3000/api · web http://localhost:5173
 ```
 
-자연어로 새 작업 요청:
-> "새 작업 만들어줘. 목표는 ○○이고 ○○ worker가 필요할 것 같아."
+브라우저에서 http://localhost:5173 → Keycloak 로그인 → 허브.
+개발용 가상 사용자: `dev-owner`(System Owner) · `dev-member` · `dev-requester`, 비밀번호는 `.env`의 `DEV_USER_PASSWORD`.
 
-Orchestrator가 `_templates/task-folder.md` 가이드에 따라 작업 폴더 생성 → worker 승인 요청 → 진행.
+api·web은 Docker 없이 Node로 직접 빌드·실행한다(`pnpm build` → `pnpm --filter @mes/api start`, 웹은 `apps/web/dist` 정적 파일).
+운영 배포 방식(Windows 서비스 / 컨테이너)은 S5에서 정한다.
 
-## 모니터링 (선택) — mat
+## 명령
 
-작업 진행을 터미널에서 지켜보고 싶다면 **[mat](https://github.com/netwaif/mat)** (MultiAgent Tracker)를 함께 쓴다.
-한 작업의 워커 상태(대기·실행 중·완료·에러)·goal·로그를 한 화면에서 본다.
-시스템을 **읽기만** 한다 — 작업 생성·승인·워커 호출은 하지 않으므로, 켜두거나 꺼도 진행에 영향이 없다.
+| 목적 | 명령 |
+|---|---|
+| 타입 검사 | `pnpm typecheck` |
+| 단위 테스트 (DB 없이) | `pnpm test` |
+| DB 통합 테스트 | `pnpm test:db` (compose의 PostgreSQL 필요) |
+| E2E | `pnpm test:e2e` (compose 필요, 처음 한 번 `pnpm --filter @mes/e2e install:browsers`) |
+| 린트 | `pnpm lint` |
+| 빌드 | `pnpm build` |
+| 마이그레이션 생성 | `pnpm --filter @mes/api db:generate` (스키마: `apps/api/src/db/schema.ts`) |
+| 마이그레이션 적용 | `pnpm db:migrate` |
 
-```bash
-brew install netwaif/tap/mat
-MAT_ROOT=<설치한-폴더> mat
-```
+DB 스키마는 [docs/architecture/postgres-draft.sql](docs/architecture/postgres-draft.sql)과 1:1이다 — 한쪽을 바꾸면 다른 쪽도 바꾸고 `pnpm test:db`로 대조한다.
 
-설치·키 조작 등 자세한 내용은 [mat 저장소](https://github.com/netwaif/mat) 참고.
+## 저장소 규칙
 
-> ⚠️ mat에서 워커 한 줄 목적이 ` ```yaml `로 보이면 **알려진 경미 이슈**(KI-1)다.
-> 시스템·진행에는 영향 없다. [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) 참고.
-
-## 알려진 이슈
-
-해결·보류 중인 알려진 결함은 [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md)에 추적한다.
-
-## 핵심 원칙
-
-| 원칙 | 강제 방식 |
-|------|---------|
-| 모든 worker 호출 전 승인 | `task.md`의 `workers_approved` 필드 |
-| 측정 가능한 컨텍스트 한도 | `wc -m` / `wc -w`로 검증 |
-| append-only 로그 | `log.md` 수정·삭제 금지 |
-| 최소 worker set | `routing.md` decision tree로 강제 |
-| codex-main 외부 repo 쓰기 4-조건 | `target_repo` + `write_scope` + 승인 + log [APPROVAL] |
-
-자세한 규칙은 [`CLAUDE.md`](./CLAUDE.md) 참고.
+- 공개 저장소다. 사내 주소·사내 포털 주소·양식 번호·실명·비밀값을 커밋하지 않는다(시드·테스트는 가상 데이터, 비밀값은 `.env`만 — 커밋은 `.env.example`).
+- 크로스플랫폼 원칙(스크립트·경로·줄바꿈)은 [CLAUDE.md](CLAUDE.md) "크로스플랫폼 원칙"을 따른다.
+- 이 폴더는 멀티에이전트 오케스트레이션(`_shared/`, `_templates/`, `CLAUDE.md`)으로 개발한다 — 제3자 고지는 [NOTICE](NOTICE).
 
 ## 라이선스
 
-개인 사용 및 학습 목적.
+UNLICENSED — 권리 보유, 사용·배포 허가 없음.
