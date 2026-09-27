@@ -84,8 +84,8 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | D23 | 서버 세션은 DB `app_session`(쿠키 토큰의 SHA-256만 저장, 기본 12시간). DDL 초안에 추가해 1:1 유지 | S0 기본값 (2026-09-28) |
 | D24 | 최초 SO는 `INITIAL_SYSTEM_OWNERS`(SSO `sub` 또는 `preferred_username`) — 로그인 때 부여만 하고 해제하지 않음 | PRD §2 · S0 기본값 |
 | D25 | 라이선스 UNLICENSED, LICENSE 파일 제거. NOTICE는 오케스트레이션 규칙의 제3자 고지로 유지 | 사용자 (2026-09-28) |
-| D27 | SSO 사용자 식별은 `(issuer, sub)` — `app_user.sso_subject`에 `{issuer}#{sub}`로 저장(IdP 교체 시 권한 승계 방지) | codex-critic 리뷰 반영 (2026-09-28) |
 | D26 | api는 ESM + tsc 빌드(데코레이터 메타데이터), DI는 모두 명시적 `@Inject(토큰)` — 테스트 변환기(oxc)와 무관하게 동작 | S0 기본값 |
+| D27 | SSO 사용자 식별은 `(issuer, sub)` — `app_user.sso_subject`에 `{issuer}#{sub}`로 저장(IdP 교체 시 권한 승계 방지) | codex-critic 리뷰 반영 (2026-09-28) |
 
 ## 6. 진행 현황
 
