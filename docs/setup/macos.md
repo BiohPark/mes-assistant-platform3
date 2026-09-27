@@ -38,7 +38,7 @@ psql -d postgres -c "CREATE DATABASE mes_hub OWNER mes;"
 
 ## 5–7. 로그인·기동·테스트
 
-Windows와 같다. `pnpm dev` → http://localhost:5173 → `dev-member` 로그인 → 빈 허브.
+Windows와 같다. `pnpm dev` → http://localhost:5173 → 회원가입(예: `dev-owner`) → 빈 허브.
 
 ## 8. 운영 배포
 

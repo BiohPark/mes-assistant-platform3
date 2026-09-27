@@ -15,7 +15,7 @@ packages/domain     도메인 규칙 (데모 src/domain 이식)
 packages/llm        요청 조립·OpenWebUI 호출 (데모 src/llm 이식, 저장소는 포트 주입)
 packages/contracts  API 계약 (zod)
 e2e/                Playwright
-docker/             개발용 의존 서비스 설정 (Keycloak realm, 가짜 OpenWebUI)
+docker/             개발용 의존 서비스 설정 (Keycloak realm — OIDC 모드 전용, 가짜 OpenWebUI)
 ```
 
 ## 개발 환경
@@ -29,13 +29,13 @@ docker/             개발용 의존 서비스 설정 (Keycloak realm, 가짜 Op
 ```bash
 pnpm install
 pnpm setup:env          # .env.example → .env (로컬 개발용 가상 값)
-docker compose up -d --wait   # PostgreSQL 16 · Keycloak(SSO 대역) · 가짜 OpenWebUI
+docker compose up -d --wait   # PostgreSQL 16 · 가짜 OpenWebUI (Keycloak은 --profile oidc)
 pnpm db:migrate
 pnpm dev                # api http://localhost:3000/api · web http://localhost:5173
 ```
 
-브라우저에서 http://localhost:5173 → Keycloak 로그인 → 허브.
-개발용 가상 사용자: `dev-owner`(System Owner) · `dev-member` · `dev-requester`, 비밀번호는 `.env`의 `DEV_USER_PASSWORD`.
+브라우저에서 http://localhost:5173 → 회원가입(ID·비밀번호) → 허브. `.env`의 `INITIAL_SYSTEM_OWNERS`(기본 `dev-owner`)에 있는 ID로 가입하면 System Owner.
+로그인 방식은 `AUTH_MODE`: `local`(기본, 앱 자체) / `oidc`(SSO — 개발은 Keycloak, `docker compose --profile oidc up -d`).
 
 api·web은 Docker 없이 Node로 직접 빌드·실행한다(`pnpm build` → `pnpm --filter @mes/api start`, 웹은 `apps/web/dist` 정적 파일).
 운영 배포 방식(Windows 서비스 / 컨테이너)은 S5에서 정한다.

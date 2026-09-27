@@ -6,7 +6,7 @@
 > 문서와 실제가 어긋나지 않도록, 이 문서에서 ` ```powershell ci ` 로 표시된 명령 블록은 CI의 Windows 잡(`setup-guide`)이 **그대로 실행**한다(`scripts/run-doc-commands.mjs`). GUI 설치·Docker·브라우저 로그인 단계는 사람이 확인한다.
 > 명령이 바뀌면 이 문서를 **같은 커밋에서** 고친다.
 
-현재 단계: **S0 뼈대** — 로그인하면 빈 허브가 보인다. 에이전트·대화 기능은 S2부터.
+현재 단계: **S1 진행 중** — 회원가입·로그인하면 빈 허브가 보인다. 에이전트·대화 기능은 S2부터.
 
 ---
 
@@ -82,16 +82,15 @@ pnpm setup:env
 |---|---|---|
 | `POSTGRES_DB` · `POSTGRES_USER` · `POSTGRES_PASSWORD` | Docker PostgreSQL을 만들 때 쓰는 DB·사용자·비밀번호 | `mes_hub` · `mes` · 가상 값 |
 | `POSTGRES_PORT` | Docker PostgreSQL의 호스트 포트 | `5432` |
-| `KEYCLOAK_PORT` | Keycloak 포트 | `8180` |
-| `KEYCLOAK_ADMIN_PASSWORD` | Keycloak 관리 콘솔(`admin`) 비밀번호 | 가상 값 |
-| `DEV_USER_PASSWORD` | 개발용 테스트 계정 3개의 비밀번호 | 가상 값 |
+| `KEYCLOAK_PORT` · `KEYCLOAK_ADMIN_PASSWORD` · `DEV_USER_PASSWORD` | Keycloak(OIDC 모드 전용, `--profile oidc`) 포트·관리 콘솔 비밀번호·테스트 계정 비밀번호 | 가상 값 |
 | `FAKE_OPENWEBUI_PORT` | 가짜 OpenWebUI 포트 | `3101` |
 | `API_PORT` | api 포트 (web 개발 서버의 `/api` 프록시도 이 값을 따른다) | `3000` |
+| `AUTH_MODE` | 로그인 방식: `local`(앱 자체 로그인, 기본) 또는 `oidc`(SSO) | `local` |
 | `APP_ORIGIN` | 브라우저가 여는 앱 주소. OIDC 콜백은 `{APP_ORIGIN}/api/auth/callback`. `https://`면 Secure 쿠키 | `http://localhost:5173` |
 | `DATABASE_URL` | api가 붙는 PostgreSQL | `postgres://mes:…@localhost:5432/mes_hub` |
 | `SESSION_SECRET` | 쿠키 서명 비밀(32자 이상). 운영은 무작위 값 | 가상 값 |
-| `OIDC_ISSUER` · `OIDC_CLIENT_ID` · `OIDC_CLIENT_SECRET` | SSO(OIDC) 발급자·앱 ID·비밀 | 개발 Keycloak realm `mes-dev` |
-| `INITIAL_SYSTEM_OWNERS` | 첫 로그인 때 System Owner로 만들 SSO 사용자(`preferred_username` 또는 `sub`), 쉼표 구분 | `dev-owner` |
+| `OIDC_ISSUER` · `OIDC_CLIENT_ID` · `OIDC_CLIENT_SECRET` | SSO(OIDC) 발급자·앱 ID·비밀 — `AUTH_MODE=oidc`일 때만 필수 | 개발 Keycloak realm `mes-dev` |
+| `INITIAL_SYSTEM_OWNERS` | 가입·로그인 때 System Owner로 만들 사용자 — `local`: 로그인 ID / `oidc`: `preferred_username` 또는 `sub`, 쉼표 구분 | `dev-owner` |
 | `OPENWEBUI_BASE_URL` · `OPENWEBUI_API_KEY` | OpenWebUI 주소·키 (S1부터 사용) | 가짜 OpenWebUI |
 | `FILE_STORAGE_ROOT` | 파일 저장 루트(상대 경로면 api 실행 폴더 기준). 드라이브·UNC 경로 가능 (S2부터 사용) | `./storage` |
 
@@ -107,7 +106,7 @@ Docker Desktop을 켠 뒤:
 docker compose up -d --wait
 ```
 
-PostgreSQL 16·Keycloak·가짜 OpenWebUI가 함께 뜬다(`--wait`는 준비될 때까지 기다린다). DB·사용자는 `.env` 값으로 자동 생성된다.
+PostgreSQL 16·가짜 OpenWebUI가 함께 뜬다(`--wait`는 준비될 때까지 기다린다). DB·사용자는 `.env` 값으로 자동 생성된다. Keycloak은 OIDC 모드에서만 필요하다(5장).
 
 ### (b) Windows에 PostgreSQL 16 직접 설치
 
@@ -124,7 +123,7 @@ psql -U postgres -h localhost -c "CREATE USER mes WITH PASSWORD 'dev-postgres-pa
 psql -U postgres -h localhost -c "CREATE DATABASE mes_hub OWNER mes;"
 ```
 
-이 경로에서도 **로그인(Keycloak)** 은 필요하다 — 5장.
+이 경로에서는 Docker가 전혀 필요 없다 — 로그인은 앱 자체 회원가입이다(5장).
 
 ### 마이그레이션
 
@@ -138,16 +137,24 @@ pnpm db:migrate
 
 ### 개발용 시드
 
-S0에는 시드가 없다 — 사용자는 **첫 로그인 때** 자동으로 만들어지고, 허브는 비어 있는 것이 정상이다. 에이전트 카탈로그 시드(가상 데이터)는 S2에서 `pnpm db:seed`로 추가한다.
+시드는 아직 없다 — 사용자는 **회원가입**으로 만들고, 허브는 비어 있는 것이 정상이다. 에이전트 카탈로그 시드(가상 데이터)는 S2에서 `pnpm db:seed`로 추가한다.
 
-## 5. 로그인 (SSO)
+## 5. 로그인
 
-### 개발 — Keycloak
+### 기본 — 앱 자체 로그인 (`AUTH_MODE=local`)
 
-4장 (a)를 했다면 이미 떠 있다. (b)를 골랐다면 PostgreSQL 없이 나머지만 띄운다:
+이번 페이즈는 사내 SSO를 연계하지 않는다(HANDOFF D32·D34). 앱이 ID·비밀번호를 직접 관리한다.
+
+- 첫 화면에서 **회원가입** → ID(소문자·숫자·`.`·`_`·`-` 3~32자)와 비밀번호(8자 이상) → 가입 즉시 로그인된다.
+- 가입한 ID가 `.env`의 `INITIAL_SYSTEM_OWNERS`에 있으면(기본 `dev-owner`) System Owner가 된다. 그 밖은 기본 사용자. SO·BO 지정 화면은 S4.
+- 비밀번호는 Node 내장 scrypt로 해시해 저장한다. 별도 설정·서비스가 필요 없다.
+
+### 선택 — SSO(OIDC) 모드 (`AUTH_MODE=oidc`)
+
+후속 페이즈의 사내 SSO 연계용. 개발에서는 Keycloak을 사내 IdP 대역으로 쓴다. `.env`에 `AUTH_MODE=oidc`를 두고 Keycloak을 프로필로 띄운다:
 
 ```powershell
-docker compose up -d --wait keycloak fake-openwebui
+docker compose --profile oidc up -d --wait keycloak
 ```
 
 - Keycloak: http://localhost:8180 (관리 콘솔 `admin` / `.env`의 `KEYCLOAK_ADMIN_PASSWORD`), realm `mes-dev`
@@ -159,11 +166,13 @@ docker compose up -d --wait keycloak fake-openwebui
 | `dev-member` | 담당자 |
 | `dev-requester` | 담당자 (요청자 역할 구분은 S4) |
 
+이 계정들은 Keycloak(OIDC 모드)에만 있다. local 모드에서는 회원가입으로 만든다.
+
 Docker를 쓸 수 없다면: Keycloak 배포판(zip, Java 21 필요)을 받아 `docker\keycloak\mes-dev-realm.json`을 `data\import\`에 복사하고, 그 파일의 `${OIDC_CLIENT_SECRET}` `${APP_ORIGIN}` `${DEV_USER_PASSWORD}`를 환경 변수로 준 뒤 `bin\kc.bat start-dev --http-port=8180 --import-realm`로 띄운다.
 
-### 운영 — 사내 SSO로 바꿀 때
+### 운영 — 사내 SSO로 바꿀 때 (후속 페이즈)
 
-코드는 바꾸지 않는다. `.env`(운영은 서버 비밀 저장소)의 값만 바꾼다.
+코드는 바꾸지 않는다. `.env`(운영은 서버 비밀 저장소)의 값만 바꾼다 — `AUTH_MODE=oidc`와 아래 값.
 
 | 설정 | 넣을 값 (IT 부서에 요청 — [architecture.md §5](../next-project/architecture.md) 체크리스트) |
 |---|---|
@@ -190,9 +199,9 @@ api(워크스페이스 패키지 빌드 → 감시 모드)와 web(Vite)이 함�
 |---|---|
 | http://localhost:5173 | 앱 — 여기로 접속한다 (`/api`는 api로 프록시) |
 | http://localhost:3000/api/health | api 상태 (`{"status":"ok","db":"up"}`) |
-| http://localhost:8180 | Keycloak |
+| http://localhost:8180 | Keycloak (OIDC 모드일 때만) |
 
-**확인(S0 완료 기준)**: 브라우저에서 http://localhost:5173 → Keycloak 로그인(`dev-member`) → "에이전트 허브"에 **"등록된 에이전트가 없습니다"** 가 보이면 성공. 오른쪽 위 이름 → 로그아웃.
+**확인**: 브라우저에서 http://localhost:5173 → 회원가입(예: `dev-owner`) → "에이전트 허브"에 **"등록된 에이전트가 없습니다"** 가 보이면 성공. 오른쪽 위 이름 → 로그아웃 → 다시 로그인.
 
 ### 운영 모드 (S0 기준 — 배포 방식은 S5에서 확정)
 
@@ -218,9 +227,9 @@ pnpm test:db
 | `pnpm lint` | 린트(경고도 실패) | — |
 | `pnpm test` | 단위 테스트 | — (DB 없이) |
 | `pnpm test:db` | DB 통합 테스트(스키마 대조 포함) | PostgreSQL + `CREATEDB` 권한 |
-| `pnpm test:e2e` | 브라우저 E2E(로그인 → 빈 허브) | Keycloak·PostgreSQL, 처음 한 번 `pnpm --filter @mes/e2e install:browsers` |
+| `pnpm test:e2e` | 브라우저 E2E(회원가입 → 로그인 → 빈 허브) | PostgreSQL, 처음 한 번 `pnpm --filter @mes/e2e install:browsers` |
 
-`pnpm test:e2e`는 api·web을 알아서 띄운다(이미 떠 있으면 재사용). CI의 Windows 잡은 E2E를 아직 돌리지 않는다(Windows 러너에서 Keycloak 컨테이너를 쓸 수 없음 — S1 이후 추가).
+`pnpm test:e2e`는 api·web을 알아서 띄운다(이미 떠 있으면 재사용). CI의 Windows 잡은 E2E를 아직 돌리지 않는다(S1 이후 추가).
 
 ## 8. 운영 배포 초안 — Windows 서비스 (S5에서 확정)
 
@@ -249,6 +258,7 @@ api를 Windows 서비스로 상시 실행하는 후보:
 | `Filename too long` / `ENAMETOOLONG` | 긴 경로. 2장의 `core.longpaths`·`LongPathsEnabled`, 저장소를 `C:\dev\` 같은 짧은 경로로 |
 | `pnpm install`이 매우 느림 | 백신 실시간 검사가 `node_modules`를 검사. 저장소 폴더와 pnpm 스토어(`pnpm store path`)를 Microsoft Defender 제외 목록에 추가(회사 정책 확인) |
 | 로그인 뒤 "서버에 연결할 수 없습니다" | api가 안 떠 있거나 DB 연결 실패. http://localhost:3000/api/health 확인 → `db: down`이면 PostgreSQL·`DATABASE_URL` 확인 → "다시 시도" |
-| Keycloak 로그인 뒤 `Invalid parameter: redirect_uri` | `APP_ORIGIN`이 Keycloak에 등록된 콜백과 다름. `.env` 수정 후 `docker compose up -d --force-recreate keycloak` |
+| 로그인 화면에서 "ID 또는 비밀번호가 올바르지 않습니다" | ID 오타 또는 다른 비밀번호. 계정이 없으면 회원가입. 초기화하려면 개발 DB를 비운다(`docker compose down -v` 또는 DB 재생성) |
+| (OIDC) Keycloak 로그인 뒤 `Invalid parameter: redirect_uri` | `APP_ORIGIN`이 Keycloak에 등록된 콜백과 다름. `.env` 수정 후 `docker compose --profile oidc up -d --force-recreate keycloak` |
 | `docker compose up`이 `.env에 … 필요` 로 멈춤 | `.env`가 없음 → `pnpm setup:env` |
 | `pnpm db:migrate`가 `password authentication failed` | `DATABASE_URL`의 사용자·비밀번호가 4장에서 만든 값과 다름 |
