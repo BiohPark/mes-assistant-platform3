@@ -1,4 +1,4 @@
-# 잔여 대상 상세 설계 — S3 상세 · S4/S5 개요 (2026-09-28, 초안)
+# 잔여 대상 상세 설계 — S3 상세 · S4/S5 개요 (2026-09-28, 개정 1 — codex-critic 설계 리뷰 반영)
 
 > 사용자 지시 "승인하고 잔여 대상 상세 설계하자"에 따른 문서. 대응표 잔여 ⬜ 60행(S3 21 · S4 33 · S5·기타 6)을 **API 계약·상태 기계·데이터·화면·테스트** 수준으로 내려 적는다. S3는 코드 착수 직전 수준으로, S4·S5는 결정이 필요한 지점이 드러나는 수준으로. 정본과 어긋나면 정본(PRD·architecture·data-contract·postgres-draft·openapi·fusion-design §5·HANDOFF 결정 D1–D38)이 우선하고, 이 문서는 그 사이를 잇는다. 승인되면 openapi.yaml을 이 문서에 맞춰 갱신하고, 각 태스크의 `sources/*-spec.md`는 이 문서의 절을 가리킨다.
 >
@@ -8,7 +8,7 @@
 
 | # | 불변식 | 강제 위치 |
 |---|---|---|
-| I1 | **요청은 서버 RequestService만 소유·전송**한다. 웹은 시작·중지·재시도를 요청하고 결과를 본다 | `POST /api/threads/{id}/requests` 외에 provider를 부르는 경로 없음 |
+| I1 | **provider 호출은 서버 RequestService만** — 주 요청(`POST /api/threads/{id}/requests`·retry)과 **보조 호출**(AI 제목·요약 초안, §8.9) 모두. 웹은 시작·중지·재시도를 요청하고 결과를 본다 | RequestService 밖에서 `createProvider`를 부르는 코드 없음(lint 규칙 또는 테스트로 단언) |
 | I2 | **대화당 진행 중 요청 1건** | `chat_request_one_active` 부분 고유 인덱스 + 트랜잭션 안 삽입 → 충돌 시 409 |
 | I3 | **보낸 것 = 본 것**: 트레이 추정과 실제 전송은 같은 `buildChatRequest` | 추정 API가 `dryRun: true`로 같은 함수 호출. 단위 테스트로 `info` 동일성 단언 |
 | I4 | **자동 절단·자동 요약·자동 재전송 없음**. 한도 초과는 전송 차단, 실패는 사람이 재시도 | 서버가 `bytes > limit` → 요청 실패 기록·provider 미호출. 재시도는 사람이 `POST /requests/{id}/retry` |
@@ -29,7 +29,7 @@
 - `message`: 답변 자리표시는 `role=assistant, status=streaming, content=''` → 종료 시 `done|error`. 데모의 `heartbeatAt`·`requestInfo`·`requestSnapshot`은 **메시지 대신 `chat_request`가 가진다**(data-contract §5). 답변 메시지 ↔ 요청은 `reply_message_id`.
 - `file_remote_ref(file_id, scope_hash, remote_id)`: OpenWebUI 업로드 재사용 캐시. `scope_hash = sha256(baseUrl + '#' + shortHash(apiKey))` — 서버·키가 바뀌면 다시 올림(데모 `remoteKey` 규칙).
 - **스냅샷 저장(S3-4a)**: 직렬화 크기 ≤ 1 MiB면 `snapshot` jsonb, 초과면 `FileStorageService`에 `requests/{yyyy}/{mm}/{requestId}.json`으로 쓰고 `snapshot = {"storageKey": "..."}`. 조회 API가 둘을 구분해 같은 형태로 준다.
-- **DDL 변경 없음** — `chat_request`·`chat_request_input`·`file_remote_ref`·부분 고유 인덱스 `chat_request_one_active`는 S0 마이그레이션 0000에 이미 있다(Orchestrator 대조 2026-09-28). 새 마이그레이션은 만들지 않는다.
+- 테이블·부분 고유 인덱스는 S0 마이그레이션 0000에 이미 있다(Orchestrator 대조 2026-09-28). **마이그레이션 0003(개정 1)**: `chat_request.idempotency_key text`(§8.1) + `unique (thread_id, idempotency_key)`, `chat_request.phase text`(§8.7). 초안 SQL 동기화.
 
 ### 1.2 상태 기계
 
@@ -114,7 +114,7 @@ POST → [pending] ──────────► (파일 전달·조립) ─
 
 ### 1.9 테스트 매핑
 
-| 데모 `chatRunner.test.ts` | 서버 테스트(vitest, tempDb + 가짜 provider 주입) |
+| 데모 `chatRunner.test.ts`(`it` 11건) + E5 보호 | 서버 테스트(vitest, tempDb + 가짜 provider 주입) |
 |---|---|
 | stores the user message and a reply with the structured request record | 요청 1건: user·reply 메시지, chat_request(succeeded)·inputs 기록, snapshot 키 없음 |
 | keeps the live run state until the final reply is stored | finalize 순서: DB 먼저 → 메모리 run 제거(동시 전송 요청이 409를 받는 창 없음) |
@@ -138,7 +138,7 @@ E2E: E1 **S5**(가짜 OpenWebUI live: 처리 완료 후 전송·주 입력 먼�
 ### 2.1 후보 (`GET /api/tasks/{id}/candidates` 의 `conversations`)
 
 - 조건: 현재 대화와 `tag_key`를 하나 이상 **직접** 공유 · 자기 자신 제외 · **SR 접수 스레드 제외**(fusion §5.1) · 상태 무관(완료 대화도 후보 — 데모 `conversationCandidates` 규칙 확인 후 동일하게). 정렬 `last_activity_at desc`.
-- 항목: `{ taskId, code, title, status, assistant:{id,name,color}, sharedTags[], messageCount(적격), bytes(적격 원문 합), lastActivityAt, selected?: { weight, mode, snapshotId, newMessages, detached } }`. 적격 메시지 = `role in (user, assistant) and status='done' and kind is null`(팀 의견·실패·미완성 제외 — domain `eligibleMessages`).
+- 항목: `{ taskId, code, title, status, assistant:{id,name,color}, sharedTags[], messageCount(적격), bytes(적격 원문 합), lastActivityAt, selected?: { weight, mode, snapshotId, newMessages, detached } }`. 적격 메시지 = `role in (user, assistant) and status='done' and kind is null and trim(content) <> ''`(팀 의견·실패·미완성·**빈 본문(첨부만)** 제외 — domain `eligibleMessages`와 동일).
 - 태그는 발견 조건이지 권한이 아니다 — S2-9로 로그인 사용자 전원 열람이라 S3에선 추가 검사 없음(S4 BO 제한 때 재검토).
 
 ### 2.2 데이터
@@ -171,7 +171,7 @@ E2E: E1 **S5**(가짜 OpenWebUI live: 처리 완료 후 전송·주 입력 먼�
 
 ### 3.1 추정 (`POST /api/threads/{threadId}/requests/estimate`)
 
-body `{ draft?: string, oneShotFileIds?: string[] }` → `RequestInfo & { overLimit: boolean, limitBytes, attachmentLimit }`. 구현은 **①의 조립 함수에 `dryRun: true`**(업로드 없이 첨부 예정으로 계산, 파일 바이트는 한도에 미포함 표시). 로그인 사용자, 완료 대화도 조회 가능(전송만 차단). 클라이언트 `useRequestEstimate`: 400 ms 디바운스, 키 = 초안·입력 선택·참조 대화·메시지·설정 변경.
+body `{ draft?: string, attachmentIds?: string[], oneShotFileIds?: string[] }`(개정 1: 아직 고정되지 않은 초안 첨부 포함) → `RequestInfo & { overLimit: boolean, limitBytes, attachmentLimit }`. 구현은 **①의 조립 함수에 `dryRun: true`** — 실제 전송과 **같은 입력 상태**(초안 첨부는 전송 시 규칙대로 ☑ 고정될 것으로 가정)를 조립. 동일성 계약은 §8.5. 로그인 사용자, 완료 대화도 조회 가능(전송만 차단). 클라이언트 `useRequestEstimate`: 400 ms 디바운스, 키 = 초안·입력 선택·참조 대화·메시지·설정 변경.
 
 ### 3.2 한도 초과 UX (fusion §5.8)
 
@@ -228,3 +228,79 @@ body `{ draft?: string, oneShotFileIds?: string[] }` → `RequestInfo & { overLi
 ## 7. 대응표 S3 21행 → 태스크 매핑
 
 ①: §4 `ChatView`(스트리밍) · `Composer`(AI 전송) · `MessageBubble` · `RequestInfoDialog` · `requestLabels.ts` · `useChat.ts` · §5 `chat.ts` 잔여(활성 응답·정리) · §9 S5·S6·S7·S8·E2·E5 · `support/app.ts`(로그인 헬퍼 정리). ②: §3 `ConversationInputs`·`ConversationPickerDialog`·`useTaskData` 잔여 · §5 `conversationInputs.ts`(+test) · §9 E3a–d. ③: §2 `presence.ts` · §4 `ContextTray`·`useRequestEstimate` · §9 E4·E6 · FR-04 실시간(대응표 `/` 칸반 행 실시간 보완).
+
+
+---
+
+## 8. 개정 1 — codex-critic 설계 리뷰(2026-09-28) 반영
+
+리뷰 원문: `tasks/s3-request/workers/codex-critic/result-design.md`. 아래가 위 절과 어긋나면 **이 절이 우선**한다.
+
+### 8.1 멱등 키 (높음)
+- `POST …/requests`·`POST /requests/{id}/retry`는 헤더 `Idempotency-Key`(클라이언트가 전송 시도마다 UUID 생성, 재접속·재전송에는 같은 키) **필수**(없으면 400). 저장: `chat_request.idempotency_key`, `unique (thread_id, idempotency_key)`(마이그레이션 0003).
+- 같은 키 재호출: 기존 요청을 찾아 **새 행을 만들지 않고** SSE로 `started`(같은 requestId) + 현재 상태(진행 중이면 이후 델타를 이어서, 끝났으면 `completed|failed` 즉시)를 보낸다. 다른 키 + 활성 요청 있음 → 409 `REQUEST_ACTIVE`(기존과 같음).
+- HANDOFF §7 이월 항목(초안 생성 idempotency)은 S3에서 `POST /api/tasks`에도 같은 헤더를 선택 적용(있으면 `task.idempotency_key` — 0003에 함께; 없으면 기존 동작).
+
+### 8.2 종료 전이의 원자성 (높음)
+- 종료(성공·실패·취소·중단·시간 초과)는 모두 **한 트랜잭션의 조건부 전이**: `update chat_request set status=$to, error, finished_at, bytes, snapshot where id=$id and status in ('pending','streaming')` + 같은 tx에서 답변 메시지 `update … where id=$reply and status='streaming'`. 갱신 행 수가 0이면 다른 경로가 먼저 닫은 것 — **아무것도 쓰지 않고 최종 SSE도 보내지 않는다**(전이 성공자만 `completed|failed` 발신). 이것이 I7의 정의다.
+- 취소 API: 먼저 위 전이(`cancelled`)를 수행하고 성공했을 때만 실행기에 `abort('cancelled')`. 실행기는 abort를 받으면 스트림을 끊고 finalize에서 전이를 시도하지만 0행이라 건너뛴다(부분 응답은 취소 전이가 `content=현재까지`로 함께 기록 — 실행기가 마지막 flush 이후 받은 글자는 버려도 됨을 명시).
+- sweeper: `update … set status='interrupted' where status in (pending,streaming) and lease_until < now()` + 메시지 전이, 같은 규칙. 실행기 flush(`content`·`lease_until` 갱신)도 `where status='streaming'` 조건부 — 0행이면 `abort('lost')`.
+- 잠금 순서(교착 방지): **task 행 → thread → chat_request** 순으로만 잠근다(acquire·완료 전이·취소·삭제 공통).
+
+### 8.3 응답 중 완료 거부 (높음)
+- `tasks.service.setStatus(done)`: 트랜잭션에서 task `for update` → `exists chat_request where thread=… and status in (pending,streaming)` → 409 `REQUEST_ACTIVE`. acquire도 task `for update` 후 인덱스 삽입 → 두 경로가 같은 잠금을 공유해 경쟁이 직렬화된다. **S2 서비스 변경이 ① 범위**(request-spec §구현 순서 4).
+
+### 8.4 LlmPorts SR 포트 (높음)
+- `getServiceRequestsByCodes(codes)`·`getFilesBySr(srId)`는 S3에서 **실제 DB 조회로 구현**(`service_request`·`file_object(kind=sr_attachment)` 테이블은 0000에 존재; S4 전엔 빈 결과). NotImplemented 던지기 금지 — SR 태그가 붙은 일반 업무 요청이 promptBuilder에서 이 포트를 호출한다.
+- `ChatScope.sr`(SR 접수 스레드) 경로도 열어 둔다(D3-1 추천). 화면은 S4.
+
+### 8.5 추정 ↔ 전송 동일성 계약 (높음)
+- 비교 대상 = `RequestInfo`에서 **실행 시점에만 확정되는 필드를 제외한 부분**: `provider, transport, model, limitBytes, bytes, srCodes, inputs[].{kind, weight, fileId, fileVersion, sourceLabel, oneShot, delivery(예정값: attached|inline|metadata_only), sourceTaskId, snapshotId, mode, messageCount, bytes}`. 제외: `at`, `retryOf`, `remoteId`, 실행 결과로 바뀌는 `delivery='failed'`·`error`.
+- 단위 테스트: 같은 입력 상태로 `dryRun` 결과와 실제 요청 기록의 위 부분집합이 deep-equal. `bytes`는 첨부 파일 바이트를 제외한 직렬화 크기라 dryRun과 실제가 같아야 한다(임시 원격 ID 길이 차이가 생기면 `files` 배열은 바이트 계산에서 제외 — promptBuilder 이식분 확인 후 필요 시 수정).
+
+### 8.6 참조 메시지 ID 검증 (높음)
+- `PUT …/conversation-inputs/{sourceTaskId}`의 `messageIds`(및 `summary.messageIds`): 트랜잭션에서 모두 **원본 스레드 소속·적격(§2.1)·중복 없음** 검증, 하나라도 어긋나면 400 `INVALID_MESSAGE_IDS`. 스냅샷 `seq`는 원본 순서로 서버가 부여(클라이언트 순서 무시).
+
+### 8.7 SSE·오류 경계·phase·이벤트 버퍼 (중간)
+- **HTTP 사전 거부(요청 행 없음)**: 404, 409 `TASK_DONE`·`REQUEST_ACTIVE`, 400 입력 검증, 413 `ATTACHMENT_LIMIT`(개수), 멱등 키 누락 400.
+- **커밋 후 실패(행 `failed` + SSE `failed`)**: 파일 전달 실패, 요청 크기 한도 초과(`REQUEST_TOO_LARGE` — 기록에 남는 실패, 데모 규칙), 조립 예외, provider 오류, 시간 초과. §1.2 그림의 "413은 행 없이 거부"는 **첨부 개수 한도만** 가리킨다.
+- `phase`: `chat_request.phase text`(0003)에 실행기가 갱신(파일 전달 단계 문구, 스트리밍 시작 시 null). `GET /requests/{id}`·`request.updated` 이벤트에 포함.
+- `/api/events`: `id`는 서버 프로세스 내 단조 증가 정수(`{bootId}:{seq}`), `Last-Event-ID`가 버퍼 범위 밖이거나 bootId가 다르면 첫 이벤트로 `resync {}`를 보내고 클라이언트는 전체 무효화. 하트비트 15 s, 버퍼 5 분 또는 1000건.
+
+### 8.8 첫 토큰 마감·lease 루프 (중간)
+- acquire 직후: `deadline = now + (첨부 있음 ? FILES_FIRST_TOKEN_MS : FIRST_TOKEN_MS)` **하나**. 파일 업로드·처리 대기·provider 호출은 모두 같은 `AbortSignal`과 **남은 시간**을 쓴다(`deliverFiles.processTimeoutMs = min(300 s, 남은 시간)`, 파일 여러 개는 순차이므로 합계가 마감 안에 들어야 함). 첫 토큰 후 `idle` 타이머로 교체.
+- lease 갱신 루프는 acquire 직후 시작(10 s마다 `update … set lease_until where id and status in (pending,streaming)`; 0행이면 `abort('lost')`), finalize에서 정지.
+
+### 8.9 보조 호출 (중간)
+- AI 제목·요약 초안·(S4) 체크리스트 점검은 `RequestService.runAuxiliary(kind, messages, { timeoutMs: 30 000, signal })`로만 호출 — 요청 기록 없음(D3-2), 스레드 활성 인덱스와 무관, **사용자당 동시 1건**(메모리 세마포어, 초과 시 429), 호출자 취소 가능. AI 제목은 주 요청 finalize 뒤 fire-and-forget이되 같은 세마포어를 쓴다.
+
+### 8.10 pending 행의 NOT NULL 값 (중간·확인 필요)
+- acquire 시: `provider = config.llm.mode`, `transport = preset==='openwebui' ? 'openwebui' : 'inline'`, `model = modelResolution(task.modelId › assistant.modelId › 전역 기본)`, `bytes = 0`, `limit_bytes = 현재 한도`, `snapshot = null`. build 후 같은 트랜잭션 없이 `update … where status='pending'`으로 `model·transport·bytes` 확정. 조회 API는 `status='pending' and bytes=0`이면 `bytes: null`로 내보내 "준비 중"으로 표시(임시값이 실제 전송값처럼 보이지 않게).
+
+### 8.11 원격 파일 캐시 (중간)
+- `DbLlmPorts.getFiles`가 `file_remote_ref`를 현재 `scope_hash`로 조회해 `FileAsset.remoteIds[scope]`를 채운다(도메인 타입 그대로). `deliverFiles`는 값이 있으면 업로드 대신 처리 상태만 확인, 404·failed면 재업로드 후 `updateFileRemoteIds`로 갱신. 서버·키 변경은 `scope_hash`가 달라져 자연 무효화.
+
+### 8.12 재시도 입력 검증 (누락)
+- `excludeFileIds`는 원 사용자 메시지 첨부 ∪ 현재 `task_input`에, `forceInlineFileIds`는 그 중 텍스트 파일에 속해야 한다. 벗어나면 400 `INVALID_RETRY_INPUT`(조용히 무시하지 않음).
+
+### 8.13 참조 대화가 있는 대화의 삭제 정책 (중간) — **사용자 결정 D3-6**
+- 현행 S2 `DELETE /api/tasks/{id}`는 하드 삭제(파일 행까지). DDL은 과거 스냅샷이 원본 task를 FK로 보존하므로 한 번이라도 참조된 대화는 삭제가 실패한다.
+- (a) **추천**: S3에서 `DELETE /api/tasks`를 **소프트 삭제**(`task.deleted_at` — 0003 추가)로 바꾸고, 목록·후보·검색에서 제외. 참조 기록·스냅샷·요청 기록은 보존(PRD §6 "삭제하지 않음(소프트 삭제)"과 일치). 참조 중(`conversation_input` 현재 선택)이면 여전히 409.
+- (b) 현행 하드 삭제 유지 + 과거 스냅샷이 있으면 409 "참조 기록이 있는 대화는 삭제할 수 없습니다"(영구).
+- (c) S4로 미룸(S2 규칙 유지, 스냅샷 있으면 409).
+
+### 8.14 정정
+- 데모 `chatRunner.test.ts`의 `it`은 11건(+ E5 보호 항목은 별도) — §1.9 표 제목 정정.
+- 적격 메시지에 빈 본문 제외 추가(§2.1 정정).
+
+## 9. 결정 요청 (개정 1 합산)
+
+| # | 항목 | 추천 |
+|---|---|---|
+| D3-1 | `ChatScope.sr` 경로 미리 열기 | 연다 |
+| D3-2 | 보조 호출(제목·요약)을 요청 기록에 남길지 | 남기지 않음(§8.9) |
+| D3-3 | 스냅샷 파일 전환 임계 | 1 MiB |
+| D3-4 | 이벤트 버퍼·하트비트 | 5 분/1000건 · 15 s, `resync` 규칙(§8.7) |
+| D3-5 | 완료 대화에서 추정 조회 허용 | 허용 |
+| **D3-6** | 대화 삭제 정책(§8.13) | **(a) 소프트 삭제 전환** |
+| D3-7 | 멱등 키 헤더 필수(§8.1) | 필수 — 없으면 400 |
