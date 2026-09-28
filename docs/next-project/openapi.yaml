@@ -391,11 +391,11 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [file]
+              required: [file, originTaskId]
               properties:
                 file: { type: string, format: binary }
-                taskId: { type: string }
-                srId: { type: string }
+                originTaskId: { type: string, description: '이 대화의 파일 (S2 ③). SR 첨부(originSrId)는 S4' }
+                isOutput: { type: boolean, description: '업로드와 동시에 산출물 표시' }
       responses:
         '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/FileMeta' } } } }
         '413': { $ref: '#/components/responses/Problem' }
@@ -430,7 +430,7 @@ paths:
       tags: [files]
       summary: 답변을 마크다운 산출물로 저장 (같은 이름이면 새 버전)
       parameters: [{ $ref: '#/components/parameters/taskId' }]
-      requestBody: { content: { application/json: { schema: { type: object, required: [name, messageId], properties: { name: { type: string }, messageId: { type: string } } } } } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [name, content], properties: { name: { type: string }, content: { type: string, description: '마크다운 본문 (S2 ③: 클라이언트가 답변 본문을 넘김. messageId 연결은 S3)' } } } } } }
       responses:
         '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/FileMeta' } } } }
 
