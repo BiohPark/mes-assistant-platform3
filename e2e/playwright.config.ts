@@ -20,7 +20,7 @@ export default defineConfig({
   webServer: [
     {
       // 명령은 셸 무관(cmd·PowerShell·bash) — && 만 사용
-      command: 'pnpm --filter "@mes/api..." build && pnpm --filter @mes/api db:migrate && pnpm --filter @mes/api start',
+      command: 'pnpm --filter "@mes/api..." build && pnpm --filter @mes/api db:migrate && pnpm db:seed && pnpm --filter @mes/api start',
       cwd: resolve(import.meta.dirname, '..'),
       url: `http://localhost:${apiPort}/api/health`,
       reuseExistingServer: !process.env.CI,

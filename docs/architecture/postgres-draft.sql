@@ -18,6 +18,24 @@ create table app_user (
   login_id        text unique,
   password_hash   text
 );
+-- BO (D33, S2-2): 기존 개발 스키마에 추가되는 컬럼
+alter table app_user add column is_business_owner boolean not null default false;
+
+-- 코드 관리 (D35, S2-1)
+create table code_group (
+  key        text primary key,
+  name       text not null,
+  sort_order integer not null default 0
+);
+create table code (
+  id         text primary key,
+  group_key  text not null references code_group(key),
+  code       text not null,
+  name       text not null,
+  sort_order integer not null default 0,
+  active     boolean not null default true,
+  unique (group_key, code)
+);
 
 create table file_object (
   id             text primary key,
@@ -47,8 +65,6 @@ create unique index file_object_version on file_object(coalesce(origin_task_id, 
 create table assistant (
   id           text primary key,                  -- 데모 slug를 그대로 쓰되 변경 불가 키로 취급
   name         text not null,
-  level1       text not null,
-  level2       text not null,
   summary      text not null default '',
   sort_order   integer not null,
   model_id     text,                              -- 비면 공통 기본 모델
@@ -64,6 +80,9 @@ create table assistant (
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
+-- 코드 관리 (D35, S2-1): 기존 level1·level2 컬럼 교체
+alter table assistant add column level1_code_id text not null references code(id);
+alter table assistant add column level2_code_id text not null references code(id);
 
 create table assistant_expected_io (
   assistant_id text not null references assistant(id) on delete cascade,

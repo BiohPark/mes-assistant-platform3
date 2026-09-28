@@ -3,7 +3,7 @@ import type { Assistant, FileAsset, Settings, Task, User } from '@mes/domain'
 import type { LlmPorts } from '@mes/llm'
 import type { AppConfig } from '../config/config.js'
 import type { Db } from '../db/db.module.js'
-import { appSetting, appUser, assistant, assistantChecklistTemplate, assistantExpectedIo, checklistItem, fileObject, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { appSetting, appUser, assistant, assistantChecklistTemplate, assistantExpectedIo, code, checklistItem, fileObject, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 import { toLlmSettings } from './presets.js'
 
 const iso = (date: Date) => date.toISOString()
@@ -32,13 +32,16 @@ export class DbLlmPorts implements LlmPorts {
   }
 
   async getAssistants(): Promise<Assistant[]> {
-    const [rows, io, templates] = await Promise.all([
+    const [rows, io, templates, codes] = await Promise.all([
       this.db.select().from(assistant),
       this.db.select().from(assistantExpectedIo),
       this.db.select().from(assistantChecklistTemplate),
+      this.db.select().from(code),
     ])
+    const labels = new Map(codes.map((item) => [item.id, item.name]))
     return rows.map((row) => ({
-      id: row.id, name: row.name, level1: row.level1, level2: row.level2, summary: row.summary,
+      id: row.id, name: row.name, level1: labels.get(row.level1CodeId) ?? row.level1CodeId, level2: labels.get(row.level2CodeId) ?? row.level2CodeId,
+      level1CodeId: row.level1CodeId, level2CodeId: row.level2CodeId, summary: row.summary,
       order: row.sortOrder, ...(row.modelId ? { modelId: row.modelId } : {}),
       ...(row.link1 ? { link1: row.link1 } : {}), ...(row.docUrl ? { docUrl: row.docUrl } : {}),
       expectedInputs: io.filter((item) => item.assistantId === row.id && item.direction === 'input').sort((a, b) => a.sortOrder - b.sortOrder).map((item) => item.label),

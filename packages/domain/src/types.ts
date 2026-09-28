@@ -28,6 +28,8 @@ export interface Assistant {
   name: string
   level1: string
   level2: string
+  level1CodeId?: string
+  level2CodeId?: string
   summary: string
   /** 갤러리·칸반 공통 순서 (SO가 편집 모드에서 드래그로 정함) */
   order: number
@@ -54,6 +56,7 @@ export interface Assistant {
   createdBy: ID
   createdAt: ISODate
   updatedAt: ISODate
+  revision?: number
 }
 
 export type TaskStatus = 'todo' | 'in_progress' | 'on_hold' | 'done'
