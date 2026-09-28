@@ -3,8 +3,8 @@ import { persist } from 'zustand/middleware'
 
 export interface HomeFilters {
   q: string
-  level1: string | null
-  level2: string | null
+  level1CodeId: string | null
+  level2CodeId: string | null
   showRetired: boolean
 }
 
@@ -21,10 +21,10 @@ interface UiState {
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-      homeFilters: { q: '', level1: null, level2: null, showRetired: false },
+      homeFilters: { q: '', level1CodeId: null, level2CodeId: null, showRetired: false },
       // Lv1이 바뀌면 Lv2 선택은 무효
       setHomeFilters: (patch) =>
-        set((s) => ({ homeFilters: { ...s.homeFilters, ...patch, level2: 'level1' in patch && patch.level1 !== s.homeFilters.level1 ? null : (patch.level2 !== undefined ? patch.level2 : s.homeFilters.level2) } })),
+        set((s) => ({ homeFilters: { ...s.homeFilters, ...patch, level2CodeId: 'level1CodeId' in patch && patch.level1CodeId !== s.homeFilters.level1CodeId ? null : (patch.level2CodeId !== undefined ? patch.level2CodeId : s.homeFilters.level2CodeId) } })),
       kanbanCollapseEmpty: false,
       setKanbanCollapseEmpty: (kanbanCollapseEmpty) => set({ kanbanCollapseEmpty }),
       assistantOpen: false,

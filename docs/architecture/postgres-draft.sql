@@ -16,10 +16,9 @@ create table app_user (
   created_at      timestamptz not null default now(),
   -- 앱 자체 로그인 (D34)
   login_id        text unique,
-  password_hash   text
+  password_hash   text,
+  is_business_owner boolean not null default false -- BO (D33, S2-2)
 );
--- BO (D33, S2-2): 기존 개발 스키마에 추가되는 컬럼
-alter table app_user add column is_business_owner boolean not null default false;
 
 -- 코드 관리 (D35, S2-1)
 create table code_group (
@@ -78,11 +77,10 @@ create table assistant (
   revision     integer not null default 0,        -- 공통 순서 편집 충돌 검사
   created_by   text not null references app_user(id),
   created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now()
+  updated_at   timestamptz not null default now(),
+  level1_code_id text not null references code(id), -- 코드 관리 (D35, S2-1)
+  level2_code_id text not null references code(id)
 );
--- 코드 관리 (D35, S2-1): 기존 level1·level2 컬럼 교체
-alter table assistant add column level1_code_id text not null references code(id);
-alter table assistant add column level2_code_id text not null references code(id);
 
 create table assistant_expected_io (
   assistant_id text not null references assistant(id) on delete cascade,
