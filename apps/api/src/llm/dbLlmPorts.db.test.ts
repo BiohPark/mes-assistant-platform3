@@ -3,7 +3,7 @@ import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { loadConfig } from '../config/config.js'
 import { runMigrations } from '../db/migrate.js'
-import { appSetting, appUser, assistant, fileObject, task } from '../db/schema.js'
+import { appSetting, appUser, assistant, code, codeGroup, fileObject, task } from '../db/schema.js'
 import { createTempDb } from '../test/tempDb.js'
 import { DbLlmPorts } from './dbLlmPorts.js'
 
@@ -26,7 +26,9 @@ describe('DbLlmPorts', () => {
   it('설정 병합과 삽입한 사용자·어시스턴트 조회', async () => {
     await db.insert(appSetting).values({ key: 'srIntakeAssistantId', value: 'a1' })
     await db.insert(appUser).values({ id: 'u1', name: '운영', role: '', initials: '운', color: 'blue' })
-    await db.insert(assistant).values({ id: 'a1', name: '도우미', level1: '업무', level2: '일반', sortOrder: 1, ownerId: 'u1', status: 'open', color: 'blue', createdBy: 'u1' })
+    await db.insert(codeGroup).values([{ key: 'assistant_level1', name: 'Lv1' }, { key: 'assistant_level2', name: 'Lv2' }])
+    await db.insert(code).values([{ id: 'assistant_level1:업무', groupKey: 'assistant_level1', code: '업무', name: '업무' }, { id: 'assistant_level2:일반', groupKey: 'assistant_level2', code: '일반', name: '일반' }])
+    await db.insert(assistant).values({ id: 'a1', name: '도우미', level1CodeId: 'assistant_level1:업무', level2CodeId: 'assistant_level2:일반', sortOrder: 1, ownerId: 'u1', status: 'open', color: 'blue', createdBy: 'u1' })
     const ports = new DbLlmPorts(db, config, 'u1')
     expect((await ports.getSettings()).srIntakeAssistantId).toBe('a1')
     expect((await ports.getUsers())[0]?.id).toBe('u1')

@@ -30,13 +30,13 @@
 | `AppShell.tsx` | 사이드바·NAV·Toaster·시스템 assistant 서랍 | 화면 §3 | S0 → 화면별 NAV 추가 | 변경(NAV는 화면이 생길 때 추가, 서랍은 결정 U1) | ✅ 셸 |
 | `TopBar.tsx` | 제목·LLM 모드 배지·시스템 assistant 버튼·알림 종·사용자 전환 | — | S0 → S4 | 변경(사용자 전환 → 로그인 사용자·로그아웃. 배지는 S1에서 SO 전용으로(`/api/llm/status`). 버튼은 U1·S4) | ✅ 일부(셸·배지) |
 | `chatRunner.ts` (+test) | 요청 실행기: 활성 1건·생존 신호·시간 제한·재시도·중지·끊긴 응답 정리 | FR-33 | S3 | 변경(서버 RequestService, `lease_until`·주기 작업) — 테스트 먼저 이식 | ⬜ |
-| `hooks.ts` | 현재 사용자·설정·사용자 목록 훅 | — | S2 | 변경(TanStack Query) | ⬜ |
+| `hooks.ts` | 현재 사용자·설정·사용자 목록 훅 | — | S2 | 변경(TanStack Query) | ✅ 일부(S2 ①: 사용자 목록·카탈로그. 설정 훅은 S4 설정 API 뒤) |
 | `NotificationBell.tsx` | 알림 종(읽음 처리 후 이동) | FR-41 | S4 | 변경(API·SSE) | ⬜ |
 | `presence.ts` | 같은 브라우저 탭 간 "입력 중" 표시(BroadcastChannel) | — | S3 | 변경(U5(a): SSE 이벤트로 다른 PC까지, 휘발성·DB 저장 없음) | ⬜ |
 | `router.tsx` | 라우트·리포트 지연 로딩 | — | S0 → 화면별 | 그대로 | ✅ 일부 |
 | `tabUser.ts` | 탭별 사용자 전환(시연용) | — | — | **제외** — 로그인 사용자로 대체(architecture §3) | — |
-| `uiStore.ts` | 홈 필터·칸반 빈 열 접기·서랍 열림(브라우저 저장) | 화면 §3 | S2 | 그대로(개인 화면 설정은 브라우저) | ⬜ |
-| `useMediaQuery.ts` | 좁은 화면 판정 | — | S2 | 그대로 | ⬜ |
+| `uiStore.ts` | 홈 필터·칸반 빈 열 접기·서랍 열림(브라우저 저장) | 화면 §3 | S2 | 그대로(개인 화면 설정은 브라우저) | ✅ S2 ① |
+| `useMediaQuery.ts` | 좁은 화면 판정 | — | S2 | 그대로 | ✅ S2 ① |
 | `useTagSuggest.ts` | 태그 자동완성(빈도순 + 접수 SR 코드) | FR-02 | S2 | 변경(API) | ⬜ |
 
 ## 3. `src/features`
@@ -44,11 +44,11 @@
 ### home
 | 데모 모듈 | 하는 일 | FR | 스프린트 | 방식 | 상태 |
 |---|---|---|---|---|---|
-| `HomePage.tsx` | 카드↔칸반 세그먼트 토글(URL `view`) | 화면 §3 | S2 | 변경(API) | ⬜ (빈 허브 ✅) |
-| `AssistantCard.tsx` | 에이전트 카드 본문 | 화면 §3 | S2 | 그대로 | ⬜ |
+| `HomePage.tsx` | 카드↔칸반 세그먼트 토글(URL `view`) | 화면 §3 | S2 | 변경(API) | ✅ 카드 뷰(S2 ①) · 칸반은 ② |
+| `AssistantCard.tsx` | 에이전트 카드 본문 | 화면 §3 | S2 | 그대로(이미지는 S4 이미지 API 뒤, 지금은 이니셜. OpenWebUI 열기 버튼의 기본 링크 규칙은 U9(a) S4 전역 설정 뒤 — 지금은 link1이 있을 때만) | ✅ S2 ①(링크 기본 규칙은 S4) |
 | `SortableAssistantGrid.tsx` | SO 편집 모드 드래그 순서(저장/취소, 필터 중 차단) | FR-60 | S2(표시)·S4(편집 권한) | 변경(충돌 검사 `revision`) | ⬜ |
-| `CardMapFilterBar.tsx` | 카드 검색·Lv1/Lv2 필터·중단 에이전트 보기 | — | S2 | 그대로(U4(a)) | ⬜ |
-| `useAssistantStats.ts` | 카드별 대화 집계 | 화면 §3 | S2 | 변경(서버 집계) | ⬜ |
+| `CardMapFilterBar.tsx` | 카드 검색·Lv1/Lv2 필터·중단 에이전트 보기 | — | S2 | 그대로(U4(a)) | ✅ S2 ① |
+| `useAssistantStats.ts` | 카드별 대화 집계 | 화면 §3 | S2 | 변경(서버 집계 `GET /api/assistants/stats`) | ✅ S2 ① |
 | `ConversationKanban.tsx` | 전체 대화 칸반(열=에이전트, 필터 URL 공유) | 화면 §3, D3 | S2 | 변경(API) | ⬜ |
 | `ConversationCard.tsx` | 칸반 카드(완료는 대화 화면에서만) | FR-01 | S2 | 그대로 | ⬜ |
 
@@ -160,12 +160,12 @@
 |---|---|---|---|
 | `components/ui/*` (shadcn 27종) | 쓰는 화면과 함께 | 그대로 | ✅ 4종(button·dropdown-menu·tooltip·sonner) |
 | `UserAvatar` · `EmptyState` | S0 | 그대로 | ✅ |
-| `AssistantAvatar` · `TagChip` · `TagInput` · `StatusBadges` · `Markdown` · `ConfirmDialog` · `ReasonDialog` | S2 | 그대로 | ⬜ |
+| `AssistantAvatar` · `TagChip` · `TagInput` · `StatusBadges` · `Markdown` · `ConfirmDialog` · `ReasonDialog` | S2 | 그대로 | ✅ S2 ① |
 | `lib/utils` | S0 | 그대로 | ✅ |
 | `lib/dates` | S0 | 그대로(domain에 포함) | ✅ |
 | `lib/colors` (이니셜·색) | S0 | 그대로(api `userDisplay`·web) | ✅ api |
-| `lib/labels` · `lib/activity` · `lib/clipboard`(+test) · `lib/ids` | S2 | 그대로 | ⬜ |
-| `lib/links`(+test) (OpenWebUI 링크1·외부 링크) | S1·S2 | 변경(베이스 주소는 서버 설정에서) | ⬜ |
+| `lib/labels` · `lib/activity` · `lib/clipboard`(+test) · `lib/ids` | S2 | 그대로 | ✅ S2 ① |
+| `lib/links`(+test) (OpenWebUI 링크1·외부 링크) | S1·S2 | 변경(베이스 주소는 서버 설정에서) | ✅ S2 ①(테스트 이식) |
 | `lib/blob` | — | 그대로(llm에서 포트로 대체, 웹 미리보기에서 필요 시) | ✅ llm |
 
 ## 8. 설정 항목 (`SettingsPage`)

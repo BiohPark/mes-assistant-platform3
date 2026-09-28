@@ -18,6 +18,7 @@
     "build": "pnpm -r build",
     "dev": "concurrently -k -n api,web \"pnpm --filter @mes/api dev\" \"pnpm --filter @mes/web dev\"",
     "db:migrate": "pnpm --filter \"@mes/api...\" build && pnpm --filter @mes/api db:migrate",
+    "db:seed": "pnpm --filter \"@mes/api...\" build && pnpm --filter @mes/api db:seed",
     "test:db": "pnpm --filter @mes/api test:db",
     "test:e2e": "pnpm --filter @mes/e2e test:e2e"
   },

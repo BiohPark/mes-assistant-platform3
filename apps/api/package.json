@@ -35,6 +35,7 @@
     "test:db": "vitest run --config vitest.db.config.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file-if-exists=../../.env dist/db/migrate.js",
+    "db:seed": "node --env-file-if-exists=../../.env dist/db/seed.js",
     "start": "node --env-file-if-exists=../../.env dist/main.js",
     "dev": "pnpm --filter \"@mes/api^...\" build && tsc -p tsconfig.build.json && concurrently -k -n tsc,api \"tsc -p tsconfig.build.json --watch --preserveWatchOutput\" \"node --env-file-if-exists=../../.env --watch-path=dist dist/main.js\""
   },

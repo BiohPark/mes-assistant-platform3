@@ -3,6 +3,9 @@ import { expect, test } from '@playwright/test'
 const password = 'e2e-password-1234'
 
 test.describe('local 로그인 → 빈 허브', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/assistants', (route) => route.fulfill({ json: [] }))
+  })
   test('담당자: 회원가입, 로그인 오류, 빈 허브, 로그아웃', async ({ page }) => {
     const loginId = `e2e-member-${Date.now()}`
     await page.goto('/')

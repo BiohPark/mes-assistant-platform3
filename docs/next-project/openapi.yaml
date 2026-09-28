@@ -104,6 +104,19 @@ paths:
       responses:
         '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/Assistant' } } } }
         '403': { $ref: '#/components/responses/Problem' }
+  /assistants/stats:
+    get:
+      tags: [assistants]
+      summary: 카드별 대화 집계 (S2 ①)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: object, required: [assistantId, open, inProgress, onHold, done], properties: { assistantId: { type: string }, open: { type: integer }, inProgress: { type: integer }, onHold: { type: integer }, done: { type: integer } } } } } } }
+  /codes:
+    get:
+      tags: [misc]
+      summary: 코드 목록 (FR-63, D36 — active만; group으로 필터)
+      parameters: [{ name: group, in: query, schema: { type: string, description: 'code_group.key (예 assistant_level1)' } }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: object, required: [id, groupKey, code, name, sortOrder, active], properties: { id: { type: string }, groupKey: { type: string }, code: { type: string }, name: { type: string }, sortOrder: { type: integer }, active: { type: boolean } } } } } } }
   /assistants/{assistantId}:
     patch:
       tags: [assistants]

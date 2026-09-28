@@ -32,11 +32,27 @@ export const appUser = pgTable('app_user', {
   initials: text('initials').notNull(),
   color: text('color').notNull(),
   isSystemOwner: boolean('is_system_owner').notNull().default(false),
+  isBusinessOwner: boolean('is_business_owner').notNull().default(false),
   active: boolean('active').notNull().default(true),
   createdAt: tz('created_at').notNull().defaultNow(),
   loginId: text('login_id').unique('app_user_login_id_key'),
   passwordHash: text('password_hash'),
 })
+
+export const codeGroup = pgTable('code_group', {
+  key: text('key').primaryKey(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+})
+
+export const code = pgTable('code', {
+  id: text('id').primaryKey(),
+  groupKey: text('group_key').notNull().references(() => codeGroup.key),
+  code: text('code').notNull(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  active: boolean('active').notNull().default(true),
+}, (t) => [unique('code_group_key_code_key').on(t.groupKey, t.code)])
 
 export const fileObject = pgTable(
   'file_object',
@@ -77,8 +93,8 @@ export const assistant = pgTable(
   {
     id: text('id').primaryKey(),
     name: text('name').notNull(),
-    level1: text('level1').notNull(),
-    level2: text('level2').notNull(),
+    level1CodeId: text('level1_code_id').notNull().references(() => code.id),
+    level2CodeId: text('level2_code_id').notNull().references(() => code.id),
     summary: text('summary').notNull().default(''),
     sortOrder: integer('sort_order').notNull(),
     modelId: text('model_id'),

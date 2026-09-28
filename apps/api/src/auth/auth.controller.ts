@@ -36,7 +36,7 @@ export class AuthController {
     }
   }
 
-  private async respondWithSession(user: { id: string; name: string; role: string; isSystemOwner: boolean }, res: Response): Promise<Me> {
+  private async respondWithSession(user: { id: string; name: string; role: string; isSystemOwner: boolean; isBusinessOwner?: boolean }, res: Response): Promise<Me> {
     const { token, expiresAt } = await this.sessions.create(user.id)
     res.cookie(SESSION_COOKIE, token, this.cookie({ expires: expiresAt }))
     return { id: user.id, name: user.name, role: user.role, roles: rolesOf(user) }

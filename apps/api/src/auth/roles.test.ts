@@ -6,4 +6,8 @@ describe('rolesOf', () => {
     expect(rolesOf({ isSystemOwner: false })).toEqual(['member'])
     expect(rolesOf({ isSystemOwner: true })).toEqual(['member', 'system_owner'])
   })
+  it('BO 표시가 있으면 requester를 추가하고 SO와 조합된다', () => {
+    expect(rolesOf({ isSystemOwner: false, isBusinessOwner: true })).toEqual(['member', 'requester'])
+    expect(rolesOf({ isSystemOwner: true, isBusinessOwner: true })).toEqual(['member', 'system_owner', 'requester'])
+  })
 })

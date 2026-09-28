@@ -16,7 +16,24 @@ create table app_user (
   created_at      timestamptz not null default now(),
   -- 앱 자체 로그인 (D34)
   login_id        text unique,
-  password_hash   text
+  password_hash   text,
+  is_business_owner boolean not null default false -- BO (D33, S2-2)
+);
+
+-- 코드 관리 (D35, S2-1)
+create table code_group (
+  key        text primary key,
+  name       text not null,
+  sort_order integer not null default 0
+);
+create table code (
+  id         text primary key,
+  group_key  text not null references code_group(key),
+  code       text not null,
+  name       text not null,
+  sort_order integer not null default 0,
+  active     boolean not null default true,
+  unique (group_key, code)
 );
 
 create table file_object (
@@ -47,8 +64,6 @@ create unique index file_object_version on file_object(coalesce(origin_task_id, 
 create table assistant (
   id           text primary key,                  -- 데모 slug를 그대로 쓰되 변경 불가 키로 취급
   name         text not null,
-  level1       text not null,
-  level2       text not null,
   summary      text not null default '',
   sort_order   integer not null,
   model_id     text,                              -- 비면 공통 기본 모델
@@ -62,7 +77,9 @@ create table assistant (
   revision     integer not null default 0,        -- 공통 순서 편집 충돌 검사
   created_by   text not null references app_user(id),
   created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now()
+  updated_at   timestamptz not null default now(),
+  level1_code_id text not null references code(id), -- 코드 관리 (D35, S2-1)
+  level2_code_id text not null references code(id)
 );
 
 create table assistant_expected_io (

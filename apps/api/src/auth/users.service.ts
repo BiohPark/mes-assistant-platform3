@@ -41,14 +41,14 @@ export class DbUserDirectory implements UserDirectory {
       const [row] = await tx.insert(appUser).values({
         id, loginId, passwordHash: hash, name: loginId, initials: initialsOf(loginId), color: pickColor(id),
         isSystemOwner: candidate && !owner,
-      }).onConflictDoNothing({ target: appUser.loginId }).returning({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner })
+      }).onConflictDoNothing({ target: appUser.loginId }).returning({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner })
       return row ?? null
     })
   }
 
   async findByLoginId(loginId: string) {
     const [row] = await this.db.select({
-      id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner,
+      id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner,
       hash: appUser.passwordHash, active: appUser.active,
     }).from(appUser).where(eq(appUser.loginId, loginId))
     if (!row?.hash) return null
@@ -72,7 +72,7 @@ export class DbUserDirectory implements UserDirectory {
         target: appUser.ssoSubject,
         set: { name, initials: initialsOf(name) },
       })
-      .returning({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner })
+      .returning({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner })
       return row!
     })
   }

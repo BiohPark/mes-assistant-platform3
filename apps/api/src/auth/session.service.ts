@@ -10,6 +10,7 @@ export interface AuthUser {
   name: string
   role: string
   isSystemOwner: boolean
+  isBusinessOwner?: boolean
 }
 
 export interface SessionStore {
@@ -40,7 +41,7 @@ export class DbSessionStore implements SessionStore {
 
   async resolve(token: string): Promise<AuthUser | null> {
     const [row] = await this.db
-      .select({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner })
+      .select({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner })
       .from(appSession)
       .innerJoin(appUser, eq(appUser.id, appSession.userId))
       .where(and(eq(appSession.id, hashToken(token)), gt(appSession.expiresAt, new Date()), eq(appUser.active, true)))
