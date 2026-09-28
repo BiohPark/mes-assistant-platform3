@@ -295,11 +295,26 @@ paths:
         '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Message' } } } } }
     post:
       tags: [requests]
-      summary: 팀 의견 (AI에 보내지 않음)
+      summary: 팀 의견 (AI에 보내지 않음) — S2에서는 kind=discussion만 허용, AI 요청은 /requests(S3)
       parameters: [{ $ref: '#/components/parameters/threadId' }]
-      requestBody: { content: { application/json: { schema: { type: object, required: [content], properties: { content: { type: string }, attachmentIds: { type: array, items: { type: string } } } } } } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [content, kind], properties: { content: { type: string }, kind: { type: string, enum: [discussion] }, attachmentIds: { type: array, items: { type: string }, description: 'S2 ③부터' } } } } } }
       responses:
         '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '400': { description: kind가 discussion이 아님 }
+  /tags/suggest:
+    get:
+      tags: [tasks]
+      summary: 태그 자동완성 (빈도순 + 접수 SR 코드 — SR은 S4부터)
+      parameters: [{ name: prefix, in: query, schema: { type: string } }, { name: exclude, in: query, schema: { type: array, items: { type: string } } }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: object, required: [tag], properties: { tag: { type: string }, count: { type: integer }, kind: { type: string } } } } } } }
+  /tasks/{taskId}/activity:
+    get:
+      tags: [tasks]
+      summary: 활동 이력 (추가만, 최신순)
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ActivityLog' } } } } }
   /threads/{threadId}/requests/estimate:
     post:
       tags: [requests]
