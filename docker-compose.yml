@@ -1,0 +1,60 @@
+# 개발용 의존 서비스만 (api·web은 호스트에서 Node로 실행 — CLAUDE.md 크로스플랫폼 원칙)
+# OrbStack·Docker Desktop(Windows) 공통: 표준 compose 기능만 사용한다.
+name: mes-agent-hub
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mes_hub}
+      POSTGRES_USER: ${POSTGRES_USER:-mes}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?.env에 POSTGRES_PASSWORD 필요}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command: ["start-dev", "--import-realm", "--http-port=8080"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?.env에 KEYCLOAK_ADMIN_PASSWORD 필요}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?.env에 OIDC_CLIENT_SECRET 필요}
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:5173}
+      DEV_USER_PASSWORD: ${DEV_USER_PASSWORD:?.env에 DEV_USER_PASSWORD 필요}
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "${KEYCLOAK_PORT:-8180}:8080"
+    healthcheck:
+      # 이미지에 curl이 없어 컨테이너 안 bash로 관리 포트(9000)의 준비 상태를 본다
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+    volumes:
+      - ./docker/keycloak:/opt/keycloak/data/import:ro
+
+  fake-openwebui:
+    image: node:22-alpine
+    command: ["node", "/app/server.mjs"]
+    environment:
+      PORT: "8080"
+    ports:
+      - "${FAKE_OPENWEBUI_PORT:-3101}:8080"
+    volumes:
+      - ./docker/fake-openwebui:/app:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:

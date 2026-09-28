@@ -43,7 +43,7 @@
   - 현재 루트 `README.md`·`LICENSE`·`CHANGELOG.md`·`NOTICE`·`KNOWN_ISSUES.md`·`assets/`는 multi-agent-starter가 넣은 파일이다 → 이 프로젝트용으로 교체(라이선스는 사용자에게 확인).
   - 현재 `docs/HANDOFF.md`는 데모의 HANDOFF 사본(참고용)이다 → 이 저장소의 HANDOFF로 새로 쓴다. 데모 HANDOFF는 데모 저장소 `demo-final`에 남아 있다.
 
-**완료 기준**: `docker compose up` → 로그인 → 빈 허브가 보이고, 전체 테스트가 통과한다.
+**완료 기준**: `docker compose up` → 로그인 → 빈 허브가 보이고, 전체 테스트가 통과한다. (추가 2026-09-28: Windows에서 pnpm install·typecheck·test 통과 — CI windows 잡 녹색, `docs/setup/windows.md`대로 따라 해 로그인 → 빈 허브 확인)
 
 ## 작업 방식
 

@@ -1,0 +1,9 @@
+{
+  "name": "@mes/contracts",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": { ".": { "source": "./src/index.ts", "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "scripts": { "build": "tsc -p tsconfig.build.json", "typecheck": "tsc -p tsconfig.json --noEmit", "test": "vitest run" },
+  "dependencies": { "zod": "^4.6.5" }
+}

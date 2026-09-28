@@ -270,20 +270,35 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 - PostgreSQL 16 + Drizzle(`postgres-draft.sql`과 1:1) · TanStack Query + SSE · vitest + Playwright
 - 개발 환경: Docker Compose(PostgreSQL · Keycloak(SSO 대역) · 가짜 OpenWebUI). 인증은 사내 SSO(OIDC/SAML) **수신 측만** 구현, 역할은 앱이 관리.
 
+### 크로스플랫폼 원칙 (최종 실행 환경 = Windows, 개발 = macOS — S0부터 적용)
+- Docker는 개발용 의존 서비스(PostgreSQL·Keycloak·가짜 OpenWebUI)에만 쓴다. api·web은 Docker 없이 Windows에서 Node로 직접 빌드·실행 가능해야 한다. 운영 배포(Windows 서비스 네이티브 / 컨테이너)는 S5에서 정하고, 그 전까지 둘 다 가능하게 둔다. compose는 OrbStack 전용 기능 없이 Docker Desktop(Windows)에서 그대로 돌아야 한다.
+- package.json 스크립트에 bash 문법·`rm -rf`·`export`·`VAR=값` 접두 금지 → node 스크립트·cross-env·rimraf. 개발 흐름에 `.sh` 필수 단계 금지(컨테이너 내부 스크립트는 예외).
+- 경로는 `path.join`/`path.resolve`만. 파일 `storage_key`는 OS 무관 `/` 구분 상대 키, 실제 경로 변환은 `FileStorageService` 한 곳에서만(드라이브·UNC 대비). 파일명에 Windows 금지 문자·예약어 금지.
+- `.gitattributes`로 LF 정규화. import 경로 대소문자는 실제 파일명과 정확히 일치.
+- 네이티브 빌드 npm 패키지는 피하고, 불가피하면 Windows 사전 빌드 여부를 확인해 사용자에게 알린다.
+- CI는 ubuntu-latest·windows-latest 두 곳에서 typecheck·test·lint. E2E의 Windows 실행은 S1 이후.
+
 ### 데모 소스 재사용
 - 데모 저장소: `~/workspace/github/work/mes-assistant-platform2` — **읽기 전용 참조. 절대 수정·커밋하지 않는다.**
 - 옮길 때는 architecture §3 재사용 지도를 따른다(도메인 규칙은 거의 그대로, `db` 직접 조회는 저장소 인터페이스 주입으로, `useLiveQuery`는 TanStack Query로).
 - 워커 brief에는 데모 파일 **경로**를 적는다(내용 inline 금지 — 위 Context Rules).
+- **이식 원칙**: 기능을 옮길 때는 데모 소스를 직접 열어 동작·엣지케이스를 확인하고, 데모 테스트가 있으면 **먼저 이식해 통과**시킨 뒤 구현한다. 요약 문서(HANDOFF·PRD 등)만 보고 재구현하지 않는다. 목표는 데모 기능 100% 수용(명시적으로 제외한 것만 빼고) — 대응표 정본 `docs/next-project/parity-matrix.md`.
+
+### 워커 실행 규칙 (이 프로젝트)
+- 디스패처를 우회해 워커를 직접 실행하면 출력을 `tasks/<task>/artifacts/<role>.stdout.log`에 남기고, 시작·종료를 디스코드 채널에 한 줄씩 알린다(agentlayer에 안 보이므로).
+- gemini(agy) 모델: 전역 기본 `gemini-3.8-flash-high`. 긴 문서·제3자 검토처럼 Pro가 필요한 호출은 `--model gemini-3.1-pro-high`를 호출별로 붙인다(최신 agy는 `--model` 지원 — `_shared/routing.md`의 "per-call 핀 불가·전역 pro-high"는 옛 정보, 이 규칙이 우선).
 
 ### 진행 방식
 - 스프린트 = architecture §9의 S0–S5. 태스크 폴더는 `tasks/s<N>-<주제>/`. 각 스프린트의 **완료 기준**이 Verification의 기준이다.
-- 현재 위치: **S0 착수 전**. 이번 세션의 정본 지시서 = **`docs/next-project/S0-kickoff.md`** (범위·완료 기준·착수 전 환경 점검). "S0 시작" 류 요청을 받으면 그 문서부터 읽는다.
-- S1은 반드시 `docs/evaluation/real-env-verification.md` 절차로 **실제 사내 OpenWebUI 확인**부터 한다.
-- 착수 전 사용자 확인 항목(next-project/README): 사내 SSO 방식·앱 등록, OpenWebUI 버전, 배포 환경·PostgreSQL 사용 가능 여부, 비기능 제안값(PRD §6).
+- 현재 위치: **S0 완료(`feat/s0-skeleton`, push·`main` 병합 대기) → 다음 S1**. S0 기록: `tasks/s0-skeleton/`, `docs/HANDOFF.md` 6장. S0 지시서는 `docs/next-project/S0-kickoff.md`(완료).
+- S1의 실환경 확인(`docs/evaluation/real-env-verification.md`)은 **이 환경에서 불가(D31)** — 사용자가 사내에서 수행. 개발은 가짜 OpenWebUI + OpenAI 호환 API 전환 프리셋으로 진행하고, 사내 연동 결과가 오면 어댑터를 맞춘다.
+- 확정: 배포 Windows 서버 + PostgreSQL 설치(D32), 이번 페이즈 SSO 미연계 → **앱 자체 로그인**(D34), 병렬 단계·상태는 **코드 데이터로 관리**(D35). 남은 확인: OpenWebUI 버전, 비기능 제안값(PRD §6).
 - 스프린트가 끝나면 이 블록의 "현재 위치"와 아래 "명령"을 갱신한다.
 
 ### 작업 방식 (사용자 지시 — 매 세션 적용)
+- 오케스트레이터(이 세션)는 계획·판단·통합·검증·소통만 한다. **구현은 워커에 위임**(codex-main·claude-main) — 작업 단위와 write_scope를 좁혀 승인을 요청하고, 결과는 테스트·scope_check로 검증한 뒤 `[VERIFICATION]`을 기록한다. 문서·기록 갱신은 오케스트레이터가 직접 한다.
 - 시작 전에 이번 세션 계획(파일 구조와 순서)을 보여 주고 **승인을 받는다**(워커셋·write_scope 승인과 함께).
+- 스프린트마다 계획 → 승인 → 워커 위임 → 검증 → 대응표(`parity-matrix.md`) ✅ 갱신 → 사용자 확인. **매 보고에 대응표의 남은 항목 수(⬜)를 적는다.**
 - 기능 브랜치(`feat/*`)에서 작업, **테스트를 먼저** 쓰고, 단계별로 **작게 커밋**한다. **push와 `main` 병합은 사용자 확인 후.**
 - 사용자 판단이 꼭 필요한 결정만 선택지로 질문한다. 나머지는 합리적인 기본값으로 진행하고 알려 준다.
 - 세션이 끝나면 `docs/HANDOFF.md`에 상태·결정·다음 단계를 기록한다.
@@ -292,13 +307,25 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 - `target_repo`: 이 저장소 루트. 제안 `write_scope`: `apps/**`, `packages/**`, `e2e/**`, `docker/**`, 루트 설정 파일(`package.json`, `pnpm-workspace.yaml`, `tsconfig*.json`, `docker-compose*.yml`, `.github/**`) — 태스크별로 좁혀서 승인받는다.
 - `CLAUDE.md`, `_shared/**`, `_templates/**`는 워커 쓰기 범위에 넣지 않는다. `docs/**`는 README·HANDOFF 작성 태스크에서만 해당 파일로 좁혀 승인받는다.
 
-### 명령 (S0에서 확정 후 채운다)
-- 설치 / 개발 서버 / typecheck / 단위 테스트 / E2E / DB 마이그레이션: _미정_
+### 명령 (S0 확정 — 상세는 README)
+- 설치 `pnpm install` · 환경 `pnpm setup:env` · 의존 서비스 `docker compose up -d --wait`
+- 개발 서버 `pnpm dev` (api :3000 · web :5173) · 빌드 `pnpm build`
+- typecheck `pnpm typecheck` · 린트 `pnpm lint` · 단위 `pnpm test` · DB 통합 `pnpm test:db` · E2E `pnpm test:e2e`
+- DB 마이그레이션 생성 `pnpm --filter @mes/api db:generate` · 적용 `pnpm db:migrate`
+- Node는 22 고정(mise·`.nvmrc`) — 이 Mac에서는 `mise exec -- pnpm …`
+
+### git 관리 기준 (정본: `docs/git-policy.md`)
+- `main`은 항상 동작. 작업은 `feat/*`·`fix/*`·`docs/*`·`chore/*`. 병합은 **merge commit(`--no-ff`)**, squash 금지. 스프린트 병합 뒤 태그 `s<N>-done`.
+- Conventional Commits(`feat:` `fix:` `docs:` `test:` `refactor:` `chore:`), 작게·한 커밋 한 목적. `pnpm-lock.yaml`은 항상 커밋, 의존성 변경은 별도 커밋.
+- 병합 조건: CI(ubuntu+windows) 녹색 + 테스트 통과 + **사용자 승인**. push·`main` 병합은 사용자 확인 후.
+- 커밋 금지: `.env`·키·토큰, 사내 주소·실명·사내 자료, 로컬 산출물(node_modules·dist·.pnpm-store·로그·스크린샷). 커밋 전 git-policy §6 점검.
+- 설치 가이드 `docs/setup/windows.md`(기준)·`macos.md`: 명령이 바뀌면 **같은 커밋에서** 갱신. ` ```powershell ci ` 블록은 CI `setup-guide` 잡이 그대로 실행한다.
 
 ### 공개 저장소 규칙 (GitHub PUBLIC — HANDOFF §7)
 - 사내 주소·사내 AI 포털 주소·양식 번호·참고 이미지·이미지에서 옮긴 문구·실명 추가 금지(시드·테스트는 가상 데이터). 비밀값(키·client secret·`.env`)은 커밋하지 않고 `.env.example`만 둔다.
 - 커밋 전 `git grep`으로 민감 문자열 점검. `feat/*` 브랜치 커밋은 자유, **push·`main` 병합은 사용자 승인 후에만.**
 
 ### 이 봇 자신의 멘션 (디스코드)
+- 이 봇 자신의 사용자 ID는 `CLAUDE.local.md`(git 무시)에 있다. 메시지에 그 멘션만 있으면 사용자가 봇을 부른 것이므로 평소처럼 응답한다.
 - 위 "다른 사람이 함께 있는 채널" 규칙은 이 봇 **이외의** `<@…>` 멘션에만 적용한다.
 <!-- store:project:end -->

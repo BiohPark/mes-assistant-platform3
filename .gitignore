@@ -30,5 +30,23 @@ _local/*
 .discord-state/
 .bot-token*
 .claude/settings.local.json
+CLAUDE.local.md
 threads/
 .agentlayer/
+
+# Node / 빌드 산출물
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+playwright-report/
+test-results/
+.env.local
+storage/
+
+# pnpm 스토어는 저장소 밖(사용자 전역). 로컬에 생기면 무시
+.pnpm-store/
+
+# 로컬 스크린샷 (저장소 루트)
+/*.png
+/*.jpg

@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: typecheck · lint · test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
+  setup-guide:
+    # docs/setup/windows.md의 ```powershell ci 블록을 그대로 실행 — 문서와 실제가 어긋나면 실패
+    # (PostgreSQL은 문서 4장 (b) "직접 설치" 경로. Windows 러너는 리눅스 컨테이너를 못 돌려 Keycloak·E2E는 제외)
+    name: 설치 가이드 검증 (windows.md)
+    runs-on: windows-latest
+    env:
+      PGPASSWORD: postgres
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: ikalnytskyi/action-setup-postgres@v7
+        with:
+          postgres-version: '16'
+          username: postgres
+          password: postgres
+      # action-setup-postgres가 PG* 환경을 덮어써 잡 env의 PGPASSWORD가 비어 있게 된다 → psql이 비밀번호 프롬프트에서 멈춘다(run 36355928533).
+      # 스텝 env가 우선하므로 여기서 다시 준다. 문서의 사람용 절차는 4장 (b)의 $env:PGPASSWORD 줄이 같은 역할.
+      - run: node scripts/run-doc-commands.mjs docs/setup/windows.md
+        env:
+          PGPASSWORD: postgres
+
+  db:
+    name: DB 통합 테스트 (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: mes_hub
+          POSTGRES_USER: mes
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U mes -d mes_hub"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgres://mes:ci-only-password@localhost:5432/mes_hub
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:db
+
+  e2e:
+    name: E2E (docker compose + Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm setup:env
+      - run: docker compose up -d --wait
+      - run: pnpm --filter @mes/e2e exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - if: failure()
+        run: docker compose logs --no-color
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/test-results

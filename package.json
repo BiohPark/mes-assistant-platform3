@@ -1,0 +1,32 @@
+{
+  "name": "mes-agent-hub",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=22.12 <23",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "setup:env": "node scripts/setup-env.mjs",
+    "services:up": "docker compose up -d",
+    "services:down": "docker compose down",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "test": "pnpm -r test",
+    "lint": "oxlint --deny-warnings --format default",
+    "build": "pnpm -r build",
+    "dev": "concurrently -k -n api,web \"pnpm --filter @mes/api dev\" \"pnpm --filter @mes/web dev\"",
+    "db:migrate": "pnpm --filter \"@mes/api...\" build && pnpm --filter @mes/api db:migrate",
+    "test:db": "pnpm --filter @mes/api test:db",
+    "test:e2e": "pnpm --filter @mes/e2e test:e2e"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "concurrently": "^10.0.5",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.1"
+  }
+}

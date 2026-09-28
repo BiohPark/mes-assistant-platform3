@@ -1,0 +1,9 @@
+{
+  "name": "@mes/domain",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": { ".": { "source": "./src/index.ts", "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "scripts": { "build": "tsc -p tsconfig.build.json", "typecheck": "tsc -p tsconfig.json --noEmit", "test": "vitest run" },
+  "dependencies": { "date-fns": "^4.1.0" }
+}
