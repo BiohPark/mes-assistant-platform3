@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises'
+import { Buffer } from 'node:buffer'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -35,6 +36,20 @@ describe('FileStorageService', () => {
     expect(sha256(bytes)).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824')
     await store.remove('2026/09/test.txt')
     expect(await store.exists('2026/09/test.txt')).toBe(false)
+  })
+  it('큰 파일을 스트림으로 읽고 없는 키는 오류로 반환한다', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mes-files-'))
+    roots.push(root)
+    const store = new FileStorageService(root)
+    const bytes = Buffer.alloc(3000000, 37)
+    await store.write('2026/09/big.bin', bytes)
+    const chunks: Buffer[] = []
+    for await (const chunk of await store.createReadStream('2026/09/big.bin')) chunks.push(Buffer.from(chunk))
+    // toEqual은 3 MB Buffer를 원소 단위로 비교해 CI에서 10초 넘게 걸린다(로컬 통과·CI 시간 초과) → 바이트 비교
+    const joined = Buffer.concat(chunks)
+    expect(joined.length).toBe(bytes.length)
+    expect(joined.equals(bytes)).toBe(true)
+    await expect(store.createReadStream('2026/09/missing.bin')).rejects.toMatchObject({ code: 'ENOENT' })
   })
   it('없는 저장 루트를 생성한 뒤 실제 경로를 사용한다', async () => {
     const parent = await mkdtemp(join(tmpdir(), 'mes-files-'))

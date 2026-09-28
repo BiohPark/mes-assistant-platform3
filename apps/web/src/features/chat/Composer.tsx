@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
 
 /** 보낼 첨부 1건. once=true면 이번 메시지에만 쓰고 대화 입력으로 고정하지 않는다 */
 export interface PendingAttachment {
@@ -35,6 +36,7 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
   const [discussion, setDiscussion] = useState(true)
   const [text, setTextState] = useState('')
   const [pending, setPending] = useState<PendingAttachment[]>([])
+  const [attachmentError, setAttachmentError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const blocked = !discussion && !!blockedReason
   const canSend = !disabled && !blocked && (discussion || !streaming) && (text.trim().length > 0 || pending.length > 0)
@@ -79,7 +81,7 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
             <span key={i} className="inline-flex items-center gap-1 rounded-md border bg-muted/50 px-1.5 py-0.5 text-[11px]">
               <Paperclip className="size-3" />
               {p.file.name}
-              {allowPin && !discussion && (
+              {allowPin && (
                 <button
                   type="button"
                   className={cn('inline-flex items-center gap-0.5 rounded px-1', p.once ? 'text-muted-foreground' : 'text-primary')}
@@ -98,6 +100,7 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
           ))}
         </div>
       )}
+      {attachmentError && <div role="alert" className="mb-1 text-xs text-destructive">{attachmentError}</div>}
       <div className={cn('flex items-end gap-2 rounded-xl border bg-background p-1.5 focus-within:ring-2 focus-within:ring-ring/40', discussion && 'border-amber-300 bg-amber-50/40 dark:bg-amber-950/20')}>
         {allowAttachments && (
           <Button type="button" variant="ghost" size="icon-sm" aria-label="파일 첨부" onClick={() => inputRef.current?.click()} disabled={disabled}>
@@ -111,7 +114,8 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
           className="hidden"
           onChange={(e) => {
             const picked = Array.from(e.target.files ?? []).map((file) => ({ file, once: false }))
-            setPending((p) => [...p, ...picked])
+            if (pending.length + picked.length > FILE_MAX_PER_REQUEST) setAttachmentError(`첨부 파일은 최대 ${FILE_MAX_PER_REQUEST}개까지 선택할 수 있습니다.`)
+            else { setPending((p) => [...p, ...picked]); setAttachmentError('') }
             e.target.value = ''
           }}
         />

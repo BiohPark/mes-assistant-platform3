@@ -79,8 +79,8 @@ export async function deleteTask(taskId: string): Promise<{ ok: boolean; reason?
   } catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error) } }
 }
 export async function appendMessage(_actor: Actor | null, threadId: string, role: Message['role'], content: string, attachmentIds: string[] = [], status: Message['status'] = 'done', kind?: Message['kind']): Promise<Message> {
-  if (role !== 'user' || status !== 'done' || kind !== 'discussion' || attachmentIds.length) throw new Error('AI 요청과 첨부는 후속 단계에서 지원합니다')
-  const result = await request<Message>(`/threads/${encodeURIComponent(threadId)}/messages`, 'POST', { content, kind })
+  if (role !== 'user' || status !== 'done' || kind !== 'discussion') throw new Error('AI 요청은 후속 단계에서 지원합니다')
+  const result = await request<Message>(`/threads/${encodeURIComponent(threadId)}/messages`, 'POST', { content, kind, ...(attachmentIds.length && { attachmentIds }) })
   void queryClient.invalidateQueries({ queryKey: ['messages', threadId] })
   refresh()
   return result

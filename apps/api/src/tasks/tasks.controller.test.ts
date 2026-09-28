@@ -47,5 +47,6 @@ describe('tasks HTTP API', () => {
     await request(app.getHttpServer()).post('/api/threads/h/messages').set(auth()).send({ content: 'AI', kind: 'prompt' }).expect(400)
     await request(app.getHttpServer()).post('/api/threads/h/messages').set(auth()).send({ content: '팀 의견', kind: 'discussion' }).expect(201)
     expect(service.appendMessage).toHaveBeenCalledWith('u', 'h', { content: '팀 의견', kind: 'discussion' })
+    await request(app.getHttpServer()).post('/api/threads/h/messages').set(auth()).send({ content: '', kind: 'discussion', attachmentIds: Array.from({ length: 21 }, (_, i) => `file-${i}`) }).expect(400)
   })
 })

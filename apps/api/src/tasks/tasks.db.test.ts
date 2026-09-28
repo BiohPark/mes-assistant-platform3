@@ -2,11 +2,16 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import { eq } from 'drizzle-orm'
 import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { appUser, assistant, fileObject, message, task, taskInput, thread } from '../db/schema.js'
+import { appUser, assistant, fileObject, message, messageAttachment, task, taskInput, thread } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from './tasks.service.js'
+import { DbFilesService } from '../files/files.service.js'
+import { FileStorageService } from '../files/fileStorage.service.js'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 describe('tasks DB', () => {
   let temp: Awaited<ReturnType<typeof createTempDb>>
@@ -78,6 +83,22 @@ describe('tasks DB', () => {
     expect(await db.select().from(fileObject).where(eq(fileObject.id, 'owned-file'))).toHaveLength(0)
   })
 
+  it('serializes deleting a source task with selecting its file', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mes-race-'))
+    try {
+      const files = new DbFilesService(db, new FileStorageService(root), { fileMaxBytes: 1024, fileMaxPerRequest: 2 } as never)
+      for (let index = 0; index < 5; index++) {
+        const source = (await service.create('member', { assistantId, tags: ['race'] })).task
+        const consumer = (await service.create('member', { assistantId, tags: ['race'] })).task
+        const file = await files.upload('member', source.id, `race-${index}.txt`, 'text/plain', Buffer.from('x'))
+        const [deletion, selection] = await Promise.allSettled([service.delete(source.id), files.setInput('member', consumer.id, file.id, 'main')])
+        const accepted = (deletion.status === 'rejected' && deletion.reason?.status === 409 && selection.status === 'fulfilled')
+          || (deletion.status === 'fulfilled' && selection.status === 'rejected' && [400, 404].includes(selection.reason?.status))
+        expect(accepted).toBe(true)
+      }
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
   it('rejects unknown owner and assignee IDs without an internal database error', async () => {
     const { task: created } = await service.create('member', { assistantId })
     await expect(service.update('member', created.id, { ownerId: 'missing-user' })).rejects.toMatchObject({ status: 400 })
@@ -90,6 +111,16 @@ describe('tasks DB', () => {
     expect((await service.activity(withMessage.task.id)).map((item) => item.type)).toContain('message.sent')
     const withoutMessage = await service.create('member', { assistantId })
     expect(await service.messages(withoutMessage.thread.id)).toEqual([])
+  })
+
+  it('records a one-shot file on a discussion message without selecting it as task input', async () => {
+    const { task: created, thread: createdThread } = await service.create('member', { assistantId })
+    await db.insert(fileObject).values({ id: 'one-shot', kind: 'task_file', originTaskId: created.id, originalName: 'note.txt', mime: 'text/plain', sizeBytes: 1, sha256: 'a'.repeat(64), storageKey: `test/${created.id}/one-shot`, source: 'upload', version: 1, uploadedBy: 'member' })
+    const sent = await service.appendMessage('member', createdThread.id, { content: '', kind: 'discussion', attachmentIds: ['one-shot'] })
+    expect(sent).toMatchObject({ attachmentIds: ['one-shot'] })
+    expect(await db.select().from(messageAttachment).where(eq(messageAttachment.messageId, sent!.id))).toHaveLength(1)
+    expect((await service.get(created.id)).inputs).toEqual([])
+    await expect(service.appendMessage('member', createdThread.id, { content: '', kind: 'discussion', attachmentIds: ['missing'] })).rejects.toMatchObject({ status: 400 })
   })
 
   it('rejects completed edits and serializes completion with tag changes', async () => {
@@ -132,6 +163,12 @@ describe('tasks DB', () => {
     const counted = new DbTasksService(drizzle(client, { logger: { logQuery: () => { queries++ } } }))
     await counted.list()
     expect(queries).toBeLessThanOrEqual(4)
+  })
+
+  it('keeps the thread when a task has no assignees', async () => {
+    const created = await service.create('member', { assistantId })
+    await service.update('member', created.task.id, { assigneeIds: [] })
+    expect(await service.get(created.task.id)).toMatchObject({ assigneeIds: [], threadId: created.thread.id })
   })
 
   it('advances lastActivityAt when a tag is removed', async () => {

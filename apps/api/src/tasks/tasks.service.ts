@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common'
 import { applyTaskStatus, isSrTag, normalizeTag, tagKey, tagSuggestions, type Task, type TaskStatus, type Thread } from '@mes/domain'
 import { and, desc, eq, exists, inArray, or, sql } from 'drizzle-orm'
+import { unionAll } from 'drizzle-orm/pg-core'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appUser, assistant, fileObject, message, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, fileObject, message, messageAttachment, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 
 export interface CreateTaskInput {
   assistantId: string
@@ -53,21 +54,25 @@ export class DbTasksService {
   private async assemble(rows: (typeof task.$inferSelect)[]): Promise<(Task & { thread?: Thread })[]> {
     if (!rows.length) return []
     const ids = rows.map((row) => row.id)
-    const [tags, assignees, threads] = await Promise.all([
+    const [tags, assigneesAndThreads, materials] = await Promise.all([
       this.db.select({ taskId: taskTag.taskId, label: tag.label }).from(taskTag).innerJoin(tag, eq(taskTag.tagKey, tag.key)).where(inArray(taskTag.taskId, ids)).orderBy(taskTag.addedAt),
-      this.db.select().from(taskAssignee).where(inArray(taskAssignee.taskId, ids)),
-      this.db.select().from(thread).where(inArray(thread.taskId, ids)),
+      this.db.select({ taskId: thread.taskId, userId: taskAssignee.userId, taskThread: thread }).from(thread).leftJoin(taskAssignee, eq(taskAssignee.taskId, thread.taskId)).where(inArray(thread.taskId, ids)),
+      unionAll(
+        this.db.select({ taskId: taskInput.taskId, fileId: taskInput.fileId, weight: taskInput.weight, sortOrder: taskInput.sortOrder, selectedBy: taskInput.selectedBy, selectedAt: taskInput.selectedAt, isOutput: sql<boolean>`false` }).from(taskInput).where(inArray(taskInput.taskId, ids)),
+        this.db.select({ taskId: sql<string>`coalesce(${fileObject.originTaskId}, '')`, fileId: fileObject.id, weight: sql<string>`null`, sortOrder: sql<number>`null`, selectedBy: sql<string>`null`, selectedAt: sql<Date>`null`, isOutput: sql<boolean>`true` }).from(fileObject).where(and(inArray(fileObject.originTaskId, ids), eq(fileObject.isOutput, true), sql`${fileObject.deletedAt} is null`)),
+      ),
     ])
     return rows.map((row) => {
       const taskId = row.id
-      const taskThread = threads.find((item) => item.taskId === taskId)
+      const taskThread = assigneesAndThreads.find((item) => item.taskId === taskId)?.taskThread
       return {
         id: row.id, code: row.code, assistantId: row.assistantId, title: row.title,
         titleSource: row.titleSource as Task['titleSource'], summary: row.summary,
         status: row.status as TaskStatus, ownerId: row.ownerId,
-        assigneeIds: assignees.filter((item) => item.taskId === taskId).map((item) => item.userId), priority: row.priority as Task['priority'],
+        assigneeIds: assigneesAndThreads.filter((item) => item.taskId === taskId && item.userId !== null).map((item) => item.userId!), priority: row.priority as Task['priority'],
         ...(row.dueDate && { dueDate: row.dueDate }), tags: tags.filter((item) => item.taskId === taskId).map((item) => item.label),
-        checklist: [], inputs: [], outputFileIds: [], ...(taskThread && { threadId: taskThread.id,
+        checklist: [], inputs: materials.filter((item) => item.taskId === taskId && !item.isOutput).sort((a, b) => (a.weight === b.weight ? a.sortOrder! - b.sortOrder! : a.weight === 'main' ? -1 : 1)).map((item) => ({ fileId: item.fileId, weight: item.weight as 'main' | 'reference', selectedBy: item.selectedBy!, selectedAt: item.selectedAt!.toISOString() })),
+        outputFileIds: materials.filter((item) => item.taskId === taskId && item.isOutput).map((item) => item.fileId), ...(taskThread && { threadId: taskThread.id,
           thread: { id: taskThread.id, taskId, title: taskThread.title, createdAt: taskThread.createdAt.toISOString(), createdBy: taskThread.createdBy, archived: false, ...(taskThread.modelId && { modelId: taskThread.modelId }) } }),
         ...(row.modelId && { modelId: row.modelId }), createdAt: row.createdAt.toISOString(),
         createdBy: row.createdBy, lastActivityAt: row.lastActivityAt.toISOString(),
@@ -206,23 +211,31 @@ export class DbTasksService {
   async messages(threadId: string) {
     const [target] = await this.db.select().from(thread).where(eq(thread.id, threadId))
     if (!target?.taskId) throw new NotFoundException('스레드를 찾을 수 없습니다')
-    return (await this.db.select().from(message).where(eq(message.threadId, threadId)).orderBy(message.seq)).map((row) => ({
+    const rows = await this.db.select().from(message).where(eq(message.threadId, threadId)).orderBy(message.seq)
+    const attachments = rows.length ? await this.db.select().from(messageAttachment).where(inArray(messageAttachment.messageId, rows.map((row) => row.id))) : []
+    return rows.map((row) => ({
       id: row.id, threadId: row.threadId, seq: row.seq, role: row.role, kind: row.kind,
-      content: row.content, authorId: row.authorId, status: row.status, createdAt: row.createdAt.toISOString(), attachmentIds: [],
+      content: row.content, authorId: row.authorId, status: row.status, createdAt: row.createdAt.toISOString(), attachmentIds: attachments.filter((item) => item.messageId === row.id).map((item) => item.fileId),
     }))
   }
 
-  async appendMessage(actor: string, threadId: string, input: { content: string; kind: 'discussion' }) {
+  async appendMessage(actor: string, threadId: string, input: { content: string; kind: 'discussion'; attachmentIds?: string[] }) {
     if (input.kind !== 'discussion') throw new BadRequestException('AI 요청은 S3에서 지원합니다')
-    if (!input.content?.trim()) throw new BadRequestException('내용이 필요합니다')
+    if (!input.content?.trim() && !input.attachmentIds?.length) throw new BadRequestException('내용이 필요합니다')
     const messageId = id()
     await this.db.transaction(async (tx) => {
       const [target] = await tx.select().from(thread).where(eq(thread.id, threadId))
       if (!target?.taskId) throw new NotFoundException('스레드를 찾을 수 없습니다')
       await this.ensureEditable(tx, target.taskId)
+      const attachmentIds = [...new Set(input.attachmentIds ?? [])]
+      if (attachmentIds.length) {
+        const valid = await tx.select({ id: fileObject.id }).from(fileObject).where(and(inArray(fileObject.id, attachmentIds), eq(fileObject.originTaskId, target.taskId), sql`${fileObject.deletedAt} is null`))
+        if (valid.length !== attachmentIds.length) throw new BadRequestException('첨부 파일이 이 대화에 없습니다')
+      }
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${threadId}))`)
       const [max] = await tx.select({ value: sql<number>`coalesce(max(${message.seq}), 0)` }).from(message).where(eq(message.threadId, threadId))
       await tx.insert(message).values({ id: messageId, threadId, seq: Number(max?.value ?? 0) + 1, role: 'user', kind: 'discussion', content: input.content.trim(), authorId: actor, status: 'done' })
+      if (attachmentIds.length) await tx.insert(messageAttachment).values(attachmentIds.map((fileId) => ({ messageId, fileId })))
       await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, target.taskId!))
       await tx.insert(activityLog).values({ id: id(), type: 'message.sent', userId: actor, taskId: target.taskId, payload: { kind: 'discussion' } })
     })
@@ -238,13 +251,14 @@ export class DbTasksService {
   }
 
   async delete(taskId: string): Promise<void> {
-    await this.row(taskId)
-    const ownFiles = await this.db.select({ id: fileObject.id }).from(fileObject).where(eq(fileObject.originTaskId, taskId))
-    if (ownFiles.length) {
-      const used = await this.db.select().from(taskInput).where(inArray(taskInput.fileId, ownFiles.map((file) => file.id)))
-      if (used.some((item) => item.taskId !== taskId)) throw new ConflictException('다른 대화가 이 대화의 파일을 입력으로 사용합니다')
-    }
     await this.db.transaction(async (tx) => {
+      const [owner] = await tx.select({ id: task.id }).from(task).where(eq(task.id, taskId)).for('update')
+      if (!owner) throw new NotFoundException('대화를 찾을 수 없습니다')
+      const ownFiles = await tx.select({ id: fileObject.id }).from(fileObject).where(eq(fileObject.originTaskId, taskId))
+      if (ownFiles.length) {
+        const used = await tx.select().from(taskInput).where(inArray(taskInput.fileId, ownFiles.map((file) => file.id)))
+        if (used.some((item) => item.taskId !== taskId)) throw new ConflictException('다른 대화가 이 대화의 파일을 입력으로 사용합니다')
+      }
       await tx.delete(thread).where(eq(thread.taskId, taskId))
       await tx.delete(taskInput).where(eq(taskInput.taskId, taskId))
       if (ownFiles.length) {

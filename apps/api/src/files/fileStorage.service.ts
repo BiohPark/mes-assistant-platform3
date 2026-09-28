@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile, access, lstat } from 'node:fs/promises'
-import { mkdirSync, realpathSync } from 'node:fs'
+import { createReadStream, mkdirSync, realpathSync } from 'node:fs'
 import { extname, posix, win32, resolve as nativeResolve, sep as nativeSep } from 'node:path'
 
 const invalidWindows = /[<>:"\\|?*]/
@@ -71,6 +71,12 @@ export class FileStorageService {
     const path = this.resolvePath(key)
     await this.rejectSymlinks(key)
     return Uint8Array.from(await readFile(path))
+  }
+  async createReadStream(key: string) {
+    const path = this.resolvePath(key)
+    await this.rejectSymlinks(key)
+    await access(path)
+    return createReadStream(path)
   }
   async exists(key: string): Promise<boolean> {
     const path = this.resolvePath(key)

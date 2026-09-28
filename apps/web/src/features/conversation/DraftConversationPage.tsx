@@ -6,14 +6,16 @@ import { normalizeTag, tagKey } from '@mes/domain'
 import { TopBar } from '@/app/TopBar'
 import { useActor, useUserMap } from '@/app/hooks'
 import { useTagSuggest } from '@/app/useTagSuggest'
-import { startConversation } from '@/api/tasks'
+import { deleteTask, startConversation } from '@/api/tasks'
+import { appendMessage } from '@/api/tasks'
+import { setInput, uploadFile } from '@/api/files'
 import { listAssistants } from '@/lib/catalog'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { AssistantStatusBadge } from '@/components/StatusBadges'
 import { TagInput } from '@/components/TagInput'
 import { Markdown } from '@/components/Markdown'
 import { UserAvatar } from '@/components/UserAvatar'
-import { Composer } from '@/features/chat/Composer'
+import { Composer, type PendingAttachment } from '@/features/chat/Composer'
 import { suggestionsFrom } from '@/features/chat/suggestions'
 
 /** 카드 클릭은 초안만 연다. 첫 팀 의견을 보낼 때 대화와 스레드가 생성된다. */
@@ -37,12 +39,27 @@ export function DraftConversationPage() {
   const retired = assistant.status === 'retired'
   const owner = users.get(assistant.ownerId)
 
-  async function send(text: string) {
-    if (!assistant || !text.trim() || sending.current) return
+  async function send(text: string, attachments: PendingAttachment[]) {
+    if (!assistant || (!text.trim() && !attachments.length) || sending.current) return
     sending.current = true
     setBusy(true)
     try {
-      const { task } = await startConversation(actor, { assistantId: assistant.id, tags, ...(refId && { referenceTaskId: refId }), firstMessage: text.trim() })
+      const { task } = await startConversation(actor, { assistantId: assistant.id, tags, ...(refId && { referenceTaskId: refId }), ...(!attachments.length && text.trim() && { firstMessage: text.trim() }) })
+      try {
+        if (attachments.length) {
+          const uploaded: string[] = []
+          for (const attachment of attachments) {
+            const file = await uploadFile(actor, { taskId: task.id }, attachment.file)
+            uploaded.push(file.id)
+            if (!attachment.once) await setInput(actor, task.id, file.id, 'reference')
+          }
+          await appendMessage(actor, task.threadId!, 'user', text.trim(), uploaded, 'done', 'discussion')
+        }
+      } catch (error) {
+        const removed = await deleteTask(task.id)
+        if (!removed.ok) throw new Error(`${error instanceof Error ? error.message : String(error)} · 대화 ${task.code}가 남았습니다`)
+        throw error
+      }
       navigate(`/c/${task.id}`, { replace: true })
     } catch (error) {
       sending.current = false
@@ -78,7 +95,7 @@ export function DraftConversationPage() {
           {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">폐기된 에이전트입니다. <Link to="/" className="underline">다른 에이전트 고르기</Link></div>}
         </div>
       </div>
-      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer disabled={busy} streaming={false} allowAttachments={false} onSend={async (text) => send(text)} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
+      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer disabled={busy} streaming={false} allowAttachments allowPin onSend={async (text, attachments) => send(text, attachments)} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
     </div>
   </>
 }

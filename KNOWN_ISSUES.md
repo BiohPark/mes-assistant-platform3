@@ -5,7 +5,9 @@
 | # | 내용 | 영향 | 계획 |
 |---|---|---|---|
 | KI-1 | (OIDC 모드만) 로그아웃은 앱 세션만 끝낸다(IdP 세션 유지). `/logged-out`에서 "다시 로그인"을 누르면 비밀번호 없이 다시 들어간다. 기본 `local` 모드에는 해당 없음 | 공용 PC에서 IdP 로그아웃 필요 | SSO 연계 페이즈에 단일 로그아웃 지원 여부 확인 후(architecture §5 체크리스트 6) RP-initiated logout 추가 |
-| KI-2 | 요청자(requester) 역할을 저장할 곳이 DDL에 없다. S0은 모든 사용자 `member`, SO만 `system_owner` 추가 | SR 접수 권한 구분 불가 | S4 권한 가드 전체 때 결정 |
+| ✅ KI-2 | 요청자(requester) 역할 저장 → `app_user.is_business_owner`(D37, S2 ①)로 해결. 지정 화면은 S4 | — | 해결 (2026-09-28) |
+| KI-6 | CI의 E2E 잡은 Ubuntu(compose)에서만 돈다 — Windows 러너 E2E 없음. Windows 실기 확인은 사용자 몫 | Windows 전용 브라우저·경로 차이 미검출 | S5 배포 점검 때 Windows PC에서 `pnpm test:e2e` 1회 |
+| KI-7 | 컴포저의 첨부 개수 사전 검사는 contracts 기본값 20 고정 — 서버 `FILE_MAX_PER_REQUEST`를 바꾸면 화면 한도와 어긋남(서버 검사는 정확) | 설정값 변경 시 UX 불일치 | S4 설정 API에 한도 포함 |
 | KI-3 | 웹 번들 한 덩어리(>500 kB, zod·radix 포함) | 첫 로딩 | 화면이 늘어나는 S2 이후 경로별 분할 |
 | ✅ KI-4 | CI windows 잡 원격 미확인 → 확인 완료. `setup-guide` 잡이 psql 비밀번호 프롬프트에서 정지하던 결함은 `bbaccf8`로 수정(HANDOFF §7) | — | 해결 (2026-09-28, run 36358525856 전부 녹색) |
 | KI-5 | 회원가입에 횟수 제한·CAPTCHA가 없다(사내망 전제). 비밀번호 변경·재설정 화면 없음 | 사내망 밖 노출 시 계정 남발 | S4 권한·계정 관리 때 SO의 계정 관리 화면과 함께 |
