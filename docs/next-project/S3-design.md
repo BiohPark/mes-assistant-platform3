@@ -29,7 +29,7 @@
 - `message`: 답변 자리표시는 `role=assistant, status=streaming, content=''` → 종료 시 `done|error`. 데모의 `heartbeatAt`·`requestInfo`·`requestSnapshot`은 **메시지 대신 `chat_request`가 가진다**(data-contract §5). 답변 메시지 ↔ 요청은 `reply_message_id`.
 - `file_remote_ref(file_id, scope_hash, remote_id)`: OpenWebUI 업로드 재사용 캐시. `scope_hash = sha256(baseUrl + '#' + shortHash(apiKey))` — 서버·키가 바뀌면 다시 올림(데모 `remoteKey` 규칙).
 - **스냅샷 저장(S3-4a)**: 직렬화 크기 ≤ 1 MiB면 `snapshot` jsonb, 초과면 `FileStorageService`에 `requests/{yyyy}/{mm}/{requestId}.json`으로 쓰고 `snapshot = {"storageKey": "..."}`. 조회 API가 둘을 구분해 같은 형태로 준다.
-- 마이그레이션 0003: 인덱스 `chat_request_one_active`가 초안에 있으므로 Drizzle에 동일 정의 추가(파리티 테스트). 추가 컬럼 없음.
+- **DDL 변경 없음** — `chat_request`·`chat_request_input`·`file_remote_ref`·부분 고유 인덱스 `chat_request_one_active`는 S0 마이그레이션 0000에 이미 있다(Orchestrator 대조 2026-09-28). 새 마이그레이션은 만들지 않는다.
 
 ### 1.2 상태 기계
 
