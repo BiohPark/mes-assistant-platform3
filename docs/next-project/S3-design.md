@@ -99,7 +99,7 @@ POST → [pending] ──────────► (파일 전달·조립) ─
 
 - 서버에서 `deliverFiles(settings, files, { signal, onProgress, pollMs: 2000, processTimeoutMs: 300000 }, ports)`(이식 완료). 순서: **주 입력 먼저**(★) → 참고, 업로드 이름은 `versionedName(name, version)` 예 `URS_DEMO (v2).md`(FR-32·E1 S5). 업로드 성공 시 `file_remote_ref` 저장, 다음 요청은 재사용(처리 상태만 확인).
 - `LLM_PRESET=openai-compatible`면 Files API를 쓰지 않고(`usesFilesApi=false`) 텍스트 파일은 본문 인라인, 그 외는 `metadata_only`(이름만) — 트레이 배지로 드러남(I3).
-- **가짜 OpenWebUI 확장**(compose `server.mjs`): `POST /api/v1/files/`(multipart → `{ id, filename, meta:{size} }`, 상태 `pending`) · `GET /api/v1/files/{id}` → `{ id, status: 'pending'|'processed'|'failed' }`(업로드 뒤 1.5 s 후 processed; 이름이 `fail-*`면 upload 500, `stuck-*`면 영원히 pending, `slow-*`면 8 s) · `chat/completions`는 `files` 파라미터를 받아 응답 본문에 `[files: n]`을 넣어 E2E가 전달 여부를 확인. 실제 사내 형태와 다르면 **어댑터(openwebuiFiles.ts)만** 맞춘다(D31 위험 — HANDOFF §7 함정에 기록).
+- **가짜 OpenWebUI 확장**(compose `server.mjs`) — 이식된 클라이언트 `openwebuiFiles.ts`가 실제로 부르는 경로에 맞춘다(Orchestrator 대조 2026-09-28): `POST /api/v1/files/`(multipart → `{ id, filename, meta:{size} }`) · **`GET /api/v1/files/{id}/process/status` → `{ status: 'pending'|'completed'|'failed' }`**(업로드 뒤 1.5 s 후 `completed`; 404는 클라이언트가 "처리 확인 미지원"으로 통과시키므로 가짜는 반드시 구현) · 이름이 `fail-*`면 upload 500, `stuck-*`면 영원히 `pending`(processTimeoutMs 검증), `slow-*`면 8 s 뒤 `completed` · `chat/completions`는 `files` 파라미터를 받아 응답 본문에 `[files: n]`을 넣어 E2E가 전달 여부를 확인. 실제 사내 형태와 다르면 **어댑터(openwebuiFiles.ts)만** 맞춘다(D31 위험 — HANDOFF §7 함정에 기록).
 
 ### 1.7 Mock provider (S3-8a)
 
