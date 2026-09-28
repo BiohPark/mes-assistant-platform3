@@ -45,7 +45,7 @@
 | 데모 모듈 | 하는 일 | FR | 스프린트 | 방식 | 상태 |
 |---|---|---|---|---|---|
 | `HomePage.tsx` | 카드↔칸반 세그먼트 토글(URL `view`) | 화면 §3 | S2 | 변경(API) | ✅ 카드 뷰(S2 ①) · 칸반은 ② |
-| `AssistantCard.tsx` | 에이전트 카드 본문 | 화면 §3 | S2 | 그대로(이미지는 S4 이미지 API 뒤, 지금은 이니셜) | ✅ S2 ① |
+| `AssistantCard.tsx` | 에이전트 카드 본문 | 화면 §3 | S2 | 그대로(이미지는 S4 이미지 API 뒤, 지금은 이니셜. OpenWebUI 열기 버튼의 기본 링크 규칙은 U9(a) S4 전역 설정 뒤 — 지금은 link1이 있을 때만) | ✅ S2 ①(링크 기본 규칙은 S4) |
 | `SortableAssistantGrid.tsx` | SO 편집 모드 드래그 순서(저장/취소, 필터 중 차단) | FR-60 | S2(표시)·S4(편집 권한) | 변경(충돌 검사 `revision`) | ⬜ |
 | `CardMapFilterBar.tsx` | 카드 검색·Lv1/Lv2 필터·중단 에이전트 보기 | — | S2 | 그대로(U4(a)) | ✅ S2 ① |
 | `useAssistantStats.ts` | 카드별 대화 집계 | 화면 §3 | S2 | 변경(서버 집계 `GET /api/assistants/stats`) | ✅ S2 ① |

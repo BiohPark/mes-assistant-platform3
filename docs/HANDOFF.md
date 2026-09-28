@@ -144,6 +144,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 - `sso_subject` 형식을 `{issuer}#{sub}`로 바꾸기 전에 로그인한 개발 DB 사용자는 다음 로그인 때 새 사용자로 생긴다 — 개발 DB는 `docker compose down -v`로 초기화
 - 기능 대응표 [next-project/parity-matrix.md](next-project/parity-matrix.md)가 데모 수용 범위의 정본 — 이식할 때 데모 소스를 직접 연다
 - CI Windows 러너의 `ikalnytskyi/action-setup-postgres`는 PG* 환경 변수를 덮어써 잡 env의 `PGPASSWORD`가 비게 된다 — psql이 비밀번호 프롬프트에서 무한 대기(setup-guide 잡 33분 정지). 스텝 env로 다시 준다
+- 마이그레이션 0002(S2 ①)는 `assistant.level1/level2`를 코드 FK 컬럼(NOT NULL, 기본값 없음)으로 교체한다 — **기존 assistant 행이 있는 DB에는 적용이 실패**한다. S0·S1에는 에이전트 생성 경로가 없어 실제로는 빈 테이블이지만, 손으로 넣은 개발 DB는 `docker compose down -v`(또는 DB 재생성) 후 `db:migrate` → `db:seed`
 - 데모 저장소는 읽기 전용 — 수정·커밋 금지
 - 요청은 서버 RequestService만 보낸다(S3). 트레이 추정은 `buildChatRequest({ dryRun: true })` — 실제 전송과 같은 함수
 
