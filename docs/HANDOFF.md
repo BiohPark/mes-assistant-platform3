@@ -97,7 +97,14 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 
 ## 6. 진행 현황
 
-### 완료 — S0 뼈대 (2026-09-28)
+### 완료 — S1 (2026-09-28, `main` 병합 · 태그 `s1-done`)
+
+- ① 앱 자체 로그인(D34): `AUTH_MODE=local` 기본, 회원가입·로그인·최초 SO 부트스트랩 1회, 로그인 CSRF Origin 검사. OIDC는 `oidc` 모드·Keycloak 프로필로만
+- ② 서버 대리 호출 기반(D31): `LLM_MODE`·`LLM_PRESET`(openwebui/openai-compatible)·`GET /api/llm/models`·`/status`, `LlmPorts` DB 어댑터 1차(S2·S3 메서드는 NotImplemented 명시), `FileStorageService`(realpath 루트·내부 링크 거부·Windows 예약어), 웹 모델 목록·SO 배지
+- 검증: 단위 165 · DB 15(가짜 OpenWebUI 계약 포함) · E2E 2 · CI 5잡(ubuntu·windows) 녹색. codex-critic 리뷰 2회(9건) 반영
+- **미완(이월)**: OpenAI 실키로 모델 목록 수동 확인(사용자 키 미제공 → 사내 확인 때), Windows PC 실기 확인
+
+### 완료 — S0 뼈대 (2026-09-28, `main` 병합 · 태그 `s0-done`)
 
 - 커밋(`feat/s0-skeleton`): 루트 설정 → domain·llm 이식(codex-main) → compose → contracts → Drizzle 스키마·마이그레이션 → api 골격 → web 셸 → e2e → CI → 문서
 - 검증: 단위 125개(domain 61 · llm 41 · contracts 3 · api 14 · web 6) · DB 통합 5개(초안 SQL ↔ 마이그레이션 대조 포함, schema.ts ↔ 마이그레이션 드리프트는 단위) · E2E 2개(실제 Keycloak 로그인 → 빈 허브 → 로그아웃, SO 역할) · typecheck · lint 녹색 (macOS)
@@ -107,13 +114,13 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 
 | 우선 | 항목 | 메모 |
 |---|---|---|
-| **S0 마감** | **G3 결정** → `feat/s0-skeleton` push(승인) → CI(windows 잡·`setup-guide` 잡) 녹색 확인 → Windows PC에서 [setup/windows.md](setup/windows.md)대로 로그인 → 빈 허브 확인 → `main` 병합(**merge commit `--no-ff`**)·태그 `s0-done` | 사용자 승인 필요 |
+| 이월 | Windows PC에서 [setup/windows.md](setup/windows.md)대로 회원가입 → 빈 허브 확인(문서 명령은 CI가 검증, 사람 확인만 남음) · OpenAI 실키 모델 목록 1회 | 사용자 |
 | 조사 | **회사 PC에서 저장소 받기**: 저장소를 public으로 두는 이유 — 회사에서 GitHub 로그인이 안 됨. 대안 조사 필요(읽기 전용 fine-grained PAT·deploy key·release zip·사내 미러) — 회사 망에서 github.com 도달 여부부터 확인 | 사용자 (2026-09-28) |
 | S4 설계 | 코드 관리(D35) — assistant 관리 구분(1·2단계)·상태 코드 테이블, 관리 화면·API 형태 논의 | PRD FR-63 |
 | **남은 위험** | ① 실제 Windows 실기 미확인(문서 명령은 PowerShell 7.6으로 검증, CI windows 잡은 push 후) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
-| **다음(S1)** | 서버 대리 호출(채팅·파일·모델 목록 U6) — 가짜 OpenWebUI + OpenAI 호환 API 전환 프리셋(D31). 실환경 확인은 사내에서 사용자가 수행(킵) | `LlmPorts` 구현(DB 어댑터)·`FileStorageService` 시작 |
-| **S1 ② 완료(병합 대기)** | 서버 대리 호출 기반 `feat/s1-llm-proxy` — `LLM_MODE`·`LLM_PRESET`(openwebui/openai-compatible)·`GET /api/llm/models`·`/status`, `LlmPorts` DB 어댑터 1차, `FileStorageService`(realpath 루트·내부 링크 거부), 웹 모델 목록·SO 배지. codex-critic 4건+누락 1건 반영. 검증 단위 165·DB 15·E2E 2, CI 5/5(Windows 8.3 경로·CI 환경 의존 2건 수정 후). **OpenAI 실키 수동 확인은 사용자 키 필요** | tasks/s1-llm-proxy |
-| **S1 ① 완료** | 앱 자체 로그인·회원가입(D34) `feat/s1-auth-local` — codex-main 구현 + codex-critic 리뷰 4건 반영. 검증 단위 142·DB 9·E2E 2. CI 녹색 확인 후 `main` 병합(사용자 승인) | tasks/s1-auth-local · [요구사항 검토](status/requirements-review-2026-09-28.md) |
+| **다음(S2)** | [S2-kickoff.md](next-project/S2-kickoff.md) 4태스크(catalog·tasks·files·e2e). 착수 조건: G3·G4 결정 + 계획 승인 | 대응표 S2 34행 |
+| ~~S1 ②~~ 병합 완료 | 서버 대리 호출 기반 `feat/s1-llm-proxy` — `LLM_MODE`·`LLM_PRESET`(openwebui/openai-compatible)·`GET /api/llm/models`·`/status`, `LlmPorts` DB 어댑터 1차, `FileStorageService`(realpath 루트·내부 링크 거부), 웹 모델 목록·SO 배지. codex-critic 4건+누락 1건 반영. 검증 단위 165·DB 15·E2E 2, CI 5/5(Windows 8.3 경로·CI 환경 의존 2건 수정 후). **OpenAI 실키 수동 확인은 사용자 키 필요** | tasks/s1-llm-proxy |
+| ~~S1 ①~~ 병합 완료 | 앱 자체 로그인·회원가입(D34) `feat/s1-auth-local` — codex-main 구현 + codex-critic 리뷰 4건 반영. 검증 단위 142·DB 9·E2E 2. CI 녹색 확인 후 `main` 병합(사용자 승인) | tasks/s1-auth-local · [요구사항 검토](status/requirements-review-2026-09-28.md) |
 | 착수 전 확인 | OpenWebUI 버전(사용자 추후 회신), 비기능 제안값(PRD §6) | next-project/README |
 | 중간 | IdP 로그아웃, 요청자 역할 저장 | [KNOWN_ISSUES](../KNOWN_ISSUES.md) KI-1·KI-2 |
 
