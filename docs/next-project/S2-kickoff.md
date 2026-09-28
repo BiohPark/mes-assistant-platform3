@@ -1,6 +1,6 @@
-# S2 착수 계획 (초안 — 사용자 승인 전, 세부 결정 비교 포함)
+# S2 착수 계획 (2026-09-28 사용자 승인 — 세부 결정 S2-1~S2-10 모두 추천안)
 
-> 작성 2026-09-28, Orchestrator. S1 두 태스크가 CI 녹색·병합 대기인 시점의 계획. **G3(코드 관리)·G4(BO 역할) 결정과 이 계획의 승인이 있어야 착수한다.** 정본은 [PRD](PRD.md)·[architecture §9](architecture.md)·[parity-matrix](parity-matrix.md)·[data-contract §6](../architecture/data-contract.md)·[openapi.yaml](openapi.yaml)이며, 이 문서는 그것을 태스크로 쪼갠 것이다.
+> 작성 2026-09-28, Orchestrator. 사용자 승인: 계획·세부 결정 10건 모두 추천안(디스코드, 2026-09-28). G3=S2-1(a), G4=S2-2(a). 정본은 [PRD](PRD.md)·[architecture §9](architecture.md)·[parity-matrix](parity-matrix.md)·[data-contract §6](../architecture/data-contract.md)·[openapi.yaml](openapi.yaml)이며, 이 문서는 그것을 태스크로 쪼갠 것이다.
 
 ## 목표 (architecture §9 S2)
 
@@ -23,7 +23,7 @@ AI 요청 실행·스트리밍·중지·추정(S3, RequestService·SSE·presence
 
 순서 ① → ② → ③ → ④. ②·③은 API 계약(contracts zod)이 먼저 정해지면 병렬 가능하지만 같은 작업 트리를 쓰므로 **순차**로 한다.
 
-## 세부 결정 — 선택지 비교와 추천 (사용자 승인 요청, 2026-09-28)
+## 세부 결정 — 선택지 비교와 추천 (2026-09-28 사용자: "모두 추천안으로 진행")
 
 | # | 결정 | 선택지 | 비교 | **추천** |
 |---|---|---|---|---|
@@ -57,7 +57,7 @@ AI 요청 실행·스트리밍·중지·추정(S3, RequestService·SSE·presence
 
 ## 워커 쓰기 범위 (승인 요청값)
 
-- ①: `apps/api/**, apps/web/**, packages/**, docs/architecture/postgres-draft.sql, .env.example`
+- ①: `apps/api/**, apps/web/**, packages/**, e2e/**, docs/architecture/postgres-draft.sql, .env.example, package.json`(루트 — `db:seed` 스크립트 1줄, E2E 시드 단계)
 - ②·③: `apps/api/**, apps/web/**, packages/**, docs/architecture/postgres-draft.sql`
 - ④: `e2e/**, docker/**, apps/web/**`(테스트용 data-testid 추가에 한정)
 - codex-critic: `none`

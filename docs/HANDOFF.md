@@ -93,6 +93,9 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | D32 | 배포는 **Windows 서버**, PostgreSQL은 필요 시 설치해 사용. 이번 목표 페이즈에서 **SSO는 미연계** — 대체 인증 방식은 결정 대기(§6) | 사용자 (2026-09-28) |
 | D34 | **인증(A1)**: 앱 자체 로그인. 로그인 ID = 계정 식별자(별도 이메일·사번 없음), 비밀번호는 Node 내장 `crypto.scrypt` 해시(네이티브 빌드 회피, D22). **회원가입은 아주 단순하게**(ID·비밀번호만) → 가입 직후 기본 사용자, SO·BO는 SO가 부여(S4). 최초 SO는 `INITIAL_SYSTEM_OWNERS`=ID — **부트스트랩 1회**: SO가 한 명도 없을 때 그 ID로 가입하는 첫 사용자만(codex-critic 리뷰 반영, 로그인 시 부여 없음). S0의 OIDC 경로는 `AUTH_MODE=oidc` 설정 선택으로 남기고 기본은 `local`(후속 페이즈 SSO 연계용). 세션 쿠키·`app_session`은 그대로 | 사용자 (2026-09-28) |
 | D35 | **코드 관리**: 관리가 필요한 병렬 단계·병렬 상태는 하드코딩하지 않고 **코드(공통 코드) 데이터로 관리**한다. 최소 대상: assistant 관리 구분(1단계·2단계 각각), 그 외 상태 관련 정보. 코드 관리 화면·API의 구체 형태는 구현 시점(S4)에 사용자와 논의. PRD FR-63 | 사용자 (2026-09-28) |
+| D36 | **코드 관리 1차 설계(FR-63, S2-1a)**: 공통 코드 테이블 `code_group`·`code`, assistant `level1/level2`는 코드 참조. 프로그램 로직이 분기하는 상태(task·SR·요청 status)는 check 제약 유지(전이 규칙·테스트가 값에 묶임). 관리 화면·API는 S4 | 사용자 (2026-09-28, S2-kickoff) |
+| D37 | **BO 역할 저장(KI-2, S2-2a)**: `app_user.is_business_owner boolean` — SO와 같은 패턴, SO∧BO 조합 가능. `roles`의 `requester`가 여기서 나옴. 지정 화면은 S4 | 사용자 (2026-09-28) |
+| D38 | S2 세부: 완료 기준은 데모 E1 S1·S3·S4(parity 배정) · 태스크 4개 순차 · PC 간 실시간은 S3 SSE · 파일 한도는 설정값(50 MB/20개) · 업무 코드 `WK-YYYY-NNNN` 서버 발급 · 개발 시드 `pnpm db:seed`(운영 거부) · S2 파일 접근은 로그인 사용자 전원 · S2 E2E는 LLM 호출 없음 | 사용자 (2026-09-28, [S2-kickoff §세부 결정](next-project/S2-kickoff.md)) |
 | D33 | 역할 호칭: **SO = System Owner, BO = Business Owner(= PRD의 요청자, SR 접수 현업)**. "담당자"는 에이전트를 컨트롤하는 사람이라는 뜻일 뿐 권한 등급이 아님 → 로그인한 기본 사용자(`member`). 권한 등급은 기본 사용자·SO·BO 셋 | 사용자 (2026-09-28) |
 
 ## 6. 진행 현황
@@ -116,9 +119,9 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 |---|---|---|
 | 이월 | Windows PC에서 [setup/windows.md](setup/windows.md)대로 회원가입 → 빈 허브 확인(문서 명령은 CI가 검증, 사람 확인만 남음) · OpenAI 실키 모델 목록 1회 | 사용자 |
 | 조사 | **회사 PC에서 저장소 받기**: 저장소를 public으로 두는 이유 — 회사에서 GitHub 로그인이 안 됨. 대안 조사 필요(읽기 전용 fine-grained PAT·deploy key·release zip·사내 미러) — 회사 망에서 github.com 도달 여부부터 확인 | 사용자 (2026-09-28) |
-| S4 설계 | 코드 관리(D35) — assistant 관리 구분(1·2단계)·상태 코드 테이블, 관리 화면·API 형태 논의 | PRD FR-63 |
+| S4 | 코드 관리 화면·API(SO), SO·BO 지정 화면 — DDL은 S2 ①에서(D36·D37) | PRD FR-63 |
 | **남은 위험** | ① 실제 Windows 실기 미확인(문서 명령은 PowerShell 7.6으로 검증, CI windows 잡은 push 후) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
-| **다음(S2)** | [S2-kickoff.md](next-project/S2-kickoff.md) 4태스크(catalog·tasks·files·e2e). 착수 조건: G3·G4 결정 + 계획 승인 | 대응표 S2 34행 |
+| **진행(S2)** | [S2-kickoff.md](next-project/S2-kickoff.md) 승인(2026-09-28). ① `s2-catalog` 착수 → ② tasks → ③ files → ④ e2e | 대응표 S2 34행 |
 | ~~S1 ②~~ 병합 완료 | 서버 대리 호출 기반 `feat/s1-llm-proxy` — `LLM_MODE`·`LLM_PRESET`(openwebui/openai-compatible)·`GET /api/llm/models`·`/status`, `LlmPorts` DB 어댑터 1차, `FileStorageService`(realpath 루트·내부 링크 거부), 웹 모델 목록·SO 배지. codex-critic 4건+누락 1건 반영. 검증 단위 165·DB 15·E2E 2, CI 5/5(Windows 8.3 경로·CI 환경 의존 2건 수정 후). **OpenAI 실키 수동 확인은 사용자 키 필요** | tasks/s1-llm-proxy |
 | ~~S1 ①~~ 병합 완료 | 앱 자체 로그인·회원가입(D34) `feat/s1-auth-local` — codex-main 구현 + codex-critic 리뷰 4건 반영. 검증 단위 142·DB 9·E2E 2. CI 녹색 확인 후 `main` 병합(사용자 승인) | tasks/s1-auth-local · [요구사항 검토](status/requirements-review-2026-09-28.md) |
 | 착수 전 확인 | OpenWebUI 버전(사용자 추후 회신), 비기능 제안값(PRD §6) | next-project/README |
