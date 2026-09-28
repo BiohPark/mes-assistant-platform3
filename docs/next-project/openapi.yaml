@@ -166,7 +166,8 @@ paths:
                 tags: { type: array, items: { type: string } }
                 title: { type: string }
                 inputFileIds: { type: array, items: { type: string } }
-                referenceTaskId: { type: string, description: '?ref= — 이 대화를 ★ 참조 대화로 미리 선택' }
+                referenceTaskId: { type: string, description: '?ref= — 이 대화를 ★ 참조 대화로 미리 선택 (저장은 S3)' }
+                firstMessage: { type: string, description: '첫 팀 의견 — 있으면 대화·스레드와 같은 트랜잭션에 kind=discussion 메시지(seq 1)로 저장 (S2 ②)' }
       responses:
         '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }
   /tasks/{taskId}:
