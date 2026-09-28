@@ -79,7 +79,7 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
             <span key={i} className="inline-flex items-center gap-1 rounded-md border bg-muted/50 px-1.5 py-0.5 text-[11px]">
               <Paperclip className="size-3" />
               {p.file.name}
-              {allowPin && !discussion && (
+              {allowPin && (
                 <button
                   type="button"
                   className={cn('inline-flex items-center gap-0.5 rounded px-1', p.once ? 'text-muted-foreground' : 'text-primary')}

@@ -19,7 +19,7 @@ it('offers narrow-screen tabs, placeholders, and the activity panel', async () =
   renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
   const mobileTabs = within(screen.getByRole('tablist', { name: '대화 화면 탭' }))
   fireEvent.click(mobileTabs.getByRole('tab', { name: '자료' }))
-  expect(screen.getByText('자료는 후속 단계에서 사용할 수 있습니다.')).toBeInTheDocument()
+  expect(screen.getByRole('tablist', { name: '자료 탭' })).toBeInTheDocument()
   fireEvent.click(mobileTabs.getByRole('tab', { name: '이력' }))
   expect(await screen.findByText('사유: 추가 확인')).toBeInTheDocument()
 })

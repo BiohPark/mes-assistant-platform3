@@ -24,3 +24,15 @@ it('keeps text during a failed send and clears it after a successful retry', asy
   await waitFor(() => expect(send).toHaveBeenCalledTimes(2))
   await waitFor(() => expect(input).toHaveValue(''))
 })
+
+it('pins attachments by default and lets a sender mark one as message-only', async () => {
+  const send = vi.fn(async () => undefined)
+  const { container } = render(<Composer streaming={false} onSend={send} onStop={() => undefined} allowAttachments allowPin />)
+  const file = new File(['abc'], 'note.txt', { type: 'text/plain' })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [file] } })
+  expect(screen.getByText('입력으로 고정')).toBeInTheDocument()
+  fireEvent.click(screen.getByText('입력으로 고정'))
+  expect(screen.getByText('이번 메시지만')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(send).toHaveBeenCalledWith('', [{ file, once: true }], true))
+})

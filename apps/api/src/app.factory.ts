@@ -6,6 +6,8 @@ import type { AppConfig } from './config/config.js'
 export function configureApp<T extends INestApplication>(app: T, config: AppConfig): T {
   app.setGlobalPrefix('api')
   app.use(cookieParser(config.sessionSecret))
+  const bodyParserApp = app as unknown as { useBodyParser: (type: string, options: { limit: number }) => void }
+  bodyParserApp.useBodyParser('json', { limit: config.fileMaxBytes + 1024 * 1024 })
   app.enableShutdownHooks()
   return app
 }

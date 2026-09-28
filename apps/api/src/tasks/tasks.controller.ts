@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, P
 import type { AuthedRequest } from '../auth/guards.js'
 import { DbTasksService } from './tasks.service.js'
 import { z } from 'zod'
+import { CONFIG, type AppConfig } from '../config/config.js'
 
 const createSchema = z.object({
   assistantId: z.string().min(1), tags: z.array(z.string()).optional(), title: z.string().optional(),
@@ -13,7 +14,7 @@ const patchSchema = z.object({
   modelId: z.string().nullable().optional(),
 }).strict()
 const statusSchema = z.object({ status: z.enum(['todo', 'in_progress', 'on_hold', 'done']), reason: z.string().optional() }).strict()
-const messageSchema = z.object({ content: z.string().trim().min(1), kind: z.literal('discussion') }).strict()
+const messageSchema = z.object({ content: z.string().trim(), kind: z.literal('discussion'), attachmentIds: z.array(z.string().min(1)).optional() }).strict().refine((value) => !!value.content || !!value.attachmentIds?.length)
 function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body)
   if (!result.success) throw new BadRequestException('요청 형식이 올바르지 않습니다')
@@ -83,7 +84,7 @@ export class TagsController {
 
 @Controller('threads')
 export class ThreadsController {
-  constructor(@Inject(DbTasksService) private readonly tasks: DbTasksService) {}
+  constructor(@Inject(DbTasksService) private readonly tasks: DbTasksService, @Inject(CONFIG) private readonly config: AppConfig) {}
 
   @Get(':id/messages')
   messages(@Param('id') id: string) { return this.tasks.messages(id) }
@@ -92,6 +93,7 @@ export class ThreadsController {
   append(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
     const result = messageSchema.safeParse(body)
     if (!result.success) throw new BadRequestException('AI 요청은 S3에서 지원합니다')
+    if ((result.data.attachmentIds?.length ?? 0) > this.config.fileMaxPerRequest) throw new BadRequestException('첨부 파일 개수 한도를 초과했습니다')
     return this.tasks.appendMessage(req.user!.id, id, result.data)
   }
 }
