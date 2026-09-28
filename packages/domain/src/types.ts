@@ -258,6 +258,7 @@ export interface RequestInfo {
 
 export interface Message {
   id: ID
+  requestId?: ID
   threadId: ID
   role: MessageRole
   content: string

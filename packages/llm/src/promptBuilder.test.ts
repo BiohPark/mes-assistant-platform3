@@ -75,6 +75,25 @@ describe('buildChatRequest — files', () => {
     expect(built.info.transport).toBe('openwebui')
   })
 
+  it('keeps dry-run and actual budget fields equal when the remote file ID changes', async () => {
+    await setLlm({ mode: 'live', baseUrl: 'http://owui.test/api', apiKey: 'k', fileDelivery: 'openwebui' })
+    const me = await startConversation(dev, { assistantId: 'fds' })
+    const file = await uploadFile(dev, { taskId: me.task.id }, text('budget.md', 'A'))
+    await setInput(dev, me.task.id, file.id, 'main')
+    const { scope, thread } = await scopeOf(me.task.id)
+    const dry = await buildChatRequest(scope, thread, [], { dryRun: true })
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/api/v1/files/')
+      ? new Response(JSON.stringify({ id: 'a-much-longer-remote-identifier' }), { status: 200 })
+      : new Response(JSON.stringify({ status: 'completed' }), { status: 200 })))
+    const actual = await buildChatRequest(scope, thread, [])
+    const comparable = (value: typeof dry.info) => ({ provider: value.provider, transport: value.transport, model: value.model,
+      bytes: value.bytes, limitBytes: value.limitBytes, srCodes: value.srCodes,
+      inputs: value.inputs.map((item) => item.kind === 'file' ? { kind: item.kind, fileId: item.fileId, version: item.version,
+        weight: item.weight, source: item.source, oneShot: item.oneShot, delivery: item.delivery, bytes: item.bytes }
+        : { kind: item.kind, sourceTaskId: item.sourceTaskId, snapshotId: item.snapshotId, mode: item.mode, messageCount: item.messageCount, bytes: item.bytes }) })
+    expect(comparable(actual.info)).toEqual(comparable(dry.info))
+  })
+
   it('OpenWebUI failures are reported (not silently inlined); text files can be forced inline', async () => {
     await setLlm({ mode: 'live', baseUrl: 'http://owui.test/api', apiKey: 'k', fileDelivery: 'openwebui' })
     vi.stubGlobal('fetch', vi.fn(async () => new Response('down', { status: 503 })))

@@ -9,9 +9,8 @@ export function configureApp<T extends INestApplication>(app: T, config: AppConf
   app.setGlobalPrefix('api')
   app.use(cookieParser(config.sessionSecret))
   const sessions = app.get<SessionStore>(SESSION_STORE)
-  app.use('/api/tasks/:id/outputs', async (req: Request, res: Response, next: NextFunction) => {
+  const jsonBody = (limit: number) => async (req: Request, res: Response, next: NextFunction) => {
     if (!req.is('application/json')) return next()
-    const limit = config.fileMaxBytes + 1024 * 1024
     if (Number(req.headers['content-length']) > limit) return res.status(413).end()
     try {
       const token: unknown = req.cookies?.[SESSION_COOKIE]
@@ -35,7 +34,9 @@ export function configureApp<T extends INestApplication>(app: T, config: AppConf
       catch { res.status(400).end() }
     })
     req.on('error', next)
-  })
+  }
+  app.use('/api/tasks/:id/outputs', jsonBody(config.fileMaxBytes + 1024 * 1024))
+  app.use(/^\/api\/threads\/[^/]+\/requests\/?$/, jsonBody(2 * 1024 * 1024))
   app.enableShutdownHooks()
   return app
 }

@@ -18,6 +18,14 @@ export default defineConfig({
   use: { baseURL: appOrigin, trace: 'retain-on-failure', locale: 'ko-KR' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
+    ...(process.env.LLM_MODE === 'live' ? [{
+      command: 'node docker/fake-openwebui/server.mjs',
+      cwd: resolve(import.meta.dirname, '..'),
+      env: { PORT: '3101' },
+      url: 'http://localhost:3101/health',
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    }] : []),
     {
       // 명령은 셸 무관(cmd·PowerShell·bash) — && 만 사용
       command: 'pnpm --filter "@mes/api..." build && pnpm --filter @mes/api db:migrate && pnpm db:seed && pnpm --filter @mes/api start',

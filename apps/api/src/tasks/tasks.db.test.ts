@@ -42,6 +42,13 @@ describe('tasks DB', () => {
     expect((await db.select().from(thread).where(eq(thread.taskId, created[0]!.task.id)))).toHaveLength(1)
   })
 
+  it('uses an optional idempotency key to return one draft under retries', async () => {
+    const first = await service.create('member', { assistantId }, 'same-draft')
+    const second = await service.create('member', { assistantId }, 'same-draft')
+    expect(second.task.id).toBe(first.task.id)
+    expect(second.thread.id).toBe(first.thread.id)
+  })
+
   it('rejects retired assistants and locks completed task edits until a reasoned reopen', async () => {
     await db.update(assistant).set({ status: 'retired' }).where(eq(assistant.id, assistantId))
     await expect(service.create('member', { assistantId })).rejects.toMatchObject({ status: 409 })

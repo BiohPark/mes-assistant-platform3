@@ -284,7 +284,7 @@ export async function buildChatRequest(scope: ChatScope, thread: Thread, history
       provider: settings.llm.mode,
       transport,
       model,
-      bytes: requestBytes({ model, messages, files }),
+      bytes: requestBytes({ model, messages }),
       limitBytes,
       inputs: built.inputs,
       srCodes: built.srCodes,

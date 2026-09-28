@@ -1,16 +1,16 @@
 import { BadGatewayException, Controller, Get, Inject } from '@nestjs/common'
-import type { ChatProvider } from '@mes/llm'
 import { Roles } from '../auth/roles.decorator.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
+import { RequestsService } from '../requests/requests.service.js'
 
-export const LLM_PROVIDER = Symbol('LLM_PROVIDER')
+export { LLM_PROVIDER } from './provider.token.js'
 
 @Controller('llm')
 export class LlmController {
   private cached?: { models: string[]; until: number }
 
   constructor(
-    @Inject(LLM_PROVIDER) private readonly provider: ChatProvider,
+    @Inject(RequestsService) private readonly requests: RequestsService,
     @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -18,7 +18,7 @@ export class LlmController {
   async models() {
     if (this.cached && this.cached.until > Date.now()) return { models: this.cached.models }
     try {
-      const models = await this.provider.listModels()
+      const models = await this.requests.listModels()
       this.cached = { models, until: Date.now() + 60_000 }
       return { models }
     } catch {
@@ -30,7 +30,7 @@ export class LlmController {
   @Roles('system_owner')
   async status() {
     let result: { ok: boolean; detail: string }
-    try { result = await this.provider.ping() } catch { result = { ok: false, detail: '연결 실패' } }
+    try { result = await this.requests.ping() } catch { result = { ok: false, detail: '연결 실패' } }
     const key = this.config.llm.apiKey
     const detail = result.detail.replace(/Authorization\s*[:=]\s*\S+(?:\s+\S+)?/gi, '[redacted]').replace(/Bearer\s+\S+/gi, '[redacted]')
     return {

@@ -1,12 +1,13 @@
 import { Module } from '@nestjs/common'
-import { createProvider } from '@mes/llm'
 import { CONFIG, type AppConfig } from '../config/config.js'
-import { LlmController, LLM_PROVIDER } from './llm.controller.js'
+import { LlmController } from './llm.controller.js'
+import { LLM_PROVIDER } from './provider.token.js'
 import { toLlmSettings } from './presets.js'
+import { RequestsService } from '../requests/requests.service.js'
 
 @Module({
   controllers: [LlmController],
-  providers: [{ provide: LLM_PROVIDER, inject: [CONFIG], useFactory: (config: AppConfig) => createProvider(toLlmSettings(config.llm)) }],
-  exports: [LLM_PROVIDER],
+  providers: [{ provide: LLM_PROVIDER, inject: [CONFIG], useFactory: (config: AppConfig) => RequestsService.createProvider(toLlmSettings(config.llm)) }, RequestsService],
+  exports: [LLM_PROVIDER, RequestsService],
 })
 export class LlmModule {}

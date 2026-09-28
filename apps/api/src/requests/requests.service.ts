@@ -1,0 +1,411 @@
+import { randomUUID } from 'node:crypto'
+import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common'
+import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
+import { buildChatRequest, createProvider, suggestTitle, type ChatProvider } from '@mes/llm'
+import type { LlmSettings, Message, RequestInfo, RequestInput, ServiceRequest, Thread } from '@mes/domain'
+import { CONFIG, type AppConfig } from '../config/config.js'
+import { DB, type Db } from '../db/db.module.js'
+import { activityLog, appSetting, assistant, chatRequest, chatRequestInput, fileObject, message, messageAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
+import { FileStorageService } from '../files/fileStorage.service.js'
+import { DbLlmPorts } from '../llm/dbLlmPorts.js'
+import { LLM_PROVIDER } from '../llm/provider.token.js'
+
+type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
+type EventName = 'started' | 'phase' | 'delta' | 'completed' | 'failed'
+export type RequestEvent = { event: EventName; data: Record<string, unknown> }
+type Listener = (event: RequestEvent) => void
+export interface StartBody { content: string; attachmentIds?: string[]; oneShotFileIds?: string[] }
+export interface RetryBody { excludeFileIds?: string[]; forceInlineFileIds?: string[] }
+export interface StartedRequest { id: string; replyMessageId: string; userMessageId: string; done: Promise<void> }
+
+const ACTIVE = ['pending', 'streaming']
+const STOPPED = '요청을 중지했습니다.'
+const STALE = '응답이 중단되었습니다 — 요청한 화면이 닫혔거나 연결이 끊겼습니다. 자동으로 다시 보내지 않았습니다.'
+class FencedTransition extends Error {}
+const publicInfo = (info: RequestInfo | undefined) => info ? { ...info, inputs: info.inputs.map((item) => {
+  if (item.kind !== 'file') return item
+  const { remoteId: _remoteId, ...visible } = item
+  return visible
+}) } : undefined
+const isUnique = (error: unknown) => !!error && typeof error === 'object' && 'code' in error && error.code === '23505'
+
+@Injectable()
+export class RequestsService implements OnModuleDestroy {
+  static createProvider(settings: LlmSettings): ChatProvider { return createProvider(settings) }
+  private readonly storage: FileStorageService
+  private readonly runs = new Map<string, AbortController>()
+  private readonly listeners = new Map<string, Set<Listener>>()
+  private readonly events = new Map<string, RequestEvent[]>()
+  private readonly auxiliaryUsers = new Set<string>()
+  private sweepTimer?: ReturnType<typeof setInterval>
+
+  constructor(@Inject(DB) private readonly db: Db, @Inject(CONFIG) private readonly config: AppConfig,
+    @Inject(LLM_PROVIDER) private readonly provider: ChatProvider) {
+    this.storage = new FileStorageService(config.fileStorageRoot)
+  }
+
+  async startSweeper() {
+    await this.recoverOnStartup().catch(() => undefined)
+    this.sweepTimer = setInterval(() => { void this.sweep().catch(() => undefined) }, this.config.request.sweepMs)
+    this.sweepTimer.unref?.()
+  }
+  onModuleDestroy() { if (this.sweepTimer) clearInterval(this.sweepTimer) }
+  listModels() { return this.provider.listModels() }
+  ping() { return this.provider.ping() }
+  async runAuxiliary<T>(actor: string, _kind: 'title' | 'summary' | 'checklist', operation: (signal: AbortSignal) => Promise<T>,
+    options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<T> {
+    if (this.auxiliaryUsers.has(actor)) throw new HttpException('보조 요청이 이미 진행 중입니다', 429)
+    this.auxiliaryUsers.add(actor)
+    const controller = new AbortController()
+    const abort = () => controller.abort('cancelled')
+    options.signal?.addEventListener('abort', abort, { once: true })
+    if (options.signal?.aborted) abort()
+    const timer = setTimeout(() => controller.abort('timeout'), options.timeoutMs ?? 30_000)
+    try {
+      if (controller.signal.aborted) throw new Error('보조 요청 중지')
+      const stopped = new Promise<never>((_, reject) => controller.signal.addEventListener('abort', () => reject(new Error(controller.signal.reason === 'timeout' ? '보조 요청 시간 초과' : '보조 요청 중지')), { once: true }))
+      return await Promise.race([operation(controller.signal), stopped])
+    } finally {
+      clearTimeout(timer)
+      options.signal?.removeEventListener('abort', abort)
+      this.auxiliaryUsers.delete(actor)
+    }
+  }
+  private safeError(error: unknown) {
+    if (!(error instanceof Error)) return '요청 처리 오류'
+    const key = this.config.llm.apiKey
+    return error.message.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]').replaceAll(key || '\u0000', '[redacted]')
+  }
+
+  subscribe(id: string, listener: Listener): () => void {
+    const set = this.listeners.get(id) ?? new Set<Listener>()
+    set.add(listener)
+    this.listeners.set(id, set)
+    for (const event of this.events.get(id) ?? []) listener(event)
+    return () => { set.delete(listener); if (!set.size) this.listeners.delete(id) }
+  }
+  private emit(id: string, event: RequestEvent) {
+    const history = this.events.get(id) ?? []
+    history.push(event)
+    this.events.set(id, history)
+    for (const listener of this.listeners.get(id) ?? []) listener(event)
+    if (event.event === 'completed' || event.event === 'failed') {
+      const timer = setTimeout(() => this.events.delete(id), 60_000)
+      timer.unref?.()
+    }
+  }
+
+  private async lockedOwner(tx: Tx, threadId: string) {
+    const [candidate] = await tx.select().from(thread).where(eq(thread.id, threadId))
+    if (!candidate) throw new NotFoundException('스레드를 찾을 수 없습니다')
+    if (candidate.taskId) {
+      const [owner] = await tx.select().from(task).where(and(eq(task.id, candidate.taskId), isNull(task.deletedAt))).for('update')
+      if (!owner) throw new NotFoundException('대화를 찾을 수 없습니다')
+      if (owner.status === 'done') throw new ConflictException({ code: 'TASK_DONE' })
+    }
+    const [locked] = await tx.select().from(thread).where(eq(thread.id, threadId)).for('update')
+    if (!locked) throw new NotFoundException('스레드를 찾을 수 없습니다')
+    return locked
+  }
+
+  private async replay(row: typeof chatRequest.$inferSelect): Promise<StartedRequest> {
+    const record = await this.get(row.id)
+    const started = { event: 'started', data: { requestId: row.id, replyMessageId: row.replyMessageId, userMessageId: row.userMessageId } } as const
+    if (!this.events.has(row.id)) {
+      this.events.set(row.id, [started])
+      if (row.phase) this.emit(row.id, { event: 'phase', data: { text: row.phase } })
+      if (row.status === 'succeeded') this.emit(row.id, { event: 'completed', data: { requestInfo: record } })
+      if (['failed', 'cancelled', 'interrupted'].includes(row.status)) this.emit(row.id, { event: 'failed', data: { error: row.error ?? '요청 실패', requestInfo: record } })
+    }
+    return { id: row.id, replyMessageId: row.replyMessageId, userMessageId: row.userMessageId, done: Promise.resolve() }
+  }
+
+  async start(actor: string, threadId: string, body: StartBody, key: string): Promise<StartedRequest> {
+    if (!key?.trim()) throw new BadRequestException('Idempotency-Key가 필요합니다')
+    const attachments = [...new Set(body.attachmentIds ?? [])]
+    const oneShot = [...new Set(body.oneShotFileIds ?? [])]
+    if ((!body.content?.trim() && !attachments.length) || oneShot.some((id) => !attachments.includes(id))) throw new BadRequestException('요청 내용 또는 첨부가 올바르지 않습니다')
+    const existing = await this.db.select().from(chatRequest).where(and(eq(chatRequest.threadId, threadId), eq(chatRequest.idempotencyKey, key)))
+    if (existing[0]) return this.replay(existing[0])
+    let acquired: { id: string; replyMessageId: string; userMessageId: string; duplicate?: boolean }
+    try {
+      acquired = await this.db.transaction(async (tx) => {
+        const owner = await this.lockedOwner(tx, threadId)
+        const [duplicate] = await tx.select().from(chatRequest).where(and(eq(chatRequest.threadId, threadId), eq(chatRequest.idempotencyKey, key)))
+        if (duplicate) return { id: duplicate.id, replyMessageId: duplicate.replyMessageId, userMessageId: duplicate.userMessageId, duplicate: true }
+        const [active] = await tx.select({ id: chatRequest.id }).from(chatRequest).where(and(eq(chatRequest.threadId, threadId), inArray(chatRequest.status, ACTIVE)))
+        if (active) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
+        if (attachments.length > this.config.fileMaxPerRequest) throw new HttpException({ code: 'ATTACHMENT_LIMIT' }, 413)
+        if (attachments.length) {
+          const valid = await tx.select({ id: fileObject.id }).from(fileObject).where(and(inArray(fileObject.id, attachments), eq(fileObject.originTaskId, owner.taskId ?? ''), isNull(fileObject.deletedAt)))
+          if (valid.length !== attachments.length) throw new BadRequestException('첨부 파일이 이 대화에 없습니다')
+        }
+        const [max] = await tx.select({ seq: sql<number>`coalesce(max(${message.seq}), 0)` }).from(message).where(eq(message.threadId, threadId))
+        const seq = Number(max?.seq ?? 0)
+        const userMessageId = randomUUID(), replyMessageId = randomUUID(), requestId = randomUUID()
+        await tx.insert(message).values([{ id: userMessageId, threadId, seq: seq + 1, role: 'user', content: body.content.trim(), authorId: actor, status: 'done' },
+          { id: replyMessageId, threadId, seq: seq + 2, role: 'assistant', content: '', status: 'streaming' }])
+        if (attachments.length) await tx.insert(messageAttachment).values(attachments.map((fileId) => ({ messageId: userMessageId, fileId })))
+        if (owner.taskId) {
+          const selected = attachments.filter((fileId) => !oneShot.includes(fileId))
+          for (const [index, fileId] of selected.entries()) await tx.insert(taskInput).values({ taskId: owner.taskId, fileId, weight: 'reference', sortOrder: index, selectedBy: actor }).onConflictDoNothing()
+          await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, owner.taskId))
+        }
+        const [currentTask] = owner.taskId ? await tx.select().from(task).where(eq(task.id, owner.taskId)) : []
+        const [currentAssistant] = currentTask ? await tx.select().from(assistant).where(eq(assistant.id, currentTask.assistantId)) : []
+        const [budgetSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
+        const limitBytes = typeof budgetSetting?.value === 'number' ? budgetSetting.value : this.config.request.budgetBytes
+        await tx.insert(chatRequest).values({ id: requestId, threadId, userMessageId, replyMessageId, requestedBy: actor, idempotencyKey: key,
+          status: 'pending', provider: this.config.llm.mode, transport: this.config.llm.mode === 'live' && this.config.llm.preset === 'openwebui' ? 'openwebui' : 'inline',
+          model: owner.modelId ?? currentTask?.modelId ?? currentAssistant?.modelId ?? this.config.llm.defaultModel ?? 'glm-5.2',
+          bytes: 0, limitBytes, leaseUntil: new Date(Date.now() + this.config.request.leaseMs) })
+        await tx.insert(activityLog).values({ id: randomUUID(), type: 'message.sent', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
+        await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
+        return { id: requestId, replyMessageId, userMessageId }
+      })
+    } catch (error) { if (isUnique(error)) throw new ConflictException({ code: 'REQUEST_ACTIVE' }); throw error }
+    if (acquired.duplicate) return this.replay(await this.getRow(acquired.id))
+    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId } })
+    const done = this.run(acquired.id, oneShot, [])
+    return { ...acquired, done }
+  }
+
+  async retry(actor: string, requestId: string, body: RetryBody, key: string): Promise<StartedRequest> {
+    if (!key?.trim()) throw new BadRequestException('Idempotency-Key가 필요합니다')
+    const original = await this.getRow(requestId)
+    const duplicate = await this.db.select().from(chatRequest).where(and(eq(chatRequest.threadId, original.threadId), eq(chatRequest.idempotencyKey, key)))
+    if (duplicate[0]) return this.replay(duplicate[0])
+    if (!['failed', 'cancelled', 'interrupted'].includes(original.status)) throw new ConflictException({ code: 'NOT_FAILED' })
+    const exclude = [...new Set(body.excludeFileIds ?? [])], inline = [...new Set(body.forceInlineFileIds ?? [])]
+    const acquired = await this.db.transaction(async (tx) => {
+      const owner = await this.lockedOwner(tx, original.threadId)
+      const [duplicate] = await tx.select().from(chatRequest).where(and(eq(chatRequest.threadId, original.threadId), eq(chatRequest.idempotencyKey, key)))
+      if (duplicate) return { id: duplicate.id, replyMessageId: duplicate.replyMessageId, userMessageId: duplicate.userMessageId, oneShot: [] as string[], duplicate: true }
+      const [latest] = await tx.select().from(message).where(and(eq(message.threadId, original.threadId), isNull(message.kind))).orderBy(desc(message.seq)).limit(1)
+      if (latest?.id !== original.replyMessageId) throw new ConflictException({ code: 'NOT_LATEST' })
+      const [active] = await tx.select().from(chatRequest).where(and(eq(chatRequest.threadId, original.threadId), inArray(chatRequest.status, ACTIVE)))
+      if (active) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
+      const files = await tx.select().from(messageAttachment).where(eq(messageAttachment.messageId, original.userMessageId))
+      const allowed = new Set(files.map((item) => item.fileId))
+      const selected = owner.taskId ? await tx.select().from(taskInput).where(eq(taskInput.taskId, owner.taskId)) : []
+      const selectable = new Set([...allowed, ...selected.map((item) => item.fileId)])
+      if (exclude.some((id) => !selectable.has(id)) || inline.some((id) => !selectable.has(id) || exclude.includes(id))) throw new BadRequestException('재시도 파일 ID가 올바르지 않습니다')
+      if (inline.length) {
+        const rows = await tx.select().from(fileObject).where(inArray(fileObject.id, inline))
+        if (inline.some((id) => !selectable.has(id)) || rows.length !== inline.length || rows.some((row) => !/^(text\/|application\/(json|xml))/.test(row.mime))) throw new BadRequestException('텍스트 파일만 본문으로 보낼 수 있습니다')
+      }
+      if (owner.taskId && exclude.length) await tx.delete(taskInput).where(and(eq(taskInput.taskId, owner.taskId), inArray(taskInput.fileId, exclude)))
+      const [max] = await tx.select({ seq: sql<number>`coalesce(max(${message.seq}), 0)` }).from(message).where(eq(message.threadId, original.threadId))
+      const replyMessageId = randomUUID(), id = randomUUID()
+      const [budgetSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
+      const limitBytes = typeof budgetSetting?.value === 'number' ? budgetSetting.value : this.config.request.budgetBytes
+      await tx.insert(message).values({ id: replyMessageId, threadId: original.threadId, seq: Number(max?.seq ?? 0) + 1, role: 'assistant', content: '', status: 'streaming' })
+      await tx.insert(chatRequest).values({ id, threadId: original.threadId, userMessageId: original.userMessageId, replyMessageId, requestedBy: actor,
+        retryOf: original.id, idempotencyKey: key, status: 'pending', provider: this.config.llm.mode,
+        transport: this.config.llm.mode === 'live' && this.config.llm.preset === 'openwebui' ? 'openwebui' : 'inline',
+        model: original.model, bytes: 0, limitBytes, leaseUntil: new Date(Date.now() + this.config.request.leaseMs) })
+      await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId: id, retryOf: original.id } })
+      return { id, replyMessageId, userMessageId: original.userMessageId, oneShot: files.map((item) => item.fileId).filter((fileId) => !exclude.includes(fileId) && !selected.some((item) => item.fileId === fileId)) }
+    })
+    if (acquired.duplicate) return this.replay(await this.getRow(acquired.id))
+    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId } })
+    return { ...acquired, done: this.run(acquired.id, acquired.oneShot, inline) }
+  }
+
+  private async getRow(id: string) {
+    const [row] = await this.db.select().from(chatRequest).where(eq(chatRequest.id, id))
+    if (!row) throw new NotFoundException('요청을 찾을 수 없습니다')
+    return row
+  }
+  async get(id: string) {
+    const row = await this.getRow(id)
+    const inputs = await this.db.select().from(chatRequestInput).where(eq(chatRequestInput.requestId, id)).orderBy(chatRequestInput.seq)
+    return { id: row.id, threadId: row.threadId, status: row.status, phase: row.phase, provider: row.provider, transport: row.transport,
+      model: row.model, bytes: row.status === 'pending' && row.bytes === 0 ? null : row.bytes, limitBytes: row.limitBytes, error: row.error, retryOf: row.retryOf, createdAt: row.createdAt.toISOString(),
+      finishedAt: row.finishedAt?.toISOString(), inputs: inputs.map((item) => ({ kind: item.kind, weight: item.weight, fileId: item.fileId,
+        fileVersion: item.fileVersion, sourceLabel: item.sourceLabel, oneShot: item.oneShot, delivery: item.delivery, sourceTaskId: item.sourceTaskId,
+        snapshotId: item.snapshotId, mode: item.mode, messageCount: item.messageCount, bytes: item.bytes, error: item.error })) }
+  }
+  async snapshot(id: string) {
+    const row = await this.getRow(id)
+    const value = row.snapshot as Record<string, unknown> | null
+    if (typeof value?.storageKey === 'string') return JSON.parse(Buffer.from(await this.storage.read(value.storageKey)).toString('utf8')) as unknown
+    return value ?? {}
+  }
+
+  private async transition(id: string, status: 'succeeded' | 'failed' | 'cancelled' | 'interrupted', error?: string, content?: string,
+    info?: RequestInfo, snapshot?: unknown): Promise<boolean> {
+    const row = await this.getRow(id)
+    try { return await this.db.transaction(async (tx) => {
+      const owner = await this.lockedOwner(tx, row.threadId).catch((e) => { if (e instanceof ConflictException && status !== 'succeeded') return undefined; throw e })
+      const [updated] = await tx.update(chatRequest).set({ status, error: error ?? null, finishedAt: new Date(), phase: null,
+        bytes: info?.bytes ?? row.bytes, snapshot: snapshot ?? row.snapshot, leaseUntil: null }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE))).returning({ id: chatRequest.id })
+      if (!updated) return false
+      const [reply] = await tx.update(message).set({ status: status === 'succeeded' ? 'done' : 'error', error: error ?? null,
+        ...(content !== undefined ? { content: content || (error ? `⚠️ ${error}` : '') } : {}) }).where(and(eq(message.id, row.replyMessageId), eq(message.status, 'streaming'))).returning({ id: message.id })
+      if (!reply) throw new FencedTransition()
+      if (info?.inputs.length) {
+        await tx.insert(chatRequestInput).values(info.inputs.map((item: RequestInput, seq) => ({ requestId: id, seq, kind: item.kind, weight: item.weight,
+          fileId: item.kind === 'file' ? item.fileId : null, fileVersion: item.kind === 'file' ? item.version : null,
+          sourceLabel: item.kind === 'file' ? `${item.name}${item.source ? ` · ${item.source}` : ''}` : item.code, oneShot: item.kind === 'file' ? !!item.oneShot : false,
+          delivery: item.kind === 'file' ? item.delivery : null, remoteId: item.kind === 'file' ? item.remoteId : null,
+          sourceTaskId: item.kind === 'conversation' ? item.sourceTaskId : null, snapshotId: item.kind === 'conversation' ? item.snapshotId : null,
+          mode: item.kind === 'conversation' ? item.mode : null, messageCount: item.kind === 'conversation' ? item.messageCount : null,
+          bytes: item.bytes, error: item.kind === 'file' ? item.error : null })))
+      }
+      await tx.insert(activityLog).values({ id: randomUUID(), type: `request.${status === 'succeeded' ? 'completed' : status === 'cancelled' ? 'cancelled' : 'failed'}`,
+        userId: row.requestedBy, taskId: owner?.taskId ?? null, srId: owner?.srId ?? null, payload: { requestId: id, bytes: info?.bytes ?? row.bytes, model: info?.model ?? row.model } })
+      return true
+    }) } catch (caught) { if (caught instanceof FencedTransition) return false; throw caught }
+  }
+
+  async cancel(id: string): Promise<void> {
+    const row = await this.getRow(id)
+    if (!ACTIVE.includes(row.status)) return
+    if (await this.transition(id, 'cancelled', STOPPED)) {
+      this.runs.get(id)?.abort('cancelled')
+      this.emit(id, { event: 'failed', data: { error: STOPPED, requestInfo: await this.get(id) } })
+    }
+  }
+
+  async sweep(): Promise<number> {
+    const expired = await this.db.select({ id: chatRequest.id }).from(chatRequest).where(and(inArray(chatRequest.status, ACTIVE), lt(chatRequest.leaseUntil, new Date())))
+    let count = 0
+    for (const row of expired) if (await this.transition(row.id, 'interrupted', STALE)) {
+      count++
+      this.runs.get(row.id)?.abort('lost')
+      this.emit(row.id, { event: 'failed', data: { error: STALE, requestInfo: await this.get(row.id) } })
+    }
+    return count
+  }
+
+  async recoverOnStartup(): Promise<number> {
+    const pending = await this.db.select({ id: chatRequest.id }).from(chatRequest).where(inArray(chatRequest.status, ACTIVE))
+    let count = 0
+    for (const row of pending) if (!this.runs.has(row.id) && await this.transition(row.id, 'interrupted', STALE)) count++
+    return count
+  }
+
+  private async run(id: string, oneShot: string[], forceInline: string[]): Promise<void> {
+    const controller = new AbortController()
+    this.runs.set(id, controller)
+    const startedAt = Date.now()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let rejectDeadline: ((error: Error) => void) | undefined
+    const deadline = new Promise<never>((_, reject) => { rejectDeadline = reject })
+    void deadline.catch(() => undefined)
+    const arm = (ms: number) => { if (timer) clearTimeout(timer); timer = setTimeout(() => {
+      controller.abort('timeout'); rejectDeadline?.(new Error('응답 시간 초과 — 제한 시간 안에 응답이 오지 않았습니다.'))
+    }, ms) }
+    arm(this.config.request.firstTokenMs)
+    const lease = setInterval(() => { void this.db.update(chatRequest).set({ leaseUntil: new Date(Date.now() + this.config.request.leaseMs) })
+      .where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE))) }, this.config.request.keepaliveMs)
+    lease.unref?.()
+    let acc = '', info: RequestInfo | undefined, snapshot: unknown, failure: string | undefined
+    let dirty = false
+    let replyId = ''
+    const flush = async () => {
+      if (!dirty || !replyId || controller.signal.aborted) return
+      dirty = false
+      const content = acc
+      const [updated] = await this.db.update(message).set({ content }).where(and(eq(message.id, replyId), eq(message.status, 'streaming'))).returning({ id: message.id })
+      if (!updated) controller.abort('lost')
+    }
+    const flushTimer = setInterval(() => { void flush().catch(() => controller.abort('lost')) }, this.config.request.flushMs)
+    flushTimer.unref?.()
+    try {
+      const row = await this.getRow(id)
+      replyId = row.replyMessageId
+      const ports = new DbLlmPorts(this.db, this.config, row.requestedBy, this.storage)
+      const [owner] = await this.db.select().from(thread).where(eq(thread.id, row.threadId))
+      if (!owner) throw new Error('스레드를 찾을 수 없습니다')
+      const scope = owner.taskId ? await (async () => {
+        const t = await ports.getTask(owner.taskId!)
+        const assistants = await ports.getAssistants()
+        const selected = assistants.find((item) => item.id === t?.assistantId)
+        if (!t || !selected) throw new Error('대화 또는 에이전트를 찾을 수 없습니다')
+        return { kind: 'task' as const, task: t, assistant: selected }
+      })() : await (async () => {
+        const [sr] = await this.db.select().from(serviceRequest).where(eq(serviceRequest.id, owner.srId!))
+        const settings = await ports.getSettings()
+        const intake = (await ports.getAssistants()).find((item) => item.id === settings.srIntakeAssistantId)
+        if (!sr || !intake) throw new Error('SR 또는 접수 에이전트를 찾을 수 없습니다')
+        const scopeSr: ServiceRequest = { id: sr.id, code: sr.code ?? '', requesterId: sr.requesterId, title: sr.title,
+          titleSource: sr.titleSource as ServiceRequest['titleSource'], body: sr.body, status: sr.status as ServiceRequest['status'],
+          attachmentIds: [], threadId: owner.id, results: [], createdAt: sr.createdAt.toISOString(), updatedAt: sr.updatedAt.toISOString() }
+        return { kind: 'sr' as const, sr: scopeSr, intake, files: await ports.getFilesBySr(sr.id) }
+      })()
+      const all = await this.db.select().from(message).where(eq(message.threadId, row.threadId)).orderBy(message.seq)
+      const user = all.find((item) => item.id === row.userMessageId)
+      const attached = await this.db.select({ fileId: messageAttachment.fileId }).from(messageAttachment).where(eq(messageAttachment.messageId, row.userMessageId))
+      const selected = owner.taskId ? await this.db.select({ fileId: taskInput.fileId }).from(taskInput).where(eq(taskInput.taskId, owner.taskId)) : []
+      if (attached.length || selected.length) arm(Math.max(1, startedAt + this.config.request.filesFirstTokenMs - Date.now()))
+      const history: Message[] = all.filter((item) => item.seq <= (user?.seq ?? 0)).map((item) => ({ id: item.id, threadId: item.threadId,
+        role: item.role as Message['role'], content: item.content, authorId: item.authorId ?? undefined, createdAt: item.createdAt.toISOString(),
+        attachmentIds: [], status: item.status as Message['status'], kind: item.kind as Message['kind'] }))
+      const domainThread: Thread = { id: owner.id, ...(owner.taskId ? { taskId: owner.taskId } : { srId: owner.srId! }), title: owner.title,
+        createdBy: owner.createdBy, createdAt: owner.createdAt.toISOString(), archived: false, ...(owner.modelId ? { modelId: owner.modelId } : {}) }
+      if (controller.signal.aborted) throw new Error('요청 시간 초과')
+      const built = await Promise.race([buildChatRequest(scope, domainThread, history, { oneShotFileIds: oneShot, forceInlineFileIds: forceInline,
+        signal: controller.signal, onProgress: (progress) => { const phase = `${progress.phase === 'uploading' ? '파일 올리는 중' : '파일 처리 대기'} ${progress.index + 1}/${progress.total} · ${progress.name}`
+          void this.db.update(chatRequest).set({ phase }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
+          this.emit(id, { event: 'phase', data: { text: phase } }) } }, ports), deadline])
+      info = { ...built.info, ...(row.retryOf ? { retryOf: row.retryOf } : {}) }
+      await this.db.update(chatRequest).set({ provider: info.provider, transport: info.transport, model: info.model, bytes: info.bytes, limitBytes: info.limitBytes, phase: null })
+        .where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
+      if (built.failed.length) { failure = `파일 ${built.failed.length}개(${built.failed.map((item) => item.name).join(', ')})를 OpenWebUI에 전달하지 못해 요청을 보내지 않았습니다.`; return }
+      if (info.bytes > info.limitBytes) { failure = `요청 크기 한도 초과 (${Math.ceil(info.bytes / 1024)} KB / ${Math.ceil(info.limitBytes / 1024)} KB)`; return }
+      snapshot = { sentAt: new Date().toISOString(), provider: this.provider.kind, model: built.model, meta: built.meta,
+        messages: built.messages }
+      const serialized = Buffer.from(JSON.stringify(snapshot))
+      if (serialized.byteLength > 1024 * 1024) {
+        const now = new Date(), key = `requests/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${id}.json`
+        await this.storage.write(key, serialized)
+        snapshot = { storageKey: key }
+      }
+      if (controller.signal.aborted) return
+      const [streaming] = await this.db.update(chatRequest).set({ status: 'streaming' }).where(and(eq(chatRequest.id, id), eq(chatRequest.status, 'pending'))).returning({ id: chatRequest.id })
+      if (!streaming) { controller.abort('lost'); return }
+      const iterator = this.provider.stream({ model: built.model, messages: built.messages, files: built.files, meta: built.meta, signal: controller.signal })[Symbol.asyncIterator]()
+      for (;;) {
+        const chunk = await Promise.race([iterator.next(), deadline])
+        if (chunk.done) break
+        if (controller.signal.aborted) break
+        if (chunk.value.type === 'error') { failure = chunk.value.message; break }
+        if (chunk.value.type !== 'delta') continue
+        acc += chunk.value.text
+        dirty = true
+        this.emit(id, { event: 'delta', data: { text: chunk.value.text } })
+        arm(this.config.request.idleMs)
+      }
+    } catch (error) { failure = controller.signal.reason === 'timeout' ? '응답 시간 초과 — 제한 시간 안에 응답이 오지 않았습니다.' : this.safeError(error) }
+    finally {
+      if (timer) clearTimeout(timer)
+      clearInterval(lease)
+      clearInterval(flushTimer)
+      if (controller.signal.reason === 'timeout') failure = '응답 시간 초과 — 제한 시간 안에 응답이 오지 않았습니다.'
+      try {
+        if (controller.signal.reason !== 'lost' && controller.signal.reason !== 'cancelled') {
+          const ok = await this.transition(id, failure ? 'failed' : 'succeeded', failure, acc, info, snapshot)
+          if (ok) {
+            this.emit(id, failure ? { event: 'failed', data: { error: failure, requestInfo: publicInfo(info) } } : { event: 'completed', data: { requestInfo: publicInfo(info) } })
+            if (!failure) void this.maybeTitle(id).catch(() => undefined)
+          }
+        }
+      } finally { this.runs.delete(id) }
+    }
+  }
+
+  private async maybeTitle(id: string) {
+    const row = await this.getRow(id)
+    const [owner] = await this.db.select().from(thread).where(eq(thread.id, row.threadId))
+    if (!owner?.taskId) return
+    const [current] = await this.db.select().from(task).where(eq(task.id, owner.taskId))
+    if (current?.titleSource !== 'default') return
+    const rows = await this.db.select().from(message).where(eq(message.threadId, owner.id)).orderBy(message.seq)
+    const history: Message[] = rows.map((item) => ({ id: item.id, threadId: item.threadId, role: item.role as Message['role'], content: item.content,
+      createdAt: item.createdAt.toISOString(), attachmentIds: [], status: item.status as Message['status'], kind: item.kind as Message['kind'] }))
+    const title = await this.runAuxiliary(row.requestedBy, 'title', () => suggestTitle(this.provider, row.model, history))
+    if (title) await this.db.update(task).set({ title, titleSource: 'ai' }).where(and(eq(task.id, owner.taskId), eq(task.titleSource, 'default')))
+  }
+}

@@ -16,7 +16,7 @@ test('대화 생성, 태그와 칸반, 완료와 재개, 다른 사용자 조회
   await page.getByRole('link', { name: /새 대화/ }).first().click()
   await expect(page).toHaveURL(/\/new\//)
   await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('첫 팀 의견')
-  await page.getByRole('button', { name: /전송/ }).click()
+  await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page).toHaveURL(/\/c\/[^/]+$/)
   await expect(page.getByText(/WK-\d{4}-\d{4}/).first()).toBeVisible()
   const taskUrl = page.url()

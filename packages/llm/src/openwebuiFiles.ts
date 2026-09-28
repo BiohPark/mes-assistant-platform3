@@ -94,12 +94,15 @@ export async function uploadToOpenWebUi(settings: LlmSettings, file: FileAsset, 
 }
 
 /** 처리 완료까지 대기. 상태 경로가 없는 버전(404)은 처리된 것으로 본다. */
-async function waitProcessed(settings: LlmSettings, file: FileAsset, remoteId: string, opts: DeliverOptions): Promise<void> {
+async function waitProcessed(settings: LlmSettings, file: FileAsset, remoteId: string, opts: DeliverOptions, cached = false): Promise<void> {
   const url = `${openWebUiBase(settings.baseUrl)}/api/v1/files/${encodeURIComponent(remoteId)}/process/status`
   const deadline = Date.now() + (opts.processTimeoutMs ?? PROCESS_TIMEOUT_MS)
   for (;;) {
     const res = await fetch(url, { headers: authHeaders(settings), signal: opts.signal })
-    if (res.status === 404) return
+    if (res.status === 404) {
+      if (cached) throw new DeliveryError('캐시된 파일이 없습니다')
+      return
+    }
     if (!res.ok) throw new DeliveryError(`처리 상태 확인 실패 (HTTP ${res.status})`)
     const status = ((await res.json()) as { status?: unknown }).status
     if (status === 'completed') return
@@ -120,8 +123,14 @@ export async function deliverFiles(settings: LlmSettings, files: FileAsset[], op
   for (const [index, file] of files.entries()) {
     const cached = file.remoteIds?.[key]
     if (cached) {
-      attached.set(file.id, { type: 'file', id: cached })
-      continue
+      try {
+        opts.onProgress?.({ index, total: files.length, name: file.name, phase: 'processing' })
+        await waitProcessed(settings, file, cached, opts, true)
+        attached.set(file.id, { type: 'file', id: cached })
+        continue
+      } catch (error) {
+        if (opts.signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) throw abortError()
+      }
     }
     try {
       opts.onProgress?.({ index, total: files.length, name: file.name, phase: 'uploading' })

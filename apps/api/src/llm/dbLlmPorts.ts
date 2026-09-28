@@ -1,17 +1,21 @@
-import { and, inArray, isNull } from 'drizzle-orm'
-import type { Assistant, FileAsset, Settings, Task, User } from '@mes/domain'
+import { createHash } from 'node:crypto'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
+import type { Assistant, FileAsset, ServiceRequest, Settings, Task, User } from '@mes/domain'
 import type { LlmPorts } from '@mes/llm'
+import { remoteKey } from '@mes/llm'
 import type { AppConfig } from '../config/config.js'
 import type { Db } from '../db/db.module.js'
-import { appSetting, appUser, assistant, assistantChecklistTemplate, assistantExpectedIo, code, checklistItem, fileObject, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { appSetting, appUser, assistant, assistantChecklistTemplate, assistantExpectedIo, code, checklistItem, fileObject, fileRemoteRef, serviceRequest, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { FileStorageService } from '../files/fileStorage.service.js'
 import { toLlmSettings } from './presets.js'
 
 const iso = (date: Date) => date.toISOString()
 const missing = (name: string): never => { throw new Error(`NotImplemented: ${name} (S2/S3)`) }
+const scopeHash = (key: string) => createHash('sha256').update(key).digest('hex')
 
 /** LLM prompt builder에서 필요한 S1 DB 읽기 어댑터. */
 export class DbLlmPorts implements LlmPorts {
-  constructor(private readonly db: Db, private readonly config: AppConfig, private readonly currentUserId: string) {}
+  constructor(private readonly db: Db, private readonly config: AppConfig, private readonly currentUserId: string, private readonly storage = new FileStorageService(config.fileStorageRoot)) {}
 
   async getSettings(): Promise<Settings> {
     const rows = await this.db.select().from(appSetting)
@@ -22,7 +26,7 @@ export class DbLlmPorts implements LlmPorts {
       id: 'app', currentUserId: this.currentUserId,
       llm: toLlmSettings(this.config.llm),
       ...(typeof sr === 'string' ? { srIntakeAssistantId: sr } : {}),
-      ...(typeof budget === 'number' ? { requestBudgetBytes: budget } : {}),
+      requestBudgetBytes: typeof budget === 'number' ? budget : this.config.request.budgetBytes,
     }
   }
 
@@ -58,7 +62,7 @@ export class DbLlmPorts implements LlmPorts {
   async getTasks(ids: string[]): Promise<(Task | undefined)[]> {
     if (!ids.length) return []
     const [rows, assignees, tags, inputs, checks, threads, outputs] = await Promise.all([
-      this.db.select().from(task).where(inArray(task.id, ids)),
+      this.db.select().from(task).where(and(inArray(task.id, ids), isNull(task.deletedAt))),
       this.db.select().from(taskAssignee).where(inArray(taskAssignee.taskId, ids)),
       this.db.select().from(taskTag).where(inArray(taskTag.taskId, ids)),
       this.db.select().from(taskInput).where(inArray(taskInput.taskId, ids)),
@@ -90,19 +94,45 @@ export class DbLlmPorts implements LlmPorts {
   async getFiles(ids: string[]): Promise<(FileAsset | undefined)[]> {
     if (!ids.length) return []
     const rows = await this.db.select().from(fileObject).where(and(inArray(fileObject.id, ids), isNull(fileObject.deletedAt)))
+    const refs = await this.db.select().from(fileRemoteRef).where(inArray(fileRemoteRef.fileId, ids))
+    const currentKey = remoteKey(toLlmSettings(this.config.llm))
+    const currentHash = scopeHash(currentKey)
     const byId = new Map(rows.map((row): [string, FileAsset] => [row.id, {
       id: row.id, ...(row.originTaskId ? { originTaskId: row.originTaskId } : {}),
       ...(row.originSrId ? { originSrId: row.originSrId } : {}), name: row.originalName,
       mime: row.mime, size: row.sizeBytes, blob: new Blob([]), uploadedBy: row.uploadedBy,
       uploadedAt: iso(row.uploadedAt), source: row.source === 'assistant' ? 'assistant' : row.kind === 'sr_attachment' ? 'sr' : 'upload',
       tags: [], version: row.version, ...(row.previousId ? { previousId: row.previousId } : {}),
+      ...(refs.find((ref) => ref.fileId === row.id && ref.scopeHash === currentHash) ? { remoteIds: { [currentKey]: refs.find((ref) => ref.fileId === row.id && ref.scopeHash === currentHash)!.remoteId } } : {}),
     }]))
     return ids.map((id) => byId.get(id))
   }
 
-  async getServiceRequestsByCodes(): Promise<never> { return missing('getServiceRequestsByCodes') }
-  async getFilesBySr(): Promise<never> { return missing('getFilesBySr') }
-  async loadConversationInputs(): Promise<never> { return missing('loadConversationInputs') }
-  async updateFileRemoteIds(): Promise<never> { return missing('updateFileRemoteIds') }
-  async readFileBytes(): Promise<never> { return missing('readFileBytes') }
+  async getServiceRequestsByCodes(codes: string[]): Promise<ServiceRequest[]> {
+    if (!codes.length) return []
+    const rows = await this.db.select().from(serviceRequest).where(inArray(serviceRequest.code, codes))
+    const threads = await this.db.select().from(thread).where(inArray(thread.srId, rows.map((row) => row.id)))
+    const files = await this.db.select({ id: fileObject.id, srId: fileObject.originSrId }).from(fileObject).where(and(inArray(fileObject.originSrId, rows.map((row) => row.id)), isNull(fileObject.deletedAt)))
+    return rows.map((row) => ({ id: row.id, code: row.code ?? '', requesterId: row.requesterId, title: row.title,
+      titleSource: row.titleSource as ServiceRequest['titleSource'], body: row.body, status: row.status as ServiceRequest['status'],
+      attachmentIds: files.filter((file) => file.srId === row.id).map((file) => file.id), threadId: threads.find((item) => item.srId === row.id)?.id ?? '',
+      results: [], ...(row.submittedAt ? { submittedAt: iso(row.submittedAt) } : {}), createdAt: iso(row.createdAt), updatedAt: iso(row.updatedAt) }))
+  }
+  async getFilesBySr(srId: string): Promise<FileAsset[]> {
+    const rows = await this.db.select({ id: fileObject.id }).from(fileObject).where(and(eq(fileObject.originSrId, srId), isNull(fileObject.deletedAt)))
+    return (await this.getFiles(rows.map((row) => row.id))).filter((file): file is FileAsset => !!file)
+  }
+  async loadConversationInputs() { return [] }
+  async updateFileRemoteIds(fileId: string, remoteIds: Record<string, string>): Promise<void> {
+    const key = remoteKey(toLlmSettings(this.config.llm))
+    const remoteId = remoteIds[key]
+    if (remoteId) await this.db.insert(fileRemoteRef).values({ fileId, scopeHash: scopeHash(key), remoteId })
+      .onConflictDoUpdate({ target: [fileRemoteRef.fileId, fileRemoteRef.scopeHash], set: { remoteId, uploadedAt: new Date() } })
+  }
+  async readFileBytes(file?: FileAsset): Promise<Uint8Array> {
+    if (!file) return missing('readFileBytes')
+    const [row] = await this.db.select({ storageKey: fileObject.storageKey }).from(fileObject).where(eq(fileObject.id, file.id))
+    if (!row) throw new Error('파일이 없습니다')
+    return this.storage.read(row.storageKey)
+  }
 }
