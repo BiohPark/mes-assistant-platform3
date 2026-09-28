@@ -30,7 +30,7 @@ export class FileStorageService {
     if (platform === 'native') {
       const resolved = nativeResolve(root)
       mkdirSync(resolved, { recursive: true })
-      this.root = realpathSync(resolved)
+      this.root = realpathSync.native(resolved) // Windows 8.3 짧은 이름(RUNNER~1)도 긴 이름으로 정규화 — fs.promises.realpath와 같은 결과
     } else {
       this.root = this.path.resolve(root)
     }
