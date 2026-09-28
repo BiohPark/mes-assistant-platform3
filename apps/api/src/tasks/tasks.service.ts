@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common'
 import { applyTaskStatus, isSrTag, normalizeTag, tagKey, tagSuggestions, type Task, type TaskStatus, type Thread } from '@mes/domain'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, exists, inArray, or, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appUser, assistant, fileObject, message, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 
@@ -11,6 +11,7 @@ export interface CreateTaskInput {
   title?: string
   referenceTaskId?: string
   inputFileIds?: string[]
+  firstMessage?: string
 }
 export interface TaskPatch {
   title?: string
@@ -37,33 +38,48 @@ export class DbTasksService {
     return row
   }
 
-  private async ensureEditable(taskId: string) {
-    const row = await this.row(taskId)
+  private async lockedRow(tx: Parameters<Parameters<Db['transaction']>[0]>[0], taskId: string) {
+    const [row] = await tx.select().from(task).where(eq(task.id, taskId)).for('update')
+    if (!row) throw new NotFoundException('대화를 찾을 수 없습니다')
+    return row
+  }
+
+  private async ensureEditable(tx: Parameters<Parameters<Db['transaction']>[0]>[0], taskId: string) {
+    const row = await this.lockedRow(tx, taskId)
     if (row.status === 'done') throw new ConflictException('완료된 대화는 재개한 뒤 수정하세요')
     return row
   }
 
-  async get(taskId: string): Promise<Task & { thread?: Thread }> {
-    const row = await this.row(taskId)
+  private async assemble(rows: (typeof task.$inferSelect)[]): Promise<(Task & { thread?: Thread })[]> {
+    if (!rows.length) return []
+    const ids = rows.map((row) => row.id)
     const [tags, assignees, threads] = await Promise.all([
-      this.db.select({ label: tag.label }).from(taskTag).innerJoin(tag, eq(taskTag.tagKey, tag.key)).where(eq(taskTag.taskId, taskId)).orderBy(taskTag.addedAt),
-      this.db.select({ userId: taskAssignee.userId }).from(taskAssignee).where(eq(taskAssignee.taskId, taskId)),
-      this.db.select().from(thread).where(eq(thread.taskId, taskId)),
+      this.db.select({ taskId: taskTag.taskId, label: tag.label }).from(taskTag).innerJoin(tag, eq(taskTag.tagKey, tag.key)).where(inArray(taskTag.taskId, ids)).orderBy(taskTag.addedAt),
+      this.db.select().from(taskAssignee).where(inArray(taskAssignee.taskId, ids)),
+      this.db.select().from(thread).where(inArray(thread.taskId, ids)),
     ])
-    return {
-      id: row.id, code: row.code, assistantId: row.assistantId, title: row.title,
-      titleSource: row.titleSource as Task['titleSource'], summary: row.summary,
-      status: row.status as TaskStatus, ownerId: row.ownerId,
-      assigneeIds: assignees.map((item) => item.userId), priority: row.priority as Task['priority'],
-      ...(row.dueDate && { dueDate: row.dueDate }), tags: tags.map((item) => item.label),
-      checklist: [], inputs: [], outputFileIds: [], ...(threads[0] && { threadId: threads[0].id,
-        thread: { id: threads[0].id, taskId, title: threads[0].title, createdAt: threads[0].createdAt.toISOString(), createdBy: threads[0].createdBy, archived: false, ...(threads[0].modelId && { modelId: threads[0].modelId }) } }),
-      ...(row.modelId && { modelId: row.modelId }), createdAt: row.createdAt.toISOString(),
-      createdBy: row.createdBy, lastActivityAt: row.lastActivityAt.toISOString(),
-      ...(iso(row.startedAt) && { startedAt: iso(row.startedAt)! }),
-      ...(iso(row.completedAt) && { completedAt: iso(row.completedAt)! }),
-      ...(row.completedBy && { completedBy: row.completedBy }),
-    }
+    return rows.map((row) => {
+      const taskId = row.id
+      const taskThread = threads.find((item) => item.taskId === taskId)
+      return {
+        id: row.id, code: row.code, assistantId: row.assistantId, title: row.title,
+        titleSource: row.titleSource as Task['titleSource'], summary: row.summary,
+        status: row.status as TaskStatus, ownerId: row.ownerId,
+        assigneeIds: assignees.filter((item) => item.taskId === taskId).map((item) => item.userId), priority: row.priority as Task['priority'],
+        ...(row.dueDate && { dueDate: row.dueDate }), tags: tags.filter((item) => item.taskId === taskId).map((item) => item.label),
+        checklist: [], inputs: [], outputFileIds: [], ...(taskThread && { threadId: taskThread.id,
+          thread: { id: taskThread.id, taskId, title: taskThread.title, createdAt: taskThread.createdAt.toISOString(), createdBy: taskThread.createdBy, archived: false, ...(taskThread.modelId && { modelId: taskThread.modelId }) } }),
+        ...(row.modelId && { modelId: row.modelId }), createdAt: row.createdAt.toISOString(),
+        createdBy: row.createdBy, lastActivityAt: row.lastActivityAt.toISOString(),
+        ...(iso(row.startedAt) && { startedAt: iso(row.startedAt)! }),
+        ...(iso(row.completedAt) && { completedAt: iso(row.completedAt)! }),
+        ...(row.completedBy && { completedBy: row.completedBy }),
+      }
+    })
+  }
+
+  async get(taskId: string): Promise<Task & { thread?: Thread }> {
+    return (await this.assemble([await this.row(taskId)]))[0]!
   }
 
   async create(actor: string, input: CreateTaskInput) {
@@ -85,6 +101,10 @@ export class DbTasksService {
         ownerId: actor, priority: 'normal', createdBy: actor, startedAt: now, lastActivityAt: now })
       await tx.insert(taskAssignee).values({ taskId, userId: actor })
       await tx.insert(thread).values({ id: threadId, taskId, title: '대화', createdBy: actor })
+      if (input.firstMessage?.trim()) {
+        await tx.insert(message).values({ id: id(), threadId, seq: 1, role: 'user', kind: 'discussion', content: input.firstMessage.trim(), authorId: actor, status: 'done' })
+        await tx.insert(activityLog).values({ id: id(), type: 'message.sent', userId: actor, taskId, payload: { kind: 'discussion' } })
+      }
       for (const label of tags) {
         const key = tagKey(label)
         await tx.insert(tag).values({ key, label, kind: isSrTag(label) ? 'sr' : 'keyword' }).onConflictDoNothing()
@@ -97,18 +117,20 @@ export class DbTasksService {
   }
 
   async list(filter: TaskFilter = {}): Promise<Task[]> {
-    const rows = await this.db.select({ id: task.id, ownerId: task.ownerId }).from(task).orderBy(desc(task.lastActivityAt))
-    const tasks = await Promise.all(rows.map((row) => this.get(row.id)))
-    const wanted = new Set((filter.tags ?? []).map(tagKey))
-    return tasks.filter((item) =>
-      (!filter.assistantId || item.assistantId === filter.assistantId) &&
-      (!filter.status?.length || filter.status.includes(item.status)) &&
-      (!filter.mine || item.ownerId === filter.mine || item.assigneeIds.includes(filter.mine)) &&
-      ([...wanted].every((key) => item.tags.some((value) => tagKey(value) === key))))
+    const conditions = [
+      ...(filter.assistantId ? [eq(task.assistantId, filter.assistantId)] : []),
+      ...(filter.status?.length ? [inArray(task.status, filter.status)] : []),
+      ...(filter.mine ? [or(
+        eq(task.ownerId, filter.mine),
+        exists(this.db.select({ id: taskAssignee.taskId }).from(taskAssignee).where(and(eq(taskAssignee.taskId, task.id), eq(taskAssignee.userId, filter.mine)))),
+      )] : []),
+      ...[...new Set((filter.tags ?? []).map(tagKey))].map((key) => exists(this.db.select({ id: taskTag.taskId }).from(taskTag).where(and(eq(taskTag.taskId, task.id), eq(taskTag.tagKey, key))))),
+    ]
+    const rows = await this.db.select().from(task).where(and(...conditions)).orderBy(desc(task.lastActivityAt))
+    return this.assemble(rows)
   }
 
   async update(actor: string, taskId: string, patch: TaskPatch): Promise<Task> {
-    await this.ensureEditable(taskId)
     if (patch.title !== undefined && !patch.title.trim()) throw new BadRequestException('제목이 필요합니다')
     const userIds = [...new Set([patch.ownerId, ...(patch.assigneeIds ?? [])].filter((value): value is string => !!value))]
     if (userIds.length) {
@@ -116,6 +138,7 @@ export class DbTasksService {
       if (found.length !== userIds.length) throw new BadRequestException('존재하지 않는 담당자가 있습니다')
     }
     await this.db.transaction(async (tx) => {
+      await this.ensureEditable(tx, taskId)
       await tx.update(task).set({
         ...(patch.title !== undefined && { title: patch.title.trim(), titleSource: 'manual' }),
         ...(patch.summary !== undefined && { summary: patch.summary }),
@@ -136,12 +159,12 @@ export class DbTasksService {
   }
 
   async setStatus(actor: string, taskId: string, status: TaskStatus, reason?: string): Promise<Task> {
-    const current = await this.row(taskId)
-    if (current.status === status) return this.get(taskId)
-    if (current.status === 'done' && !reason?.trim()) throw new BadRequestException('재개 사유가 필요합니다')
-    const next = applyTaskStatus(await this.get(taskId), status, actor, new Date().toISOString())
-    const type = current.status === 'done' ? 'task.reopened' : ({ done: 'task.completed', in_progress: 'task.started', on_hold: 'task.hold', todo: 'task.status_changed' } as const)[status]
     await this.db.transaction(async (tx) => {
+      const current = await this.lockedRow(tx, taskId)
+      if (current.status === status) return
+      if (current.status === 'done' && !reason?.trim()) throw new BadRequestException('재개 사유가 필요합니다')
+      const next = applyTaskStatus((await this.assemble([current]))[0]!, status, actor, new Date().toISOString())
+      const type = current.status === 'done' ? 'task.reopened' : ({ done: 'task.completed', in_progress: 'task.started', on_hold: 'task.hold', todo: 'task.status_changed' } as const)[status]
       await tx.update(task).set({ status, startedAt: next.startedAt ? new Date(next.startedAt) : null,
         completedAt: next.completedAt ? new Date(next.completedAt) : null, completedBy: next.completedBy ?? null,
         lastActivityAt: new Date() }).where(eq(task.id, taskId))
@@ -151,11 +174,11 @@ export class DbTasksService {
   }
 
   async addTag(actor: string, taskId: string, raw: string): Promise<void> {
-    await this.ensureEditable(taskId)
     const label = normalizeTag(raw)
     if (!label) throw new BadRequestException('태그가 필요합니다')
     const key = tagKey(label)
     await this.db.transaction(async (tx) => {
+      await this.ensureEditable(tx, taskId)
       await tx.insert(tag).values({ key, label, kind: isSrTag(label) ? 'sr' : 'keyword' }).onConflictDoNothing()
       const added = await tx.insert(taskTag).values({ taskId, tagKey: key, addedBy: actor }).onConflictDoNothing().returning()
       if (added.length) {
@@ -166,10 +189,13 @@ export class DbTasksService {
   }
 
   async removeTag(actor: string, taskId: string, raw: string): Promise<void> {
-    await this.ensureEditable(taskId)
     await this.db.transaction(async (tx) => {
+      await this.ensureEditable(tx, taskId)
       const removed = await tx.delete(taskTag).where(and(eq(taskTag.taskId, taskId), eq(taskTag.tagKey, tagKey(raw)))).returning()
-      if (removed.length) await tx.insert(activityLog).values({ id: id(), type: 'tag.removed', userId: actor, taskId, payload: { tag: normalizeTag(raw) } })
+      if (removed.length) {
+        await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, taskId))
+        await tx.insert(activityLog).values({ id: id(), type: 'tag.removed', userId: actor, taskId, payload: { tag: normalizeTag(raw) } })
+      }
     })
   }
 
@@ -189,11 +215,11 @@ export class DbTasksService {
   async appendMessage(actor: string, threadId: string, input: { content: string; kind: 'discussion' }) {
     if (input.kind !== 'discussion') throw new BadRequestException('AI 요청은 S3에서 지원합니다')
     if (!input.content?.trim()) throw new BadRequestException('내용이 필요합니다')
-    const [target] = await this.db.select().from(thread).where(eq(thread.id, threadId))
-    if (!target?.taskId) throw new NotFoundException('스레드를 찾을 수 없습니다')
-    await this.ensureEditable(target.taskId)
     const messageId = id()
     await this.db.transaction(async (tx) => {
+      const [target] = await tx.select().from(thread).where(eq(thread.id, threadId))
+      if (!target?.taskId) throw new NotFoundException('스레드를 찾을 수 없습니다')
+      await this.ensureEditable(tx, target.taskId)
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${threadId}))`)
       const [max] = await tx.select({ value: sql<number>`coalesce(max(${message.seq}), 0)` }).from(message).where(eq(message.threadId, threadId))
       await tx.insert(message).values({ id: messageId, threadId, seq: Number(max?.value ?? 0) + 1, role: 'user', kind: 'discussion', content: input.content.trim(), authorId: actor, status: 'done' })

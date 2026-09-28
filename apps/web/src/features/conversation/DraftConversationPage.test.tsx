@@ -6,7 +6,9 @@ import { MeContext } from '@/app/auth'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { DraftConversationPage } from './DraftConversationPage'
 
-afterEach(() => vi.unstubAllGlobals())
+const toastError = vi.hoisted(() => vi.fn())
+vi.mock('sonner', () => ({ toast: { error: toastError } }))
+afterEach(() => { vi.unstubAllGlobals(); toastError.mockClear() })
 
 it('creates a task only on the first discussion send and shows the conversation code', async () => {
   const posts: string[] = []
@@ -28,6 +30,38 @@ it('creates a task only on the first discussion send and shows the conversation 
   fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '팀 의견' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(posts).toHaveLength(1))
-  expect(JSON.parse(posts[0]!)).toEqual({ assistantId: 'a', tags: ['abc'] })
+  expect(JSON.parse(posts[0]!)).toEqual({ assistantId: 'a', tags: ['abc'], firstMessage: '팀 의견' })
   await screen.findByText('대화로 이동')
+  expect(posts).toHaveLength(1)
+})
+
+it('keeps the draft and shows an error if creation fails', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants') return new Response(JSON.stringify([{ id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-28T00:00:00.000Z', updatedAt: '2026-09-28T00:00:00.000Z', revision: 0 }]), { status: 200 })
+    if (url === '/api/tasks' && init?.method === 'POST') return new Response(JSON.stringify({ message: '생성 실패' }), { status: 500 })
+    return new Response('[]', { status: 200 })
+  }))
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><TooltipProvider><MemoryRouter initialEntries={['/new/a']}><Routes><Route path="/new/:assistantId" element={<DraftConversationPage />} /><Route path="/c/:taskId" element={<div>대화로 이동</div>} /></Routes></MemoryRouter></TooltipProvider></MeContext></QueryClientProvider>)
+  await screen.findByText('도우미')
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '남길 의견' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(screen.getByRole('textbox', { name: '팀 의견 입력' })).toHaveValue('남길 의견'))
+  await waitFor(() => expect(toastError).toHaveBeenCalled())
+  expect(screen.queryByText('대화로 이동')).not.toBeInTheDocument()
+})
+
+it('disables sending while the create request is pending', async () => {
+  let posts = 0
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants') return new Response(JSON.stringify([{ id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-28T00:00:00.000Z', updatedAt: '2026-09-28T00:00:00.000Z', revision: 0 }]), { status: 200 })
+    if (url === '/api/tasks' && init?.method === 'POST') { posts++; return new Promise<Response>(() => undefined) }
+    return new Response('[]', { status: 200 })
+  }))
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><TooltipProvider><MemoryRouter initialEntries={['/new/a']}><Routes><Route path="/new/:assistantId" element={<DraftConversationPage />} /></Routes></MemoryRouter></TooltipProvider></MeContext></QueryClientProvider>)
+  await screen.findByText('도우미')
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '첫 의견' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeDisabled())
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  expect(posts).toBe(1)
 })

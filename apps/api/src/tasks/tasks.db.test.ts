@@ -83,4 +83,62 @@ describe('tasks DB', () => {
     await expect(service.update('member', created.id, { ownerId: 'missing-user' })).rejects.toMatchObject({ status: 400 })
     await expect(service.update('member', created.id, { assigneeIds: ['missing-user'] })).rejects.toMatchObject({ status: 400 })
   })
+
+  it('creates the first discussion and activity atomically, and leaves an empty thread when omitted', async () => {
+    const withMessage = await service.create('member', { assistantId, firstMessage: ' 첫 의견 ' })
+    expect(await service.messages(withMessage.thread.id)).toMatchObject([{ seq: 1, content: '첫 의견', kind: 'discussion', authorId: 'member' }])
+    expect((await service.activity(withMessage.task.id)).map((item) => item.type)).toContain('message.sent')
+    const withoutMessage = await service.create('member', { assistantId })
+    expect(await service.messages(withoutMessage.thread.id)).toEqual([])
+  })
+
+  it('rejects completed edits and serializes completion with tag changes', async () => {
+    const { task: created, thread: createdThread } = await service.create('member', { assistantId })
+    await service.setStatus('member', created.id, 'done')
+    await expect(service.update('member', created.id, { summary: 'late' })).rejects.toMatchObject({ status: 409 })
+    await expect(service.addTag('member', created.id, 'late')).rejects.toMatchObject({ status: 409 })
+    await expect(service.removeTag('member', created.id, 'late')).rejects.toMatchObject({ status: 409 })
+    await expect(service.appendMessage('member', createdThread.id, { content: 'late', kind: 'discussion' })).rejects.toMatchObject({ status: 409 })
+
+    for (let index = 0; index < 5; index++) {
+      const { task: racing } = await service.create('member', { assistantId })
+      const outcomes = await Promise.allSettled([service.setStatus('member', racing.id, 'done'), service.addTag('member', racing.id, `race-${index}`)])
+      expect(outcomes[0]?.status).toBe('fulfilled')
+      if (outcomes[1]?.status === 'rejected') expect(outcomes[1].reason).toMatchObject({ status: 409 })
+      expect((await service.get(racing.id)).status).toBe('done')
+      const hasTag = (await service.get(racing.id)).tags.includes(`race-${index}`)
+      expect(hasTag).toBe(outcomes[1]?.status === 'fulfilled')
+    }
+  })
+
+  it('filters by SQL criteria and assembles list items like get', async () => {
+    const first = (await service.create('member', { assistantId, tags: ['filter-one'] })).task
+    const second = (await service.create('member', { assistantId, tags: ['filter-two'] })).task
+    await db.insert(appUser).values({ id: 'assignee', name: 'Assignee', initials: 'A', color: '#123456' }).onConflictDoNothing()
+    await service.update('member', first.id, { assigneeIds: ['assignee'] })
+    await service.setStatus('member', second.id, 'done')
+    expect((await service.list({ assistantId, status: ['in_progress'], tags: ['filter-one'], mine: 'member' })).find((item) => item.id === first.id)).toEqual(await service.get(first.id))
+    expect((await service.list({ mine: 'assignee', tags: ['filter-one'] })).map((item) => item.id)).toContain(first.id)
+    expect((await service.list({ mine: 'assignee', tags: ['filter-two'] })).map((item) => item.id)).not.toContain(second.id)
+    expect((await service.list({ status: ['done'], tags: ['filter-one'] })).some((item) => item.id === first.id)).toBe(false)
+    expect((await service.list({ assistantId: 'missing' })).some((item) => item.id === first.id)).toBe(false)
+    expect((await service.list({ mine: 'missing' })).some((item) => item.id === first.id)).toBe(false)
+    expect((await service.list({ tags: ['filter-two'] })).some((item) => item.id === second.id)).toBe(true)
+    expect((await service.list({ tags: ['filter-one', 'filter-two'] })).some((item) => item.id === first.id || item.id === second.id)).toBe(false)
+  })
+
+  it('uses a constant number of queries for the list', async () => {
+    let queries = 0
+    const counted = new DbTasksService(drizzle(client, { logger: { logQuery: () => { queries++ } } }))
+    await counted.list()
+    expect(queries).toBeLessThanOrEqual(4)
+  })
+
+  it('advances lastActivityAt when a tag is removed', async () => {
+    const { task: created } = await service.create('member', { assistantId, tags: ['remove-me'] })
+    const before = new Date('2020-01-01T00:00:00.000Z')
+    await db.update(task).set({ lastActivityAt: before }).where(eq(task.id, created.id))
+    await service.removeTag('member', created.id, 'remove-me')
+    expect(new Date((await service.get(created.id)).lastActivityAt).getTime()).toBeGreaterThan(before.getTime())
+  })
 })

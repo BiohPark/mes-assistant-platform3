@@ -48,14 +48,11 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
     if (!canSend) return
     const t = text
     const f = pending
-    setText('')
-    setPending([])
     try {
       await onSend(t, f, discussion)
+      setText('')
+      setPending([])
     } catch (e) {
-      // 전송 실패 시 입력을 복구해 메시지가 사라지지 않게 한다
-      setText(t)
-      setPending(f)
       toast.error('전송하지 못했습니다.', { description: e instanceof Error ? e.message : String(e) })
     }
   }

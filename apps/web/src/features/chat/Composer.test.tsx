@@ -11,3 +11,16 @@ it('sends text as discussion while AI and file controls are unavailable', async 
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(send).toHaveBeenCalledWith('안녕하세요', [], true))
 })
+
+it('keeps text during a failed send and clears it after a successful retry', async () => {
+  const send = vi.fn().mockRejectedValueOnce(new Error('실패')).mockResolvedValueOnce(undefined)
+  render(<Composer streaming={false} onSend={send} onStop={() => undefined} />)
+  const input = screen.getByRole('textbox', { name: '팀 의견 입력' })
+  fireEvent.change(input, { target: { value: '남길 의견' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+  expect(input).toHaveValue('남길 의견')
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect(input).toHaveValue(''))
+})

@@ -5,7 +5,7 @@ import { z } from 'zod'
 
 const createSchema = z.object({
   assistantId: z.string().min(1), tags: z.array(z.string()).optional(), title: z.string().optional(),
-  referenceTaskId: z.string().optional(), inputFileIds: z.array(z.string()).optional(),
+  referenceTaskId: z.string().optional(), inputFileIds: z.array(z.string()).optional(), firstMessage: z.string().trim().min(1).optional(),
 }).strict()
 const patchSchema = z.object({
   title: z.string().optional(), summary: z.string().optional(), priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),

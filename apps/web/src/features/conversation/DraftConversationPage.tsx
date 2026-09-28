@@ -2,7 +2,6 @@ import { useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, Info } from 'lucide-react'
-import { toast } from 'sonner'
 import { normalizeTag, tagKey } from '@mes/domain'
 import { TopBar } from '@/app/TopBar'
 import { useActor, useUserMap } from '@/app/hooks'
@@ -43,12 +42,12 @@ export function DraftConversationPage() {
     sending.current = true
     setBusy(true)
     try {
-      const { task } = await startConversation(actor, { assistantId: assistant.id, tags, ...(refId && { referenceTaskId: refId }) })
-      navigate(`/c/${task.id}`, { replace: true, state: { autoSend: text.trim() } })
+      const { task } = await startConversation(actor, { assistantId: assistant.id, tags, ...(refId && { referenceTaskId: refId }), firstMessage: text.trim() })
+      navigate(`/c/${task.id}`, { replace: true })
     } catch (error) {
       sending.current = false
       setBusy(false)
-      toast.error(error instanceof Error ? error.message : '대화를 시작하지 못했습니다')
+      throw error
     }
   }
 

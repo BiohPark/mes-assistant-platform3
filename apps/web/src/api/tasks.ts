@@ -3,7 +3,7 @@ import type { TagSuggestion } from '@mes/domain'
 import { queryClient } from './queryClient'
 
 export interface Actor { userId: string }
-export interface StartConversationInput { assistantId: string; tags?: string[]; title?: string; referenceTaskId?: string; inputFileIds?: string[] }
+export interface StartConversationInput { assistantId: string; tags?: string[]; title?: string; referenceTaskId?: string; inputFileIds?: string[]; firstMessage?: string }
 export interface TaskFilter { assistantId?: string; status?: TaskStatus[]; tags?: string[]; mine?: boolean }
 
 async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
