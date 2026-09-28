@@ -100,6 +100,14 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 
 ## 6. 진행 현황
 
+### 완료 — S2 (2026-09-28, `main` 병합 · 태그 `s2-done`)
+
+- ① 카탈로그: 코드 테이블(D36)·BO 역할(D37)·개발 시드·카탈로그 읽기 API·허브 카드(검색·Lv1/Lv2 필터)
+- ② 대화: `/api/tasks`(지연 생성 + `firstMessage` 원자 저장, WK 코드 advisory lock, 상태 전이·재개 사유, 완료 잠금 트랜잭션), 태그·자동완성, 팀 의견, 활동 이력, 초안/대화 화면, 칸반, RelatedStrip, ModelPicker
+- ③ 파일: `/api/files`(업로드 한도·버전 체인·스트리밍·산출물·소프트 삭제 참조 보호), ☑/★ 입력 선택·버전 전환, 직접 태그 공유 후보, 자료함·컴포저 첨부·산출물 저장
+- 검증: 단위 222 · DB 38 · E2E 7(home·tasks·files = 데모 E1 S1·S3·S4) · CI 5잡 녹색. codex-critic 리뷰 3회(16건) 반영. ④ e2e 태스크는 ③에 흡수
+- **이월**: 카드 OpenWebUI 링크 기본 규칙(U9, S4) · 첨부 개수 표시 한도(KI-7, S4 설정 API) · 초안 생성 요청의 idempotency key(S3) · Windows E2E(KI-6)
+
 ### 완료 — S1 (2026-09-28, `main` 병합 · 태그 `s1-done`)
 
 - ① 앱 자체 로그인(D34): `AUTH_MODE=local` 기본, 회원가입·로그인·최초 SO 부트스트랩 1회, 로그인 CSRF Origin 검사. OIDC는 `oidc` 모드·Keycloak 프로필로만
@@ -121,7 +129,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | 조사 | **회사 PC에서 저장소 받기**: 저장소를 public으로 두는 이유 — 회사에서 GitHub 로그인이 안 됨. 대안 조사 필요(읽기 전용 fine-grained PAT·deploy key·release zip·사내 미러) — 회사 망에서 github.com 도달 여부부터 확인 | 사용자 (2026-09-28) |
 | S4 | 코드 관리 화면·API(SO), SO·BO 지정 화면 — DDL은 S2 ①에서(D36·D37) | PRD FR-63 |
 | **남은 위험** | ① 실제 Windows 실기 미확인(문서 명령은 PowerShell 7.6으로 검증, CI windows 잡은 push 후) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
-| **진행(S2)** | [S2-kickoff.md](next-project/S2-kickoff.md) 승인(2026-09-28). ① `s2-catalog` **완료·main 병합(24dd90e)** — 코드 테이블·BO 역할·시드·카탈로그 API·허브 카드(단위 186·DB 18·E2E 3, 리뷰 반영) → ② `s2-tasks` **완료·main 병합(65b4403)**(리뷰 5건 반영, 단위 201·DB 28·E2E 4) → ③ `s2-files` 구현·검증 완료(단위 214·DB 35·E2E 7 — E1 S1·S3·S4 통과), 리뷰·CI 뒤 병합 → ④ e2e(CI 확인·정리) | tasks/s2-catalog · tasks/s2-tasks |
+| **다음(S3)** | [S3-kickoff.md](next-project/S3-kickoff.md) 계획·세부 결정 8건 승인(2026-09-28). 착수 전 **잔여 대상 상세 설계**(사용자 지시) → ① `s3-request` → ② `s3-context` → ③ `s3-tray-events` | 대응표 S3 21행 |
 | ~~S1 ②~~ 병합 완료 | 서버 대리 호출 기반 `feat/s1-llm-proxy` — `LLM_MODE`·`LLM_PRESET`(openwebui/openai-compatible)·`GET /api/llm/models`·`/status`, `LlmPorts` DB 어댑터 1차, `FileStorageService`(realpath 루트·내부 링크 거부), 웹 모델 목록·SO 배지. codex-critic 4건+누락 1건 반영. 검증 단위 165·DB 15·E2E 2, CI 5/5(Windows 8.3 경로·CI 환경 의존 2건 수정 후). **OpenAI 실키 수동 확인은 사용자 키 필요** | tasks/s1-llm-proxy |
 | ~~S1 ①~~ 병합 완료 | 앱 자체 로그인·회원가입(D34) `feat/s1-auth-local` — codex-main 구현 + codex-critic 리뷰 4건 반영. 검증 단위 142·DB 9·E2E 2. CI 녹색 확인 후 `main` 병합(사용자 승인) | tasks/s1-auth-local · [요구사항 검토](status/requirements-review-2026-09-28.md) |
 | 착수 전 확인 | OpenWebUI 버전(사용자 추후 회신), 비기능 제안값(PRD §6) | next-project/README |
