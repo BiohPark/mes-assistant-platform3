@@ -5,6 +5,7 @@ import { DbModule } from './db/db.module.js'
 import { HealthModule } from './health/health.controller.js'
 import { LlmModule } from './llm/llm.module.js'
 import { CatalogModule } from './catalog/catalog.module.js'
+import { TasksModule } from './tasks/tasks.module.js'
 
-@Module({ imports: [ConfigModule, DbModule, HealthModule, AuthModule, LlmModule, CatalogModule] })
+@Module({ imports: [ConfigModule, DbModule, HealthModule, AuthModule, LlmModule, CatalogModule, TasksModule] })
 export class AppModule {}
