@@ -4,6 +4,15 @@ MES Agent Hub의 주요 변경. 스프린트(architecture §9) 단위로 기록�
 
 ## [Unreleased]
 
+### S2 — 카탈로그·대화·파일 (2026-09-28, `s2-done`)
+
+- 코드 관리 1차(D36): `code_group`·`code`, assistant 1·2단계 코드 참조(마이그레이션 0002). BO 역할 `app_user.is_business_owner`(D37)
+- 개발 시드 `pnpm db:seed`(가상 카탈로그 12개, 운영 거부)
+- 카탈로그 API `GET /api/assistants`·`/assistants/stats`·`/users`·`/codes`, 허브 카드 뷰(검색·Lv1/Lv2 필터·중단 보기)
+- 대화 API `/api/tasks`(지연 생성 + `firstMessage` 원자 저장, `WK-YYYY-NNNN` 서버 발급, 상태 전이·재개 사유, 완료 잠금 트랜잭션), 태그·자동완성, 팀 의견 메시지, 활동 이력. 초안/대화 화면, 칸반(URL 필터), RelatedStrip, ModelPicker, ActivityPanel
+- 파일 API `/api/files`(업로드 한도·버전 체인·스트리밍 다운로드·산출물·소프트 삭제 참조 보호), 입력 선택 ☑/★·버전 전환(자동 교체 없음), 직접 태그 공유 후보. 자료함·미리보기·버전·컴포저 첨부·산출물 저장
+- E2E: home·tasks·files(데모 E1 S1·S3·S4). codex-critic 리뷰 3회(16건) 반영
+
 ### S1 — 로그인·서버 대리 호출 기반 (2026-09-28, `s1-done`)
 
 - 앱 자체 로그인(`AUTH_MODE=local` 기본): 회원가입(ID·비밀번호, scrypt)·로그인·로그아웃, 최초 System Owner는 `INITIAL_SYSTEM_OWNERS`로 부트스트랩 1회, 로그인 CSRF Origin 검사. OIDC는 `AUTH_MODE=oidc`(Keycloak `--profile oidc`)
