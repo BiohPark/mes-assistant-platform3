@@ -25,7 +25,7 @@ export class OpenIdOidc implements OidcPort {
   constructor(@Inject(CONFIG) private readonly config: AppConfig) {}
 
   private configuration() {
-    const { issuer, clientId, clientSecret } = this.config.oidc
+    const { issuer, clientId, clientSecret } = this.config.oidc!
     this.discovered ??= client
       .discovery(new URL(issuer), clientId, clientSecret, undefined, {
         // 개발 Keycloak은 http — 운영 IdP는 https라 이 옵션이 붙지 않는다
@@ -46,7 +46,7 @@ export class OpenIdOidc implements OidcPort {
       codeVerifier: client.randomPKCECodeVerifier(),
     }
     const url = client.buildAuthorizationUrl(configuration, {
-      redirect_uri: this.config.oidc.redirectUri,
+      redirect_uri: this.config.oidc!.redirectUri,
       scope: 'openid profile email',
       code_challenge: await client.calculatePKCECodeChallenge(pending.codeVerifier),
       code_challenge_method: 'S256',

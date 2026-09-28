@@ -22,13 +22,41 @@ tags:
   - name: misc
 
 paths:
-  /auth/login:
+  /auth/mode:
     get:
       tags: [auth]
-      summary: SSO 로그인 시작 (IdP로 리다이렉트)
+      summary: 로그인 방식 (D34 — local 기본, oidc는 후속 페이즈 SSO)
+      security: []
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, required: [mode], properties: { mode: { type: string, enum: [local, oidc] } } } } } }
+  /auth/signup:
+    post:
+      tags: [auth]
+      summary: 회원가입 (local 모드) — ID·비밀번호만, 가입 즉시 세션 쿠키
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Credentials' } } } }
+      responses:
+        '201': { description: 가입·로그인됨, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '400': { description: ID·비밀번호 규칙 위반 }
+        '404': { description: local 모드가 아님 }
+        '409': { description: 이미 사용 중인 ID }
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: 로그인 (local 모드) — 세션 쿠키 발급
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Credentials' } } } }
+      responses:
+        '200': { description: 로그인됨, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '401': { description: ID 또는 비밀번호 불일치 (구분하지 않음) }
+        '404': { description: local 모드가 아님 }
+    get:
+      tags: [auth]
+      summary: SSO 로그인 시작 (oidc 모드, IdP로 리다이렉트)
       security: []
       responses:
         '302': { description: IdP로 이동 }
+        '404': { description: oidc 모드가 아님 }
   /auth/callback:
     get:
       tags: [auth]
@@ -446,6 +474,12 @@ components:
       description: 오류 (RFC 9457)
       content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
   schemas:
+    Credentials:
+      type: object
+      required: [loginId, password]
+      properties:
+        loginId: { type: string, pattern: '^[a-z0-9._-]{3,32}$', description: 로그인 ID = 계정 식별자 (D34) }
+        password: { type: string, minLength: 8, maxLength: 128 }
     Problem:
       type: object
       properties:

@@ -1,5 +1,5 @@
 import { createContext, use } from 'react'
-import { MeSchema, type Me } from '@mes/contracts'
+import { AuthModeSchema, MeSchema, type AuthMode, type Me } from '@mes/contracts'
 
 export class HttpError extends Error {
   constructor(readonly status: number) {
@@ -12,6 +12,12 @@ export async function fetchMe(): Promise<Me> {
   const res = await fetch('/api/me', { credentials: 'same-origin' })
   if (!res.ok) throw new HttpError(res.status)
   return MeSchema.parse(await res.json())
+}
+
+export async function fetchAuthMode(): Promise<AuthMode> {
+  const res = await fetch('/api/auth/mode', { credentials: 'same-origin' })
+  if (!res.ok) throw new HttpError(res.status)
+  return AuthModeSchema.parse((await res.json()).mode)
 }
 
 export async function logout(): Promise<void> {

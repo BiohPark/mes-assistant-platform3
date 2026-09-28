@@ -1,15 +1,17 @@
-import { BadRequestException, Controller, Get, HttpCode, Inject, Post, Req, Res } from '@nestjs/common'
-import type { Me } from '@mes/contracts'
-import type { CookieOptions, Response } from 'express'
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Post, Req, Res, UnauthorizedException } from '@nestjs/common'
+import { CredentialsSchema, type Me } from '@mes/contracts'
+import type { CookieOptions, Request, Response } from 'express'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import type { AuthedRequest } from './guards.js'
 import { OIDC, type OidcPort, type PendingLogin } from './oidc.service.js'
+import { hashPassword, verifyPassword } from './password.js'
 import { Public } from './public.decorator.js'
 import { rolesOf } from './roles.js'
 import { SESSION_COOKIE, SESSION_STORE, type SessionStore } from './session.service.js'
 import { USER_DIRECTORY, type UserDirectory } from './users.service.js'
 
 const PENDING_COOKIE = 'mes_oidc'
+const dummyHash = hashPassword('dummy')
 
 @Controller()
 export class AuthController {
@@ -24,9 +26,62 @@ export class AuthController {
     return { httpOnly: true, sameSite: 'lax', secure: this.config.cookieSecure, path: '/', ...extra }
   }
 
+  private ensureLocal() {
+    if (this.config.authMode !== 'local') throw new NotFoundException('앱 자체 로그인이 비활성입니다')
+  }
+
+  private checkOrigin(req: Request) {
+    if ((req.get('Origin') !== undefined && req.get('Origin') !== this.config.appOrigin) || req.get('Sec-Fetch-Site') === 'cross-site') {
+      throw new ForbiddenException('허용되지 않은 출처입니다')
+    }
+  }
+
+  private async respondWithSession(user: { id: string; name: string; role: string; isSystemOwner: boolean }, res: Response): Promise<Me> {
+    const { token, expiresAt } = await this.sessions.create(user.id)
+    res.cookie(SESSION_COOKIE, token, this.cookie({ expires: expiresAt }))
+    return { id: user.id, name: user.name, role: user.role, roles: rolesOf(user) }
+  }
+
+  @Get('auth/mode')
+  @Public()
+  mode() { return { mode: this.config.authMode } }
+
+  @Post('auth/signup')
+  @Public()
+  async signup(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<Me> {
+    this.ensureLocal()
+    this.checkOrigin(req)
+    const parsed = CredentialsSchema.safeParse(body)
+    if (!parsed.success) throw new BadRequestException('ID 또는 비밀번호 형식이 올바르지 않습니다')
+    const { loginId, password } = parsed.data
+    if (await this.users.findByLoginId(loginId)) throw new ConflictException('이미 사용 중인 ID입니다')
+    const user = await this.users.createLocal(loginId, await hashPassword(password))
+    if (!user) throw new ConflictException('이미 사용 중인 ID입니다')
+    return this.respondWithSession(user, res)
+  }
+
+  @Post('auth/login')
+  @Public()
+  @HttpCode(200)
+  async localLogin(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<Me> {
+    this.ensureLocal()
+    this.checkOrigin(req)
+    const parsed = CredentialsSchema.safeParse(body)
+    if (!parsed.success) throw new BadRequestException('ID 또는 비밀번호 형식이 올바르지 않습니다')
+    const { loginId, password } = parsed.data
+    const found = await this.users.findByLoginId(loginId)
+    if (!found || !found.active) {
+      await verifyPassword(password, await dummyHash)
+      throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다')
+    }
+    if (!await verifyPassword(password, found.hash)) throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다')
+    return this.respondWithSession(found.user, res)
+  }
+
   @Get('auth/login')
   @Public()
   async login(@Res() res: Response) {
+    if (this.config.authMode !== 'oidc') throw new NotFoundException('SSO 로그인이 비활성입니다')
     const { url, pending } = await this.oidc.start()
     res.cookie(PENDING_COOKIE, JSON.stringify(pending), this.cookie({ signed: true, maxAge: 10 * 60_000 }))
     res.redirect(302, url)
@@ -35,6 +90,7 @@ export class AuthController {
   @Get('auth/callback')
   @Public()
   async callback(@Req() req: AuthedRequest, @Res() res: Response) {
+    if (this.config.authMode !== 'oidc') throw new NotFoundException('SSO 로그인이 비활성입니다')
     const raw: unknown = req.signedCookies?.[PENDING_COOKIE]
     if (typeof raw !== 'string') throw new BadRequestException('로그인 시작 기록이 없거나 만료되었습니다. 다시 로그인하세요.')
     const pending = JSON.parse(raw) as PendingLogin

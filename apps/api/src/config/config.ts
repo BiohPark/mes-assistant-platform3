@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { z } from 'zod'
+import { AuthModeSchema } from '@mes/contracts'
 
 const list = z
   .string()
@@ -12,11 +13,17 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET은 32자 이상'),
   SESSION_TTL_HOURS: z.coerce.number().positive().default(12),
-  OIDC_ISSUER: z.url(),
-  OIDC_CLIENT_ID: z.string().min(1),
-  OIDC_CLIENT_SECRET: z.string().min(1),
+  AUTH_MODE: AuthModeSchema.default('local'),
+  OIDC_ISSUER: z.string().optional(),
+  OIDC_CLIENT_ID: z.string().optional(),
+  OIDC_CLIENT_SECRET: z.string().optional(),
   INITIAL_SYSTEM_OWNERS: list,
   FILE_STORAGE_ROOT: z.string().default('storage'),
+}).superRefine((e, ctx) => {
+  if (e.AUTH_MODE !== 'oidc') return
+  if (!e.OIDC_ISSUER || !z.url().safeParse(e.OIDC_ISSUER).success) ctx.addIssue({ code: 'custom', path: ['OIDC_ISSUER'], message: '유효한 URL이 필요합니다' })
+  if (!e.OIDC_CLIENT_ID) ctx.addIssue({ code: 'custom', path: ['OIDC_CLIENT_ID'], message: '필수 값입니다' })
+  if (!e.OIDC_CLIENT_SECRET) ctx.addIssue({ code: 'custom', path: ['OIDC_CLIENT_SECRET'], message: '필수 값입니다' })
 })
 
 export type AppConfig = ReturnType<typeof loadConfig>
@@ -36,13 +43,14 @@ export function loadConfig(env: Record<string, string | undefined>) {
     databaseUrl: e.DATABASE_URL,
     sessionSecret: e.SESSION_SECRET,
     sessionTtlHours: e.SESSION_TTL_HOURS,
+    authMode: e.AUTH_MODE,
     cookieSecure: appOrigin.startsWith('https://'),
-    oidc: {
-      issuer: e.OIDC_ISSUER,
-      clientId: e.OIDC_CLIENT_ID,
-      clientSecret: e.OIDC_CLIENT_SECRET,
+    oidc: e.AUTH_MODE === 'oidc' ? {
+      issuer: e.OIDC_ISSUER!,
+      clientId: e.OIDC_CLIENT_ID!,
+      clientSecret: e.OIDC_CLIENT_SECRET!,
       redirectUri: `${appOrigin}/api/auth/callback`,
-    },
+    } : undefined,
     initialSystemOwners: e.INITIAL_SYSTEM_OWNERS,
     fileStorageRoot: resolve(e.FILE_STORAGE_ROOT),
   }

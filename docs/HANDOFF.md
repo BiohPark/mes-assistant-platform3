@@ -91,7 +91,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | D30 | 오케스트레이터(Fable 5.1)는 계획·판단·통합·검증·소통만, 구현은 워커(codex-main·claude-main) 위임. 작업 단위·write_scope를 좁혀 승인, 결과는 테스트·scope_check 검증 후 `[VERIFICATION]` | 사용자 (2026-09-28) |
 | D31 | **실제 사내 OpenWebUI 연동·실제 데이터 테스트는 사내에서만** 가능(이 개발 환경에서는 접속 불가). S1의 실환경 확인([real-env-verification](evaluation/real-env-verification.md))은 킵하고 사용자가 사내에서 수행. 개발·검증은 가짜 OpenWebUI + **OpenAI 등 다른 OpenAI 호환 API로 전환 가능한 프리셋**(base URL·키는 서버 설정)으로 진행 | 사용자 (2026-09-28) |
 | D32 | 배포는 **Windows 서버**, PostgreSQL은 필요 시 설치해 사용. 이번 목표 페이즈에서 **SSO는 미연계** — 대체 인증 방식은 결정 대기(§6) | 사용자 (2026-09-28) |
-| D34 | **인증(A1)**: 앱 자체 로그인. 로그인 ID = 계정 식별자(별도 이메일·사번 없음), 비밀번호는 argon2 해시. **회원가입은 아주 단순하게**(ID·비밀번호만) → 가입 직후 기본 사용자, SO·BO는 SO가 부여(최초 SO는 `INITIAL_SYSTEM_OWNERS`=ID). S0의 OIDC 경로는 `AUTH_MODE=oidc` 설정 선택으로 남기고 기본은 `local`(후속 페이즈 SSO 연계용). 세션 쿠키·`app_session`은 그대로 | 사용자 (2026-09-28) |
+| D34 | **인증(A1)**: 앱 자체 로그인. 로그인 ID = 계정 식별자(별도 이메일·사번 없음), 비밀번호는 Node 내장 `crypto.scrypt` 해시(네이티브 빌드 회피, D22). **회원가입은 아주 단순하게**(ID·비밀번호만) → 가입 직후 기본 사용자, SO·BO는 SO가 부여(S4). 최초 SO는 `INITIAL_SYSTEM_OWNERS`=ID — **부트스트랩 1회**: SO가 한 명도 없을 때 그 ID로 가입하는 첫 사용자만(codex-critic 리뷰 반영, 로그인 시 부여 없음). S0의 OIDC 경로는 `AUTH_MODE=oidc` 설정 선택으로 남기고 기본은 `local`(후속 페이즈 SSO 연계용). 세션 쿠키·`app_session`은 그대로 | 사용자 (2026-09-28) |
 | D35 | **코드 관리**: 관리가 필요한 병렬 단계·병렬 상태는 하드코딩하지 않고 **코드(공통 코드) 데이터로 관리**한다. 최소 대상: assistant 관리 구분(1단계·2단계 각각), 그 외 상태 관련 정보. 코드 관리 화면·API의 구체 형태는 구현 시점(S4)에 사용자와 논의. PRD FR-63 | 사용자 (2026-09-28) |
 | D33 | 역할 호칭: **SO = System Owner, BO = Business Owner(= PRD의 요청자, SR 접수 현업)**. "담당자"는 에이전트를 컨트롤하는 사람이라는 뜻일 뿐 권한 등급이 아님 → 로그인한 기본 사용자(`member`). 권한 등급은 기본 사용자·SO·BO 셋 | 사용자 (2026-09-28) |
 
@@ -112,7 +112,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | S4 설계 | 코드 관리(D35) — assistant 관리 구분(1·2단계)·상태 코드 테이블, 관리 화면·API 형태 논의 | PRD FR-63 |
 | **남은 위험** | ① 실제 Windows 실기 미확인(문서 명령은 PowerShell 7.6으로 검증, CI windows 잡은 push 후) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
 | **다음(S1)** | 서버 대리 호출(채팅·파일·모델 목록 U6) — 가짜 OpenWebUI + OpenAI 호환 API 전환 프리셋(D31). 실환경 확인은 사내에서 사용자가 수행(킵) | `LlmPorts` 구현(DB 어댑터)·`FileStorageService` 시작 |
-| **S1 추가** | 앱 자체 로그인·단순 회원가입(D34) — E2E 로그인도 local 모드로, Keycloak은 `oidc` 모드 검증용으로만 | D34 |
+| **S1 ① 완료** | 앱 자체 로그인·회원가입(D34) `feat/s1-auth-local` — codex-main 구현 + codex-critic 리뷰 4건 반영. 검증 단위 142·DB 9·E2E 2. CI 녹색 확인 후 `main` 병합(사용자 승인) | tasks/s1-auth-local · [요구사항 검토](status/requirements-review-2026-09-28.md) |
 | 착수 전 확인 | OpenWebUI 버전(사용자 추후 회신), 비기능 제안값(PRD §6) | next-project/README |
 | 중간 | IdP 로그아웃, 요청자 역할 저장 | [KNOWN_ISSUES](../KNOWN_ISSUES.md) KI-1·KI-2 |
 
@@ -127,8 +127,12 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 - Keycloak realm의 `${ENV}` 자리는 컨테이너 환경 변수로 치환된다. realm을 바꾸면 컨테이너를 다시 만들어야(`docker compose up -d --force-recreate keycloak`) 다시 임포트된다
 - Keycloak 사용자 프로필 검증은 이름에 괄호 등 특수문자를 막는다 — 걸리면 로그인 뒤 "프로필 수정" 화면이 끼어 E2E가 멈춘다. `name` 클레임은 `firstName lastName` 순서
 - 웹은 `/api/me`의 401이 아닌 오류를 두 번 재시도한다(api `dev` watch 재시작 중 502 대비)
+- 로그인 방식은 `AUTH_MODE`(기본 `local`). `oidc`일 때만 `OIDC_*`가 필수이고 Keycloak은 compose `--profile oidc`로만 뜬다. local에서 SSO 경로는 404, oidc에서 signup/login은 404
+- `INITIAL_SYSTEM_OWNERS`는 부트스트랩 전용 — SO가 아직 없을 때 목록의 ID로 가입(또는 OIDC 첫 로그인)하는 사용자만 SO. SO가 생긴 뒤에는 목록이 무시된다. 배포 직후 관리자가 먼저 가입해야 한다
+- 가입·로그인 POST는 `Origin`이 `APP_ORIGIN`과 다르거나 `Sec-Fetch-Site: cross-site`면 403(로그인 CSRF 방지). 프록시 뒤에서 `APP_ORIGIN`이 실제 브라우저 주소와 다르면 로그인이 막힌다
 - `sso_subject` 형식을 `{issuer}#{sub}`로 바꾸기 전에 로그인한 개발 DB 사용자는 다음 로그인 때 새 사용자로 생긴다 — 개발 DB는 `docker compose down -v`로 초기화
 - 기능 대응표 [next-project/parity-matrix.md](next-project/parity-matrix.md)가 데모 수용 범위의 정본 — 이식할 때 데모 소스를 직접 연다
+- CI Windows 러너의 `ikalnytskyi/action-setup-postgres`는 PG* 환경 변수를 덮어써 잡 env의 `PGPASSWORD`가 비게 된다 — psql이 비밀번호 프롬프트에서 무한 대기(setup-guide 잡 33분 정지). 스텝 env로 다시 준다
 - 데모 저장소는 읽기 전용 — 수정·커밋 금지
 - 요청은 서버 RequestService만 보낸다(S3). 트레이 추정은 `buildChatRequest({ dryRun: true })` — 실제 전송과 같은 함수
 

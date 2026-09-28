@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { Inject, Injectable } from '@nestjs/common'
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
 import { appUser } from '../db/schema.js'
@@ -16,6 +16,8 @@ export interface SsoClaims {
 
 export interface UserDirectory {
   upsertFromClaims(claims: SsoClaims): Promise<AuthUser>
+  createLocal(loginId: string, hash: string): Promise<AuthUser | null>
+  findByLoginId(loginId: string): Promise<{ user: AuthUser; hash: string; active: boolean } | null>
 }
 
 export const USER_DIRECTORY = Symbol('USER_DIRECTORY')
@@ -30,21 +32,48 @@ export class DbUserDirectory implements UserDirectory {
     @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
+  async createLocal(loginId: string, hash: string): Promise<AuthUser | null> {
+    const id = randomUUID()
+    return this.db.transaction(async (tx) => {
+      const candidate = this.config.initialSystemOwners.includes(loginId)
+      if (candidate) await tx.execute(sql`select pg_advisory_xact_lock(72026, 1)`)
+      const [owner] = candidate ? await tx.select({ id: appUser.id }).from(appUser).where(eq(appUser.isSystemOwner, true)).limit(1) : []
+      const [row] = await tx.insert(appUser).values({
+        id, loginId, passwordHash: hash, name: loginId, initials: initialsOf(loginId), color: pickColor(id),
+        isSystemOwner: candidate && !owner,
+      }).onConflictDoNothing({ target: appUser.loginId }).returning({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner })
+      return row ?? null
+    })
+  }
+
+  async findByLoginId(loginId: string) {
+    const [row] = await this.db.select({
+      id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner,
+      hash: appUser.passwordHash, active: appUser.active,
+    }).from(appUser).where(eq(appUser.loginId, loginId))
+    if (!row?.hash) return null
+    const { hash, active, ...user } = row
+    return { user, hash, active }
+  }
+
   /** 첫 로그인 때 app_user를 만들고, 이후에는 이름만 IdP 값으로 맞춘다. 역할은 앱이 관리한다(D21). */
   async upsertFromClaims(claims: SsoClaims): Promise<AuthUser> {
     const name = claims.name?.trim() || claims.preferred_username || claims.sub
     const owners = this.config.initialSystemOwners
     const initialOwner = owners.includes(claims.sub) || (!!claims.preferred_username && owners.includes(claims.preferred_username))
     const id = randomUUID()
-    const [row] = await this.db
+    return this.db.transaction(async (tx) => {
+      if (initialOwner) await tx.execute(sql`select pg_advisory_xact_lock(72026, 1)`)
+      const [owner] = initialOwner ? await tx.select({ id: appUser.id }).from(appUser).where(eq(appUser.isSystemOwner, true)).limit(1) : []
+      const [row] = await tx
       .insert(appUser)
-      .values({ id, ssoSubject: ssoSubjectKey(this.config.oidc.issuer, claims.sub), name, initials: initialsOf(name), color: pickColor(id), isSystemOwner: initialOwner })
+      .values({ id, ssoSubject: ssoSubjectKey(this.config.oidc!.issuer, claims.sub), name, initials: initialsOf(name), color: pickColor(id), isSystemOwner: initialOwner && !owner })
       .onConflictDoUpdate({
         target: appUser.ssoSubject,
-        // 최초 SO 목록은 부여만 한다 (앱에서 해제한 SO를 되살리지 않도록 목록에서 빼면 된다)
-        set: { name, initials: initialsOf(name), isSystemOwner: initialOwner ? sql`true` : sql`${appUser.isSystemOwner}` },
+        set: { name, initials: initialsOf(name) },
       })
       .returning({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner })
-    return row!
+      return row!
+    })
   }
 }

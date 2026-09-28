@@ -26,6 +26,7 @@ const config = loadConfig({
   DATABASE_URL: 'postgres://u:p@localhost:1/none',
   SESSION_SECRET: 's'.repeat(32),
   APP_ORIGIN: 'http://localhost:5173',
+  AUTH_MODE: 'oidc',
   OIDC_ISSUER: 'http://localhost:8180/realms/mes-dev',
   OIDC_CLIENT_ID: 'mes-agent-hub',
   OIDC_CLIENT_SECRET: 'secret',
@@ -46,7 +47,11 @@ describe('api 골격', () => {
     start: vi.fn(async () => ({ url: 'http://idp.test/auth?state=st', pending: { state: 'st', nonce: 'n', codeVerifier: 'v' } })),
     finish: vi.fn(async () => ({ sub: 'kc-1', preferred_username: 'dev-member', name: '이담당' })),
   }
-  const users: UserDirectory = { upsertFromClaims: vi.fn(async () => member) }
+  const users: UserDirectory = {
+    upsertFromClaims: vi.fn(async () => member),
+    createLocal: vi.fn(async () => null),
+    findByLoginId: vi.fn(async () => null),
+  }
 
   beforeEach(async () => {
     dbUp = true
