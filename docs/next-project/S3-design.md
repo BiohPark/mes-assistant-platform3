@@ -143,7 +143,7 @@ E2E: E1 **S5**(가짜 OpenWebUI live: 처리 완료 후 전송·주 입력 먼�
 
 ### 2.2 데이터
 
-`conversation_input(id, task_id, source_task_id unique 쌍, weight, mode, snapshot_id, selected_by, selected_at)` · `context_snapshot(id, source_task_id, mode, up_to_message_id, summary_text/source/model, created_by, created_at)` · `context_snapshot_message(snapshot_id, message_id, seq)`. 스냅샷은 **불변**, 갱신은 새 행(옛 스냅샷은 요청 기록이 가리킬 수 있어 보존). DDL 변경 없음.
+`conversation_input(id, task_id, source_task_id unique 쌍, weight, mode, snapshot_id, selected_by, selected_at)` · `context_snapshot(id, source_task_id, mode, up_to_message_id, summary_text/source/model, created_by, created_at)` · `context_snapshot_message(snapshot_id, message_id, seq)`. 스냅샷은 **불변**, 갱신은 새 행(옛 스냅샷은 요청 기록이 가리킬 수 있어 보존). DDL 변경 없음. 도메인 `ContextSnapshot.upToCreatedAt`(`newMessagesSince` 폴백)은 DDL에 없으므로 `up_to_message_id`의 메시지 `created_at`에서 **파생**해 채운다(경계 메시지가 삭제된 대화는 `newMessagesSince`가 createdAt 폴백으로 계산). 후보 규칙은 이식된 `conversationCandidates`(상태 무관·직접 태그·최근 활동순)를 서버 SQL로 옮긴 것과 같아야 한다(단위 테스트로 동일성).
 
 ### 2.3 API
 
