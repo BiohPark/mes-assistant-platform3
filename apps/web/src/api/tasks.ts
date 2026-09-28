@@ -1,4 +1,4 @@
-import type { Message, Task, TaskStatus, Thread } from '@mes/domain'
+import type { ActivityLog, Message, Task, TaskStatus, Thread } from '@mes/domain'
 import type { TagSuggestion } from '@mes/domain'
 import { queryClient } from './queryClient'
 
@@ -16,6 +16,7 @@ function refresh(taskId?: string) {
   void queryClient.invalidateQueries({ queryKey: ['tasks'] })
   void queryClient.invalidateQueries({ queryKey: ['assistant-stats'] })
   void queryClient.invalidateQueries({ queryKey: ['tag-suggest'] })
+  void queryClient.invalidateQueries({ queryKey: ['activity'] })
   if (taskId) {
     void queryClient.invalidateQueries({ queryKey: ['task', taskId] })
     void queryClient.invalidateQueries({ queryKey: ['activity', taskId] })
@@ -38,7 +39,7 @@ export async function listTasks(filter: TaskFilter = {}): Promise<Task[]> {
 }
 export const getTask = (taskId: string) => request<Task>(`/tasks/${encodeURIComponent(taskId)}`)
 export const getMessages = (threadId: string) => request<Message[]>(`/threads/${encodeURIComponent(threadId)}/messages`)
-export const getActivity = (taskId: string) => request<unknown[]>(`/tasks/${encodeURIComponent(taskId)}/activity`)
+export const getActivity = (taskId: string) => request<ActivityLog[]>(`/tasks/${encodeURIComponent(taskId)}/activity`)
 export const suggestTags = (prefix = '', exclude: string[] = []) => {
   const query = new URLSearchParams({ prefix })
   for (const tag of exclude) query.append('exclude[]', tag)
@@ -53,6 +54,9 @@ export async function setTaskTitle(taskId: string, title: string, source: Task['
 export async function updateTask(taskId: string, patch: Partial<Pick<Task, 'summary' | 'priority' | 'dueDate' | 'assigneeIds' | 'ownerId' | 'modelId'>>): Promise<void> {
   await request(`/tasks/${encodeURIComponent(taskId)}`, 'PATCH', patch)
   refresh(taskId)
+}
+export async function setTaskModel(_actor: Actor, taskId: string, modelId: string): Promise<void> {
+  await updateTask(taskId, { modelId })
 }
 export async function addTag(_actor: Actor, taskId: string, tag: string): Promise<boolean> {
   await request(`/tasks/${encodeURIComponent(taskId)}/tags/${encodeURIComponent(tag)}`, 'PUT')
