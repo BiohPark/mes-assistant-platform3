@@ -60,12 +60,12 @@
 | `task/TaskHeader.tsx` | 제목·상태·태그·연결된 대화·재개 사유 | FR-01·02·03 | S2 | 변경(API) | ✅ S2 ②(연결된 SR은 S4) |
 | `task/RelatedStrip.tsx` | 태그를 직접 공유하는 다른 대화 줄(최근 활동순) | — | S2 | 그대로(U3(a): 직접 공유만, 태그 떼면 사라짐) | ✅ S2 ② |
 | `task/TaskBody.tsx` | 채팅 + 오른쪽 [자료·체크·노트·이력], 좁은 화면 탭 | 화면 §3 | S2 | 그대로 | ✅ 골격(S2 ②: 이력 탭 동작, 자료 ③·체크·노트 S4) |
-| `task/useTaskData.ts` | 같은 태그 대화 후보 + 원문 규모 | FR-20 | S2·S3 | 변경(API) | ⬜ |
-| `task/MaterialsPanel.tsx` | 자료함: AI 입력·공유 자료함·SR 첨부·이 대화 파일 | FR-10·12 | S2 | 변경(API) | ⬜ |
-| `task/FileList.tsx` | 파일 목록·산출물 토글·출처 뱃지 | FR-10·13 | S2 | 변경(API) | ⬜ |
-| `task/FilePreviewDialog.tsx` | 텍스트·이미지 미리보기 | FR-15 | S2 | 변경(파일 API) | ⬜ |
-| `task/FileVersionsDialog.tsx` | 버전 체인(최신→과거) | FR-11·15 | S2 | 변경(API) | ⬜ |
-| `task/InputToggle.tsx` | ☑참고/★주 입력 토글 | FR-10·20 | S2 | 그대로 | ⬜ |
+| `task/useTaskData.ts` | 같은 태그 대화 후보 + 원문 규모 | FR-20 | S2·S3 | 변경(API) | ✅ 일부(S2 ③: 파일 후보 `GET candidates`. 대화 후보·원문 규모는 S3) |
+| `task/MaterialsPanel.tsx` | 자료함: AI 입력·공유 자료함·SR 첨부·이 대화 파일 | FR-10·12 | S2 | 변경(API) | ✅ S2 ③(SR 첨부 탭은 S4) |
+| `task/FileList.tsx` | 파일 목록·산출물 토글·출처 뱃지 | FR-10·13 | S2 | 변경(API) | ✅ S2 ③ |
+| `task/FilePreviewDialog.tsx` | 텍스트·이미지 미리보기 | FR-15 | S2 | 변경(파일 API `GET /api/files/{id}/content`) | ✅ S2 ③ |
+| `task/FileVersionsDialog.tsx` | 버전 체인(최신→과거) | FR-11·15 | S2 | 변경(API) | ✅ S2 ③ |
+| `task/InputToggle.tsx` | ☑참고/★주 입력 토글 | FR-10·20 | S2 | 그대로 | ✅ S2 ③ |
 | `task/ConversationInputs.tsx` | 참조 대화 입력 목록·갱신 안내 | FR-20–22 | S3 | 변경(API) | ⬜ |
 | `task/ConversationPickerDialog.tsx` | 전체·메시지 범위·요약 선택 | FR-21 | S3 | 변경(API, 요약은 서버 대리 호출) | ⬜ |
 | `task/ChecklistPanel.tsx` | 체크리스트(강제 아님) | FR-40 | S4 | 변경(API) | ⬜ |
@@ -78,14 +78,14 @@
 | 데모 모듈 | 하는 일 | FR | 스프린트 | 방식 | 상태 |
 |---|---|---|---|---|---|
 | `ChatView.tsx` | 채팅 화면·입력 중 표시·추천 칩 | FR-04 | S2·S3 | 변경(SSE) · presence U5 · 칩 U2 | ✅ 일부(S2 ②: 메시지 목록·팀 의견. 스트리밍·presence S3) |
-| `Composer.tsx` | 입력창·첨부(기본 고정, "이번 메시지만") | FR-10 | S2 | 변경(업로드 API) | ✅ 일부(S2 ②: 텍스트=팀 의견. 첨부 ③, AI 전송 S3) |
+| `Composer.tsx` | 입력창·첨부(기본 고정, "이번 메시지만") | FR-10 | S2 | 변경(업로드 API) | ✅ S2 ②·③(텍스트·첨부. AI 전송 S3) |
 | `ContextTray.tsx` | "이번 요청에 사용" 트레이·크기·초과 시 조절 | FR-30·31 | S3 | 변경(서버 추정 API) | ⬜ |
 | `useRequestEstimate.ts` | 트레이 추정(dryRun 같은 조립 함수) | FR-30 | S3 | 변경(서버 추정 API) | ⬜ |
 | `MessageBubble.tsx` | 답변·사용한 자료·실패 복구(재시도·빼고 다시·텍스트로) | FR-32·34 | S3 | 변경(API) | ⬜ |
 | `RequestInfoDialog.tsx` | 전송 기록 뷰어·원본 JSON | FR-34 | S3 | 변경(API) | ⬜ |
 | `requestLabels.ts` | 전달 방식 표기(트레이·사용한 자료 공통) | FR-30·34 | S3 | 그대로 | ⬜ |
 | `ModelPicker.tsx` | 대화/스레드 모델 지정(서버 모델 목록 자동완성) | FR-35 | S2 | 변경(API) · 목록은 U6 | ✅ S2 ②(대화 모델. 스레드 모델은 S3) |
-| `SaveAsOutputDialog.tsx` | 답변 → 산출물(기본 이름 규칙·버전) | FR-13 | S2 | 변경(API) | ⬜ |
+| `SaveAsOutputDialog.tsx` | 답변 → 산출물(기본 이름 규칙·버전) | FR-13 | S2 | 변경(API `POST /api/tasks/{id}/outputs`) | ✅ S2 ③(실제 답변 흐름은 S3) |
 | `suggestions.ts` | 사용 예시에서 추천 질문 칩 추출 | — | S2 | 그대로(U2(a): 사람이 누르는 입력 도우미) | ✅ S2 ② |
 | `useChat.ts` | 실행기 래퍼(전송·중지·재시도) | FR-33 | S3 | 변경(API·SSE) | ⬜ |
 
@@ -132,11 +132,11 @@
 
 | 데모 모듈 | 함수 | FR | 스프린트 | 방식 | 상태 |
 |---|---|---|---|---|---|
-| `tasks.ts` | `nextCode` `startConversation` `setTaskTitle` `updateTask` `addTag` `removeTag` `assertNotDone` `setInput` `switchInputVersion` `setTaskStatus` `setTaskModel` `setThreadModel` `deleteTask` | FR-01·02·03·10·11·35 | S2 | 변경(서버, 코드는 advisory lock 시퀀스) | ✅ 일부(S2 ②: `setInput`·`switchInputVersion`은 ③, `setThreadModel`은 S3) |
+| `tasks.ts` | `nextCode` `startConversation` `setTaskTitle` `updateTask` `addTag` `removeTag` `assertNotDone` `setInput` `switchInputVersion` `setTaskStatus` `setTaskModel` `setThreadModel` `deleteTask` | FR-01·02·03·10·11·35 | S2 | 변경(서버, 코드는 advisory lock 시퀀스) | ✅ S2 ②·③(`setThreadModel`은 S3) |
 | `tasks.ts` | `toggleChecklist` `addChecklistItem` `removeChecklistItem` `saveChecklistReview` `applyChecklistReview` `giveFeedback` | FR-40·01 | S4 | 변경(서버) | ⬜ |
 | `chat.ts` | `createThread` `setActiveThread` `nextMessageTime` `appendMessage` `isLiveReply` `assertNoActiveReply` `updateMessage` `deleteThread` `STALE_MS` `STALE_ERROR` | FR-04·33 | S2·S3 | 변경(`message.seq`, 활성 1건은 DB 인덱스) | ✅ 일부(S2 ②: createThread·appendMessage(팀 의견)·seq. 활성 응답·정리는 S3) |
 | `conversationInputs.ts` (+test) | `selectConversation` `applyConversationSummary` `refreshConversationInput` `setConversationWeight` `removeConversationInput` `findConversationInput` `loadConversationInputs` | FR-20–23 | S3 | 변경(서버) — 테스트 먼저 | ⬜ |
-| `files.ts` (+test) | `fileVersions` `uploadFile` `saveAssistantOutput` `setOutputTag` `deleteFile` `filesForTask` `downloadBlob` `isTextFile` `formatSize` | FR-10–15 | S2 | 변경(`FileStorageService`, 소프트 삭제) — 테스트 먼저 | ⬜ |
+| `files.ts` (+test) | `fileVersions` `uploadFile` `saveAssistantOutput` `setOutputTag` `deleteFile` `filesForTask` `downloadBlob` `isTextFile` `formatSize` | FR-10–15 | S2 | 변경(`FileStorageService`, 소프트 삭제) — 테스트 먼저 | ✅ S2 ③(`blob`은 서버 `/content`) |
 | `assistants.ts` (+test) | `newChecklistTemplateItem` `defaultChecklistTemplate` `createAssistant` `updateAssistant` `setAssistantStatus` `setAssistantImage` `deleteAssistant` `reorderAssistants` | FR-60·40 | S2(읽기)·S4(편집) | 변경(SO 전용, `revision` 충돌 검사) — 테스트 먼저 | ⬜ |
 | `sr.ts` | `startSrConversation` `submitSr` `setSrTitle` `conversationsForSr` `startTaskFromSr` `updateSrContent` `setSrStatus` `deleteDraftSr` `shareSrResult` | FR-50·51 | S4 | 변경(서버, 요청자 범위 강제) | ⬜ |
 | `notes.ts` | `addNote` `deleteNote` | FR-41 | S4 | 변경(서버) | ⬜ |
@@ -144,7 +144,7 @@
 | `activity.ts` | `logActivity` | FR-41 | S2 | 변경(서버, 추가만) | ✅ S2 ② |
 | `settings.ts` | `getSettings` `setLlmSettings` `setRequestBudget` `setSrIntakeAssistant` | FR-61 | S4 | 변경(`app_setting`, SO 전용, 키 제외) | ⬜ |
 | `settings.ts` | `DEFAULT_USER_ID` `setCurrentUser` | — | — | **제외** — 로그인 사용자 | — |
-| `conversations.test.ts` | 대화 생성·태그·입력 규칙 테스트 | FR-01·02·10 | S2 | 테스트 먼저 이식 | ✅ 일부(S2 ②: 생성·제목·태그 → DB 테스트. 입력 규칙 3건은 ③) |
+| `conversations.test.ts` | 대화 생성·태그·입력 규칙 테스트 | FR-01·02·10 | S2 | 테스트 먼저 이식 | ✅ S2 ②·③(DB 테스트로 이식) |
 | (db) `schema.ts` · `migrations/*` · `seed/*` | Dexie 스키마·시드 | — | S0 | **제외** — Drizzle(✅), 시드는 개발 픽스처로만 | ✅ |
 | (db) `exportImport.ts` (+test) | JSON 내보내기·가져오기(비밀값 제외) | — | S5 | 변경(U7(a): 가져오기만 S5 "데모 데이터 이관 도구"로 · 내보내기는 **제외** — 서버 DB 백업으로 대체) | ⬜ |
 
@@ -185,10 +185,10 @@
 
 | 데모 시나리오 | FR | 스프린트 | 상태 |
 |---|---|---|---|
-| S1 컴포저 첨부는 다음 턴에도 AI 입력으로 남는다 | FR-10 | S2 | ⬜ |
+| S1 컴포저 첨부는 다음 턴에도 AI 입력으로 남는다 | FR-10 | S2 | ✅ S2 ③(files.spec, AI 전송 없이 입력 고정까지) |
 | S2 SR 접수 대화의 첨부는 첨부한 그 메시지에 포함된다 | FR-10·50 | S4 | ⬜ |
-| S3 기본 이름으로 두 번 저장한 산출물은 같은 파일의 v2 | FR-11·13 | S2 | ⬜ |
-| S4 태그 공유 자료를 ★·☑로 고르면 주 입력이 먼저 전달 | FR-12·20·32 | S2 | ⬜ |
+| S3 기본 이름으로 두 번 저장한 산출물은 같은 파일의 v2 | FR-11·13 | S2 | ✅ S2 ③(files.spec) |
+| S4 태그 공유 자료를 ★·☑로 고르면 주 입력이 먼저 전달 | FR-12·20·32 | S2 | ✅ S2 ③(files.spec, 선택·순서까지. 전달은 S3) |
 | S5 OpenWebUI 첨부: 처리 완료 확인 후 전송, 주 입력 먼저, 업로드 이름에 버전 | FR-32 | S2(S1 대리 호출 위) | ⬜ |
 | S6 프롬프트를 만들다 실패해도 입력창이 잠기지 않는다 | FR-33 | S3 | ⬜ |
 | S7 두 탭에서 동시에 보내도 진행 중 요청은 하나 | FR-33 | S3 | ⬜ |
