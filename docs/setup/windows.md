@@ -97,6 +97,9 @@ pnpm setup:env
 | `LLM_DEFAULT_MODEL` | 전역 기본 모델 ID(선택) | 비움 |
 | `FILE_STORAGE_ROOT` | 파일 저장 루트(상대 경로면 api 실행 폴더 기준). 드라이브·UNC 경로 가능 | `./storage` |
 | `FILE_MAX_BYTES` · `FILE_MAX_PER_REQUEST` | 파일 하나 최대 크기(바이트)·요청당 첨부 개수 — PRD §6 제안값, 확정 시 기본값만 갱신 | `52428800`(50 MB) · `20` |
+| `REQUEST_FIRST_TOKEN_MS` · `REQUEST_FILES_FIRST_TOKEN_MS` · `REQUEST_IDLE_MS` | AI 요청 시간 제한 — 첫 토큰(첨부 없음/있음)·토큰 사이 (FR-33) | `60000` · `360000` · `60000` |
+| `REQUEST_LEASE_MS` · `REQUEST_KEEPALIVE_MS` · `REQUEST_SWEEP_MS` · `REQUEST_FLUSH_MS` | 생존 신호 유효 시간·갱신 주기·끊긴 요청 정리 주기·답변 DB 반영 주기 | `30000` · `10000` · `30000` · `250` |
+| `REQUEST_BUDGET_BYTES` | 요청 본문 크기 한도(바이트, 첨부 파일 바이트 제외) — 초과 시 전송 차단. SO 전역 설정이 있으면 그 값 | `262144`(256 KiB) |
 
 ## 4. DB 셋업
 
