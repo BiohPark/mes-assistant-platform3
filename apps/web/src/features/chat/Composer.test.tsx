@@ -36,3 +36,13 @@ it('pins attachments by default and lets a sender mark one as message-only', asy
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(send).toHaveBeenCalledWith('', [{ file, once: true }], true))
 })
+
+it('rejects more than 20 attachments before sending', async () => {
+  const send = vi.fn(async () => undefined)
+  const { container } = render(<Composer streaming={false} onSend={send} onStop={() => undefined} allowAttachments />)
+  const files = Array.from({ length: 21 }, (_, index) => new File(['x'], `f${index}.txt`))
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files } })
+  expect(screen.getByRole('alert')).toHaveTextContent('20')
+  expect(screen.queryByText('f0.txt')).not.toBeInTheDocument()
+  expect(send).not.toHaveBeenCalled()
+})

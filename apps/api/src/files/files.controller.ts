@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, Put, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import type { Response } from 'express'
 import { z } from 'zod'
@@ -19,9 +19,10 @@ function parse<T>(schema: z.ZodType<T>, body: unknown): T {
 }
 
 export function contentDisposition(name: string, inline: boolean) {
-  let fallback = name.replace(/[^\x20-\x7e]|[<>:"\\/|?*]/g, '_').replace(/[. ]+$/, '') || 'download'
-  if (isWindowsReservedName(fallback)) fallback = `_${fallback}`
-  const encoded = encodeURIComponent(name).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+  let safe = [...name.replace(/[<>:"\\/|?*]/g, '_')].map((char) => char.charCodeAt(0) < 32 ? '_' : char).join('').replace(/^[. ]+|[. ]+$/g, '') || 'download'
+  if (isWindowsReservedName(safe)) safe = `_${safe}`
+  const fallback = safe.replace(/[^\x20-\x7e]/g, '_')
+  const encoded = encodeURIComponent(safe).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
   return `${inline ? 'inline' : 'attachment'}; filename="${fallback}"; filename*=UTF-8''${encoded}`
 }
 
@@ -45,13 +46,23 @@ export class FilesController {
   @Get(':id/content')
   async content(@Param('id') id: string, @Res() res: Response) {
     const meta = await this.files.get(id)
-    const bytes = await this.files.content(id)
+    let stream
+    try { stream = await this.files.contentStream(id) }
+    catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') throw new NotFoundException('파일을 찾을 수 없습니다')
+      throw error
+    }
     const inferredText = meta.mime === 'application/octet-stream' && /\.(md|txt|csv|json|sql|xml|ya?ml)$/i.test(meta.name)
     const inline = /^(text\/(plain|markdown|csv)|application\/(json|xml|x-yaml))$/.test(meta.mime) || inferredText
     res.setHeader('Content-Type', inferredText ? 'text/plain; charset=utf-8' : meta.mime)
     res.setHeader('Content-Disposition', contentDisposition(meta.name, inline))
+    res.setHeader('Content-Length', meta.size)
     res.setHeader('X-Content-Type-Options', 'nosniff')
-    res.end(Buffer.from(bytes))
+    stream.on('error', (error) => {
+      if (!res.headersSent) { res.removeHeader('Content-Length'); res.status(error instanceof Error && 'code' in error && error.code === 'ENOENT' ? 404 : 500).end() }
+      else res.destroy(error)
+    })
+    stream.pipe(res)
   }
 
   @Get(':id/versions')

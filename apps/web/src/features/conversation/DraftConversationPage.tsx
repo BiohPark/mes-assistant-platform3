@@ -6,7 +6,7 @@ import { normalizeTag, tagKey } from '@mes/domain'
 import { TopBar } from '@/app/TopBar'
 import { useActor, useUserMap } from '@/app/hooks'
 import { useTagSuggest } from '@/app/useTagSuggest'
-import { startConversation } from '@/api/tasks'
+import { deleteTask, startConversation } from '@/api/tasks'
 import { appendMessage } from '@/api/tasks'
 import { setInput, uploadFile } from '@/api/files'
 import { listAssistants } from '@/lib/catalog'
@@ -45,14 +45,20 @@ export function DraftConversationPage() {
     setBusy(true)
     try {
       const { task } = await startConversation(actor, { assistantId: assistant.id, tags, ...(refId && { referenceTaskId: refId }), ...(!attachments.length && text.trim() && { firstMessage: text.trim() }) })
-      if (attachments.length) {
-        const uploaded: string[] = []
-        for (const attachment of attachments) {
-          const file = await uploadFile(actor, { taskId: task.id }, attachment.file)
-          uploaded.push(file.id)
-          if (!attachment.once) await setInput(actor, task.id, file.id, 'reference')
+      try {
+        if (attachments.length) {
+          const uploaded: string[] = []
+          for (const attachment of attachments) {
+            const file = await uploadFile(actor, { taskId: task.id }, attachment.file)
+            uploaded.push(file.id)
+            if (!attachment.once) await setInput(actor, task.id, file.id, 'reference')
+          }
+          await appendMessage(actor, task.threadId!, 'user', text.trim(), uploaded, 'done', 'discussion')
         }
-        await appendMessage(actor, task.threadId!, 'user', text.trim(), uploaded, 'done', 'discussion')
+      } catch (error) {
+        const removed = await deleteTask(task.id)
+        if (!removed.ok) throw new Error(`${error instanceof Error ? error.message : String(error)} · 대화 ${task.code}가 남았습니다`)
+        throw error
       }
       navigate(`/c/${task.id}`, { replace: true })
     } catch (error) {

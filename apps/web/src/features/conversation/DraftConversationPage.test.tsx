@@ -65,3 +65,23 @@ it('disables sending while the create request is pending', async () => {
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   expect(posts).toBe(1)
 })
+
+it('deletes a created draft after an attachment upload fails and keeps the input', async () => {
+  const calls: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants') return new Response(JSON.stringify([{ id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-28T00:00:00.000Z', updatedAt: '2026-09-28T00:00:00.000Z', revision: 0 }]), { status: 200 })
+    if (url === '/api/tasks' && init?.method === 'POST') return new Response(JSON.stringify({ id: 't', code: 'WK-2026-0001', assistantId: 'a', threadId: 'h' }), { status: 201 })
+    if (url === '/api/files' && init?.method === 'POST') return new Response(JSON.stringify({ message: '업로드 실패' }), { status: 500 })
+    if (url === '/api/tasks/t' && init?.method === 'DELETE') { calls.push('DELETE'); return new Response(null, { status: 204 }) }
+    return new Response('[]', { status: 200 })
+  }))
+  const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><TooltipProvider><MemoryRouter initialEntries={['/new/a']}><Routes><Route path="/new/:assistantId" element={<DraftConversationPage />} /><Route path="/c/:taskId" element={<div>대화로 이동</div>} /></Routes></MemoryRouter></TooltipProvider></MeContext></QueryClientProvider>)
+  await screen.findByText('도우미')
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '남길 의견' } })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['x'], 'test.txt')] } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(calls).toEqual(['DELETE']))
+  expect(screen.getByRole('textbox', { name: '팀 의견 입력' })).toHaveValue('남길 의견')
+  expect(screen.getByText('test.txt')).toBeInTheDocument()
+  expect(toastError).toHaveBeenCalled()
+})

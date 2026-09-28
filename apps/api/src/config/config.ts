@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { AuthModeSchema } from '@mes/contracts'
+import { AuthModeSchema, FILE_MAX_PER_REQUEST } from '@mes/contracts'
 
 const list = z
   .string()
@@ -27,7 +27,7 @@ const EnvSchema = z.object({
   INITIAL_SYSTEM_OWNERS: list,
   FILE_STORAGE_ROOT: z.string().default('storage'),
   FILE_MAX_BYTES: z.coerce.number().int().positive().default(50 * 1024 * 1024),
-  FILE_MAX_PER_REQUEST: z.coerce.number().int().positive().default(20),
+  FILE_MAX_PER_REQUEST: z.coerce.number().int().positive().default(FILE_MAX_PER_REQUEST),
   LLM_MODE: z.enum(['mock', 'live']).default('mock'),
   LLM_PRESET: z.enum(['openwebui', 'openai-compatible']).default('openwebui'),
   LLM_BASE_URL: z.string().default(''),

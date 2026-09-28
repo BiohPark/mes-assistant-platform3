@@ -99,6 +99,33 @@ describe('files DB', () => {
     expect((await tasks.get(a.id)).outputFileIds).toContain(uploaded.id)
   })
 
+  it('merges an already selected target version and retains its order', async () => {
+    const a = (await tasks.create('member', { assistantId })).task
+    const first = await files.upload('member', a.id, 'merge.txt', 'text/plain', Buffer.from('one'))
+    const second = await files.upload('member', a.id, 'merge.txt', 'text/plain', Buffer.from('two'))
+    await files.setInput('member', a.id, first.id, 'main')
+    await files.setInput('member', a.id, second.id, 'reference')
+    const db = drizzle(client)
+    const before = (await db.select().from(taskInput)).find((item) => item.taskId === a.id && item.fileId === second.id)!
+    await files.switchInputVersion('member', a.id, first.id, second.id)
+    expect((await tasks.get(a.id)).inputs).toMatchObject([{ fileId: second.id, weight: 'main' }])
+    expect((await db.select().from(taskInput)).find((item) => item.taskId === a.id && item.fileId === second.id)?.sortOrder).toBe(before.sortOrder)
+    await files.setInput('member', a.id, first.id, 'reference')
+    await files.switchInputVersion('member', a.id, first.id, second.id)
+    expect((await tasks.get(a.id)).inputs).toMatchObject([{ fileId: second.id, weight: 'main' }])
+  })
+
+  it('queries only this task files once even when other tasks share tags', async () => {
+    const a = (await tasks.create('member', { assistantId, tags: ['common'] })).task
+    const b = (await tasks.create('member', { assistantId, tags: ['common'] })).task
+    const own = await files.upload('member', a.id, 'mine.txt', 'text/plain', Buffer.from('x'))
+    await files.upload('member', b.id, 'other.txt', 'text/plain', Buffer.from('y'))
+    let queries = 0
+    const counted = new DbFilesService(drizzle(client, { logger: { logQuery: () => { queries++ } } }), new FileStorageService(root), { fileMaxBytes: 1024, fileMaxPerRequest: 2 } as never)
+    expect((await counted.filesForTask(a.id)).map((file) => file.id)).toEqual([own.id])
+    expect(queries).toBe(1)
+  })
+
   it('keeps the surviving chain connected when a middle version is soft deleted', async () => {
     const a = (await tasks.create('member', { assistantId })).task
     const first = await files.upload('member', a.id, 'chain.txt', 'text/plain', Buffer.from('one'))

@@ -47,6 +47,7 @@ export class DbFilesService {
 
   async get(fileId: string) { return fileMeta(await this.row(fileId)) }
   async content(fileId: string) { return this.storage.read((await this.row(fileId)).storageKey) }
+  async contentStream(fileId: string) { return this.storage.createReadStream((await this.row(fileId)).storageKey) }
 
   private async create(actor: string, taskId: string, name: string, mime: string, bytes: Uint8Array, source: 'upload' | 'assistant', isOutput: boolean) {
     validName(name)
@@ -173,8 +174,11 @@ export class DbFilesService {
   }
 
   async filesForTask(taskId: string) {
-    const { rows } = await this.candidateRows(taskId)
-    return rows.filter((row) => row.originTaskId === taskId).map(fileMeta)
+    const rows = await this.db.select({ taskId: task.id, file: fileObject }).from(task)
+      .leftJoin(fileObject, and(eq(fileObject.originTaskId, task.id), isNull(fileObject.deletedAt)))
+      .where(eq(task.id, taskId))
+    if (!rows.length) throw new NotFoundException('대화를 찾을 수 없습니다')
+    return rows.flatMap((row) => row.file ? [fileMeta(row.file)] : [])
   }
 
   async setInput(actor: string, taskId: string, fileId: string, weight: 'main' | 'reference' | null) {
@@ -182,6 +186,7 @@ export class DbFilesService {
       await this.editable(taskId, tx)
       const row = await this.row(fileId, tx)
       if (row.kind !== 'task_file') throw new BadRequestException('선택할 수 없는 파일입니다')
+      await tx.select({ id: task.id }).from(task).where(eq(task.id, row.originTaskId!)).for('share')
       await this.lockChain(tx, row.originTaskId!, row.originalName)
       await this.row(fileId, tx)
       if (weight) {
@@ -210,9 +215,12 @@ export class DbFilesService {
       const byId = new Map(chain.map((item) => [item.id, item]))
       const root = (item: FileRow) => { let current = item; const seen = new Set<string>(); while (current.previousId && byId.has(current.previousId) && !seen.has(current.id)) { seen.add(current.id); current = byId.get(current.previousId)! } return current.id }
       if (root(from) !== root(to)) throw new BadRequestException('같은 버전 체인만 선택할 수 있습니다')
+      const [target] = await tx.select().from(taskInput).where(and(eq(taskInput.taskId, taskId), eq(taskInput.fileId, toFileId)))
       await tx.delete(taskInput).where(and(eq(taskInput.taskId, taskId), eq(taskInput.fileId, fromFileId)))
-      await tx.insert(taskInput).values({ ...selected[0]!, fileId: toFileId, selectedBy: actor, selectedAt: new Date() })
-      await tx.insert(activityLog).values({ id: id(), taskId, userId: actor, type: 'input.selected', payload: { name: to.originalName, version: to.version, weight: selected[0]!.weight } })
+      const weight = selected[0]!.weight === 'main' || target?.weight === 'main' ? 'main' : 'reference'
+      if (target) await tx.update(taskInput).set({ weight, selectedBy: actor, selectedAt: new Date() }).where(and(eq(taskInput.taskId, taskId), eq(taskInput.fileId, toFileId)))
+      else await tx.insert(taskInput).values({ ...selected[0]!, fileId: toFileId, selectedBy: actor, selectedAt: new Date() })
+      await tx.insert(activityLog).values({ id: id(), taskId, userId: actor, type: 'input.selected', payload: { name: to.originalName, version: to.version, weight } })
     })
   }
 }

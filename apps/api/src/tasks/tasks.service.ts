@@ -251,13 +251,14 @@ export class DbTasksService {
   }
 
   async delete(taskId: string): Promise<void> {
-    await this.row(taskId)
-    const ownFiles = await this.db.select({ id: fileObject.id }).from(fileObject).where(eq(fileObject.originTaskId, taskId))
-    if (ownFiles.length) {
-      const used = await this.db.select().from(taskInput).where(inArray(taskInput.fileId, ownFiles.map((file) => file.id)))
-      if (used.some((item) => item.taskId !== taskId)) throw new ConflictException('다른 대화가 이 대화의 파일을 입력으로 사용합니다')
-    }
     await this.db.transaction(async (tx) => {
+      const [owner] = await tx.select({ id: task.id }).from(task).where(eq(task.id, taskId)).for('update')
+      if (!owner) throw new NotFoundException('대화를 찾을 수 없습니다')
+      const ownFiles = await tx.select({ id: fileObject.id }).from(fileObject).where(eq(fileObject.originTaskId, taskId))
+      if (ownFiles.length) {
+        const used = await tx.select().from(taskInput).where(inArray(taskInput.fileId, ownFiles.map((file) => file.id)))
+        if (used.some((item) => item.taskId !== taskId)) throw new ConflictException('다른 대화가 이 대화의 파일을 입력으로 사용합니다')
+      }
       await tx.delete(thread).where(eq(thread.taskId, taskId))
       await tx.delete(taskInput).where(eq(taskInput.taskId, taskId))
       if (ownFiles.length) {

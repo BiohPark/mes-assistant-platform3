@@ -7,6 +7,11 @@ import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from './tasks.service.js'
+import { DbFilesService } from '../files/files.service.js'
+import { FileStorageService } from '../files/fileStorage.service.js'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 describe('tasks DB', () => {
   let temp: Awaited<ReturnType<typeof createTempDb>>
@@ -76,6 +81,22 @@ describe('tasks DB', () => {
     await db.delete(taskInput).where(eq(taskInput.taskId, consumer.id))
     await service.delete(source.id)
     expect(await db.select().from(fileObject).where(eq(fileObject.id, 'owned-file'))).toHaveLength(0)
+  })
+
+  it('serializes deleting a source task with selecting its file', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mes-race-'))
+    try {
+      const files = new DbFilesService(db, new FileStorageService(root), { fileMaxBytes: 1024, fileMaxPerRequest: 2 } as never)
+      for (let index = 0; index < 5; index++) {
+        const source = (await service.create('member', { assistantId, tags: ['race'] })).task
+        const consumer = (await service.create('member', { assistantId, tags: ['race'] })).task
+        const file = await files.upload('member', source.id, `race-${index}.txt`, 'text/plain', Buffer.from('x'))
+        const [deletion, selection] = await Promise.allSettled([service.delete(source.id), files.setInput('member', consumer.id, file.id, 'main')])
+        const accepted = (deletion.status === 'rejected' && deletion.reason?.status === 409 && selection.status === 'fulfilled')
+          || (deletion.status === 'fulfilled' && selection.status === 'rejected' && [400, 404].includes(selection.reason?.status))
+        expect(accepted).toBe(true)
+      }
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
 
   it('rejects unknown owner and assignee IDs without an internal database error', async () => {
