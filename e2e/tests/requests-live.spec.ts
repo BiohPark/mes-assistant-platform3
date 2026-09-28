@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test.skip(process.env.LLM_MODE !== 'live', '가짜 OpenWebUI live 환경에서 실행')
+test.skip((process.env.E2E_LLM_MODE ?? process.env.LLM_MODE) !== 'live', '가짜 OpenWebUI live 환경에서 실행')
 
 test('S5 파일 처리 완료 뒤 첨부하여 답변한다', async ({ page }) => {
   await page.goto('/signup')
@@ -8,6 +8,7 @@ test('S5 파일 처리 완료 뒤 첨부하여 답변한다', async ({ page }) =
   await page.getByLabel('비밀번호', { exact: true }).fill('e2e-password-1234')
   await page.getByLabel('비밀번호 확인').fill('e2e-password-1234')
   await page.getByRole('button', { name: '회원가입' }).click()
+  await expect(page).toHaveURL(/\/$/) // 세션 쿠키가 잡힌 뒤 API 호출
   const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
   const task = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id } })).json() as { id: string }
   await page.goto(`/c/${task.id}`)
@@ -17,7 +18,7 @@ test('S5 파일 처리 완료 뒤 첨부하여 답변한다', async ({ page }) =
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByText(/files: 1/).first()).toBeVisible()
   await page.getByRole('button', { name: '사용한 자료' }).click()
-  await expect(page.getByRole('dialog')).toContainText('good-e2e.txt v1')
+  await expect(page.getByRole('dialog')).toContainText(/good-e2e\.txt.*v1.*파일 첨부/) // 라벨: '☑ good-e2e.txt · 이 대화 v1 · 파일 첨부'
 })
 
 test('E2 파일 전달 실패 후 텍스트로 보내기를 선택해 복구한다', async ({ page }) => {
@@ -26,6 +27,7 @@ test('E2 파일 전달 실패 후 텍스트로 보내기를 선택해 복구한�
   await page.getByLabel('비밀번호', { exact: true }).fill('e2e-password-1234')
   await page.getByLabel('비밀번호 확인').fill('e2e-password-1234')
   await page.getByRole('button', { name: '회원가입' }).click()
+  await expect(page).toHaveURL(/\/$/) // 세션 쿠키가 잡힌 뒤 API 호출
   const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
   const task = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id } })).json() as { id: string }
   await page.goto(`/c/${task.id}`)

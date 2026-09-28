@@ -1,6 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js'
+import { eq } from 'drizzle-orm'
 import postgres from 'postgres'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { loadConfig } from '../config/config.js'
 import { runMigrations } from '../db/migrate.js'
 import { appSetting, appUser, assistant, code, codeGroup, fileObject, task } from '../db/schema.js'
@@ -48,5 +49,25 @@ describe('DbLlmPorts', () => {
     const files = await ports.getFiles(['f1', 'f2'])
     expect(files[0]).toMatchObject({ id: 'f1' })
     expect(files[1]).toBeUndefined()
+  })
+
+  it('reuses storage keys from one file query when reading three files', async () => {
+    await db.insert(fileObject).values(['f3', 'f4'].map((id) => ({ id, kind: 'task_file' as const, originTaskId: 't1', originalName: `${id}.txt`, mime: 'text/plain', sizeBytes: 1,
+      sha256: 'c'.repeat(64), storageKey: `${id}.txt`, source: 'upload' as const, version: 1, uploadedBy: 'u1' })))
+    const read = vi.fn(async () => Uint8Array.from([1]))
+    const select = vi.spyOn(db, 'select')
+    const ports = new DbLlmPorts(db, config, 'u1', { read } as never)
+    const files = await ports.getFiles(['f1', 'f3', 'f4'])
+    const afterList = select.mock.calls.length
+    for (const file of files) await ports.readFileBytes(file)
+    expect(select.mock.calls.length).toBe(afterList)
+    expect(read).toHaveBeenCalledTimes(3)
+    select.mockRestore()
+  })
+  it('hides a deleted task and its files from prompt ports', async () => {
+    await db.update(task).set({ deletedAt: new Date() }).where(eq(task.id, 't1'))
+    const ports = new DbLlmPorts(db, config, 'u1')
+    expect(await ports.getTask('t1')).toBeUndefined()
+    expect(await ports.getFiles(['f1'])).toEqual([undefined])
   })
 })

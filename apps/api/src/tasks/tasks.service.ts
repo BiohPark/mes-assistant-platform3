@@ -4,7 +4,7 @@ import { applyTaskStatus, isSrTag, normalizeTag, tagKey, tagSuggestions, type Ta
 import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
 import { unionAll } from 'drizzle-orm/pg-core'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appUser, assistant, chatRequest, contextSnapshot, conversationInput, fileObject, message, messageAttachment, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, chatRequest, conversationInput, fileObject, message, messageAttachment, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 
 export interface CreateTaskInput {
   assistantId: string
@@ -227,6 +227,7 @@ export class DbTasksService {
   async messages(threadId: string) {
     const [target] = await this.db.select().from(thread).where(eq(thread.id, threadId))
     if (!target?.taskId) throw new NotFoundException('스레드를 찾을 수 없습니다')
+    await this.row(target.taskId)
     const rows = await this.db.select().from(message).where(eq(message.threadId, threadId)).orderBy(message.seq)
     const attachments = rows.length ? await this.db.select().from(messageAttachment).where(inArray(messageAttachment.messageId, rows.map((row) => row.id))) : []
     const requests = await this.db.select({ id: chatRequest.id, replyMessageId: chatRequest.replyMessageId }).from(chatRequest).where(eq(chatRequest.threadId, threadId))
@@ -279,23 +280,10 @@ export class DbTasksService {
         const used = await tx.select().from(taskInput).where(inArray(taskInput.fileId, ownFiles.map((file) => file.id)))
         if (used.some((item) => item.taskId !== taskId)) throw new ConflictException('다른 대화가 이 대화의 파일을 입력으로 사용합니다')
       }
-      const [hasSnapshot] = await tx.select({ id: contextSnapshot.id }).from(contextSnapshot).where(eq(contextSnapshot.sourceTaskId, taskId)).limit(1)
       const [activeRequest] = await tx.select({ id: chatRequest.id }).from(chatRequest).innerJoin(thread, eq(chatRequest.threadId, thread.id))
         .where(and(eq(thread.taskId, taskId), inArray(chatRequest.status, ['pending', 'streaming']))).limit(1)
       if (activeRequest) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
-      const [hasRequest] = await tx.select({ id: chatRequest.id }).from(chatRequest).innerJoin(thread, eq(chatRequest.threadId, thread.id)).where(eq(thread.taskId, taskId)).limit(1)
-      if (hasSnapshot || hasRequest) {
-        await tx.update(task).set({ deletedAt: new Date() }).where(eq(task.id, taskId))
-        return
-      }
-      await tx.delete(thread).where(eq(thread.taskId, taskId))
-      await tx.delete(taskInput).where(eq(taskInput.taskId, taskId))
-      if (ownFiles.length) {
-        const fileIds = ownFiles.map((file) => file.id)
-        await tx.update(fileObject).set({ previousId: null }).where(inArray(fileObject.id, fileIds))
-        await tx.delete(fileObject).where(inArray(fileObject.id, fileIds))
-      }
-      await tx.delete(task).where(eq(task.id, taskId))
+      await tx.update(task).set({ deletedAt: new Date() }).where(eq(task.id, taskId))
     })
   }
 }

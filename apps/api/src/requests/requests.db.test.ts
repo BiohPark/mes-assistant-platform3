@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import { eq } from 'drizzle-orm'
 import postgres from 'postgres'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { OpenAICompatibleProvider, type ChatProvider } from '@mes/llm'
 import { loadConfig } from '../config/config.js'
 import { runMigrations } from '../db/migrate.js'
@@ -16,6 +16,7 @@ import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
 import { RequestsService } from './requests.service.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
+import { DbLlmPorts } from '../llm/dbLlmPorts.js'
 import { toLlmSettings } from '../llm/presets.js'
 
 describe('RequestService DB', () => {
@@ -125,7 +126,7 @@ describe('RequestService DB', () => {
     await run.done
     const [reply] = await db.select().from(message).where(eq(message.id, run.replyMessageId))
     expect(reply).toMatchObject({ status: 'error', content: '부분' })
-    expect((await runner.get(run.id)).status).toBe('cancelled')
+    expect(await runner.get(run.id)).toMatchObject({ status: 'cancelled', code: 'CANCELLED' })
     runner.onModuleDestroy()
   })
 
@@ -136,7 +137,7 @@ describe('RequestService DB', () => {
     await db.update(chatRequest).set({ status: 'streaming', leaseUntil: new Date(Date.now() - 1000) }).where(eq(chatRequest.id, run.id))
     await db.update(message).set({ status: 'streaming' }).where(eq(message.id, run.replyMessageId))
     expect(await service.sweep()).toBe(1)
-    expect((await service.get(run.id)).status).toBe('interrupted')
+    expect(await service.get(run.id)).toMatchObject({ status: 'interrupted', code: 'INTERRUPTED' })
     expect(await service.sweep()).toBe(0)
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
@@ -147,6 +148,170 @@ describe('RequestService DB', () => {
     expect(await runner.sweep()).toBe(0)
     release()
     await live.done
+  })
+
+  it('does not sweep a lease renewed after the expired list was read', async () => {
+    const { thread } = await tasks.create('member', { assistantId })
+    const run = await service.start('member', thread.id, { content: '경쟁' }, 'renewed-lease')
+    await run.done
+    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: new Date(Date.now() - 1000) }).where(eq(chatRequest.id, run.id))
+    await db.update(message).set({ status: 'streaming' }).where(eq(message.id, run.replyMessageId))
+    const original = (service as never as { transition: (...args: unknown[]) => Promise<boolean> }).transition.bind(service)
+    const spy = vi.spyOn(service as never as { transition: (...args: unknown[]) => Promise<boolean> }, 'transition').mockImplementation(async (...args) => {
+      await db.update(chatRequest).set({ leaseUntil: new Date(Date.now() + 30_000) }).where(eq(chatRequest.id, run.id))
+      return original(...args)
+    })
+    try { expect(await service.sweep()).toBe(0); expect((await service.get(run.id)).status).toBe('streaming') }
+    finally { spy.mockRestore() }
+    await db.update(chatRequest).set({ status: 'succeeded' }).where(eq(chatRequest.id, run.id))
+    await db.update(message).set({ status: 'done' }).where(eq(message.id, run.replyMessageId))
+  })
+
+  it('aborts the runner when lease renewal updates no active row', async () => {
+    let reason: unknown
+    const waiting: ChatProvider = { ...provider, async *stream(request) {
+      await new Promise<void>((resolve) => {
+        if (request.signal?.aborted) resolve()
+        else request.signal?.addEventListener('abort', () => resolve(), { once: true })
+      })
+      reason = request.signal?.reason
+      yield { type: 'done' }
+    } }
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
+      REQUEST_KEEPALIVE_MS: '5' }), waiting)
+    const { thread } = await tasks.create('member', { assistantId })
+    const run = await runner.start('member', thread.id, { content: 'lease' }, 'lost-lease')
+    for (let i = 0; i < 100 && (await runner.get(run.id)).status !== 'streaming'; i++) await new Promise((resolve) => setTimeout(resolve, 5))
+    await db.update(chatRequest).set({ status: 'interrupted' }).where(eq(chatRequest.id, run.id))
+    await run.done
+    expect(reason).toBe('lost')
+  })
+
+  it('keeps built file inputs when a streaming request is cancelled', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const slow: ChatProvider = { ...provider, async *stream() { await gate; yield { type: 'delta', text: '늦음' } } }
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), slow)
+    const { task: owner, thread } = await tasks.create('member', { assistantId })
+    const fileId = `built-${Date.now()}`
+    await new FileStorageService(root).write(`test/${fileId}.txt`, Buffer.from('input'))
+    await db.insert(fileObject).values({ id: fileId, kind: 'task_file', originTaskId: owner.id, originalName: 'input.txt', mime: 'text/plain', sizeBytes: 5,
+      sha256: 'a'.repeat(64), storageKey: `test/${fileId}.txt`, source: 'upload', version: 1, uploadedBy: 'member' })
+    await db.insert(taskInput).values({ taskId: owner.id, fileId, weight: 'main', sortOrder: 0, selectedBy: 'member' })
+    const run = await runner.start('member', thread.id, { content: '입력 기록' }, 'built-input')
+    for (let i = 0; i < 100 && (await runner.get(run.id)).status !== 'streaming'; i++) await new Promise((resolve) => setTimeout(resolve, 5))
+    await runner.cancel(run.id)
+    release()
+    await run.done
+    expect(await runner.get(run.id)).toMatchObject({ status: 'cancelled', inputs: [{ fileId, bytes: expect.any(Number) }] })
+  })
+
+  it('bounds replay and resumes a long active stream from saved text', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const many: ChatProvider = { ...provider, async *stream() {
+      for (let index = 0; index < 2100; index++) yield { type: 'delta', text: 'x' }
+      await gate
+      yield { type: 'delta', text: '끝' }
+    } }
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root, REQUEST_FLUSH_MS: '1' }), many)
+    const { thread } = await tasks.create('member', { assistantId })
+    const run = await runner.start('member', thread.id, { content: '긴 답' }, 'long-replay')
+    for (let i = 0; i < 100 && (await db.select().from(message).where(eq(message.id, run.replyMessageId)))[0]?.content.length !== 2100; i++) await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(((runner as never as { events: Map<string, unknown[]> }).events.get(run.id) ?? []).length).toBeLessThanOrEqual(2002)
+    const same = await runner.start('member', thread.id, { content: '긴 답' }, 'long-replay')
+    expect(same.id).toBe(run.id)
+    const seen: Array<{ event: string; data: Record<string, unknown> }> = []
+    const off = runner.subscribe(run.id, (event) => seen.push(event))
+    expect(seen[0]).toMatchObject({ event: 'started', data: { resumedText: 'x'.repeat(2100) } })
+    expect(seen.filter((event) => event.event === 'delta')).toHaveLength(0)
+    release()
+    await run.done
+    expect(seen.filter((event) => event.event === 'delta').map((event) => event.data.text)).toEqual(['끝'])
+    off()
+  })
+
+  it('uses the attachment deadline through a slow build', async () => {
+    const original = DbLlmPorts.prototype.getAssistants
+    let entered!: () => void
+    const building = new Promise<void>((resolve) => { entered = resolve })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const spy = vi.spyOn(DbLlmPorts.prototype, 'getAssistants').mockImplementation(async function (this: DbLlmPorts) {
+      entered()
+      await gate
+      return original.call(this)
+    })
+    const realSetTimeout = global.setTimeout
+    const realClearTimeout = global.clearTimeout
+    const epoch = Date.now()
+    let clock = epoch
+    const timers: Array<{ due: number; callback: () => void; active: boolean; token: object }> = []
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    const timeoutSpy = vi.spyOn(global, 'setTimeout').mockImplementation(((callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => {
+      if ((ms ?? 0) < 60_000) return realSetTimeout(callback, ms, ...args)
+      const token = { unref: () => token }
+      timers.push({ due: clock + ms!, callback: () => callback(...args), active: true, token })
+      return token
+    }) as typeof setTimeout)
+    const clearSpy = vi.spyOn(global, 'clearTimeout').mockImplementation(((token: object) => {
+      const timer = timers.find((item) => item.token === token)
+      if (timer) timer.active = false
+      else realClearTimeout(token as ReturnType<typeof setTimeout>)
+    }) as typeof clearTimeout)
+    try {
+      const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
+        REQUEST_FIRST_TOKEN_MS: '60000', REQUEST_FILES_FIRST_TOKEN_MS: '360000' }), provider)
+      const { task: owner, thread } = await tasks.create('member', { assistantId })
+      const fileId = `deadline-${Date.now()}`
+      await new FileStorageService(root).write(`test/${fileId}.txt`, Buffer.from('file'))
+      await db.insert(fileObject).values({ id: fileId, kind: 'task_file', originTaskId: owner.id, originalName: 'file.txt', mime: 'text/plain', sizeBytes: 4,
+        sha256: 'a'.repeat(64), storageKey: `test/${fileId}.txt`, source: 'upload', version: 1, uploadedBy: 'member' })
+      const run = await runner.start('member', thread.id, { content: '첨부', attachmentIds: [fileId] }, 'file-deadline')
+      await building
+      clock += 70_000
+      for (const timer of timers) if (timer.active && timer.due <= clock) { timer.active = false; timer.callback() }
+      release()
+      await run.done
+      expect((await runner.get(run.id)).status).toBe('succeeded')
+    } finally { release(); clearSpy.mockRestore(); timeoutSpy.mockRestore(); nowSpy.mockRestore(); spy.mockRestore() }
+  })
+
+  it('holds the auxiliary slot until an aborted provider settles', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let aborted = false
+    const first = service.runAuxiliary('aux-user', 'title', async (signal) => {
+      signal.addEventListener('abort', () => { aborted = true }, { once: true })
+      await gate
+      return 'late'
+    }, { timeoutMs: 5 })
+    void first.catch(() => undefined)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(aborted).toBe(true)
+    await expect(service.runAuxiliary('aux-user', 'summary', async () => 'early')).rejects.toMatchObject({ status: 429 })
+    release()
+    await expect(first).rejects.toThrow(/시간 초과/)
+    expect(await service.runAuxiliary('aux-user', 'summary', async () => 'next')).toBe('next')
+  })
+
+  it('does not write a large snapshot when cancellation wins the transition', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const slow: ChatProvider = { ...provider, async *stream() { await gate; yield { type: 'delta', text: 'late' } } }
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
+      REQUEST_BUDGET_BYTES: String(2 * 1024 * 1024) }), slow)
+    const { thread } = await tasks.create('member', { assistantId })
+    const run = await runner.start('member', thread.id, { content: 'x'.repeat(1_100_000) }, 'cancel-snapshot')
+    for (let i = 0; i < 100 && (await runner.get(run.id)).status !== 'streaming'; i++) await new Promise((resolve) => setTimeout(resolve, 5))
+    await runner.cancel(run.id)
+    release()
+    await run.done
+    const [row] = await db.select({ snapshot: chatRequest.snapshot }).from(chatRequest).where(eq(chatRequest.id, run.id))
+    expect(row?.snapshot).toBeNull()
+    const now = new Date()
+    const key = `requests/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${run.id}.json`
+    expect(await new FileStorageService(root).exists(key)).toBe(false)
   })
 
   it('interrupts unfinished requests on process restart even before lease expiry', async () => {
@@ -181,6 +346,19 @@ describe('RequestService DB', () => {
     const run = await runner.start('member', thread.id, { content: '시간 제한' }, 'timeout-key')
     await run.done
     expect(await runner.get(run.id)).toMatchObject({ status: 'failed', error: expect.stringMatching(/시간 초과/) })
+    expect((await runner.get(run.id)).code).toBe('TIMEOUT')
+  })
+
+  it('exposes a machine-readable size failure in GET and SSE', async () => {
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
+      REQUEST_BUDGET_BYTES: '100' }), provider)
+    const { thread } = await tasks.create('member', { assistantId })
+    const run = await runner.start('member', thread.id, { content: 'x'.repeat(500) }, 'too-large-code')
+    await run.done
+    expect(await runner.get(run.id)).toMatchObject({ status: 'failed', code: 'REQUEST_TOO_LARGE' })
+    const events: Array<{ event: string; data: Record<string, unknown> }> = []
+    runner.subscribe(run.id, (event) => events.push(event))()
+    expect(events.find((event) => event.event === 'failed')?.data.code).toBe('REQUEST_TOO_LARGE')
   })
 
   it('limits auxiliary calls to one per user', async () => {
@@ -212,7 +390,7 @@ describe('RequestService DB', () => {
     const { thread } = await tasks.create('member', { assistantId })
     const first = await runner.start('member', thread.id, { content: '다시' }, 'failed-key')
     await first.done
-    expect((await runner.get(first.id)).status).toBe('failed')
+    expect(await runner.get(first.id)).toMatchObject({ status: 'failed', code: 'PROVIDER_ERROR' })
     const retried = await service.retry('member', first.id, {}, 'retry-key')
     await retried.done
     expect(retried.userMessageId).toBe(first.userMessageId)
@@ -228,7 +406,7 @@ describe('RequestService DB', () => {
     await db.insert(taskInput).values({ taskId: owner.id, fileId, weight: 'reference', sortOrder: 0, selectedBy: 'member' })
     const failed = await service.start('member', thread.id, { content: '누락 파일' }, 'build-failure')
     await failed.done
-    expect((await service.get(failed.id)).status).toBe('failed')
+    expect(await service.get(failed.id)).toMatchObject({ status: 'failed', code: 'BUILD_FAILED' })
     await expect(service.retry('member', failed.id, { excludeFileIds: ['unrelated'] }, 'invalid-retry')).rejects.toMatchObject({ status: 400 })
     const recovered = await service.retry('member', failed.id, { excludeFileIds: [fileId] }, 'exclude-file')
     await recovered.done
@@ -273,7 +451,7 @@ describe('RequestService DB', () => {
       await db.insert(taskInput).values({ taskId: owner.id, fileId, weight: 'reference', sortOrder: 0, selectedBy: 'member' })
       const first = await runner.start('member', thread.id, { content: '파일 사용' }, 'delivery-key')
       await first.done
-      expect(await runner.get(first.id)).toMatchObject({ status: 'failed', inputs: [{ fileId, delivery: 'failed' }] })
+      expect(await runner.get(first.id)).toMatchObject({ status: 'failed', code: 'DELIVERY_FAILED', inputs: [{ fileId, delivery: 'failed' }] })
       expect(chatCalls).toBe(0)
       const recovered = await runner.retry('member', first.id, { forceInlineFileIds: [fileId] }, 'delivery-retry')
       await recovered.done

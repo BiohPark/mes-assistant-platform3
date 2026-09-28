@@ -13,6 +13,7 @@ export interface RequestRecord {
   id: string
   threadId: string
   status: string
+  code?: string | null
   phase?: string | null
   provider: string
   transport: string
@@ -49,8 +50,8 @@ export async function readSse(reader: ReadableStreamDefaultReader<Uint8Array>, o
   }
 }
 
-export async function streamRequest(path: string, body: unknown, onEvent: (event: string, data: Record<string, unknown>) => void) {
-  const response = await check(await fetch(`/api${path}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(body) }))
+export async function streamRequest(path: string, body: unknown, onEvent: (event: string, data: Record<string, unknown>) => void, key: string = crypto.randomUUID()) {
+  const response = await check(await fetch(`/api${path}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) }))
   if (!response.body) throw new Error('스트림 응답이 없습니다')
   await readSse(response.body.getReader(), onEvent)
 }

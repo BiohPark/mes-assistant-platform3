@@ -12,7 +12,7 @@ const TITLE_PROMPT =
  * 대화 제목 제안. 채팅 응답과 별개의 요청으로 만든다.
  * mock이거나 실패·빈 응답이면 규칙 기반 제목, 그것도 없으면 undefined.
  */
-export async function suggestTitle(provider: ChatProvider, model: string, history: Message[]): Promise<string | undefined> {
+export async function suggestTitle(provider: ChatProvider, model: string, history: Message[], signal?: AbortSignal): Promise<string | undefined> {
   const dialog = history.filter((m) => m.status === 'done' && m.kind !== 'discussion' && (m.role === 'user' || m.role === 'assistant'))
   const fallback = ruleTitle(dialog.filter((m) => m.role === 'user').map((m) => m.content))
   if (provider.kind === 'mock') return fallback
@@ -21,6 +21,9 @@ export async function suggestTitle(provider: ChatProvider, model: string, histor
     .map((m) => `${m.role === 'user' ? '사용자' : 'AI'}: ${m.content.slice(0, TRANSCRIPT_CHARS)}`)
     .join('\n')
   const controller = new AbortController()
+  const abort = () => controller.abort(signal?.reason)
+  signal?.addEventListener('abort', abort, { once: true })
+  if (signal?.aborted) abort()
   const timer = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS)
   try {
     let acc = ''
@@ -35,10 +38,13 @@ export async function suggestTitle(provider: ChatProvider, model: string, histor
       if (chunk.type === 'delta') acc += chunk.text
       if (chunk.type === 'error') return fallback
     }
+    if (signal?.aborted) throw new Error('보조 요청 중지')
     return cleanTitle(acc) || fallback
   } catch {
+    if (signal?.aborted) throw new Error('보조 요청 중지')
     return fallback
   } finally {
     clearTimeout(timer)
+    signal?.removeEventListener('abort', abort)
   }
 }

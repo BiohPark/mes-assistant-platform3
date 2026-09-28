@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull, or } from 'drizzle-orm'
 import type { Assistant, FileAsset, ServiceRequest, Settings, Task, User } from '@mes/domain'
 import type { LlmPorts } from '@mes/llm'
 import { remoteKey } from '@mes/llm'
@@ -15,6 +15,7 @@ const scopeHash = (key: string) => createHash('sha256').update(key).digest('hex'
 
 /** LLM prompt builder에서 필요한 S1 DB 읽기 어댑터. */
 export class DbLlmPorts implements LlmPorts {
+  private readonly storageKeys = new Map<string, string>()
   constructor(private readonly db: Db, private readonly config: AppConfig, private readonly currentUserId: string, private readonly storage = new FileStorageService(config.fileStorageRoot)) {}
 
   async getSettings(): Promise<Settings> {
@@ -93,11 +94,14 @@ export class DbLlmPorts implements LlmPorts {
 
   async getFiles(ids: string[]): Promise<(FileAsset | undefined)[]> {
     if (!ids.length) return []
-    const rows = await this.db.select().from(fileObject).where(and(inArray(fileObject.id, ids), isNull(fileObject.deletedAt)))
+    const rows = await this.db.select({ file: fileObject }).from(fileObject).leftJoin(task, eq(fileObject.originTaskId, task.id))
+      .where(and(inArray(fileObject.id, ids), isNull(fileObject.deletedAt), or(isNull(fileObject.originTaskId), isNull(task.deletedAt))))
+    const visible = rows.map((item) => item.file)
+    for (const row of visible) this.storageKeys.set(row.id, row.storageKey)
     const refs = await this.db.select().from(fileRemoteRef).where(inArray(fileRemoteRef.fileId, ids))
     const currentKey = remoteKey(toLlmSettings(this.config.llm))
     const currentHash = scopeHash(currentKey)
-    const byId = new Map(rows.map((row): [string, FileAsset] => [row.id, {
+    const byId = new Map(visible.map((row): [string, FileAsset] => [row.id, {
       id: row.id, ...(row.originTaskId ? { originTaskId: row.originTaskId } : {}),
       ...(row.originSrId ? { originSrId: row.originSrId } : {}), name: row.originalName,
       mime: row.mime, size: row.sizeBytes, blob: new Blob([]), uploadedBy: row.uploadedBy,
@@ -131,6 +135,8 @@ export class DbLlmPorts implements LlmPorts {
   }
   async readFileBytes(file?: FileAsset): Promise<Uint8Array> {
     if (!file) return missing('readFileBytes')
+    const key = this.storageKeys.get(file.id)
+    if (key) return this.storage.read(key)
     const [row] = await this.db.select({ storageKey: fileObject.storageKey }).from(fileObject).where(eq(fileObject.id, file.id))
     if (!row) throw new Error('파일이 없습니다')
     return this.storage.read(row.storageKey)

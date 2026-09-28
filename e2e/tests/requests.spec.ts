@@ -18,8 +18,12 @@ test('S6 크기 초과 실패가 기록되고 입력창을 다시 사용할 수 
   const task = await setup(page)
   await page.getByRole('button', { name: '팀 의견 (AI 미전송)' }).click()
   await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('x'.repeat(270_000))
+  // CI에서만 실패한 이력(run 36394xxxxxx) — 요청 POST의 응답 상태를 함께 단언해 413/401/행 없음을 구분한다
+  const responsePromise = page.waitForResponse((res) => res.url().includes('/requests') && res.request().method() === 'POST')
   await page.getByRole('button', { name: '전송', exact: true }).click()
-  await expect(page.getByText(/요청 크기 한도 초과/).first()).toBeVisible()
+  const response = await responsePromise
+  expect(response.status(), `요청 POST 응답 ${response.status()} ${await response.text().catch(() => '')}`.slice(0, 300)).toBe(201) // SSE 시작은 201
+  await expect(page.getByText(/요청 크기 한도 초과/).first()).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('textbox', { name: '팀 의견 입력' })).toBeEnabled()
   const messages = await (await page.request.get(`/api/threads/${task.threadId}/messages`)).json() as Array<{ requestId?: string; status: string }>
   expect(messages.at(-1)).toMatchObject({ status: 'error', requestId: expect.any(String) })
@@ -37,6 +41,7 @@ test('S7 두 탭의 동시 전송 중 하나만 시작한다', async ({ page, co
 })
 
 test('S8 Mock 답변에 사용한 자료와 요청 기록을 표시한다', async ({ page }) => {
+  test.skip((process.env.E2E_LLM_MODE ?? process.env.LLM_MODE) === 'live', 'Mock 전용 시나리오 — live 모드에서는 건너뜀')
   await setup(page)
   await page.getByRole('button', { name: '팀 의견 (AI 미전송)' }).click()
   await page.locator('input[type="file"]').setInputFiles({ name: 'e2e-input.txt', mimeType: 'text/plain', buffer: Buffer.from('참고 입력') })

@@ -8,6 +8,8 @@ if (existsSync(envFile)) process.loadEnvFile(envFile)
 
 const appOrigin = process.env.APP_ORIGIN ?? 'http://localhost:5173'
 const apiPort = process.env.API_PORT ?? '3000'
+const llmMode = process.env.E2E_LLM_MODE ?? process.env.LLM_MODE
+const fakePort = process.env.E2E_FAKE_OWUI_PORT ?? '3102'
 
 export default defineConfig({
   testDir: './tests',
@@ -18,11 +20,12 @@ export default defineConfig({
   use: { baseURL: appOrigin, trace: 'retain-on-failure', locale: 'ko-KR' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
-    ...(process.env.LLM_MODE === 'live' ? [{
+    // live 모드: 테스트 전용 가짜 OpenWebUI를 compose 서비스(3101)와 다른 포트에 직접 띄운다 — CI·로컬 모두 compose가 떠 있어도 충돌 없음
+    ...(llmMode === 'live' ? [{
       command: 'node docker/fake-openwebui/server.mjs',
       cwd: resolve(import.meta.dirname, '..'),
-      env: { PORT: '3101' },
-      url: 'http://localhost:3101/health',
+      env: { PORT: fakePort },
+      url: `http://localhost:${fakePort}/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     }] : []),
@@ -30,6 +33,8 @@ export default defineConfig({
       // 명령은 셸 무관(cmd·PowerShell·bash) — && 만 사용
       command: 'pnpm --filter "@mes/api..." build && pnpm --filter @mes/api db:migrate && pnpm db:seed && pnpm --filter @mes/api start',
       cwd: resolve(import.meta.dirname, '..'),
+      // api는 --env-file보다 프로세스 환경이 우선 — live면 테스트 전용 가짜 서버로 향하게 한다
+      env: llmMode === 'live' ? { LLM_MODE: 'live', LLM_PRESET: 'openwebui', LLM_BASE_URL: `http://127.0.0.1:${fakePort}`, LLM_API_KEY: 'e2e-fake-key' } : llmMode ? { LLM_MODE: llmMode } : undefined,
       url: `http://localhost:${apiPort}/api/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

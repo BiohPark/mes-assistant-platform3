@@ -21,6 +21,15 @@ export interface StartedRequest { id: string; replyMessageId: string; userMessag
 const ACTIVE = ['pending', 'streaming']
 const STOPPED = '요청을 중지했습니다.'
 const STALE = '응답이 중단되었습니다 — 요청한 화면이 닫혔거나 연결이 끊겼습니다. 자동으로 다시 보내지 않았습니다.'
+const errorCode = (status: string, error: string | null, bytes: number) => {
+  if (status === 'cancelled') return 'CANCELLED'
+  if (status === 'interrupted') return 'INTERRUPTED'
+  if (status !== 'failed') return null
+  if (error?.includes('요청 크기 한도 초과')) return 'REQUEST_TOO_LARGE'
+  if (error?.includes('OpenWebUI에 전달하지 못해')) return 'DELIVERY_FAILED'
+  if (error?.includes('시간 초과')) return 'TIMEOUT'
+  return bytes === 0 ? 'BUILD_FAILED' : 'PROVIDER_ERROR'
+}
 class FencedTransition extends Error {}
 const publicInfo = (info: RequestInfo | undefined) => info ? { ...info, inputs: info.inputs.map((item) => {
   if (item.kind !== 'file') return item
@@ -36,6 +45,8 @@ export class RequestsService implements OnModuleDestroy {
   private readonly runs = new Map<string, AbortController>()
   private readonly listeners = new Map<string, Set<Listener>>()
   private readonly events = new Map<string, RequestEvent[]>()
+  private readonly truncated = new Set<string>()
+  private readonly streamText = new Map<string, string>()
   private readonly auxiliaryUsers = new Set<string>()
   private sweepTimer?: ReturnType<typeof setInterval>
 
@@ -64,7 +75,9 @@ export class RequestsService implements OnModuleDestroy {
     try {
       if (controller.signal.aborted) throw new Error('보조 요청 중지')
       const stopped = new Promise<never>((_, reject) => controller.signal.addEventListener('abort', () => reject(new Error(controller.signal.reason === 'timeout' ? '보조 요청 시간 초과' : '보조 요청 중지')), { once: true }))
-      return await Promise.race([operation(controller.signal), stopped])
+      const work = operation(controller.signal)
+      try { return await Promise.race([work, stopped]) }
+      catch (error) { await work.catch(() => undefined); throw error }
     } finally {
       clearTimeout(timer)
       options.signal?.removeEventListener('abort', abort)
@@ -87,10 +100,20 @@ export class RequestsService implements OnModuleDestroy {
   private emit(id: string, event: RequestEvent) {
     const history = this.events.get(id) ?? []
     history.push(event)
+    if (event.event === 'delta' || event.event === 'phase') {
+      let bytes = history.reduce((sum, item) => sum + Buffer.byteLength(JSON.stringify(item)), 0)
+      while (history.length > 2001 || bytes > 256 * 1024) {
+        const first = history.findIndex((item) => item.event !== 'started')
+        if (first < 0) break
+        bytes -= Buffer.byteLength(JSON.stringify(history[first]))
+        if (history[first]!.event === 'delta') this.truncated.add(id)
+        history.splice(first, 1)
+      }
+    }
     this.events.set(id, history)
     for (const listener of this.listeners.get(id) ?? []) listener(event)
     if (event.event === 'completed' || event.event === 'failed') {
-      const timer = setTimeout(() => this.events.delete(id), 60_000)
+      const timer = setTimeout(() => { this.events.delete(id); this.truncated.delete(id); this.streamText.delete(id) }, 60_000)
       timer.unref?.()
     }
   }
@@ -111,11 +134,12 @@ export class RequestsService implements OnModuleDestroy {
   private async replay(row: typeof chatRequest.$inferSelect): Promise<StartedRequest> {
     const record = await this.get(row.id)
     const started = { event: 'started', data: { requestId: row.id, replyMessageId: row.replyMessageId, userMessageId: row.userMessageId } } as const
-    if (!this.events.has(row.id)) {
-      this.events.set(row.id, [started])
-      if (row.phase) this.emit(row.id, { event: 'phase', data: { text: row.phase } })
-      if (row.status === 'succeeded') this.emit(row.id, { event: 'completed', data: { requestInfo: record } })
-      if (['failed', 'cancelled', 'interrupted'].includes(row.status)) this.emit(row.id, { event: 'failed', data: { error: row.error ?? '요청 실패', requestInfo: record } })
+    if (this.truncated.has(row.id) || !this.events.has(row.id)) {
+      const [reply] = await this.db.select({ content: message.content }).from(message).where(eq(message.id, row.replyMessageId))
+      this.events.set(row.id, [{ event: 'started', data: { ...started.data, resumedText: this.streamText.get(row.id) ?? reply?.content ?? '' } }])
+      if (record.phase) this.emit(row.id, { event: 'phase', data: { text: record.phase } })
+      if (record.status === 'succeeded') this.emit(row.id, { event: 'completed', data: { requestInfo: record } })
+      if (['failed', 'cancelled', 'interrupted'].includes(record.status)) this.emit(row.id, { event: 'failed', data: { error: record.error ?? '요청 실패', code: record.code, requestInfo: record } })
     }
     return { id: row.id, replyMessageId: row.replyMessageId, userMessageId: row.userMessageId, done: Promise.resolve() }
   }
@@ -127,7 +151,7 @@ export class RequestsService implements OnModuleDestroy {
     if ((!body.content?.trim() && !attachments.length) || oneShot.some((id) => !attachments.includes(id))) throw new BadRequestException('요청 내용 또는 첨부가 올바르지 않습니다')
     const existing = await this.db.select().from(chatRequest).where(and(eq(chatRequest.threadId, threadId), eq(chatRequest.idempotencyKey, key)))
     if (existing[0]) return this.replay(existing[0])
-    let acquired: { id: string; replyMessageId: string; userMessageId: string; duplicate?: boolean }
+    let acquired: { id: string; replyMessageId: string; userMessageId: string; deadlineAt?: number; duplicate?: boolean }
     try {
       acquired = await this.db.transaction(async (tx) => {
         const owner = await this.lockedOwner(tx, threadId)
@@ -151,6 +175,8 @@ export class RequestsService implements OnModuleDestroy {
           for (const [index, fileId] of selected.entries()) await tx.insert(taskInput).values({ taskId: owner.taskId, fileId, weight: 'reference', sortOrder: index, selectedBy: actor }).onConflictDoNothing()
           await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, owner.taskId))
         }
+        const hasSelectedFiles = owner.taskId ? !!(await tx.select({ fileId: taskInput.fileId }).from(taskInput).where(eq(taskInput.taskId, owner.taskId)).limit(1)).length : false
+        const deadlineAt = Date.now() + (attachments.length || hasSelectedFiles ? this.config.request.filesFirstTokenMs : this.config.request.firstTokenMs)
         const [currentTask] = owner.taskId ? await tx.select().from(task).where(eq(task.id, owner.taskId)) : []
         const [currentAssistant] = currentTask ? await tx.select().from(assistant).where(eq(assistant.id, currentTask.assistantId)) : []
         const [budgetSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
@@ -161,12 +187,12 @@ export class RequestsService implements OnModuleDestroy {
           bytes: 0, limitBytes, leaseUntil: new Date(Date.now() + this.config.request.leaseMs) })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'message.sent', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
-        return { id: requestId, replyMessageId, userMessageId }
+        return { id: requestId, replyMessageId, userMessageId, deadlineAt }
       })
     } catch (error) { if (isUnique(error)) throw new ConflictException({ code: 'REQUEST_ACTIVE' }); throw error }
     if (acquired.duplicate) return this.replay(await this.getRow(acquired.id))
     this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId } })
-    const done = this.run(acquired.id, oneShot, [])
+    const done = this.run(acquired.id, oneShot, [], acquired.deadlineAt!)
     return { ...acquired, done }
   }
 
@@ -188,6 +214,7 @@ export class RequestsService implements OnModuleDestroy {
       const files = await tx.select().from(messageAttachment).where(eq(messageAttachment.messageId, original.userMessageId))
       const allowed = new Set(files.map((item) => item.fileId))
       const selected = owner.taskId ? await tx.select().from(taskInput).where(eq(taskInput.taskId, owner.taskId)) : []
+      const deadlineAt = Date.now() + (files.length || selected.length ? this.config.request.filesFirstTokenMs : this.config.request.firstTokenMs)
       const selectable = new Set([...allowed, ...selected.map((item) => item.fileId)])
       if (exclude.some((id) => !selectable.has(id)) || inline.some((id) => !selectable.has(id) || exclude.includes(id))) throw new BadRequestException('재시도 파일 ID가 올바르지 않습니다')
       if (inline.length) {
@@ -205,11 +232,11 @@ export class RequestsService implements OnModuleDestroy {
         transport: this.config.llm.mode === 'live' && this.config.llm.preset === 'openwebui' ? 'openwebui' : 'inline',
         model: original.model, bytes: 0, limitBytes, leaseUntil: new Date(Date.now() + this.config.request.leaseMs) })
       await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId: id, retryOf: original.id } })
-      return { id, replyMessageId, userMessageId: original.userMessageId, oneShot: files.map((item) => item.fileId).filter((fileId) => !exclude.includes(fileId) && !selected.some((item) => item.fileId === fileId)) }
+      return { id, replyMessageId, userMessageId: original.userMessageId, deadlineAt, oneShot: files.map((item) => item.fileId).filter((fileId) => !exclude.includes(fileId) && !selected.some((item) => item.fileId === fileId)) }
     })
     if (acquired.duplicate) return this.replay(await this.getRow(acquired.id))
     this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId } })
-    return { ...acquired, done: this.run(acquired.id, acquired.oneShot, inline) }
+    return { ...acquired, done: this.run(acquired.id, acquired.oneShot, inline, acquired.deadlineAt!) }
   }
 
   private async getRow(id: string) {
@@ -220,7 +247,7 @@ export class RequestsService implements OnModuleDestroy {
   async get(id: string) {
     const row = await this.getRow(id)
     const inputs = await this.db.select().from(chatRequestInput).where(eq(chatRequestInput.requestId, id)).orderBy(chatRequestInput.seq)
-    return { id: row.id, threadId: row.threadId, status: row.status, phase: row.phase, provider: row.provider, transport: row.transport,
+    return { id: row.id, threadId: row.threadId, status: row.status, phase: row.phase, code: errorCode(row.status, row.error, row.bytes), provider: row.provider, transport: row.transport,
       model: row.model, bytes: row.status === 'pending' && row.bytes === 0 ? null : row.bytes, limitBytes: row.limitBytes, error: row.error, retryOf: row.retryOf, createdAt: row.createdAt.toISOString(),
       finishedAt: row.finishedAt?.toISOString(), inputs: inputs.map((item) => ({ kind: item.kind, weight: item.weight, fileId: item.fileId,
         fileVersion: item.fileVersion, sourceLabel: item.sourceLabel, oneShot: item.oneShot, delivery: item.delivery, sourceTaskId: item.sourceTaskId,
@@ -233,26 +260,33 @@ export class RequestsService implements OnModuleDestroy {
     return value ?? {}
   }
 
+  private async saveBuilt(id: string, info: RequestInfo): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx.update(chatRequest).set({ provider: info.provider, transport: info.transport, model: info.model,
+        bytes: info.bytes, limitBytes: info.limitBytes, phase: null }).where(and(eq(chatRequest.id, id), eq(chatRequest.status, 'pending'))).returning({ id: chatRequest.id })
+      if (!updated) return false
+      if (info.inputs.length) await tx.insert(chatRequestInput).values(info.inputs.map((item: RequestInput, seq) => ({ requestId: id, seq, kind: item.kind, weight: item.weight,
+        fileId: item.kind === 'file' ? item.fileId : null, fileVersion: item.kind === 'file' ? item.version : null,
+        sourceLabel: item.kind === 'file' ? `${item.name}${item.source ? ` · ${item.source}` : ''}` : item.code, oneShot: item.kind === 'file' ? !!item.oneShot : false,
+        delivery: item.kind === 'file' ? item.delivery : null, remoteId: item.kind === 'file' ? item.remoteId : null,
+        sourceTaskId: item.kind === 'conversation' ? item.sourceTaskId : null, snapshotId: item.kind === 'conversation' ? item.snapshotId : null,
+        mode: item.kind === 'conversation' ? item.mode : null, messageCount: item.kind === 'conversation' ? item.messageCount : null,
+        bytes: item.bytes, error: item.kind === 'file' ? item.error : null })))
+      return true
+    })
+  }
+
   private async transition(id: string, status: 'succeeded' | 'failed' | 'cancelled' | 'interrupted', error?: string, content?: string,
-    info?: RequestInfo, snapshot?: unknown): Promise<boolean> {
+    info?: RequestInfo, snapshot?: unknown, expired = false): Promise<boolean> {
     const row = await this.getRow(id)
     try { return await this.db.transaction(async (tx) => {
       const owner = await this.lockedOwner(tx, row.threadId).catch((e) => { if (e instanceof ConflictException && status !== 'succeeded') return undefined; throw e })
       const [updated] = await tx.update(chatRequest).set({ status, error: error ?? null, finishedAt: new Date(), phase: null,
-        bytes: info?.bytes ?? row.bytes, snapshot: snapshot ?? row.snapshot, leaseUntil: null }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE))).returning({ id: chatRequest.id })
+        snapshot: snapshot ?? row.snapshot, leaseUntil: null }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE), ...(expired ? [lt(chatRequest.leaseUntil, sql`now()`)] : []))).returning({ id: chatRequest.id })
       if (!updated) return false
       const [reply] = await tx.update(message).set({ status: status === 'succeeded' ? 'done' : 'error', error: error ?? null,
         ...(content !== undefined ? { content: content || (error ? `⚠️ ${error}` : '') } : {}) }).where(and(eq(message.id, row.replyMessageId), eq(message.status, 'streaming'))).returning({ id: message.id })
       if (!reply) throw new FencedTransition()
-      if (info?.inputs.length) {
-        await tx.insert(chatRequestInput).values(info.inputs.map((item: RequestInput, seq) => ({ requestId: id, seq, kind: item.kind, weight: item.weight,
-          fileId: item.kind === 'file' ? item.fileId : null, fileVersion: item.kind === 'file' ? item.version : null,
-          sourceLabel: item.kind === 'file' ? `${item.name}${item.source ? ` · ${item.source}` : ''}` : item.code, oneShot: item.kind === 'file' ? !!item.oneShot : false,
-          delivery: item.kind === 'file' ? item.delivery : null, remoteId: item.kind === 'file' ? item.remoteId : null,
-          sourceTaskId: item.kind === 'conversation' ? item.sourceTaskId : null, snapshotId: item.kind === 'conversation' ? item.snapshotId : null,
-          mode: item.kind === 'conversation' ? item.mode : null, messageCount: item.kind === 'conversation' ? item.messageCount : null,
-          bytes: item.bytes, error: item.kind === 'file' ? item.error : null })))
-      }
       await tx.insert(activityLog).values({ id: randomUUID(), type: `request.${status === 'succeeded' ? 'completed' : status === 'cancelled' ? 'cancelled' : 'failed'}`,
         userId: row.requestedBy, taskId: owner?.taskId ?? null, srId: owner?.srId ?? null, payload: { requestId: id, bytes: info?.bytes ?? row.bytes, model: info?.model ?? row.model } })
       return true
@@ -264,17 +298,17 @@ export class RequestsService implements OnModuleDestroy {
     if (!ACTIVE.includes(row.status)) return
     if (await this.transition(id, 'cancelled', STOPPED)) {
       this.runs.get(id)?.abort('cancelled')
-      this.emit(id, { event: 'failed', data: { error: STOPPED, requestInfo: await this.get(id) } })
+      this.emit(id, { event: 'failed', data: { error: STOPPED, code: 'CANCELLED', requestInfo: await this.get(id) } })
     }
   }
 
   async sweep(): Promise<number> {
-    const expired = await this.db.select({ id: chatRequest.id }).from(chatRequest).where(and(inArray(chatRequest.status, ACTIVE), lt(chatRequest.leaseUntil, new Date())))
+    const expired = await this.db.select({ id: chatRequest.id }).from(chatRequest).where(and(inArray(chatRequest.status, ACTIVE), lt(chatRequest.leaseUntil, sql`now()`)))
     let count = 0
-    for (const row of expired) if (await this.transition(row.id, 'interrupted', STALE)) {
+    for (const row of expired) if (await this.transition(row.id, 'interrupted', STALE, undefined, undefined, undefined, true)) {
       count++
       this.runs.get(row.id)?.abort('lost')
-      this.emit(row.id, { event: 'failed', data: { error: STALE, requestInfo: await this.get(row.id) } })
+      this.emit(row.id, { event: 'failed', data: { error: STALE, code: 'INTERRUPTED', requestInfo: await this.get(row.id) } })
     }
     return count
   }
@@ -286,22 +320,24 @@ export class RequestsService implements OnModuleDestroy {
     return count
   }
 
-  private async run(id: string, oneShot: string[], forceInline: string[]): Promise<void> {
+  private async run(id: string, oneShot: string[], forceInline: string[], deadlineAt: number): Promise<void> {
     const controller = new AbortController()
     this.runs.set(id, controller)
-    const startedAt = Date.now()
     let timer: ReturnType<typeof setTimeout> | undefined
     let rejectDeadline: ((error: Error) => void) | undefined
     const deadline = new Promise<never>((_, reject) => { rejectDeadline = reject })
     void deadline.catch(() => undefined)
+    const stopped = new Promise<never>((_, reject) => controller.signal.addEventListener('abort', () => reject(new Error('요청 중지')), { once: true }))
+    void stopped.catch(() => undefined)
     const arm = (ms: number) => { if (timer) clearTimeout(timer); timer = setTimeout(() => {
       controller.abort('timeout'); rejectDeadline?.(new Error('응답 시간 초과 — 제한 시간 안에 응답이 오지 않았습니다.'))
     }, ms) }
-    arm(this.config.request.firstTokenMs)
+    arm(Math.max(1, deadlineAt - Date.now()))
     const lease = setInterval(() => { void this.db.update(chatRequest).set({ leaseUntil: new Date(Date.now() + this.config.request.leaseMs) })
-      .where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE))) }, this.config.request.keepaliveMs)
+      .where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE))).returning({ id: chatRequest.id })
+      .then((rows) => { if (!rows.length) controller.abort('lost') }).catch(() => controller.abort('lost')) }, this.config.request.keepaliveMs)
     lease.unref?.()
-    let acc = '', info: RequestInfo | undefined, snapshot: unknown, failure: string | undefined
+    let acc = '', info: RequestInfo | undefined, snapshot: unknown, snapshotBytes: Buffer | undefined, failure: string | undefined
     let dirty = false
     let replyId = ''
     const flush = async () => {
@@ -337,9 +373,6 @@ export class RequestsService implements OnModuleDestroy {
       })()
       const all = await this.db.select().from(message).where(eq(message.threadId, row.threadId)).orderBy(message.seq)
       const user = all.find((item) => item.id === row.userMessageId)
-      const attached = await this.db.select({ fileId: messageAttachment.fileId }).from(messageAttachment).where(eq(messageAttachment.messageId, row.userMessageId))
-      const selected = owner.taskId ? await this.db.select({ fileId: taskInput.fileId }).from(taskInput).where(eq(taskInput.taskId, owner.taskId)) : []
-      if (attached.length || selected.length) arm(Math.max(1, startedAt + this.config.request.filesFirstTokenMs - Date.now()))
       const history: Message[] = all.filter((item) => item.seq <= (user?.seq ?? 0)).map((item) => ({ id: item.id, threadId: item.threadId,
         role: item.role as Message['role'], content: item.content, authorId: item.authorId ?? undefined, createdAt: item.createdAt.toISOString(),
         attachmentIds: [], status: item.status as Message['status'], kind: item.kind as Message['kind'] }))
@@ -347,12 +380,12 @@ export class RequestsService implements OnModuleDestroy {
         createdBy: owner.createdBy, createdAt: owner.createdAt.toISOString(), archived: false, ...(owner.modelId ? { modelId: owner.modelId } : {}) }
       if (controller.signal.aborted) throw new Error('요청 시간 초과')
       const built = await Promise.race([buildChatRequest(scope, domainThread, history, { oneShotFileIds: oneShot, forceInlineFileIds: forceInline,
+        deadlineAt,
         signal: controller.signal, onProgress: (progress) => { const phase = `${progress.phase === 'uploading' ? '파일 올리는 중' : '파일 처리 대기'} ${progress.index + 1}/${progress.total} · ${progress.name}`
           void this.db.update(chatRequest).set({ phase }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
-          this.emit(id, { event: 'phase', data: { text: phase } }) } }, ports), deadline])
+          this.emit(id, { event: 'phase', data: { text: phase } }) } }, ports), deadline, stopped])
       info = { ...built.info, ...(row.retryOf ? { retryOf: row.retryOf } : {}) }
-      await this.db.update(chatRequest).set({ provider: info.provider, transport: info.transport, model: info.model, bytes: info.bytes, limitBytes: info.limitBytes, phase: null })
-        .where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
+      if (!(await this.saveBuilt(id, info))) { controller.abort('lost'); return }
       if (built.failed.length) { failure = `파일 ${built.failed.length}개(${built.failed.map((item) => item.name).join(', ')})를 OpenWebUI에 전달하지 못해 요청을 보내지 않았습니다.`; return }
       if (info.bytes > info.limitBytes) { failure = `요청 크기 한도 초과 (${Math.ceil(info.bytes / 1024)} KB / ${Math.ceil(info.limitBytes / 1024)} KB)`; return }
       snapshot = { sentAt: new Date().toISOString(), provider: this.provider.kind, model: built.model, meta: built.meta,
@@ -360,7 +393,7 @@ export class RequestsService implements OnModuleDestroy {
       const serialized = Buffer.from(JSON.stringify(snapshot))
       if (serialized.byteLength > 1024 * 1024) {
         const now = new Date(), key = `requests/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${id}.json`
-        await this.storage.write(key, serialized)
+        snapshotBytes = serialized
         snapshot = { storageKey: key }
       }
       if (controller.signal.aborted) return
@@ -368,12 +401,13 @@ export class RequestsService implements OnModuleDestroy {
       if (!streaming) { controller.abort('lost'); return }
       const iterator = this.provider.stream({ model: built.model, messages: built.messages, files: built.files, meta: built.meta, signal: controller.signal })[Symbol.asyncIterator]()
       for (;;) {
-        const chunk = await Promise.race([iterator.next(), deadline])
+        const chunk = await Promise.race([iterator.next(), deadline, stopped])
         if (chunk.done) break
         if (controller.signal.aborted) break
         if (chunk.value.type === 'error') { failure = chunk.value.message; break }
         if (chunk.value.type !== 'delta') continue
         acc += chunk.value.text
+        this.streamText.set(id, acc)
         dirty = true
         this.emit(id, { event: 'delta', data: { text: chunk.value.text } })
         arm(this.config.request.idleMs)
@@ -388,7 +422,11 @@ export class RequestsService implements OnModuleDestroy {
         if (controller.signal.reason !== 'lost' && controller.signal.reason !== 'cancelled') {
           const ok = await this.transition(id, failure ? 'failed' : 'succeeded', failure, acc, info, snapshot)
           if (ok) {
-            this.emit(id, failure ? { event: 'failed', data: { error: failure, requestInfo: publicInfo(info) } } : { event: 'completed', data: { requestInfo: publicInfo(info) } })
+            if (snapshotBytes && snapshot && typeof snapshot === 'object' && 'storageKey' in snapshot && typeof snapshot.storageKey === 'string') {
+              try { await this.storage.write(snapshot.storageKey, snapshotBytes) }
+              catch { await this.db.update(chatRequest).set({ snapshot: null }).where(eq(chatRequest.id, id)) }
+            }
+            this.emit(id, failure ? { event: 'failed', data: { error: failure, code: errorCode('failed', failure, info?.bytes ?? 0), requestInfo: publicInfo(info) } } : { event: 'completed', data: { requestInfo: publicInfo(info) } })
             if (!failure) void this.maybeTitle(id).catch(() => undefined)
           }
         }
@@ -405,7 +443,7 @@ export class RequestsService implements OnModuleDestroy {
     const rows = await this.db.select().from(message).where(eq(message.threadId, owner.id)).orderBy(message.seq)
     const history: Message[] = rows.map((item) => ({ id: item.id, threadId: item.threadId, role: item.role as Message['role'], content: item.content,
       createdAt: item.createdAt.toISOString(), attachmentIds: [], status: item.status as Message['status'], kind: item.kind as Message['kind'] }))
-    const title = await this.runAuxiliary(row.requestedBy, 'title', () => suggestTitle(this.provider, row.model, history))
+    const title = await this.runAuxiliary(row.requestedBy, 'title', (signal) => suggestTitle(this.provider, row.model, history, signal))
     if (title) await this.db.update(task).set({ title, titleSource: 'ai' }).where(and(eq(task.id, owner.taskId), eq(task.titleSource, 'default')))
   }
 }

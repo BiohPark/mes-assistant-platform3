@@ -23,13 +23,19 @@ export function ChatView({ task, assistant }: { task: Task; assistant?: Assistan
   const [retryChoice, setRetryChoice] = useState<{ record: RequestRecord; mode: 'exclude' | 'inline' } | null>(null)
   const chat = useChat(task.threadId)
   const messages = useQuery({ queryKey: ['messages', task.threadId], queryFn: () => getMessages(task.threadId!), enabled: !!task.threadId,
-    refetchInterval: (query) => (query.state.data as Message[] | undefined)?.some((item) => item.status === 'streaming') ? 15_000 : false })
-  const remoteStreaming = messages.data?.some((item) => item.status === 'streaming' && item.requestId !== chat.run?.requestId) ?? false
+    refetchInterval: (query) => (query.state.data as Message[] | undefined)?.some((item) => item.status === 'streaming') ? 5_000 : false })
+  const remoteRequestId = messages.data?.find((item) => item.status === 'streaming' && item.requestId !== chat.run?.requestId)?.requestId
+  const remoteRequest = useQuery({ queryKey: ['request', remoteRequestId], queryFn: () => getRequest(remoteRequestId!), enabled: !!remoteRequestId, refetchInterval: remoteRequestId ? 5_000 : false })
+  const remoteStreaming = !!remoteRequestId
   async function send(text: string, attachments: PendingAttachment[], discussion: boolean) {
     if ((!text.trim() && !attachments.length) || !task.threadId || sending) return
     const content = text.trim()
     setSending(true)
     try {
+      if (!discussion && chat.hasPendingAttempt()) {
+        await chat.send(content)
+        return
+      }
       const uploaded = []
       for (const attachment of attachments) {
         const file = await uploadFile(actor, { taskId: task.id }, attachment.file)
@@ -58,6 +64,7 @@ export function ChatView({ task, assistant }: { task: Task; assistant?: Assistan
       onRetryWithoutFiles={item.requestId && item.status === 'error' ? () => { void chooseRetry(item.requestId!, 'exclude') } : undefined}
       onRetryAsText={item.requestId && item.status === 'error' ? () => { void chooseRetry(item.requestId!, 'inline') } : undefined} />) : <div className="mx-auto mt-10 max-w-md text-center text-sm text-muted-foreground">대화를 시작하세요.</div>}
     {chat.run?.phase && <p className="text-xs text-muted-foreground">{chat.run.phase}</p>}
+    {!chat.run?.phase && remoteRequest.data?.phase && <p className="text-xs text-muted-foreground">{remoteRequest.data.phase}</p>}
   </div>{task.status !== 'done' && <Composer disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowPin allowDiscussion
     onSend={send} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />}
   {saveTarget && assistant && <SaveAsOutputDialog key={saveTarget.id} message={saveTarget} task={task} assistant={assistant} onClose={() => setSaveTarget(null)} />}</div>
