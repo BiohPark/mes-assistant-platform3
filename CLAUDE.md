@@ -290,7 +290,7 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 
 ### 진행 방식
 - 스프린트 = architecture §9의 S0–S5. 태스크 폴더는 `tasks/s<N>-<주제>/`. 각 스프린트의 **완료 기준**이 Verification의 기준이다.
-- 현재 위치: **S0·S1 완료(`main` 병합, 태그 `s0-done`·`s1-done`) → 다음 S2**. 기록: `tasks/s0-skeleton/`·`tasks/s1-auth-local/`·`tasks/s1-llm-proxy/`, `docs/HANDOFF.md` 6장. S2 계획: `docs/next-project/S2-kickoff.md`(G3·G4 결정 + 승인 후 착수). S1 이월: OpenAI 실키 확인·Windows 실기 확인.
+- 현재 위치: **S0·S1·S2 완료(`main` 병합, 태그 `s0-done`·`s1-done`·`s2-done`) → 다음 S3**. 기록: `tasks/s0-skeleton/`·`tasks/s1-*/`·`tasks/s2-*/`, `docs/HANDOFF.md` 6장. S3 계획: `docs/next-project/S3-kickoff.md`(승인 2026-09-28) — 착수 전 잔여 대상 상세 설계(사용자 지시). 이월: OpenAI 실키 확인·Windows 실기 확인(S1), U9 링크 규칙·KI-7(S4).
 - S1의 실환경 확인(`docs/evaluation/real-env-verification.md`)은 **이 환경에서 불가(D31)** — 사용자가 사내에서 수행. 개발은 가짜 OpenWebUI + OpenAI 호환 API 전환 프리셋으로 진행하고, 사내 연동 결과가 오면 어댑터를 맞춘다.
 - 확정: 배포 Windows 서버 + PostgreSQL 설치(D32), 이번 페이즈 SSO 미연계 → **앱 자체 로그인**(D34), 병렬 단계·상태는 **코드 데이터로 관리**(D35). 남은 확인: OpenWebUI 버전, 비기능 제안값(PRD §6).
 - 스프린트가 끝나면 이 블록의 "현재 위치"와 아래 "명령"을 갱신한다.
