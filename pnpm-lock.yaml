@@ -32,6 +32,12 @@ importers:
       '@mes/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@mes/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@mes/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
       '@nestjs/common':
         specifier: ^12.1.0
         version: 12.1.0(reflect-metadata@0.2.2)(rxjs@7.8.2)

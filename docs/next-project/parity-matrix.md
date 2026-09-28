@@ -28,7 +28,7 @@
 | 데모 모듈 | 하는 일 | FR | 스프린트 | 방식 | 상태 |
 |---|---|---|---|---|---|
 | `AppShell.tsx` | 사이드바·NAV·Toaster·시스템 assistant 서랍 | 화면 §3 | S0 → 화면별 NAV 추가 | 변경(NAV는 화면이 생길 때 추가, 서랍은 결정 U1) | ✅ 셸 |
-| `TopBar.tsx` | 제목·LLM 모드 배지·시스템 assistant 버튼·알림 종·사용자 전환 | — | S0 → S4 | 변경(사용자 전환 → 로그인 사용자·로그아웃. 배지·버튼은 S4·U1) | ✅ 일부 |
+| `TopBar.tsx` | 제목·LLM 모드 배지·시스템 assistant 버튼·알림 종·사용자 전환 | — | S0 → S4 | 변경(사용자 전환 → 로그인 사용자·로그아웃. 배지는 S1에서 SO 전용으로(`/api/llm/status`). 버튼은 U1·S4) | ✅ 일부(셸·배지) |
 | `chatRunner.ts` (+test) | 요청 실행기: 활성 1건·생존 신호·시간 제한·재시도·중지·끊긴 응답 정리 | FR-33 | S3 | 변경(서버 RequestService, `lease_until`·주기 작업) — 테스트 먼저 이식 | ⬜ |
 | `hooks.ts` | 현재 사용자·설정·사용자 목록 훅 | — | S2 | 변경(TanStack Query) | ⬜ |
 | `NotificationBell.tsx` | 알림 종(읽음 처리 후 이동) | FR-41 | S4 | 변경(API·SSE) | ⬜ |
@@ -117,7 +117,7 @@
 | `context.ts` (+test) | 플랫폼 컨텍스트 system 메시지·참조 대화 절 | FR-36 | S0 | 그대로(파일 바이트는 포트) | ✅ |
 | `promptBuilder.ts` (+test) | 요청 조립·전달 방식 기록·크기(dryRun=트레이) | FR-30–32·34 | S0 → S3 서버 실행 | 변경(`LlmPorts`) | ✅ 이식 |
 | `openwebuiFiles.ts` (+test) | 업로드·처리 확인·버전 이름·원격 ID | FR-32 | S0 → S1 | 변경(서버 비밀 키, `FileStorageService`) | ✅ 이식 |
-| `openaiProvider.ts` | OpenAI 호환 SSE 스트리밍 | FR-33 | S0 → S1 | 변경(서버 대리 호출) | ✅ 이식 |
+| `openaiProvider.ts` | OpenAI 호환 SSE 스트리밍 | FR-33 | S0 → S1 | 변경(서버 대리 호출. S1: `listModels` 실패 시 빈 배열 대신 오류(서버가 502로), 오류 메시지에서 상위 응답 본문 제거) | ✅ 서버에서 생성(S1) |
 | `sse.ts` (+test) | SSE 파서 | FR-33 | S0 | 그대로 | ✅ |
 | `provider.ts` · `index.ts` | provider 인터페이스 | — | S0 | 그대로 | ✅ |
 | `conversationSummary.ts` (+test) | 요청 시 요약(Mock 대역 포함) | FR-21 | S0 → S3 | 그대로 | ✅ |
@@ -126,7 +126,7 @@
 | `mockProvider.ts` · `mockScenarios.ts` (+test) | Mock 대역 응답(개발·E2E) | — | S0 | 그대로(개발·E2E용) | ✅ |
 | `mockSystemAssistant.ts` | 규칙 기반 시스템 assistant | — | S0(코드만) | U1 | ✅ 코드 |
 | `tools.ts` | 시스템 assistant 도구 3종(start_conversation·create_assistant·add_tag) | — | S0(코드만) | U1 | ✅ 코드 |
-| `useModelList.ts` | 모델 목록(Live `/models`, Mock 예시) | FR-35 | S1 | 변경(U6(a): 서버가 OpenWebUI `/api/models` 대리 조회, 키는 서버) | ⬜ |
+| `useModelList.ts` | 모델 목록(Live `/models`, Mock 예시) | FR-35 | S1 | 변경(U6(a): 서버가 OpenWebUI `/api/models` 대리 조회, 키는 서버 — `GET /api/llm/models`, 60초 캐시) | ✅ |
 
 ## 5. `src/db/repositories` (→ api 서비스 + web API 클라이언트, **같은 함수 이름·인자**, data-contract §6)
 
@@ -172,7 +172,7 @@
 
 | 데모 항목 | FR | 스프린트 | 방식 |
 |---|---|---|---|
-| LLM 모드 Mock / Live | — | S1 | 변경(U8(a): 서버 배포 설정 — 개발·E2E는 Mock, 운영은 Live. 화면 전환 없음) |
+| LLM 모드 Mock / Live | — | S1 | 변경(U8(a): 서버 배포 설정 `LLM_MODE` — 개발·E2E는 Mock, 운영은 Live. 화면 전환 없음, SO에게 배지만) ✅ S1 |
 | 사내 API 프리셋 · Base URL · API Key 입력 | FR-61 | S1 | **제외** — 서버 비밀 저장소·배포 설정(키를 화면에 두지 않음) |
 | 기본 모델 | FR-61·35 | S4 | 변경(SO 전용 전역 설정) |
 | 입력 파일 전달 방식(OpenWebUI 첨부 / 본문) | FR-61 | S4 | 변경(SO 전용) |

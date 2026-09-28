@@ -8,9 +8,13 @@ function joinUrl(base: string, path: string): string {
 
 function errorMessage(e: unknown): string {
   if (e instanceof DOMException && e.name === 'AbortError') return '요청이 취소되었습니다.'
-  if (e instanceof TypeError) return `네트워크 오류 또는 CORS 차단: ${e.message}`
-  if (e instanceof Error) return e.message
-  return '알 수 없는 오류'
+  return 'LLM 서비스 연결 오류'
+}
+
+function parseModelIds(body: unknown): string[] {
+  const data = body !== null && typeof body === 'object' ? (body as { data?: unknown }).data : undefined
+  if (!Array.isArray(data) || !data.every((m) => m !== null && typeof m === 'object' && typeof m.id === 'string')) throw new Error('응답 형식 오류')
+  return data.map((m) => m.id)
 }
 
 /** OpenAI-compatible /chat/completions 스트리밍 클라이언트 (OpenWebUI 포함) */
@@ -31,11 +35,11 @@ export class OpenAICompatibleProvider implements ChatProvider {
   async ping(): Promise<{ ok: boolean; detail: string }> {
     try {
       const res = await fetch(joinUrl(this.settings.baseUrl, 'models'), { headers: this.headers() })
-      if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${res.statusText}` }
-      const body = (await res.json()) as { data?: Array<{ id: string }> }
-      const ids = body.data?.map((m) => m.id) ?? []
-      return { ok: true, detail: ids.length ? `모델 ${ids.length}개 확인 (${ids.slice(0, 3).join(', ')}…)` : '연결 성공' }
+      if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` }
+      const ids = parseModelIds(await res.json())
+      return { ok: true, detail: ids.length ? `모델 ${ids.length}개 확인` : '연결 성공' }
     } catch (e) {
+      if (e instanceof Error && e.message === '응답 형식 오류') return { ok: false, detail: '응답 형식 오류' }
       return { ok: false, detail: errorMessage(e) }
     }
   }
@@ -43,11 +47,11 @@ export class OpenAICompatibleProvider implements ChatProvider {
   async listModels(): Promise<string[]> {
     try {
       const res = await fetch(joinUrl(this.settings.baseUrl, 'models'), { headers: this.headers() })
-      if (!res.ok) return []
-      const body = (await res.json()) as { data?: Array<{ id: string }> }
-      return (body.data ?? []).map((m) => m.id)
-    } catch {
-      return []
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return parseModelIds(await res.json())
+    } catch (error) {
+      if (error instanceof Error && /^HTTP \d+$|^응답 형식 오류$/.test(error.message)) throw error
+      throw new Error('모델 목록 네트워크 오류')
     }
   }
 
@@ -71,8 +75,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
       return
     }
     if (!res.ok || !res.body) {
-      const text = await res.text().catch(() => '')
-      yield { type: 'error', message: `HTTP ${res.status}: ${text.slice(0, 200) || res.statusText}` }
+      yield { type: 'error', message: `LLM 서비스 오류 (HTTP ${res.status})` }
       return
     }
 

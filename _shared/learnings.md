@@ -88,3 +88,8 @@
 "pro-high 쓰지 마라"(D4/INV9) 같은 **환경 한계발 금지 규칙**은 그 환경(백엔드)이 바뀌면 근거가 사라진다. pro-high 제외 사유는 옛 antigravity-claude-proxy의 `400 INVALID_ARGUMENT`였는데, 백엔드를 `agy` CLI로 바꾸니 pro-high가 정상 작동(spike 실증). → 금지 규칙엔 **"무엇 때문에 금지인지(원인 계층)"를 함께 적어야**, 원인이 사라졌을 때 안전하게 해제할 수 있다. 또 모델 셀렉션이 도구마다 다름을 확인: agy는 모델이 **전역·계정단위**(`/model`)라 per-call 핀 불가 → worker별 다른 모델 동시 사용은 안 되고, gemini 전용 전역을 pro-high로 고정해 운용. 마이그레이션은 D4·INV9·INV10·routing·validate C6를 **한 묶음으로** 갱신해야 내부 모순(validate가 새 정본을 FAIL)이 안 생긴다.
 **근거**: agy spike S1 GREEN + 3자 검수(codex #8이 "옛 정책과 충돌" 지적 → 검증하니 정책을 갱신해야 하는 것이었음). backends.json이 gemini 호출 정본, mcp__gemini-pro__/mcp__gemini__ 브리지 폐기.
 **worker**: orchestrator(마이그레이션·라이브 편집), codex-critic+gemini=agy(검수)
+
+## [2026-09-28] [verify-without-local-services]
+워커 결과를 Orchestrator가 로컬에서 재실행해 "전부 통과"로 수락했는데 CI(DB 잡·Windows 잡)에서 실패했다. 원인은 새 계약 테스트가 로컬 compose에 떠 있던 가짜 OpenWebUI(localhost:3101)를 하드코딩한 **환경 의존** — 로컬엔 그 서비스가 늘 떠 있어 검증이 잡지 못했다. → 외부 서비스에 닿는 테스트를 워커가 추가했으면, 수락 전에 **그 서비스를 내린 상태로 한 번 더 돌리거나**(`docker compose stop <svc>`) CI 잡 정의(무엇이 있고 없는지)와 대조한다. 명세 단계에서도 "테스트는 자기 의존을 스스로 띄운다(임시 포트 spawn)"를 완료 기준에 넣는 것이 더 싸다. 같은 날 앞선 사례: Windows CI에서 psql이 비밀번호 프롬프트로 33분 정지 — 로컬(mac PowerShell)에서 통과한 문서 명령이 러너 환경(action이 PG* env 덮어씀)에서 다르게 동작. 둘 다 "로컬에서 통과 = 어디서나 통과"가 아니라는 같은 교훈.
+**근거**: s1-llm-proxy CI run 36359746974 실패 → 3차 워커로 테스트가 server.mjs를 임시 포트에 spawn하도록 수정 → compose 정지 상태 15/15 통과. s0 setup-guide 잡은 스텝 env PGPASSWORD 재지정으로 해소.
+**worker**: orchestrator(원인 분석·명세), codex-main(수정), codex-critic(이 회귀는 리뷰 관점 밖이었음 — 리뷰 brief에 "CI 잡 환경에서 실행 가능한가"를 관점으로 추가할 것)

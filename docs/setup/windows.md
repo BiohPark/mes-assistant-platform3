@@ -91,7 +91,10 @@ pnpm setup:env
 | `SESSION_SECRET` | 쿠키 서명 비밀(32자 이상). 운영은 무작위 값 | 가상 값 |
 | `OIDC_ISSUER` · `OIDC_CLIENT_ID` · `OIDC_CLIENT_SECRET` | SSO(OIDC) 발급자·앱 ID·비밀 — `AUTH_MODE=oidc`일 때만 필수 | 개발 Keycloak realm `mes-dev` |
 | `INITIAL_SYSTEM_OWNERS` | 가입·로그인 때 System Owner로 만들 사용자 — `local`: 로그인 ID / `oidc`: `preferred_username` 또는 `sub`, 쉼표 구분 | `dev-owner` |
-| `OPENWEBUI_BASE_URL` · `OPENWEBUI_API_KEY` | OpenWebUI 주소·키 (S1부터 사용) | 가짜 OpenWebUI |
+| `LLM_MODE` | `mock`(개발·E2E 기본, 가짜 응답) / `live`(실제 호출) | `mock` |
+| `LLM_PRESET` | `openwebui`(서버가 `{origin}/api`를 붙임, 파일은 Files API) / `openai-compatible`(OpenAI 등 — base URL 그대로, 파일은 본문) | `openwebui` |
+| `LLM_BASE_URL` · `LLM_API_KEY` | LLM 서비스 주소·키 — `live`일 때 필수. **키는 이 파일에만**, 화면·응답·로그에 나오지 않음 | 가짜 OpenWebUI |
+| `LLM_DEFAULT_MODEL` | 전역 기본 모델 ID(선택) | 비움 |
 | `FILE_STORAGE_ROOT` | 파일 저장 루트(상대 경로면 api 실행 폴더 기준). 드라이브·UNC 경로 가능 (S2부터 사용) | `./storage` |
 
 ## 4. DB 셋업

@@ -7,6 +7,13 @@ const list = z
   .default('')
   .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean))
 
+function isOriginUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.pathname === '/' && !url.search && !url.hash && !url.username && !url.password
+  } catch { return false }
+}
+
 const EnvSchema = z.object({
   API_PORT: z.coerce.number().int().positive().default(3000),
   APP_ORIGIN: z.url(),
@@ -19,11 +26,23 @@ const EnvSchema = z.object({
   OIDC_CLIENT_SECRET: z.string().optional(),
   INITIAL_SYSTEM_OWNERS: list,
   FILE_STORAGE_ROOT: z.string().default('storage'),
+  LLM_MODE: z.enum(['mock', 'live']).default('mock'),
+  LLM_PRESET: z.enum(['openwebui', 'openai-compatible']).default('openwebui'),
+  LLM_BASE_URL: z.string().default(''),
+  LLM_API_KEY: z.string().default(''),
+  LLM_DEFAULT_MODEL: z.string().optional(),
 }).superRefine((e, ctx) => {
-  if (e.AUTH_MODE !== 'oidc') return
-  if (!e.OIDC_ISSUER || !z.url().safeParse(e.OIDC_ISSUER).success) ctx.addIssue({ code: 'custom', path: ['OIDC_ISSUER'], message: '유효한 URL이 필요합니다' })
-  if (!e.OIDC_CLIENT_ID) ctx.addIssue({ code: 'custom', path: ['OIDC_CLIENT_ID'], message: '필수 값입니다' })
-  if (!e.OIDC_CLIENT_SECRET) ctx.addIssue({ code: 'custom', path: ['OIDC_CLIENT_SECRET'], message: '필수 값입니다' })
+  if (e.AUTH_MODE === 'oidc') {
+    if (!e.OIDC_ISSUER || !z.url().safeParse(e.OIDC_ISSUER).success) ctx.addIssue({ code: 'custom', path: ['OIDC_ISSUER'], message: '유효한 URL이 필요합니다' })
+    if (!e.OIDC_CLIENT_ID) ctx.addIssue({ code: 'custom', path: ['OIDC_CLIENT_ID'], message: '필수 값입니다' })
+    if (!e.OIDC_CLIENT_SECRET) ctx.addIssue({ code: 'custom', path: ['OIDC_CLIENT_SECRET'], message: '필수 값입니다' })
+  }
+  if (e.LLM_MODE === 'live') {
+    if (!e.LLM_BASE_URL || !z.url().safeParse(e.LLM_BASE_URL).success || (e.LLM_PRESET === 'openwebui' && !isOriginUrl(e.LLM_BASE_URL))) {
+      ctx.addIssue({ code: 'custom', path: ['LLM_BASE_URL'], message: e.LLM_PRESET === 'openwebui' ? 'origin URL이 필요합니다' : '유효한 URL이 필요합니다' })
+    }
+    if (!e.LLM_API_KEY) ctx.addIssue({ code: 'custom', path: ['LLM_API_KEY'], message: '필수 값입니다' })
+  }
 })
 
 export type AppConfig = ReturnType<typeof loadConfig>
@@ -53,6 +72,7 @@ export function loadConfig(env: Record<string, string | undefined>) {
     } : undefined,
     initialSystemOwners: e.INITIAL_SYSTEM_OWNERS,
     fileStorageRoot: resolve(e.FILE_STORAGE_ROOT),
+    llm: { mode: e.LLM_MODE, preset: e.LLM_PRESET, baseUrl: e.LLM_BASE_URL, apiKey: e.LLM_API_KEY, defaultModel: e.LLM_DEFAULT_MODEL },
   }
 }
 
