@@ -77,17 +77,17 @@
 ### chat
 | 데모 모듈 | 하는 일 | FR | 스프린트 | 방식 | 상태 |
 |---|---|---|---|---|---|
-| `ChatView.tsx` | 채팅 화면·입력 중 표시·추천 칩 | FR-04 | S2·S3 | 변경(SSE) · presence U5 · 칩 U2 | ✅ 일부(S2 ②: 메시지 목록·팀 의견. 스트리밍·presence S3) |
-| `Composer.tsx` | 입력창·첨부(기본 고정, "이번 메시지만") | FR-10 | S2 | 변경(업로드 API) | ✅ S2 ②·③(텍스트·첨부. AI 전송 S3) |
+| `ChatView.tsx` | 채팅 화면·입력 중 표시·추천 칩 | FR-04 | S2·S3 | 변경(SSE) · presence U5 · 칩 U2 | ✅ S2 ②·S3 ①(스트리밍·중지. presence U5는 S3 ③) |
+| `Composer.tsx` | 입력창·첨부(기본 고정, "이번 메시지만") | FR-10 | S2 | 변경(업로드 API) | ✅ S2 ②·③·S3 ①(텍스트·첨부·AI 전송·중지) |
 | `ContextTray.tsx` | "이번 요청에 사용" 트레이·크기·초과 시 조절 | FR-30·31 | S3 | 변경(서버 추정 API) | ⬜ |
 | `useRequestEstimate.ts` | 트레이 추정(dryRun 같은 조립 함수) | FR-30 | S3 | 변경(서버 추정 API) | ⬜ |
-| `MessageBubble.tsx` | 답변·사용한 자료·실패 복구(재시도·빼고 다시·텍스트로) | FR-32·34 | S3 | 변경(API) | ⬜ |
-| `RequestInfoDialog.tsx` | 전송 기록 뷰어·원본 JSON | FR-34 | S3 | 변경(API) | ⬜ |
-| `requestLabels.ts` | 전달 방식 표기(트레이·사용한 자료 공통) | FR-30·34 | S3 | 그대로 | ⬜ |
+| `MessageBubble.tsx` | 답변·사용한 자료·실패 복구(재시도·빼고 다시·텍스트로) | FR-32·34 | S3 | 변경(API) | ✅ S3 ① |
+| `RequestInfoDialog.tsx` | 전송 기록 뷰어·원본 JSON | FR-34 | S3 | 변경(API) | ✅ S3 ① |
+| `requestLabels.ts` | 전달 방식 표기(트레이·사용한 자료 공통) | FR-30·34 | S3 | 그대로 | ✅ S3 ① |
 | `ModelPicker.tsx` | 대화/스레드 모델 지정(서버 모델 목록 자동완성) | FR-35 | S2 | 변경(API) · 목록은 U6 | ✅ S2 ②(대화 모델. 스레드 모델은 S3) |
 | `SaveAsOutputDialog.tsx` | 답변 → 산출물(기본 이름 규칙·버전) | FR-13 | S2 | 변경(API `POST /api/tasks/{id}/outputs`) | ✅ S2 ③(실제 답변 흐름은 S3) |
 | `suggestions.ts` | 사용 예시에서 추천 질문 칩 추출 | — | S2 | 그대로(U2(a): 사람이 누르는 입력 도우미) | ✅ S2 ② |
-| `useChat.ts` | 실행기 래퍼(전송·중지·재시도) | FR-33 | S3 | 변경(API·SSE) | ⬜ |
+| `useChat.ts` | 실행기 래퍼(전송·중지·재시도) | FR-33 | S3 | 변경(API·SSE) | ✅ S3 ①(SSE 파서·run 상태·재시도·중지) |
 
 ### sr · assistants · reports · settings · system-assistant
 | 데모 모듈 | 하는 일 | FR | 스프린트 | 방식 | 상태 |
@@ -134,7 +134,7 @@
 |---|---|---|---|---|---|
 | `tasks.ts` | `nextCode` `startConversation` `setTaskTitle` `updateTask` `addTag` `removeTag` `assertNotDone` `setInput` `switchInputVersion` `setTaskStatus` `setTaskModel` `setThreadModel` `deleteTask` | FR-01·02·03·10·11·35 | S2 | 변경(서버, 코드는 advisory lock 시퀀스) | ✅ S2 ②·③(`setThreadModel`은 S3) |
 | `tasks.ts` | `toggleChecklist` `addChecklistItem` `removeChecklistItem` `saveChecklistReview` `applyChecklistReview` `giveFeedback` | FR-40·01 | S4 | 변경(서버) | ⬜ |
-| `chat.ts` | `createThread` `setActiveThread` `nextMessageTime` `appendMessage` `isLiveReply` `assertNoActiveReply` `updateMessage` `deleteThread` `STALE_MS` `STALE_ERROR` | FR-04·33 | S2·S3 | 변경(`message.seq`, 활성 1건은 DB 인덱스) | ✅ 일부(S2 ②: createThread·appendMessage(팀 의견)·seq. 활성 응답·정리는 S3) |
+| `chat.ts` | `createThread` `setActiveThread` `nextMessageTime` `appendMessage` `isLiveReply` `assertNoActiveReply` `updateMessage` `deleteThread` `STALE_MS` `STALE_ERROR` | FR-04·33 | S2·S3 | 변경(`message.seq`, 활성 1건은 DB 인덱스) | ✅ S2 ②·S3 ①(활성 응답·정리는 chat_request로) |
 | `conversationInputs.ts` (+test) | `selectConversation` `applyConversationSummary` `refreshConversationInput` `setConversationWeight` `removeConversationInput` `findConversationInput` `loadConversationInputs` | FR-20–23 | S3 | 변경(서버) — 테스트 먼저 | ⬜ |
 | `files.ts` (+test) | `fileVersions` `uploadFile` `saveAssistantOutput` `setOutputTag` `deleteFile` `filesForTask` `downloadBlob` `isTextFile` `formatSize` | FR-10–15 | S2 | 변경(`FileStorageService`, 소프트 삭제) — 테스트 먼저 | ✅ S2 ③(`blob`은 서버 `/content`) |
 | `assistants.ts` (+test) | `newChecklistTemplateItem` `defaultChecklistTemplate` `createAssistant` `updateAssistant` `setAssistantStatus` `setAssistantImage` `deleteAssistant` `reorderAssistants` | FR-60·40 | S2(읽기)·S4(편집) | 변경(SO 전용, `revision` 충돌 검사) — 테스트 먼저 | ⬜ |
@@ -189,11 +189,11 @@
 | S2 SR 접수 대화의 첨부는 첨부한 그 메시지에 포함된다 | FR-10·50 | S4 | ⬜ |
 | S3 기본 이름으로 두 번 저장한 산출물은 같은 파일의 v2 | FR-11·13 | S2 | ✅ S2 ③(files.spec) |
 | S4 태그 공유 자료를 ★·☑로 고르면 주 입력이 먼저 전달 | FR-12·20·32 | S2 | ✅ S2 ③(files.spec, 선택·순서까지. 전달은 S3) |
-| S5 OpenWebUI 첨부: 처리 완료 확인 후 전송, 주 입력 먼저, 업로드 이름에 버전 | FR-32 | S3(RequestService, S2-3 결정) | ⬜ |
-| S6 프롬프트를 만들다 실패해도 입력창이 잠기지 않는다 | FR-33 | S3 | ⬜ |
-| S7 두 탭에서 동시에 보내도 진행 중 요청은 하나 | FR-33 | S3 | ⬜ |
-| S8 Mock 응답은 매 턴 사용한 자료(등급·버전)를 드러낸다 | FR-34 | S3 | ⬜ |
-| E2 OpenWebUI 전달 실패: 요청을 보내지 않고 텍스트로 보내기로 복구 | FR-32 | S3 | ⬜ |
+| S5 OpenWebUI 첨부: 처리 완료 확인 후 전송, 주 입력 먼저, 업로드 이름에 버전 | FR-32 | S3(RequestService, S2-3 결정) | ✅ S3 ①(requests-live.spec, 가짜 OpenWebUI live) |
+| S6 프롬프트를 만들다 실패해도 입력창이 잠기지 않는다 | FR-33 | S3 | ✅ S3 ①(requests.spec — 크기 초과 실패 기록·입력창 복구) |
+| S7 두 탭에서 동시에 보내도 진행 중 요청은 하나 | FR-33 | S3 | ✅ S3 ①(DB 테스트 동시 2건 → 1건. 브라우저 2탭 E2E는 ③ 이벤트와 함께) |
+| S8 Mock 응답은 매 턴 사용한 자료(등급·버전)를 드러낸다 | FR-34 | S3 | ✅ S3 ①(requests.spec) |
+| E2 OpenWebUI 전달 실패: 요청을 보내지 않고 텍스트로 보내기로 복구 | FR-32 | S3 | ✅ S3 ①(requests-live.spec) |
 | E3a 같은 태그 대화만 후보, 통째로 고르면 전체 원문(간접 연결·팀 의견 제외) | FR-20·23 | S3 | ⬜ |
 | E3b 메시지 범위를 고르면 고른 메시지만 | FR-21 | S3 | ⬜ |
 | E3c 요약은 누를 때만 만들고 확인·수정한 요약이 간다 | FR-21 | S3 | ⬜ |
@@ -202,7 +202,7 @@
 | E6 답변의 "사용한 자료"에서 전송 기록을 앱 안에서 본다 | FR-34 | S3 | ⬜ |
 | `support/fakeOpenWebUI.ts` · `support/app.ts` | — | S1·S2 | 변경(가짜 OpenWebUI는 compose 서비스, 로그인 단계 추가) — S0 `docker/fake-openwebui` ✅ 최소판 |
 
-| E5 보호(단위): 프롬프트 생성 실패 → 입력창 풀림 · 두 탭 동시 전송 1건 · 응답 중 완료 거부 · 끊긴 응답 정리 · 중지한 답변 덮어쓰기 방지 · 백업에 키·원격 ID 없음 | FR-33·61 | S3 (`chatRunner.test.ts` 먼저 이식) | ⬜ |
+| E5 보호(단위): 프롬프트 생성 실패 → 입력창 풀림 · 두 탭 동시 전송 1건 · 응답 중 완료 거부 · 끊긴 응답 정리 · 중지한 답변 덮어쓰기 방지 · 백업에 키·원격 ID 없음 | FR-33·61 | S3 (`chatRunner.test.ts` 먼저 이식) | ✅ S3 ①(requests.db.test 11건 + 키·원격 ID 비노출) |
 
 > 평가 문서 [../evaluation/context-flow.md](../evaluation/context-flow.md) 기준: **E1 = S1–S8**(`context-flow.spec.ts`), **E2–E4·E6** = `conversation-context.spec.ts`, **E5** = 요청 실행기 보호(단위 테스트). architecture §9의 "S2: 데모 E1 S1–S5", "S3: E2–E5"와 위 배정이 같다(S6–S8은 요청 실행기라 S3).
 
