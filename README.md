@@ -31,6 +31,7 @@ pnpm install
 pnpm setup:env          # .env.example → .env (로컬 개발용 가상 값)
 docker compose up -d --wait   # PostgreSQL 16 · 가짜 OpenWebUI (Keycloak은 --profile oidc)
 pnpm db:migrate
+pnpm db:seed             # 개발용 가상 카탈로그(운영 거부)
 pnpm dev                # api http://localhost:3000/api · web http://localhost:5173
 ```
 
@@ -52,6 +53,7 @@ api·web은 Docker 없이 Node로 직접 빌드·실행한다(`pnpm build` → `
 | 빌드 | `pnpm build` |
 | 마이그레이션 생성 | `pnpm --filter @mes/api db:generate` (스키마: `apps/api/src/db/schema.ts`) |
 | 마이그레이션 적용 | `pnpm db:migrate` |
+| 개발용 시드(가상 카탈로그·코드) | `pnpm db:seed` |
 
 DB 스키마는 [docs/architecture/postgres-draft.sql](docs/architecture/postgres-draft.sql)과 1:1이다 — 한쪽을 바꾸면 다른 쪽도 바꾸고 `pnpm test:db`로 대조한다.
 

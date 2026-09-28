@@ -311,7 +311,7 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 - 설치 `pnpm install` · 환경 `pnpm setup:env` · 의존 서비스 `docker compose up -d --wait`(PostgreSQL·가짜 OpenWebUI; Keycloak은 `--profile oidc`)
 - 개발 서버 `pnpm dev` (api :3000 · web :5173, 첫 화면 회원가입 → `INITIAL_SYSTEM_OWNERS`=`dev-owner`로 가입하면 SO) · 빌드 `pnpm build`
 - typecheck `pnpm typecheck` · 린트 `pnpm lint` · 단위 `pnpm test` · DB 통합 `pnpm test:db` · E2E `pnpm test:e2e`
-- DB 마이그레이션 생성 `pnpm --filter @mes/api db:generate` · 적용 `pnpm db:migrate`
+- DB 마이그레이션 생성 `pnpm --filter @mes/api db:generate` · 적용 `pnpm db:migrate` · 개발 시드 `pnpm db:seed`(운영 거부)
 - Node는 22 고정(mise·`.nvmrc`) — 이 Mac에서는 `mise exec -- pnpm …`
 
 ### git 관리 기준 (정본: `docs/git-policy.md`)
