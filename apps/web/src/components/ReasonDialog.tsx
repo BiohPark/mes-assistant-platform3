@@ -10,7 +10,7 @@ interface ReasonDialogProps {
   description?: string
   confirmLabel?: string
   placeholder?: string
-  onConfirm: (reason: string) => Promise<void> | void
+  onConfirm: (reason: string) => Promise<boolean | void> | boolean | void
 }
 
 /** 사유 입력이 필요한 액션(재개, 필수 미완료 완료 등) */
@@ -22,8 +22,8 @@ export function ReasonDialog({ open, onOpenChange, title, description, confirmLa
     if (!reason.trim()) return
     setBusy(true)
     try {
-      await onConfirm(reason.trim())
-      onOpenChange(false)
+      const accepted = await onConfirm(reason.trim())
+      if (accepted !== false) onOpenChange(false)
     } finally {
       setBusy(false)
     }

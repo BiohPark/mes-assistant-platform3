@@ -1,4 +1,5 @@
-import { Bot } from 'lucide-react'
+import { Bot, KanbanSquare, LayoutGrid } from 'lucide-react'
+import { useSearchParams } from 'react-router'
 import { TopBar } from '@/app/TopBar'
 import { useUserMap } from '@/app/hooks'
 import { useUiStore } from '@/app/uiStore'
@@ -6,6 +7,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { Button } from '@/components/ui/button'
 import { AssistantCard } from './AssistantCard'
 import { CardMapFilterBar } from './CardMapFilterBar'
+import { ConversationKanban } from './ConversationKanban'
 import { useAssistantRows, type AssistantRow } from './useAssistantStats'
 
 function matches(row: AssistantRow, q: string, level1CodeId: string | null, level2CodeId: string | null, showRetired: boolean): boolean {
@@ -18,6 +20,8 @@ function matches(row: AssistantRow, q: string, level1CodeId: string | null, leve
 }
 
 export function HomePage() {
+  const [params, setParams] = useSearchParams()
+  const view = params.get('view') === 'kanban' ? 'kanban' : 'cards'
   const { rows, isPending, isError, isFetching, refetch } = useAssistantRows()
   const users = useUserMap()
   const { q, level1CodeId: savedLevel1CodeId, level2CodeId: savedLevel2CodeId, showRetired } = useUiStore((state) => state.homeFilters)
@@ -31,6 +35,11 @@ export function HomePage() {
   return <>
     <TopBar title="에이전트 허브" />
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 lg:p-6">
+      <div role="tablist" aria-label="보기 전환" className="inline-flex self-start rounded-xl border bg-muted p-1 shadow-xs">
+        <button type="button" role="tab" aria-selected={view === 'cards'} onClick={() => setParams(new URLSearchParams())} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><LayoutGrid className="size-4" />에이전트 카드</button>
+        <button type="button" role="tab" aria-selected={view === 'kanban'} onClick={() => { const next = new URLSearchParams(params); next.set('view', 'kanban'); setParams(next) }} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'kanban' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><KanbanSquare className="size-4" />전체 대화 칸반</button>
+      </div>
+      {view === 'kanban' ? <ConversationKanban /> : <>
       <CardMapFilterBar level1Options={level1Options} level2Options={level2Options} level1CodeId={level1CodeId} level2CodeId={level2CodeId} />
       {isPending && <div className="text-sm text-muted-foreground">불러오는 중…</div>}
       {isError && <div role="alert" className="text-sm">
@@ -46,6 +55,7 @@ export function HomePage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {filtered.map((row) => <AssistantCard key={row.assistant.id} row={row} owner={users.get(row.assistant.ownerId)} baseUrl="" />)}
       </div>
+      </>}
     </div>
   </>
 }

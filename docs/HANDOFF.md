@@ -121,7 +121,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | 조사 | **회사 PC에서 저장소 받기**: 저장소를 public으로 두는 이유 — 회사에서 GitHub 로그인이 안 됨. 대안 조사 필요(읽기 전용 fine-grained PAT·deploy key·release zip·사내 미러) — 회사 망에서 github.com 도달 여부부터 확인 | 사용자 (2026-09-28) |
 | S4 | 코드 관리 화면·API(SO), SO·BO 지정 화면 — DDL은 S2 ①에서(D36·D37) | PRD FR-63 |
 | **남은 위험** | ① 실제 Windows 실기 미확인(문서 명령은 PowerShell 7.6으로 검증, CI windows 잡은 push 후) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
-| **진행(S2)** | [S2-kickoff.md](next-project/S2-kickoff.md) 승인(2026-09-28). ① `s2-catalog` 착수 → ② tasks → ③ files → ④ e2e | 대응표 S2 34행 |
+| **진행(S2)** | [S2-kickoff.md](next-project/S2-kickoff.md) 승인(2026-09-28). ① `s2-catalog` **완료·main 병합(24dd90e)** — 코드 테이블·BO 역할·시드·카탈로그 API·허브 카드(단위 186·DB 18·E2E 3, 리뷰 반영) → ② `s2-tasks` 완료(리뷰 5건 반영, 단위 201·DB 28·E2E 4) — CI 뒤 병합 승인 대기 → ③ files → ④ e2e | tasks/s2-catalog · tasks/s2-tasks |
 | ~~S1 ②~~ 병합 완료 | 서버 대리 호출 기반 `feat/s1-llm-proxy` — `LLM_MODE`·`LLM_PRESET`(openwebui/openai-compatible)·`GET /api/llm/models`·`/status`, `LlmPorts` DB 어댑터 1차, `FileStorageService`(realpath 루트·내부 링크 거부), 웹 모델 목록·SO 배지. codex-critic 4건+누락 1건 반영. 검증 단위 165·DB 15·E2E 2, CI 5/5(Windows 8.3 경로·CI 환경 의존 2건 수정 후). **OpenAI 실키 수동 확인은 사용자 키 필요** | tasks/s1-llm-proxy |
 | ~~S1 ①~~ 병합 완료 | 앱 자체 로그인·회원가입(D34) `feat/s1-auth-local` — codex-main 구현 + codex-critic 리뷰 4건 반영. 검증 단위 142·DB 9·E2E 2. CI 녹색 확인 후 `main` 병합(사용자 승인) | tasks/s1-auth-local · [요구사항 검토](status/requirements-review-2026-09-28.md) |
 | 착수 전 확인 | OpenWebUI 버전(사용자 추후 회신), 비기능 제안값(PRD §6) | next-project/README |
@@ -147,6 +147,8 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 - 마이그레이션 0002(S2 ①)는 `assistant.level1/level2`를 코드 FK 컬럼(NOT NULL, 기본값 없음)으로 교체한다 — **기존 assistant 행이 있는 DB에는 적용이 실패**한다. S0·S1에는 에이전트 생성 경로가 없어 실제로는 빈 테이블이지만, 손으로 넣은 개발 DB는 `docker compose down -v`(또는 DB 재생성) 후 `db:migrate` → `db:seed`
 - 데모 저장소는 읽기 전용 — 수정·커밋 금지
 - 요청은 서버 RequestService만 보낸다(S3). 트레이 추정은 `buildChatRequest({ dryRun: true })` — 실제 전송과 같은 함수
+- 대화 생성은 `POST /api/tasks` 한 번(`firstMessage`로 첫 팀 의견까지 같은 트랜잭션). 클라이언트 인계(autoSend) 경로는 없다 — 생성 요청 자체의 네트워크 재전송 중복(idempotency key)은 S3 RequestService와 함께
+- 완료된 대화의 수정·태그·팀 의견은 서버가 트랜잭션 안에서 행을 잠그고 재검사해 409 — 클라이언트 검사만 믿지 않는다
 
 ## 8. 다음 세션 시작 체크리스트
 
