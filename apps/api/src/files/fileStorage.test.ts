@@ -45,7 +45,10 @@ describe('FileStorageService', () => {
     await store.write('2026/09/big.bin', bytes)
     const chunks: Buffer[] = []
     for await (const chunk of await store.createReadStream('2026/09/big.bin')) chunks.push(Buffer.from(chunk))
-    expect(Buffer.concat(chunks)).toEqual(bytes)
+    // toEqual은 3 MB Buffer를 원소 단위로 비교해 CI에서 10초 넘게 걸린다(로컬 통과·CI 시간 초과) → 바이트 비교
+    const joined = Buffer.concat(chunks)
+    expect(joined.length).toBe(bytes.length)
+    expect(joined.equals(bytes)).toBe(true)
     await expect(store.createReadStream('2026/09/missing.bin')).rejects.toMatchObject({ code: 'ENOENT' })
   })
   it('없는 저장 루트를 생성한 뒤 실제 경로를 사용한다', async () => {
