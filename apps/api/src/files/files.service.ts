@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common'
-import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, fileObject, tag, task, taskInput, taskTag } from '../db/schema.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
@@ -42,8 +42,11 @@ export class DbFilesService {
     return owner
   }
 
-  private async lockChain(tx: Tx, taskId: string, name: string) {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}), hashtext(${name}))`)
+  private async lockTasks(tx: Tx, ids: string[]) {
+    for (const id of [...new Set(ids)].sort()) {
+      const [row] = await tx.select({ id: task.id }).from(task).where(and(eq(task.id, id), isNull(task.deletedAt))).for('update')
+      if (!row) throw new NotFoundException('대화를 찾을 수 없습니다')
+    }
   }
 
   async get(fileId: string) { return fileMeta(await this.row(fileId)) }
@@ -58,14 +61,16 @@ export class DbFilesService {
     try {
       const row = await this.db.transaction(async (tx) => {
         await this.editable(taskId, tx)
-        await this.lockChain(tx, taskId, name)
+        // 업무 행 잠금으로 이름별 파일 버전 체인의 쓰기를 직렬화한다.
         const [prev] = await tx.select().from(fileObject).where(and(eq(fileObject.originTaskId, taskId), eq(fileObject.originalName, name), isNull(fileObject.deletedAt))).orderBy(desc(fileObject.version)).limit(1)
         if (isOutput && prev?.isOutput) await tx.update(fileObject).set({ isOutput: false }).where(eq(fileObject.id, prev.id))
-        const [inserted] = await tx.insert(fileObject).values({ id: id(), kind: 'task_file', originTaskId: taskId,
+        const fileId = id()
+        await tx.insert(fileObject).values({ id: fileId, kind: 'task_file', originTaskId: taskId,
           originalName: name, mime: mime || 'application/octet-stream', sizeBytes: bytes.byteLength, sha256: sha256(bytes),
-          storageKey, source, isOutput, version: (prev?.version ?? 0) + 1, previousId: prev?.id, uploadedBy: actor }).returning()
+          storageKey, source, isOutput, version: (prev?.version ?? 0) + 1, previousId: prev?.id, uploadedBy: actor })
         await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, taskId))
-        await tx.insert(activityLog).values({ id: id(), taskId, userId: actor, type: isOutput ? 'file.tagged_output' : 'file.uploaded', payload: { name, version: inserted!.version } })
+        await tx.insert(activityLog).values({ id: id(), taskId, userId: actor, type: isOutput ? 'file.tagged_output' : 'file.uploaded', payload: { name, version: (prev?.version ?? 0) + 1 } })
+        const [inserted] = await tx.select().from(fileObject).where(eq(fileObject.id, fileId))
         return inserted!
       })
       return fileMeta(row)
@@ -122,7 +127,6 @@ export class DbFilesService {
       const row = await this.row(fileId, tx)
       if (row.kind !== 'task_file' || !row.originTaskId) throw new BadRequestException('대화 파일만 삭제할 수 있습니다')
       await this.editable(row.originTaskId, tx)
-      await this.lockChain(tx, row.originTaskId, row.originalName)
       await this.row(fileId, tx)
       const chain = await tx.select().from(fileObject).where(and(eq(fileObject.originTaskId, row.originTaskId!), eq(fileObject.originalName, row.originalName)))
       const byId = new Map(chain.map((item) => [item.id, item]))
@@ -189,17 +193,17 @@ export class DbFilesService {
 
   async setInput(actor: string, taskId: string, fileId: string, weight: 'main' | 'reference' | null) {
     await this.db.transaction(async (tx) => {
+      const source = await this.row(fileId, tx)
+      if (source.kind !== 'task_file' || !source.originTaskId) throw new BadRequestException('선택할 수 없는 파일입니다')
+      await this.lockTasks(tx, [taskId, source.originTaskId])
       await this.editable(taskId, tx)
       const row = await this.row(fileId, tx)
       if (row.kind !== 'task_file') throw new BadRequestException('선택할 수 없는 파일입니다')
-      await tx.select({ id: task.id }).from(task).where(eq(task.id, row.originTaskId!)).for('share')
-      await this.lockChain(tx, row.originTaskId!, row.originalName)
-      await this.row(fileId, tx)
       if (weight) {
         const { rows } = await this.candidateRows(taskId, tx)
         if (!rows.some((item) => item.id === fileId)) throw new BadRequestException('후보에 없는 파일입니다')
         const [max] = await tx.select({ sortOrder: taskInput.sortOrder }).from(taskInput).where(eq(taskInput.taskId, taskId)).orderBy(desc(taskInput.sortOrder)).limit(1)
-        await tx.insert(taskInput).values({ taskId, fileId, weight, sortOrder: (max?.sortOrder ?? -1) + 1, selectedBy: actor }).onConflictDoUpdate({ target: [taskInput.taskId, taskInput.fileId], set: { weight, selectedBy: actor, selectedAt: new Date() } })
+        await tx.insert(taskInput).values({ taskId, fileId, weight, sortOrder: (max?.sortOrder ?? -1) + 1, selectedBy: actor }).onDuplicateKeyUpdate({ set: { weight, selectedBy: actor, selectedAt: new Date() } })
       } else await tx.delete(taskInput).where(and(eq(taskInput.taskId, taskId), eq(taskInput.fileId, fileId)))
       await tx.insert(activityLog).values({ id: id(), taskId, userId: actor, type: weight ? 'input.selected' : 'input.removed', payload: { name: row.originalName, version: row.version, weight } })
     })
@@ -207,11 +211,13 @@ export class DbFilesService {
 
   async switchInputVersion(actor: string, taskId: string, fromFileId: string, toFileId: string) {
     await this.db.transaction(async (tx) => {
+      const source = await this.row(fromFileId, tx)
+      if (!source.originTaskId) throw new BadRequestException('대화 파일만 선택할 수 있습니다')
+      await this.lockTasks(tx, [taskId, source.originTaskId])
       await this.editable(taskId, tx)
       const from = await this.row(fromFileId, tx)
       const to = await this.row(toFileId, tx)
       if (from.kind !== 'task_file' || !from.originTaskId || to.kind !== 'task_file') throw new BadRequestException('대화 파일만 선택할 수 있습니다')
-      await this.lockChain(tx, from.originTaskId!, from.originalName)
       await this.row(fromFileId, tx)
       await this.row(toFileId, tx)
       const selected = await tx.select().from(taskInput).where(and(eq(taskInput.taskId, taskId), eq(taskInput.fileId, fromFileId)))
