@@ -38,7 +38,7 @@
 ```
 apps/api/src
   config/      loadConfig(env) — zod 검증, 비밀값은 여기서만 읽음
-  db/          schema.ts(Drizzle, DDL 정본) · connection.ts(세션 고정) · errors.ts · migrate.ts · db.module.ts · schema-drift.test.ts · schema-parity.db.test.ts(제약 동작)
+  db/          schema.ts(Drizzle, DDL 정본) · connection.ts(세션 고정) · errors.ts · migrate.ts · db.module.ts · schema-drift.test.ts · schema-constraints.db.test.ts(제약 동작)
   auth/        oidc.service(OIDC RP, PKCE·state·nonce) · session.service(app_session, 토큰 해시) · users.service(첫 로그인 생성·최초 SO)
                guards(SessionGuard 기본 로그인 필수·@Public 예외 → RolesGuard @Roles) · auth.controller(login·callback·logout·me)
   health/      GET /api/health (DB 상태)
@@ -131,7 +131,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | 조사 | **회사 PC에서 저장소 받기**: 저장소를 public으로 두는 이유 — 회사에서 GitHub 로그인이 안 됨. 대안 조사 필요(읽기 전용 fine-grained PAT·deploy key·release zip·사내 미러) — 회사 망에서 github.com 도달 여부부터 확인 | 사용자 (2026-09-28) |
 | S4 | 코드 관리 화면·API(SO), SO·BO 지정 화면 — DDL은 S2 ①에서(D36·D37) | PRD FR-63 |
 | **남은 위험** | ① 실제 Windows 실기 미확인(문서 명령은 PowerShell 7.6으로 검증, CI windows 잡은 push 후) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
-| **진행(DB 전환)** | D40. 브랜치 `feat/db-mariadb` — G1 기반·G2 서비스·G3 E2E 통과(단위 231 · DB 81(11.8 3회 연속·10.4) · E2E mock 10·live 11, 구조 대조: 테이블 34·컬럼 248·FK 75·check 35 일치 + 생성 컬럼 2·`db_lock`). 남음: G4 CI 녹색(push 승인 필요) → G5 코드 리뷰 반영 → 사용자 승인 후 `main` 병합 | tasks/db-mariadb · [db-mariadb-plan.md](next-project/db-mariadb-plan.md) |
+| **진행(DB 전환)** | D40. 브랜치 `feat/db-mariadb` — G1 기반·G2 서비스·G3 E2E 통과, G5 코드 리뷰 3건 반영(단위 232 · DB 85(11.8 3회 연속·10.4) · E2E mock 10·live 11, 구조 대조: 테이블 34·컬럼 248·FK 75·check 35 일치 + 생성 컬럼 2·`db_lock`). 남음: G4 CI 녹색(push 승인 필요) → 사용자 승인 후 `main` 병합. 미해결 관찰: 구현 중 로그인 테스트 400 1회(재현 안 됨, 재발 시 응답 본문이 찍히게 해 둠) | tasks/db-mariadb · [db-mariadb-plan.md](next-project/db-mariadb-plan.md) |
 | **보류(S3)** | [S3-design.md](next-project/S3-design.md) 확정(D39). ① `s3-request` **완료·main 병합(839ed7c)**. ② `s3-context`·③ `s3-tray-events`는 태스크 폴더·brief 준비됨 — **DB 전환 병합 뒤 착수**(brief의 PostgreSQL 전제는 그때 갱신) | tasks/s3-request |
 | ~~S1 ②~~ 병합 완료 | 서버 대리 호출 기반 `feat/s1-llm-proxy` — `LLM_MODE`·`LLM_PRESET`(openwebui/openai-compatible)·`GET /api/llm/models`·`/status`, `LlmPorts` DB 어댑터 1차, `FileStorageService`(realpath 루트·내부 링크 거부), 웹 모델 목록·SO 배지. codex-critic 4건+누락 1건 반영. 검증 단위 165·DB 15·E2E 2, CI 5/5(Windows 8.3 경로·CI 환경 의존 2건 수정 후). **OpenAI 실키 수동 확인은 사용자 키 필요** | tasks/s1-llm-proxy |
 | ~~S1 ①~~ 병합 완료 | 앱 자체 로그인·회원가입(D34) `feat/s1-auth-local` — codex-main 구현 + codex-critic 리뷰 4건 반영. 검증 단위 142·DB 9·E2E 2. CI 녹색 확인 후 `main` 병합(사용자 승인) | tasks/s1-auth-local · [요구사항 검토](status/requirements-review-2026-09-28.md) |
