@@ -66,8 +66,8 @@
 | `task/FilePreviewDialog.tsx` | 텍스트·이미지 미리보기 | FR-15 | S2 | 변경(파일 API `GET /api/files/{id}/content`) | ✅ S2 ③ |
 | `task/FileVersionsDialog.tsx` | 버전 체인(최신→과거) | FR-11·15 | S2 | 변경(API) | ✅ S2 ③ |
 | `task/InputToggle.tsx` | ☑참고/★주 입력 토글 | FR-10·20 | S2 | 그대로 | ✅ S2 ③ |
-| `task/ConversationInputs.tsx` | 참조 대화 입력 목록·갱신 안내 | FR-20–22 | S3 | 변경(API) | ⬜ |
-| `task/ConversationPickerDialog.tsx` | 전체·메시지 범위·요약 선택 | FR-21 | S3 | 변경(API, 요약은 서버 대리 호출) | ⬜ |
+| `task/ConversationInputs.tsx` | 참조 대화 입력 목록·갱신 안내 | FR-20–22 | S3 | 변경(API) | ✅ |
+| `task/ConversationPickerDialog.tsx` | 전체·메시지 범위·요약 선택 | FR-21 | S3 | 변경(API, 요약은 서버 대리 호출) | ✅ |
 | `task/ChecklistPanel.tsx` | 체크리스트(강제 아님) | FR-40 | S4 | 변경(API) | ⬜ |
 | `task/ChecklistReviewCard.tsx` | AI 달성도 m/n·"판단대로 체크" | FR-40 | S4 | 변경(서버 대리 호출) | ⬜ |
 | `task/NotesPanel.tsx` | 노트(첨부) | FR-41 | S4 | 변경(API) | ⬜ |
@@ -135,7 +135,7 @@
 | `tasks.ts` | `nextCode` `startConversation` `setTaskTitle` `updateTask` `addTag` `removeTag` `assertNotDone` `setInput` `switchInputVersion` `setTaskStatus` `setTaskModel` `setThreadModel` `deleteTask` | FR-01·02·03·10·11·35 | S2 | 변경(서버, 코드는 advisory lock 시퀀스) | ✅ S2 ②·③(`setThreadModel`은 S3) |
 | `tasks.ts` | `toggleChecklist` `addChecklistItem` `removeChecklistItem` `saveChecklistReview` `applyChecklistReview` `giveFeedback` | FR-40·01 | S4 | 변경(서버) | ⬜ |
 | `chat.ts` | `createThread` `setActiveThread` `nextMessageTime` `appendMessage` `isLiveReply` `assertNoActiveReply` `updateMessage` `deleteThread` `STALE_MS` `STALE_ERROR` | FR-04·33 | S2·S3 | 변경(`message.seq`, 활성 1건은 DB 인덱스) | ✅ S2 ②·S3 ①(활성 응답·정리는 chat_request로) |
-| `conversationInputs.ts` (+test) | `selectConversation` `applyConversationSummary` `refreshConversationInput` `setConversationWeight` `removeConversationInput` `findConversationInput` `loadConversationInputs` | FR-20–23 | S3 | 변경(서버) — 테스트 먼저 | ⬜ |
+| `conversationInputs.ts` (+test) | `selectConversation` `applyConversationSummary` `refreshConversationInput` `setConversationWeight` `removeConversationInput` `findConversationInput` `loadConversationInputs` | FR-20–23 | S3 | 변경(서버) — 테스트 먼저 | ✅ |
 | `files.ts` (+test) | `fileVersions` `uploadFile` `saveAssistantOutput` `setOutputTag` `deleteFile` `filesForTask` `downloadBlob` `isTextFile` `formatSize` | FR-10–15 | S2 | 변경(`FileStorageService`, 소프트 삭제) — 테스트 먼저 | ✅ S2 ③(`blob`은 서버 `/content`) |
 | `assistants.ts` (+test) | `newChecklistTemplateItem` `defaultChecklistTemplate` `createAssistant` `updateAssistant` `setAssistantStatus` `setAssistantImage` `deleteAssistant` `reorderAssistants` | FR-60·40 | S2(읽기)·S4(편집) | 변경(SO 전용, `revision` 충돌 검사) — 테스트 먼저 | ⬜ |
 | `sr.ts` | `startSrConversation` `submitSr` `setSrTitle` `conversationsForSr` `startTaskFromSr` `updateSrContent` `setSrStatus` `deleteDraftSr` `shareSrResult` | FR-50·51 | S4 | 변경(서버, 요청자 범위 강제) | ⬜ |
@@ -194,10 +194,10 @@
 | S7 두 탭에서 동시에 보내도 진행 중 요청은 하나 | FR-33 | S3 | ✅ S3 ①(DB 테스트 동시 2건 → 1건. 브라우저 2탭 E2E는 ③ 이벤트와 함께) |
 | S8 Mock 응답은 매 턴 사용한 자료(등급·버전)를 드러낸다 | FR-34 | S3 | ✅ S3 ①(requests.spec) |
 | E2 OpenWebUI 전달 실패: 요청을 보내지 않고 텍스트로 보내기로 복구 | FR-32 | S3 | ✅ S3 ①(requests-live.spec) |
-| E3a 같은 태그 대화만 후보, 통째로 고르면 전체 원문(간접 연결·팀 의견 제외) | FR-20·23 | S3 | ⬜ |
-| E3b 메시지 범위를 고르면 고른 메시지만 | FR-21 | S3 | ⬜ |
-| E3c 요약은 누를 때만 만들고 확인·수정한 요약이 간다 | FR-21 | S3 | ⬜ |
-| E3d 선택 시점 고정, 새 메시지는 갱신을 눌러야 | FR-22 | S3 | ⬜ |
+| E3a 같은 태그 대화만 후보, 통째로 고르면 전체 원문(간접 연결·팀 의견 제외) | FR-20·23 | S3 | ✅ |
+| E3b 메시지 범위를 고르면 고른 메시지만 | FR-21 | S3 | ✅ |
+| E3c 요약은 누를 때만 만들고 확인·수정한 요약이 간다 | FR-21 | S3 | ✅ |
+| E3d 선택 시점 고정, 새 메시지는 갱신을 눌러야 | FR-22 | S3 | ✅ |
 | E4 요청 크기 한도 초과 시 전송 차단·안내(자동 절단 없음) | FR-31 | S3 | ⬜ |
 | E6 답변의 "사용한 자료"에서 전송 기록을 앱 안에서 본다 | FR-34 | S3 | ⬜ |
 | `support/fakeOpenWebUI.ts` · `support/app.ts` | — | S1·S2 | 변경(가짜 OpenWebUI는 compose 서비스, 로그인 단계 추가) — S0 `docker/fake-openwebui` ✅ 최소판 |

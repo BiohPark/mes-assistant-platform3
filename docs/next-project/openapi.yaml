@@ -166,10 +166,10 @@ paths:
                 tags: { type: array, items: { type: string } }
                 title: { type: string }
                 inputFileIds: { type: array, items: { type: string } }
-                referenceTaskId: { type: string, description: '?ref= — 이 대화를 ★ 참조 대화로 미리 선택 (저장은 S3)' }
+                referenceTaskId: { type: string, description: '?ref= — 이 대화를 ★ 참조 대화(전체 원문)로 미리 선택. 태그를 직접 공유하지 않거나 전달할 메시지가 없으면 선택하지 않고 응답의 warnings[]로 알린다 (S3 ②)' }
                 firstMessage: { type: string, description: '첫 팀 의견 — 있으면 대화·스레드와 같은 트랜잭션에 kind=discussion 메시지(seq 1)로 저장 (S2 ②)' }
       responses:
-        '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }
+        '201': { description: '생성. 참조 대화를 선택하지 못했으면 Task에 warnings(string[])가 붙는다', content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }
   /tasks/{taskId}:
     get:
       tags: [tasks]
@@ -260,7 +260,8 @@ paths:
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/ConversationInputRequest' } } } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ConversationInput' } } } }
-        '409': { $ref: '#/components/responses/Problem' }
+        '400': { description: 'code: SELF_REFERENCE(자기 대화) · INVALID_MESSAGE_IDS(원본에 없는·중복·부적격 메시지)', content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '409': { description: 'code: TAG_NOT_SHARED(태그를 직접 공유하지 않음) · TASK_DONE(완료된 대화)', content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
     patch:
       tags: [materials]
       summary: 등급 변경
