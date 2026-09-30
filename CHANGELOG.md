@@ -4,6 +4,15 @@ MES Agent Hub의 주요 변경. 스프린트(architecture §9) 단위로 기록�
 
 ## [Unreleased]
 
+### DB 엔진 전환 — PostgreSQL → MariaDB (2026-09-30, D40, `feat/db-mariadb`)
+
+- DB를 MariaDB 단독 설치로 전환(기준 11.8 LTS, 호환 하한 10.4). 드라이버 `mysql2`, 초기 마이그레이션 1개로 재시작(옮길 운영 데이터 없음)
+- 연결마다 세션 고정(UTC·READ COMMITTED·엄격 모드), DB 정렬 `utf8mb4_nopad_bin`(대소문자·끝 공백 구분) — 다르면 `db:migrate`가 거부
+- 조건부 유일성(대화당 진행 중 요청 1건, 삭제되지 않은 파일 버전)은 저장형 생성 컬럼 + 유일 인덱스. 이름 잠금은 `db_lock` 행 또는 기존 행 잠금
+- 태그·멱등 키·SSO 식별자 길이 초과는 400. 교차 대화 파일 선택의 교착 경로 제거(업무 행 ID 오름차순 잠금)
+- 테스트: 연결 계약·제약 동작·파일 버전 체인 동시성·교차 선택 동시성 추가(DB 통합 66 → 81). CI `db` 잡은 MariaDB 11.8·10.4 두 버전
+- 개발 환경·설치 가이드·`DATABASE_URL`(`mysql://…`) 변경 — 기존 개발 환경은 `pnpm setup:env`를 다시 맞추고 `docker compose up -d --wait` → `pnpm db:migrate` → `pnpm db:seed`
+
 ### S2 — 카탈로그·대화·파일 (2026-09-28, `s2-done`)
 
 - 코드 관리 1차(D36): `code_group`·`code`, assistant 1·2단계 코드 참조(마이그레이션 0002). BO 역할 `app_user.is_business_owner`(D37)

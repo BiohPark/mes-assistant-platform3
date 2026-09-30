@@ -8,7 +8,7 @@
 
 ## 1. 한 줄 요약
 
-사내 AI 에이전트(OpenWebUI assistant)를 카드로 골라 대화하고, 대화끼리 태그로 느슨하게 이어 파일과 대화를 주고받는 업무 플랫폼의 **실제 제품**. 데모에서 검증한 동작을 서버(NestJS)·DB(PostgreSQL)·파일 저장·사내 SSO 기반으로 옮긴다.
+사내 AI 에이전트(OpenWebUI assistant)를 카드로 골라 대화하고, 대화끼리 태그로 느슨하게 이어 파일과 대화를 주고받는 업무 플랫폼의 **실제 제품**. 데모에서 검증한 동작을 서버(NestJS)·DB(MariaDB, D40)·파일 저장·사내 SSO 기반으로 옮긴다.
 
 ## 2. 원칙 (반드시 지킬 것)
 
@@ -29,8 +29,8 @@
 
 - pnpm 10 모노레포 · Node 22 · TypeScript 6 · 테스트 vitest 5 + Playwright · 린트 oxlint(경고도 실패)
 - web: React 19 · Vite 8 · Tailwind v4 · shadcn/ui · react-router 8 · TanStack Query
-- api: NestJS 12(ESM) · Drizzle(postgres.js) · openid-client 6 · zod 4
-- 개발 의존 서비스: `docker-compose.yml` — PostgreSQL 16, Keycloak 26(realm `mes-dev`, 가상 사용자 3명), 가짜 OpenWebUI(`docker/fake-openwebui/server.mjs`)
+- api: NestJS 12(ESM) · Drizzle(mysql2) · openid-client 6 · zod 4
+- 개발 의존 서비스: `docker-compose.yml` — MariaDB 11.8(정렬 `utf8mb4_nopad_bin`), Keycloak 26(realm `mes-dev`, 가상 사용자 3명), 가짜 OpenWebUI(`docker/fake-openwebui/server.mjs`)
 - 실행·명령: 설치 가이드 [setup/windows.md](setup/windows.md)(기준)·[setup/macos.md](setup/macos.md), 요약은 [README](../README.md). git 규칙 [git-policy.md](git-policy.md)
 
 ## 4. 구조
@@ -38,7 +38,7 @@
 ```
 apps/api/src
   config/      loadConfig(env) — zod 검증, 비밀값은 여기서만 읽음
-  db/          schema.ts(Drizzle, postgres-draft.sql과 1:1) · migrate.ts · db.module.ts · schema-parity.db.test.ts
+  db/          schema.ts(Drizzle, DDL 정본) · connection.ts(세션 고정) · errors.ts · migrate.ts · db.module.ts · schema-drift.test.ts · schema-parity.db.test.ts(제약 동작)
   auth/        oidc.service(OIDC RP, PKCE·state·nonce) · session.service(app_session, 토큰 해시) · users.service(첫 로그인 생성·최초 SO)
                guards(SessionGuard 기본 로그인 필수·@Public 예외 → RolesGuard @Roles) · auth.controller(login·callback·logout·me)
   health/      GET /api/health (DB 상태)
@@ -96,6 +96,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | D36 | **코드 관리 1차 설계(FR-63, S2-1a)**: 공통 코드 테이블 `code_group`·`code`, assistant `level1/level2`는 코드 참조. 프로그램 로직이 분기하는 상태(task·SR·요청 status)는 check 제약 유지(전이 규칙·테스트가 값에 묶임). 관리 화면·API는 S4 | 사용자 (2026-09-28, S2-kickoff) |
 | D37 | **BO 역할 저장(KI-2, S2-2a)**: `app_user.is_business_owner boolean` — SO와 같은 패턴, SO∧BO 조합 가능. `roles`의 `requester`가 여기서 나옴. 지정 화면은 S4 | 사용자 (2026-09-28) |
 | D38 | S2 세부: 완료 기준은 데모 E1 S1·S3·S4(parity 배정) · 태스크 4개 순차 · PC 간 실시간은 S3 SSE · 파일 한도는 설정값(50 MB/20개) · 업무 코드 `WK-YYYY-NNNN` 서버 발급 · 개발 시드 `pnpm db:seed`(운영 거부) · S2 파일 접근은 로그인 사용자 전원 · S2 E2E는 LLM 호출 없음 | 사용자 (2026-09-28, [S2-kickoff §세부 결정](next-project/S2-kickoff.md)) |
+| D40 | **DB 엔진 전환**: PostgreSQL 16 → **MariaDB**(단독 설치, 기준 11.8 LTS·호환 하한 10.4). D20·D32의 DB 부분을 대체. 방식은 이관(기존 테스트를 기준으로 DB 계층만 재작성), 옮길 운영 데이터 없음 → 초기 마이그레이션 1개로 재시작. 계획·매핑 규칙·검수 관문: [db-mariadb-plan.md](next-project/db-mariadb-plan.md) | 사용자 (2026-09-30) |
 | D39 | **S3 상세 설계 확정**([S3-design.md](next-project/S3-design.md) 개정 1) + D3-1~7 모두 추천안: SR 스코프 미리 개방 · 보조 호출 기록 없음 · 스냅샷 파일 임계 1 MiB · 이벤트 버퍼 5분/1000건·15 s·resync · 완료 대화 추정 허용 · **대화 삭제는 소프트 삭제로 전환**(`task.deleted_at`) · 멱등 키 헤더 필수 | 사용자 (2026-09-28) |
 | D33 | 역할 호칭: **SO = System Owner, BO = Business Owner(= PRD의 요청자, SR 접수 현업)**. "담당자"는 에이전트를 컨트롤하는 사람이라는 뜻일 뿐 권한 등급이 아님 → 로그인한 기본 사용자(`member`). 권한 등급은 기본 사용자·SO·BO 셋 | 사용자 (2026-09-28) |
 
@@ -130,7 +131,8 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | 조사 | **회사 PC에서 저장소 받기**: 저장소를 public으로 두는 이유 — 회사에서 GitHub 로그인이 안 됨. 대안 조사 필요(읽기 전용 fine-grained PAT·deploy key·release zip·사내 미러) — 회사 망에서 github.com 도달 여부부터 확인 | 사용자 (2026-09-28) |
 | S4 | 코드 관리 화면·API(SO), SO·BO 지정 화면 — DDL은 S2 ①에서(D36·D37) | PRD FR-63 |
 | **남은 위험** | ① 실제 Windows 실기 미확인(문서 명령은 PowerShell 7.6으로 검증, CI windows 잡은 push 후) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
-| **진행(S3)** | [S3-design.md](next-project/S3-design.md) 확정(D39). ① `s3-request` **완료·main 병합(839ed7c)**(리뷰 11건 반영, 단위 231·DB 66·E2E mock 10·live 10, CI 6잡 녹색) → ② `s3-context`·③ `s3-tray-events`는 태스크 폴더·brief 준비됨, 착수 대기 | tasks/s3-request |
+| **진행(DB 전환)** | D40. 브랜치 `feat/db-mariadb` — G1 기반·G2 서비스·G3 E2E 통과(단위 231 · DB 81(11.8 3회 연속·10.4) · E2E mock 10·live 11, 구조 대조: 테이블 34·컬럼 248·FK 75·check 35 일치 + 생성 컬럼 2·`db_lock`). 남음: G4 CI 녹색(push 승인 필요) → G5 코드 리뷰 반영 → 사용자 승인 후 `main` 병합 | tasks/db-mariadb · [db-mariadb-plan.md](next-project/db-mariadb-plan.md) |
+| **보류(S3)** | [S3-design.md](next-project/S3-design.md) 확정(D39). ① `s3-request` **완료·main 병합(839ed7c)**. ② `s3-context`·③ `s3-tray-events`는 태스크 폴더·brief 준비됨 — **DB 전환 병합 뒤 착수**(brief의 PostgreSQL 전제는 그때 갱신) | tasks/s3-request |
 | ~~S1 ②~~ 병합 완료 | 서버 대리 호출 기반 `feat/s1-llm-proxy` — `LLM_MODE`·`LLM_PRESET`(openwebui/openai-compatible)·`GET /api/llm/models`·`/status`, `LlmPorts` DB 어댑터 1차, `FileStorageService`(realpath 루트·내부 링크 거부), 웹 모델 목록·SO 배지. codex-critic 4건+누락 1건 반영. 검증 단위 165·DB 15·E2E 2, CI 5/5(Windows 8.3 경로·CI 환경 의존 2건 수정 후). **OpenAI 실키 수동 확인은 사용자 키 필요** | tasks/s1-llm-proxy |
 | ~~S1 ①~~ 병합 완료 | 앱 자체 로그인·회원가입(D34) `feat/s1-auth-local` — codex-main 구현 + codex-critic 리뷰 4건 반영. 검증 단위 142·DB 9·E2E 2. CI 녹색 확인 후 `main` 병합(사용자 승인) | tasks/s1-auth-local · [요구사항 검토](status/requirements-review-2026-09-28.md) |
 | 착수 전 확인 | OpenWebUI 버전(사용자 추후 회신), 비기능 제안값(PRD §6) | next-project/README |
@@ -139,9 +141,11 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 ## 7. 주의사항 (함정)
 
 - **공개 저장소**: 사내 주소·사내 AI 포털 주소·양식 번호·참고 이미지·이미지에서 옮긴 문구·실명 커밋 금지. 커밋 전 `git grep`. 비밀값은 `.env`(무시됨)만, `.env.example`은 로컬 개발용 가상 값
-- **스키마는 두 곳**: `docs/architecture/postgres-draft.sql` ↔ `apps/api/src/db/schema.ts`. 한쪽만 바꾸면 `pnpm test:db`의 대조 테스트가 깨진다. 마이그레이션은 `db:generate`로 만들고 손으로 고치지 않는다
+- **스키마 정본은 `apps/api/src/db/schema.ts`**(D40 이후. `postgres-draft.sql`은 전환 전 기록). 스키마를 바꾸면 `db:generate`로 마이그레이션을 만든다 — 빠뜨리면 `schema-drift` 테스트가 깨진다. 마이그레이션은 손으로 고치지 않는다
+- **MariaDB 규칙**([db-mariadb-plan.md](next-project/db-mariadb-plan.md) §3): DB는 `utf8mb4_nopad_bin`으로 만든다(`utf8mb4_bin`은 끝 공백을 무시). 키·인덱스 컬럼은 `varchar(191)` — 값이 그대로 저장되는 입력은 API에서 길이를 검증해 400. `returning` 없음 → 맞은 행 수(`affectedRows`)나 재조회. `for share` 문법 없음. `INSERT IGNORE`·`GET_LOCK` 금지. 식별자(제약 이름) 64자 제한. MariaDB 10.4는 json을 문자열로 돌려준다(스키마의 json 타입이 객체로 바꾼다). 잠금 순서는 `db_lock` → task → thread → chat_request, 같은 종류는 오름차순
+- 연결마다 세션을 고정한다(`db/connection.ts`: UTC·READ COMMITTED·엄격 모드). 서버 설정에 기대지 않으므로 DB 서버의 기본값이 달라도 동작이 같다. 풀을 직접 만들지 말고 `createPool`을 쓴다
 - 드리즐 인덱스의 `.desc()`는 `NULLS LAST`를 붙인다 — 초안과 맞추려면 `sql\`${col} desc\``
-- Drizzle 순환 참조(`file_object`↔`task` 등)는 `.references((): AnyPgColumn => …)`로 타입을 끊는다
+- Drizzle 순환 참조(`file_object`↔`task` 등)는 `.references((): AnyMySqlColumn => …)`로 타입을 끊는다
 - 워크스페이스 패키지를 런타임(node)에서 쓰려면 `dist`가 있어야 한다 — `pnpm build` 또는 api `dev`(선행 빌드 포함)
 - Vite `resolve.conditions`만으로는 vitest(SSR 환경)에 안 먹는다 — `vitest.shared.ts`의 `ssr.resolve.conditions`까지 써야 한다
 - Keycloak realm의 `${ENV}` 자리는 컨테이너 환경 변수로 치환된다. realm을 바꾸면 컨테이너를 다시 만들어야(`docker compose up -d --force-recreate keycloak`) 다시 임포트된다
@@ -152,7 +156,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 - 가입·로그인 POST는 `Origin`이 `APP_ORIGIN`과 다르거나 `Sec-Fetch-Site: cross-site`면 403(로그인 CSRF 방지). 프록시 뒤에서 `APP_ORIGIN`이 실제 브라우저 주소와 다르면 로그인이 막힌다
 - `sso_subject` 형식을 `{issuer}#{sub}`로 바꾸기 전에 로그인한 개발 DB 사용자는 다음 로그인 때 새 사용자로 생긴다 — 개발 DB는 `docker compose down -v`로 초기화
 - 기능 대응표 [next-project/parity-matrix.md](next-project/parity-matrix.md)가 데모 수용 범위의 정본 — 이식할 때 데모 소스를 직접 연다
-- CI Windows 러너의 `ikalnytskyi/action-setup-postgres`는 PG* 환경 변수를 덮어써 잡 env의 `PGPASSWORD`가 비게 된다 — psql이 비밀번호 프롬프트에서 무한 대기(setup-guide 잡 33분 정지). 스텝 env로 다시 준다
+- CI Windows 러너에서 DB 클라이언트가 비밀번호 프롬프트를 띄우면 잡이 무한 대기한다(PostgreSQL 시절 setup-guide 잡 33분 정지). MariaDB 전환 뒤에는 `ankane/setup-mariadb`가 root를 비밀번호 없이 띄우고, 사람용 절차만 `$env:MYSQL_PWD`를 쓴다
 - 마이그레이션 0002(S2 ①)는 `assistant.level1/level2`를 코드 FK 컬럼(NOT NULL, 기본값 없음)으로 교체한다 — **기존 assistant 행이 있는 DB에는 적용이 실패**한다. S0·S1에는 에이전트 생성 경로가 없어 실제로는 빈 테이블이지만, 손으로 넣은 개발 DB는 `docker compose down -v`(또는 DB 재생성) 후 `db:migrate` → `db:seed`
 - 데모 저장소는 읽기 전용 — 수정·커밋 금지
 - 요청은 서버 RequestService만 보낸다(S3). 트레이 추정은 `buildChatRequest({ dryRun: true })` — 실제 전송과 같은 함수

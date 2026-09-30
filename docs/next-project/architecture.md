@@ -4,7 +4,7 @@
 
 ## 1. 스택 결정 (D20)
 
-**TypeScript 풀스택 모노레포**: React(기존) + NestJS + PostgreSQL + Drizzle.
+**TypeScript 풀스택 모노레포**: React(기존) + NestJS + MariaDB + Drizzle. (DB는 HANDOFF D40으로 PostgreSQL에서 전환)
 
 | 기준 | TypeScript 풀스택 | Spring Boot (이전 초안) |
 |---|---|---|
@@ -20,14 +20,14 @@ Spring을 처음 권했던 것은 사용자의 Java 경험 때문이었다. 재�
 |---|---|---|
 | 웹 | React 19 + Vite + shadcn/ui (**데모 그대로**) | 화면 코드 이식 |
 | 서버 | NestJS (Node 22) | 모듈·가드(권한)·OpenAPI 생성·SSE. 더 가벼운 대안: Fastify/Hono |
-| DB | PostgreSQL 16 | 부분 고유 인덱스(진행 중 요청 1건)·jsonb. 사내 표준 DB가 정해지면 Drizzle 방언만 바꿈 |
-| ORM·마이그레이션 | Drizzle + drizzle-kit | SQL에 가까운 스키마(`postgres-draft.sql`과 1:1), TS 타입 공유. 대안: Prisma |
+| DB | MariaDB 11.8 LTS(호환 하한 10.4) — D40 | 단독 설치. 조건부 유일성은 저장형 생성 컬럼 + 유일 인덱스, 정렬은 `utf8mb4_nopad_bin`. 규칙: [db-mariadb-plan.md](db-mariadb-plan.md) §3 |
+| ORM·마이그레이션 | Drizzle(`mysql2`) + drizzle-kit | 스키마 정본은 `apps/api/src/db/schema.ts` + `apps/api/drizzle/`, TS 타입 공유. 대안: Prisma |
 | 검증·계약 | zod 스키마 → OpenAPI | 웹·서버 공용 |
 | 데이터 가져오기(웹) | TanStack Query + SSE 무효화 | 데모의 `useLiveQuery` 대체 |
 | 인증 | **이번 페이즈: 앱 자체 로그인**(`AUTH_MODE=local`, D32·D34) + 서버 세션 쿠키. 사내 SSO(OIDC/SAML)는 후속 페이즈에 `AUTH_MODE=oidc`로 | §5 |
 | 파일 | 로컬 디스크·NAS `FileStorageService` | data-contract §4 |
 | 테스트 | vitest(단위·서버) + Playwright(E2E, 데모 시나리오 이식) | |
-| 개발 환경 | Docker Compose: PostgreSQL + 가짜 OpenWebUI (+ Keycloak은 `--profile oidc`, SSO 대역) | |
+| 개발 환경 | Docker Compose: MariaDB + 가짜 OpenWebUI (+ Keycloak은 `--profile oidc`, SSO 대역) | |
 
 ## 2. 저장소 구조
 
@@ -145,3 +145,4 @@ API: 서명 검증 → 사용자 정보(주체 ID·이름·이메일·부서) �
 | D19 | 에이전트 관리(추가·수정·삭제·순서)와 전역 설정은 System Owner만 | 2026-09-27 |
 | D20 | 새 저장소 스택: TypeScript 풀스택 (React + NestJS + PostgreSQL + Drizzle) — 데모 소스 재사용 우선 | 2026-09-27 |
 | D21 | 인증: 사내 SSO(OIDC/SAML 표준), 역할은 앱 관리, 개발은 Keycloak 대역 — **이번 페이즈는 HANDOFF D32·D34(앱 자체 로그인)로 대체**, SSO는 후속 | 2026-09-27 |
+| D40 | DB 엔진을 PostgreSQL에서 **MariaDB**(단독 설치, 기준 11.8 LTS·호환 하한 10.4)로 전환 — D20의 DB 부분 대체. [db-mariadb-plan.md](db-mariadb-plan.md) | 2026-09-30 |

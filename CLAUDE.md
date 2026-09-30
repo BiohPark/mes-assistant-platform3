@@ -248,7 +248,7 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 ### 정본 문서 (이 순서로 읽고, 요약하지 말고 경로로 참조)
 1. `docs/next-project/PRD.md` — 역할·권한, 화면, 기능 요구사항(FR), 확정 정책(D18), 비기능, 범위
 2. `docs/next-project/architecture.md` — 스택(D20), 저장소 구조, **데모 소스 재사용 지도(§3)**, SSO(D21), 착수 순서(§9)
-3. `docs/next-project/openapi.yaml` · `docs/architecture/data-contract.md` · `docs/architecture/postgres-draft.sql` — API·데이터 계약·DDL
+3. `docs/next-project/openapi.yaml` · `docs/architecture/data-contract.md` · `apps/api/src/db/schema.ts`(DDL 정본, `postgres-draft.sql`은 전환 전 기록) · `docs/next-project/db-mariadb-plan.md` §3(DB 규칙) — API·데이터 계약·DDL
 4. `docs/fusion-design.md` · `docs/evaluation/context-flow.md` — 참조 대화·요청 트레이·전달 실패 설계 근거와 회귀 기준
 5. `docs/HANDOFF.md` — 결정 로그 D1–D21, 원칙(§2), 함정(§7)
 - 문서끼리 어긋나면 **번호가 큰 결정(D)이 우선**. 그래도 불명확하면 추측하지 말고 사용자에게 묻는다.
@@ -267,11 +267,11 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 
 ### 스택·구조 (D20·D21)
 - **pnpm** 모노레포: `apps/web`(React 19 + Vite + shadcn/ui, 데모 화면 이식) · `apps/api`(NestJS, Node 22) · `packages/domain` · `packages/llm` · `packages/contracts`(zod → OpenAPI) · `e2e/` · `docs/`
-- PostgreSQL 16 + Drizzle(`postgres-draft.sql`과 1:1) · TanStack Query + SSE · vitest + Playwright
-- 개발 환경: Docker Compose(PostgreSQL · Keycloak(SSO 대역) · 가짜 OpenWebUI). 인증은 사내 SSO(OIDC/SAML) **수신 측만** 구현, 역할은 앱이 관리.
+- MariaDB(단독 설치, 기준 11.8 LTS·호환 하한 10.4, D40) + Drizzle(`mysql2`) · TanStack Query + SSE · vitest + Playwright
+- 개발 환경: Docker Compose(MariaDB · Keycloak(SSO 대역) · 가짜 OpenWebUI). 인증은 사내 SSO(OIDC/SAML) **수신 측만** 구현, 역할은 앱이 관리.
 
 ### 크로스플랫폼 원칙 (최종 실행 환경 = Windows, 개발 = macOS — S0부터 적용)
-- Docker는 개발용 의존 서비스(PostgreSQL·Keycloak·가짜 OpenWebUI)에만 쓴다. api·web은 Docker 없이 Windows에서 Node로 직접 빌드·실행 가능해야 한다. 운영 배포(Windows 서비스 네이티브 / 컨테이너)는 S5에서 정하고, 그 전까지 둘 다 가능하게 둔다. compose는 OrbStack 전용 기능 없이 Docker Desktop(Windows)에서 그대로 돌아야 한다.
+- Docker는 개발용 의존 서비스(MariaDB·Keycloak·가짜 OpenWebUI)에만 쓴다. api·web은 Docker 없이 Windows에서 Node로 직접 빌드·실행 가능해야 한다. 운영 배포(Windows 서비스 네이티브 / 컨테이너)는 S5에서 정하고, 그 전까지 둘 다 가능하게 둔다. compose는 OrbStack 전용 기능 없이 Docker Desktop(Windows)에서 그대로 돌아야 한다.
 - package.json 스크립트에 bash 문법·`rm -rf`·`export`·`VAR=값` 접두 금지 → node 스크립트·cross-env·rimraf. 개발 흐름에 `.sh` 필수 단계 금지(컨테이너 내부 스크립트는 예외).
 - 경로는 `path.join`/`path.resolve`만. 파일 `storage_key`는 OS 무관 `/` 구분 상대 키, 실제 경로 변환은 `FileStorageService` 한 곳에서만(드라이브·UNC 대비). 파일명에 Windows 금지 문자·예약어 금지.
 - `.gitattributes`로 LF 정규화. import 경로 대소문자는 실제 파일명과 정확히 일치.
@@ -290,9 +290,9 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 
 ### 진행 방식
 - 스프린트 = architecture §9의 S0–S5. 태스크 폴더는 `tasks/s<N>-<주제>/`. 각 스프린트의 **완료 기준**이 Verification의 기준이다.
-- 현재 위치: **S0·S1·S2 완료(`main` 병합, 태그 `s0-done`·`s1-done`·`s2-done`) → 다음 S3**. 기록: `tasks/s0-skeleton/`·`tasks/s1-*/`·`tasks/s2-*/`, `docs/HANDOFF.md` 6장. S3 계획: `docs/next-project/S3-kickoff.md`(승인 2026-09-28) — 착수 전 잔여 대상 상세 설계(사용자 지시). 이월: OpenAI 실키 확인·Windows 실기 확인(S1), U9 링크 규칙·KI-7(S4).
+- 현재 위치: **S0·S1·S2 완료(`main` 병합, 태그 `s0-done`·`s1-done`·`s2-done`), S3 ① 요청 서비스 완료(`main` 병합) → DB 엔진 전환(`feat/db-mariadb`, D40, 계획 `docs/next-project/db-mariadb-plan.md`) → 병합 뒤 S3 ②·③**. 기록: `tasks/s0-skeleton/`·`tasks/s1-*/`·`tasks/s2-*/`·`tasks/s3-request/`·`tasks/db-mariadb/`, `docs/HANDOFF.md` 6장. S3 계획: `docs/next-project/S3-kickoff.md`·`S3-design.md`(D39). 이월: OpenAI 실키 확인·Windows 실기 확인(S1), U9 링크 규칙·KI-7(S4).
 - S1의 실환경 확인(`docs/evaluation/real-env-verification.md`)은 **이 환경에서 불가(D31)** — 사용자가 사내에서 수행. 개발은 가짜 OpenWebUI + OpenAI 호환 API 전환 프리셋으로 진행하고, 사내 연동 결과가 오면 어댑터를 맞춘다.
-- 확정: 배포 Windows 서버 + PostgreSQL 설치(D32), 이번 페이즈 SSO 미연계 → **앱 자체 로그인**(D34), 병렬 단계·상태는 **코드 데이터로 관리**(D35). 남은 확인: OpenWebUI 버전, 비기능 제안값(PRD §6).
+- 확정: 배포 Windows 서버(D32) + **MariaDB 단독 설치(D40)**, 이번 페이즈 SSO 미연계 → **앱 자체 로그인**(D34), 병렬 단계·상태는 **코드 데이터로 관리**(D35). 남은 확인: OpenWebUI 버전, 비기능 제안값(PRD §6).
 - 스프린트가 끝나면 이 블록의 "현재 위치"와 아래 "명령"을 갱신한다.
 
 ### 작업 방식 (사용자 지시 — 매 세션 적용)
@@ -308,7 +308,7 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 - `CLAUDE.md`, `_shared/**`, `_templates/**`는 워커 쓰기 범위에 넣지 않는다. `docs/**`는 README·HANDOFF 작성 태스크에서만 해당 파일로 좁혀 승인받는다.
 
 ### 명령 (S0 확정 — 상세는 README)
-- 설치 `pnpm install` · 환경 `pnpm setup:env` · 의존 서비스 `docker compose up -d --wait`(PostgreSQL·가짜 OpenWebUI; Keycloak은 `--profile oidc`)
+- 설치 `pnpm install` · 환경 `pnpm setup:env` · 의존 서비스 `docker compose up -d --wait`(MariaDB·가짜 OpenWebUI; Keycloak은 `--profile oidc`)
 - 개발 서버 `pnpm dev` (api :3000 · web :5173, 첫 화면 회원가입 → `INITIAL_SYSTEM_OWNERS`=`dev-owner`로 가입하면 SO) · 빌드 `pnpm build`
 - typecheck `pnpm typecheck` · 린트 `pnpm lint` · 단위 `pnpm test` · DB 통합 `pnpm test:db` · E2E `pnpm test:e2e`
 - DB 마이그레이션 생성 `pnpm --filter @mes/api db:generate` · 적용 `pnpm db:migrate` · 개발 시드 `pnpm db:seed`(운영 거부)

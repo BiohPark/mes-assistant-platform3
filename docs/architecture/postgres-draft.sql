@@ -1,4 +1,6 @@
--- MES Agent Hub — PostgreSQL DDL 초안 (새 저장소용). apps/api/src/db/schema.ts(Drizzle)와 1:1 — schema-parity 테스트가 대조한다.
+-- [전환 전 기록] DB 엔진이 MariaDB로 바뀌었다(HANDOFF D40, 2026-09-30). 이 파일은 더 이상 대조 대상이 아니다.
+-- 현재 DDL 정본: apps/api/src/db/schema.ts(Drizzle) + apps/api/drizzle/. 엔티티·제약의 의미는 아래 초안과 같다.
+-- MES Agent Hub — PostgreSQL DDL 초안 (새 저장소용).
 -- 기준: docs/architecture/data-contract.md. 데모 IndexedDB v4의 엔티티를 관계형으로 펼친 것.
 -- 원칙: 파일 바이트는 DB에 두지 않는다(storage_key만). 비밀값(API 키)은 DB에 두지 않는다.
 -- ID: 데모 가져오기를 위해 문자열 PK를 그대로 받는다. 새 행은 서버가 UUID 문자열로 발급.
