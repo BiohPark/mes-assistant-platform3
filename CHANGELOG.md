@@ -4,7 +4,7 @@ MES Agent Hub의 주요 변경. 스프린트(architecture §9) 단위로 기록�
 
 ## [Unreleased]
 
-### DB 엔진 전환 — PostgreSQL → MariaDB (2026-09-30, D40, `feat/db-mariadb`)
+### DB 엔진 전환 — PostgreSQL → MariaDB (2026-10-01, D40, `db-mariadb-done`)
 
 - DB를 MariaDB 단독 설치로 전환(기준 11.8 LTS, 호환 하한 10.4). 드라이버 `mysql2`, 초기 마이그레이션 1개로 재시작(옮길 운영 데이터 없음)
 - 연결마다 세션 고정(UTC·READ COMMITTED·엄격 모드), DB 정렬 `utf8mb4_nopad_bin`(대소문자·끝 공백 구분) — 다르면 `db:migrate`가 거부

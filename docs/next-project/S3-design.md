@@ -1,5 +1,7 @@
 # 잔여 대상 상세 설계 — S3 상세 · S4/S5 개요 (2026-09-28, 개정 1 — **사용자 확정**: "설계 확정, D3 전부 추천안")
 
+> **DB 표현 읽는 법(D40, 2026-10-01)**: 이 문서는 PostgreSQL 기준으로 쓰였다. DB가 MariaDB로 바뀌었으므로 "부분 고유 인덱스"는 저장형 생성 컬럼 + 유일 인덱스, `jsonb`는 `json`, advisory lock은 `db_lock` 행 또는 기존 행 잠금, "마이그레이션 0003"은 초기 마이그레이션에 포함된 것으로 읽는다. 규칙 정본: [db-mariadb-plan.md](db-mariadb-plan.md) §3. 동작·계약은 그대로다.
+
 > 사용자 지시 "승인하고 잔여 대상 상세 설계하자"에 따른 문서. 대응표 잔여 ⬜ 60행(S3 21 · S4 33 · S5·기타 6)을 **API 계약·상태 기계·데이터·화면·테스트** 수준으로 내려 적는다. S3는 코드 착수 직전 수준으로, S4·S5는 결정이 필요한 지점이 드러나는 수준으로. 정본과 어긋나면 정본(PRD·architecture·data-contract·postgres-draft·openapi·fusion-design §5·HANDOFF 결정 D1–D38)이 우선하고, 이 문서는 그 사이를 잇는다. 승인되면 openapi.yaml을 이 문서에 맞춰 갱신하고, 각 태스크의 `sources/*-spec.md`는 이 문서의 절을 가리킨다.
 >
 > 데모 근거 코드(읽기 전용): `src/app/chatRunner.ts`(+test 12건) · `src/db/repositories/conversationInputs.ts` · `src/llm/{promptBuilder,openwebuiFiles,context,conversationSummary}.ts`(S0 이식 완료) · `src/features/chat/{useChat,useRequestEstimate,ContextTray,MessageBubble,RequestInfoDialog}.tsx` · `src/features/task/{ConversationInputs,ConversationPickerDialog}.tsx`.
