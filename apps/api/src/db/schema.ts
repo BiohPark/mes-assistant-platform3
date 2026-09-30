@@ -1,32 +1,45 @@
-// Drizzle 스키마 — docs/architecture/postgres-draft.sql 과 1:1 (schema-parity 테스트가 대조한다).
-// 테이블·컬럼 순서도 초안을 따른다. 초안을 바꾸면 이 파일과 마이그레이션을 함께 바꾼다.
+// MariaDB DDL 정본. 마이그레이션과 schema-drift 테스트로 일치 여부를 확인한다.
 import { sql, type AnyColumn } from 'drizzle-orm'
-import type { AnyPgColumn } from 'drizzle-orm/pg-core'
+import type { AnyMySqlColumn } from 'drizzle-orm/mysql-core'
 import {
   bigint,
   boolean,
   char,
   check,
-  date,
+  customType,
+  date as mysqlDate,
+  foreignKey,
   index,
-  integer,
-  jsonb,
-  pgTable,
+  int as integer,
+  longtext,
+  mysqlTable,
+  varchar,
   primaryKey,
   text,
-  timestamp,
+  datetime,
   unique,
   uniqueIndex,
-} from 'drizzle-orm/pg-core'
+} from 'drizzle-orm/mysql-core'
 
-const tz = (name: string) => timestamp(name, { withTimezone: true })
+const tz = (name: string) => datetime(name, { fsp: 6 })
+const date = (name: string) => mysqlDate(name, { mode: 'string' })
 const inList = (col: AnyColumn, values: string[]) =>
   sql`${col} in (${sql.raw(values.map((v) => `'${v}'`).join(', '))})`
+const jsonObject = customType<{ data: unknown; driverData: string | object }>({
+  dataType: () => 'json',
+  toDriver: (value) => JSON.stringify(value),
+  fromDriver: (value) => typeof value === 'string' ? JSON.parse(value) : value,
+})
+
+/** 없는 행의 경쟁도 트랜잭션 동안 직렬화할 수 있는 이름 잠금 행. */
+export const dbLock = mysqlTable('db_lock', {
+  lockKey: varchar('lock_key', { length: 191 }).primaryKey(),
+})
 
 // ── 사람·에이전트 ─────────────────────────────────────────────────────────
-export const appUser = pgTable('app_user', {
-  id: text('id').primaryKey(),
-  ssoSubject: text('sso_subject').unique('app_user_sso_subject_key'),
+export const appUser = mysqlTable('app_user', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  ssoSubject: varchar('sso_subject', { length: 512 }).unique('app_user_sso_subject_key'),
   name: text('name').notNull(),
   role: text('role').notNull().default(''),
   initials: text('initials').notNull(),
@@ -34,45 +47,46 @@ export const appUser = pgTable('app_user', {
   isSystemOwner: boolean('is_system_owner').notNull().default(false),
   isBusinessOwner: boolean('is_business_owner').notNull().default(false),
   active: boolean('active').notNull().default(true),
-  createdAt: tz('created_at').notNull().defaultNow(),
-  loginId: text('login_id').unique('app_user_login_id_key'),
+  createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
+  loginId: varchar('login_id', { length: 191 }).unique('app_user_login_id_key'),
   passwordHash: text('password_hash'),
 })
 
-export const codeGroup = pgTable('code_group', {
-  key: text('key').primaryKey(),
+export const codeGroup = mysqlTable('code_group', {
+  key: varchar('key', { length: 191 }).primaryKey(),
   name: text('name').notNull(),
   sortOrder: integer('sort_order').notNull().default(0),
 })
 
-export const code = pgTable('code', {
-  id: text('id').primaryKey(),
-  groupKey: text('group_key').notNull().references(() => codeGroup.key),
-  code: text('code').notNull(),
+export const code = mysqlTable('code', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  groupKey: varchar('group_key', { length: 191 }).notNull().references(() => codeGroup.key),
+  code: varchar('code', { length: 191 }).notNull(),
   name: text('name').notNull(),
   sortOrder: integer('sort_order').notNull().default(0),
   active: boolean('active').notNull().default(true),
 }, (t) => [unique('code_group_key_code_key').on(t.groupKey, t.code)])
 
-export const fileObject = pgTable(
+export const fileObject = mysqlTable(
   'file_object',
   {
-    id: text('id').primaryKey(),
+    id: varchar('id', { length: 191 }).primaryKey(),
     kind: text('kind').notNull(),
-    originTaskId: text('origin_task_id').references((): AnyPgColumn => task.id),
-    originSrId: text('origin_sr_id').references((): AnyPgColumn => serviceRequest.id),
-    originalName: text('original_name').notNull(),
+    originTaskId: varchar('origin_task_id', { length: 191 }).references((): AnyMySqlColumn => task.id),
+    originSrId: varchar('origin_sr_id', { length: 191 }).references((): AnyMySqlColumn => serviceRequest.id),
+    originalName: varchar('original_name', { length: 255 }).notNull(),
     mime: text('mime').notNull(),
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
     sha256: char('sha256', { length: 64 }).notNull(),
-    storageKey: text('storage_key').notNull().unique('file_object_storage_key_key'),
+    storageKey: varchar('storage_key', { length: 191 }).notNull().unique('file_object_storage_key_key'),
     source: text('source').notNull(),
     isOutput: boolean('is_output').notNull().default(false),
     version: integer('version').notNull(),
-    previousId: text('previous_id').references((): AnyPgColumn => fileObject.id),
-    uploadedBy: text('uploaded_by').notNull().references((): AnyPgColumn => appUser.id),
-    uploadedAt: tz('uploaded_at').notNull().defaultNow(),
+    previousId: varchar('previous_id', { length: 191 }).references((): AnyMySqlColumn => fileObject.id),
+    uploadedBy: varchar('uploaded_by', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+    uploadedAt: tz('uploaded_at').notNull().default(sql`current_timestamp(6)`),
     deletedAt: tz('deleted_at'),
+    activeOrigin: varchar('active_origin', { length: 191 }).generatedAlwaysAs(() => sql`case when deleted_at is null then coalesce(origin_task_id, origin_sr_id) else null end`, { mode: 'stored' }),
   },
   (t) => [
     check('file_object_kind_check', inList(t.kind, ['task_file', 'sr_attachment', 'assistant_image'])),
@@ -82,42 +96,40 @@ export const fileObject = pgTable(
     check('file_object_check1', sql`(${t.kind} = 'sr_attachment') = (${t.originSrId} is not null)`),
     index('file_object_origin_task').on(t.originTaskId),
     index('file_object_origin_sr').on(t.originSrId),
-    uniqueIndex('file_object_version')
-      .on(sql`coalesce(${t.originTaskId}, ${t.originSrId})`, t.originalName, t.version)
-      .where(sql`${t.deletedAt} is null`),
+    uniqueIndex('file_object_version').on(t.activeOrigin, t.originalName, t.version),
   ],
 )
 
-export const assistant = pgTable(
+export const assistant = mysqlTable(
   'assistant',
   {
-    id: text('id').primaryKey(),
+    id: varchar('id', { length: 191 }).primaryKey(),
     name: text('name').notNull(),
-    level1CodeId: text('level1_code_id').notNull().references(() => code.id),
-    level2CodeId: text('level2_code_id').notNull().references(() => code.id),
-    summary: text('summary').notNull().default(''),
+    level1CodeId: varchar('level1_code_id', { length: 191 }).notNull().references(() => code.id),
+    level2CodeId: varchar('level2_code_id', { length: 191 }).notNull().references(() => code.id),
+    summary: longtext('summary').notNull().default(''),
     sortOrder: integer('sort_order').notNull(),
     modelId: text('model_id'),
     link1: text('link1'),
     docUrl: text('doc_url'),
-    ownerId: text('owner_id').notNull().references((): AnyPgColumn => appUser.id),
+    ownerId: varchar('owner_id', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
     status: text('status').notNull(),
-    usageExample: text('usage_example').notNull().default(''),
-    imageFileId: text('image_file_id').references((): AnyPgColumn => fileObject.id),
+    usageExample: longtext('usage_example').notNull().default(''),
+    imageFileId: varchar('image_file_id', { length: 191 }).references((): AnyMySqlColumn => fileObject.id),
     color: text('color').notNull(),
     revision: integer('revision').notNull().default(0),
-    createdBy: text('created_by').notNull().references((): AnyPgColumn => appUser.id),
-    createdAt: tz('created_at').notNull().defaultNow(),
-    updatedAt: tz('updated_at').notNull().defaultNow(),
+    createdBy: varchar('created_by', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+    createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
+    updatedAt: tz('updated_at').notNull().default(sql`current_timestamp(6)`),
   },
   (t) => [check('assistant_status_check', inList(t.status, ['open', 'developing', 'testing', 'retired']))],
 )
 
-export const assistantExpectedIo = pgTable(
+export const assistantExpectedIo = mysqlTable(
   'assistant_expected_io',
   {
-    assistantId: text('assistant_id').notNull().references((): AnyPgColumn => assistant.id, { onDelete: 'cascade' }),
-    direction: text('direction').notNull(),
+    assistantId: varchar('assistant_id', { length: 191 }).notNull().references((): AnyMySqlColumn => assistant.id, { onDelete: 'cascade' }),
+    direction: varchar('direction', { length: 191 }).notNull(),
     sortOrder: integer('sort_order').notNull(),
     label: text('label').notNull(),
   },
@@ -127,36 +139,36 @@ export const assistantExpectedIo = pgTable(
   ],
 )
 
-export const assistantChecklistTemplate = pgTable('assistant_checklist_template', {
-  id: text('id').primaryKey(),
-  assistantId: text('assistant_id').notNull().references((): AnyPgColumn => assistant.id, { onDelete: 'cascade' }),
+export const assistantChecklistTemplate = mysqlTable('assistant_checklist_template', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  assistantId: varchar('assistant_id', { length: 191 }).notNull().references((): AnyMySqlColumn => assistant.id, { onDelete: 'cascade' }),
   sortOrder: integer('sort_order').notNull(),
   label: text('label').notNull(),
   required: boolean('required').notNull().default(false),
 })
 
 // ── 대화(=업무)·스레드·메시지 ─────────────────────────────────────────────
-export const task = pgTable(
+export const task = mysqlTable(
   'task',
   {
-    id: text('id').primaryKey(),
-    code: text('code').notNull().unique('task_code_key'),
-    assistantId: text('assistant_id').notNull().references((): AnyPgColumn => assistant.id),
+    id: varchar('id', { length: 191 }).primaryKey(),
+    code: varchar('code', { length: 191 }).notNull().unique('task_code_key'),
+    assistantId: varchar('assistant_id', { length: 191 }).notNull().references((): AnyMySqlColumn => assistant.id),
     title: text('title').notNull(),
     titleSource: text('title_source').notNull(),
-    summary: text('summary').notNull().default(''),
+    summary: longtext('summary').notNull().default(''),
     status: text('status').notNull(),
-    ownerId: text('owner_id').notNull().references((): AnyPgColumn => appUser.id),
+    ownerId: varchar('owner_id', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
     priority: text('priority').notNull(),
     dueDate: date('due_date'),
     modelId: text('model_id'),
-    createdBy: text('created_by').notNull().references((): AnyPgColumn => appUser.id),
-    createdAt: tz('created_at').notNull().defaultNow(),
-    lastActivityAt: tz('last_activity_at').notNull().defaultNow(),
+    createdBy: varchar('created_by', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+    createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
+    lastActivityAt: tz('last_activity_at').notNull().default(sql`current_timestamp(6)`),
     startedAt: tz('started_at'),
     completedAt: tz('completed_at'),
-    completedBy: text('completed_by').references((): AnyPgColumn => appUser.id),
-    idempotencyKey: text('idempotency_key'),
+    completedBy: varchar('completed_by', { length: 191 }).references((): AnyMySqlColumn => appUser.id),
+    idempotencyKey: varchar('idempotency_key', { length: 191 }),
     deletedAt: tz('deleted_at'),
   },
   (t) => [
@@ -164,55 +176,55 @@ export const task = pgTable(
     check('task_status_check', inList(t.status, ['todo', 'in_progress', 'on_hold', 'done'])),
     check('task_priority_check', inList(t.priority, ['low', 'normal', 'high', 'urgent'])),
     index('task_assistant').on(t.assistantId),
-    index('task_last_activity').on(sql`${t.lastActivityAt} desc`),
+    index('task_last_activity').on(t.lastActivityAt),
     unique('task_idempotency_key_key').on(t.idempotencyKey),
   ],
 )
 
-export const taskAssignee = pgTable(
+export const taskAssignee = mysqlTable(
   'task_assignee',
   {
-    taskId: text('task_id').notNull().references((): AnyPgColumn => task.id, { onDelete: 'cascade' }),
-    userId: text('user_id').notNull().references((): AnyPgColumn => appUser.id),
+    taskId: varchar('task_id', { length: 191 }).notNull().references((): AnyMySqlColumn => task.id, { onDelete: 'cascade' }),
+    userId: varchar('user_id', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
   },
   (t) => [primaryKey({ columns: [t.taskId, t.userId] })],
 )
 
-export const tag = pgTable(
+export const tag = mysqlTable(
   'tag',
   {
-    key: text('key').primaryKey(),
+    key: varchar('key', { length: 191 }).primaryKey(),
     kind: text('kind').notNull(),
     label: text('label').notNull(),
-    createdAt: tz('created_at').notNull().defaultNow(),
+    createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
   },
   (t) => [check('tag_kind_check', inList(t.kind, ['sr', 'keyword']))],
 )
 
-export const taskTag = pgTable(
+export const taskTag = mysqlTable(
   'task_tag',
   {
-    taskId: text('task_id').notNull().references((): AnyPgColumn => task.id, { onDelete: 'cascade' }),
-    tagKey: text('tag_key').notNull().references((): AnyPgColumn => tag.key),
-    addedBy: text('added_by').notNull().references((): AnyPgColumn => appUser.id),
-    addedAt: tz('added_at').notNull().defaultNow(),
+    taskId: varchar('task_id', { length: 191 }).notNull().references((): AnyMySqlColumn => task.id, { onDelete: 'cascade' }),
+    tagKey: varchar('tag_key', { length: 191 }).notNull().references((): AnyMySqlColumn => tag.key),
+    addedBy: varchar('added_by', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+    addedAt: tz('added_at').notNull().default(sql`current_timestamp(6)`),
   },
   (t) => [primaryKey({ columns: [t.taskId, t.tagKey] }), index('task_tag_by_tag').on(t.tagKey)],
 )
 
-export const serviceRequest = pgTable(
+export const serviceRequest = mysqlTable(
   'service_request',
   {
-    id: text('id').primaryKey(),
-    code: text('code').unique('service_request_code_key'),
-    requesterId: text('requester_id').notNull().references((): AnyPgColumn => appUser.id),
+    id: varchar('id', { length: 191 }).primaryKey(),
+    code: varchar('code', { length: 191 }).unique('service_request_code_key'),
+    requesterId: varchar('requester_id', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
     title: text('title').notNull().default(''),
     titleSource: text('title_source').notNull(),
-    body: text('body').notNull().default(''),
+    body: longtext('body').notNull().default(''),
     status: text('status').notNull(),
     submittedAt: tz('submitted_at'),
-    createdAt: tz('created_at').notNull().defaultNow(),
-    updatedAt: tz('updated_at').notNull().defaultNow(),
+    createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
+    updatedAt: tz('updated_at').notNull().default(sql`current_timestamp(6)`),
   },
   (t) => [
     check('service_request_title_source_check', inList(t.titleSource, ['default', 'ai', 'manual'])),
@@ -223,33 +235,33 @@ export const serviceRequest = pgTable(
   ],
 )
 
-export const thread = pgTable(
+export const thread = mysqlTable(
   'thread',
   {
-    id: text('id').primaryKey(),
-    taskId: text('task_id').unique('thread_task_id_key').references((): AnyPgColumn => task.id, { onDelete: 'cascade' }),
-    srId: text('sr_id').unique('thread_sr_id_key').references((): AnyPgColumn => serviceRequest.id, { onDelete: 'cascade' }),
+    id: varchar('id', { length: 191 }).primaryKey(),
+    taskId: varchar('task_id', { length: 191 }).unique('thread_task_id_key').references((): AnyMySqlColumn => task.id, { onDelete: 'cascade' }),
+    srId: varchar('sr_id', { length: 191 }).unique('thread_sr_id_key').references((): AnyMySqlColumn => serviceRequest.id, { onDelete: 'cascade' }),
     title: text('title').notNull(),
     modelId: text('model_id'),
-    createdBy: text('created_by').notNull().references((): AnyPgColumn => appUser.id),
-    createdAt: tz('created_at').notNull().defaultNow(),
+    createdBy: varchar('created_by', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+    createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
   },
   (t) => [check('thread_check', sql`(${t.taskId} is null) <> (${t.srId} is null)`)],
 )
 
-export const message = pgTable(
+export const message = mysqlTable(
   'message',
   {
-    id: text('id').primaryKey(),
-    threadId: text('thread_id').notNull().references((): AnyPgColumn => thread.id, { onDelete: 'cascade' }),
+    id: varchar('id', { length: 191 }).primaryKey(),
+    threadId: varchar('thread_id', { length: 191 }).notNull().references((): AnyMySqlColumn => thread.id, { onDelete: 'cascade' }),
     seq: bigint('seq', { mode: 'number' }).notNull(),
     role: text('role').notNull(),
     kind: text('kind'),
-    content: text('content').notNull(),
-    authorId: text('author_id').references((): AnyPgColumn => appUser.id),
+    content: longtext('content').notNull(),
+    authorId: varchar('author_id', { length: 191 }).references((): AnyMySqlColumn => appUser.id),
     status: text('status').notNull(),
-    error: text('error'),
-    createdAt: tz('created_at').notNull().defaultNow(),
+    error: longtext('error'),
+    createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
   },
   (t) => [
     check('message_role_check', inList(t.role, ['system', 'user', 'assistant'])),
@@ -259,25 +271,25 @@ export const message = pgTable(
   ],
 )
 
-export const messageAttachment = pgTable(
+export const messageAttachment = mysqlTable(
   'message_attachment',
   {
-    messageId: text('message_id').notNull().references((): AnyPgColumn => message.id, { onDelete: 'cascade' }),
-    fileId: text('file_id').notNull().references((): AnyPgColumn => fileObject.id),
+    messageId: varchar('message_id', { length: 191 }).notNull().references((): AnyMySqlColumn => message.id, { onDelete: 'cascade' }),
+    fileId: varchar('file_id', { length: 191 }).notNull().references((): AnyMySqlColumn => fileObject.id),
   },
   (t) => [primaryKey({ columns: [t.messageId, t.fileId] })],
 )
 
 // ── 입력 선택 (파일·참조 대화) ─────────────────────────────────────────────
-export const taskInput = pgTable(
+export const taskInput = mysqlTable(
   'task_input',
   {
-    taskId: text('task_id').notNull().references((): AnyPgColumn => task.id, { onDelete: 'cascade' }),
-    fileId: text('file_id').notNull().references((): AnyPgColumn => fileObject.id),
+    taskId: varchar('task_id', { length: 191 }).notNull().references((): AnyMySqlColumn => task.id, { onDelete: 'cascade' }),
+    fileId: varchar('file_id', { length: 191 }).notNull().references((): AnyMySqlColumn => fileObject.id),
     weight: text('weight').notNull(),
     sortOrder: integer('sort_order').notNull(),
-    selectedBy: text('selected_by').notNull().references((): AnyPgColumn => appUser.id),
-    selectedAt: tz('selected_at').notNull().defaultNow(),
+    selectedBy: varchar('selected_by', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+    selectedAt: tz('selected_at').notNull().default(sql`current_timestamp(6)`),
   },
   (t) => [
     primaryKey({ columns: [t.taskId, t.fileId] }),
@@ -286,18 +298,18 @@ export const taskInput = pgTable(
   ],
 )
 
-export const contextSnapshot = pgTable(
+export const contextSnapshot = mysqlTable(
   'context_snapshot',
   {
-    id: text('id').primaryKey(),
-    sourceTaskId: text('source_task_id').notNull().references((): AnyPgColumn => task.id),
+    id: varchar('id', { length: 191 }).primaryKey(),
+    sourceTaskId: varchar('source_task_id', { length: 191 }).notNull().references((): AnyMySqlColumn => task.id),
     mode: text('mode').notNull(),
-    upToMessageId: text('up_to_message_id').references((): AnyPgColumn => message.id),
-    summaryText: text('summary_text'),
+    upToMessageId: varchar('up_to_message_id', { length: 191 }).references((): AnyMySqlColumn => message.id),
+    summaryText: longtext('summary_text'),
     summarySource: text('summary_source'),
     summaryModel: text('summary_model'),
-    createdBy: text('created_by').notNull().references((): AnyPgColumn => appUser.id),
-    createdAt: tz('created_at').notNull().defaultNow(),
+    createdBy: varchar('created_by', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+    createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
   },
   (t) => [
     check('context_snapshot_mode_check', inList(t.mode, ['full', 'messages', 'summary'])),
@@ -306,27 +318,27 @@ export const contextSnapshot = pgTable(
   ],
 )
 
-export const contextSnapshotMessage = pgTable(
+export const contextSnapshotMessage = mysqlTable(
   'context_snapshot_message',
   {
-    snapshotId: text('snapshot_id').notNull().references((): AnyPgColumn => contextSnapshot.id, { onDelete: 'cascade' }),
-    messageId: text('message_id').notNull().references((): AnyPgColumn => message.id),
+    snapshotId: varchar('snapshot_id', { length: 191 }).notNull().references((): AnyMySqlColumn => contextSnapshot.id, { onDelete: 'cascade' }),
+    messageId: varchar('message_id', { length: 191 }).notNull().references((): AnyMySqlColumn => message.id),
     seq: integer('seq').notNull(),
   },
   (t) => [primaryKey({ columns: [t.snapshotId, t.messageId] })],
 )
 
-export const conversationInput = pgTable(
+export const conversationInput = mysqlTable(
   'conversation_input',
   {
-    id: text('id').primaryKey(),
-    taskId: text('task_id').notNull().references((): AnyPgColumn => task.id, { onDelete: 'cascade' }),
-    sourceTaskId: text('source_task_id').notNull().references((): AnyPgColumn => task.id),
+    id: varchar('id', { length: 191 }).primaryKey(),
+    taskId: varchar('task_id', { length: 191 }).notNull().references((): AnyMySqlColumn => task.id, { onDelete: 'cascade' }),
+    sourceTaskId: varchar('source_task_id', { length: 191 }).notNull().references((): AnyMySqlColumn => task.id),
     weight: text('weight').notNull(),
     mode: text('mode').notNull(),
-    snapshotId: text('snapshot_id').notNull().references((): AnyPgColumn => contextSnapshot.id),
-    selectedBy: text('selected_by').notNull().references((): AnyPgColumn => appUser.id),
-    selectedAt: tz('selected_at').notNull().defaultNow(),
+    snapshotId: varchar('snapshot_id', { length: 191 }).notNull().references((): AnyMySqlColumn => contextSnapshot.id),
+    selectedBy: varchar('selected_by', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+    selectedAt: tz('selected_at').notNull().default(sql`current_timestamp(6)`),
   },
   (t) => [
     check('conversation_input_weight_check', inList(t.weight, ['main', 'reference'])),
@@ -338,30 +350,31 @@ export const conversationInput = pgTable(
 )
 
 // ── 요청 기록 ─────────────────────────────────────────────────────────────
-export const chatRequest = pgTable(
+export const chatRequest = mysqlTable(
   'chat_request',
   {
-    id: text('id').primaryKey(),
-    threadId: text('thread_id').notNull().references((): AnyPgColumn => thread.id),
-    userMessageId: text('user_message_id').notNull().references((): AnyPgColumn => message.id),
-    replyMessageId: text('reply_message_id')
+    id: varchar('id', { length: 191 }).primaryKey(),
+    threadId: varchar('thread_id', { length: 191 }).notNull().references((): AnyMySqlColumn => thread.id),
+    userMessageId: varchar('user_message_id', { length: 191 }).notNull().references((): AnyMySqlColumn => message.id),
+    replyMessageId: varchar('reply_message_id', { length: 191 })
       .notNull()
       .unique('chat_request_reply_message_id_key')
-      .references((): AnyPgColumn => message.id),
-    requestedBy: text('requested_by').notNull().references((): AnyPgColumn => appUser.id),
-    retryOf: text('retry_of').references((): AnyPgColumn => chatRequest.id),
+      .references((): AnyMySqlColumn => message.id),
+    requestedBy: varchar('requested_by', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+    retryOf: varchar('retry_of', { length: 191 }).references((): AnyMySqlColumn => chatRequest.id),
     status: text('status').notNull(),
-    idempotencyKey: text('idempotency_key'),
+    activeThreadId: varchar('active_thread_id', { length: 191 }).generatedAlwaysAs(() => sql`case when status in ('pending', 'streaming') then thread_id else null end`, { mode: 'stored' }),
+    idempotencyKey: varchar('idempotency_key', { length: 191 }),
     phase: text('phase'),
     provider: text('provider').notNull(),
     transport: text('transport').notNull(),
     model: text('model').notNull(),
     bytes: integer('bytes').notNull(),
     limitBytes: integer('limit_bytes').notNull(),
-    error: text('error'),
-    snapshot: jsonb('snapshot'),
+    error: longtext('error'),
+    snapshot: jsonObject('snapshot'),
     leaseUntil: tz('lease_until'),
-    createdAt: tz('created_at').notNull().defaultNow(),
+    createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
     finishedAt: tz('finished_at'),
   },
   (t) => [
@@ -371,30 +384,30 @@ export const chatRequest = pgTable(
     ),
     check('chat_request_provider_check', inList(t.provider, ['mock', 'live'])),
     check('chat_request_transport_check', inList(t.transport, ['inline', 'openwebui'])),
-    uniqueIndex('chat_request_one_active').on(t.threadId).where(sql`${t.status} in ('pending', 'streaming')`),
+    uniqueIndex('chat_request_one_active').on(t.activeThreadId),
     unique('chat_request_thread_id_idempotency_key_key').on(t.threadId, t.idempotencyKey),
   ],
 )
 
-export const chatRequestInput = pgTable(
+export const chatRequestInput = mysqlTable(
   'chat_request_input',
   {
-    requestId: text('request_id').notNull().references((): AnyPgColumn => chatRequest.id, { onDelete: 'cascade' }),
+    requestId: varchar('request_id', { length: 191 }).notNull().references((): AnyMySqlColumn => chatRequest.id, { onDelete: 'cascade' }),
     seq: integer('seq').notNull(),
     kind: text('kind').notNull(),
     weight: text('weight').notNull(),
-    fileId: text('file_id').references((): AnyPgColumn => fileObject.id),
+    fileId: varchar('file_id', { length: 191 }).references((): AnyMySqlColumn => fileObject.id),
     fileVersion: integer('file_version'),
     sourceLabel: text('source_label'),
     oneShot: boolean('one_shot').notNull().default(false),
     delivery: text('delivery'),
     remoteId: text('remote_id'),
-    sourceTaskId: text('source_task_id').references((): AnyPgColumn => task.id),
-    snapshotId: text('snapshot_id').references((): AnyPgColumn => contextSnapshot.id),
+    sourceTaskId: varchar('source_task_id', { length: 191 }).references((): AnyMySqlColumn => task.id),
+    snapshotId: varchar('snapshot_id', { length: 191 }).references((): AnyMySqlColumn => contextSnapshot.id),
     mode: text('mode'),
     messageCount: integer('message_count'),
     bytes: integer('bytes').notNull().default(0),
-    error: text('error'),
+    error: longtext('error'),
   },
   (t) => [
     primaryKey({ columns: [t.requestId, t.seq] }),
@@ -407,37 +420,37 @@ export const chatRequestInput = pgTable(
   ],
 )
 
-export const fileRemoteRef = pgTable(
+export const fileRemoteRef = mysqlTable(
   'file_remote_ref',
   {
-    fileId: text('file_id').notNull().references((): AnyPgColumn => fileObject.id, { onDelete: 'cascade' }),
-    scopeHash: text('scope_hash').notNull(),
+    fileId: varchar('file_id', { length: 191 }).notNull().references((): AnyMySqlColumn => fileObject.id, { onDelete: 'cascade' }),
+    scopeHash: varchar('scope_hash', { length: 191 }).notNull(),
     remoteId: text('remote_id').notNull(),
-    uploadedAt: tz('uploaded_at').notNull().defaultNow(),
+    uploadedAt: tz('uploaded_at').notNull().default(sql`current_timestamp(6)`),
   },
   (t) => [primaryKey({ columns: [t.fileId, t.scopeHash] })],
 )
 
 // ── 체크리스트·노트·SR 결과·활동·알림·설정 ─────────────────────────────────
-export const checklistItem = pgTable('checklist_item', {
-  id: text('id').primaryKey(),
-  taskId: text('task_id').notNull().references((): AnyPgColumn => task.id, { onDelete: 'cascade' }),
-  templateItemId: text('template_item_id').references((): AnyPgColumn => assistantChecklistTemplate.id),
+export const checklistItem = mysqlTable('checklist_item', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  taskId: varchar('task_id', { length: 191 }).notNull().references((): AnyMySqlColumn => task.id, { onDelete: 'cascade' }),
+  templateItemId: varchar('template_item_id', { length: 191 }),
   sortOrder: integer('sort_order').notNull(),
   label: text('label').notNull(),
   required: boolean('required').notNull().default(false),
   checked: boolean('checked').notNull().default(false),
-  checkedBy: text('checked_by').references((): AnyPgColumn => appUser.id),
+  checkedBy: varchar('checked_by', { length: 191 }).references((): AnyMySqlColumn => appUser.id),
   checkedAt: tz('checked_at'),
-})
+}, (t) => [foreignKey({ name: 'checklist_item_template_item_id_fk', columns: [t.templateItemId], foreignColumns: [assistantChecklistTemplate.id] })])
 
-export const checklistReview = pgTable(
+export const checklistReview = mysqlTable(
   'checklist_review',
   {
-    id: text('id').primaryKey(),
-    taskId: text('task_id').notNull().references((): AnyPgColumn => task.id, { onDelete: 'cascade' }),
-    byUser: text('by_user').notNull().references((): AnyPgColumn => appUser.id),
-    at: tz('at').notNull().defaultNow(),
+    id: varchar('id', { length: 191 }).primaryKey(),
+    taskId: varchar('task_id', { length: 191 }).notNull().references((): AnyMySqlColumn => task.id, { onDelete: 'cascade' }),
+    byUser: varchar('by_user', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+    at: tz('at').notNull().default(sql`current_timestamp(6)`),
     met: integer('met').notNull(),
     total: integer('total').notNull(),
     source: text('source').notNull(),
@@ -445,105 +458,105 @@ export const checklistReview = pgTable(
   (t) => [check('checklist_review_source_check', inList(t.source, ['ai', 'rule']))],
 )
 
-export const checklistReviewItem = pgTable(
+export const checklistReviewItem = mysqlTable(
   'checklist_review_item',
   {
-    reviewId: text('review_id').notNull().references((): AnyPgColumn => checklistReview.id, { onDelete: 'cascade' }),
-    itemId: text('item_id').notNull().references((): AnyPgColumn => checklistItem.id, { onDelete: 'cascade' }),
+    reviewId: varchar('review_id', { length: 191 }).notNull().references((): AnyMySqlColumn => checklistReview.id, { onDelete: 'cascade' }),
+    itemId: varchar('item_id', { length: 191 }).notNull().references((): AnyMySqlColumn => checklistItem.id, { onDelete: 'cascade' }),
     met: boolean('met').notNull(),
     note: text('note').notNull().default(''),
   },
   (t) => [primaryKey({ columns: [t.reviewId, t.itemId] })],
 )
 
-export const taskFeedback = pgTable(
+export const taskFeedback = mysqlTable(
   'task_feedback',
   {
-    taskId: text('task_id').primaryKey().references((): AnyPgColumn => task.id, { onDelete: 'cascade' }),
+    taskId: varchar('task_id', { length: 191 }).primaryKey().references((): AnyMySqlColumn => task.id, { onDelete: 'cascade' }),
     rating: integer('rating').notNull(),
     comment: text('comment').notNull().default(''),
-    byUser: text('by_user').notNull().references((): AnyPgColumn => appUser.id),
-    at: tz('at').notNull().defaultNow(),
+    byUser: varchar('by_user', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+    at: tz('at').notNull().default(sql`current_timestamp(6)`),
   },
   (t) => [check('task_feedback_rating_check', sql`${t.rating} between 1 and 5`)],
 )
 
-export const note = pgTable('note', {
-  id: text('id').primaryKey(),
-  taskId: text('task_id').notNull().references((): AnyPgColumn => task.id, { onDelete: 'cascade' }),
-  authorId: text('author_id').notNull().references((): AnyPgColumn => appUser.id),
-  content: text('content').notNull(),
-  createdAt: tz('created_at').notNull().defaultNow(),
+export const note = mysqlTable('note', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  taskId: varchar('task_id', { length: 191 }).notNull().references((): AnyMySqlColumn => task.id, { onDelete: 'cascade' }),
+  authorId: varchar('author_id', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+  content: longtext('content').notNull(),
+  createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
 })
 
-export const noteAttachment = pgTable(
+export const noteAttachment = mysqlTable(
   'note_attachment',
   {
-    noteId: text('note_id').notNull().references((): AnyPgColumn => note.id, { onDelete: 'cascade' }),
-    fileId: text('file_id').notNull().references((): AnyPgColumn => fileObject.id),
+    noteId: varchar('note_id', { length: 191 }).notNull().references((): AnyMySqlColumn => note.id, { onDelete: 'cascade' }),
+    fileId: varchar('file_id', { length: 191 }).notNull().references((): AnyMySqlColumn => fileObject.id),
   },
   (t) => [primaryKey({ columns: [t.noteId, t.fileId] })],
 )
 
-export const sharedResult = pgTable('shared_result', {
-  id: text('id').primaryKey(),
-  srId: text('sr_id').notNull().references((): AnyPgColumn => serviceRequest.id, { onDelete: 'cascade' }),
-  taskId: text('task_id').references((): AnyPgColumn => task.id),
-  text: text('text').notNull().default(''),
-  byUser: text('by_user').notNull().references((): AnyPgColumn => appUser.id),
-  at: tz('at').notNull().defaultNow(),
+export const sharedResult = mysqlTable('shared_result', {
+  id: varchar('id', { length: 191 }).primaryKey(),
+  srId: varchar('sr_id', { length: 191 }).notNull().references((): AnyMySqlColumn => serviceRequest.id, { onDelete: 'cascade' }),
+  taskId: varchar('task_id', { length: 191 }).references((): AnyMySqlColumn => task.id),
+  text: longtext('text').notNull().default(''),
+  byUser: varchar('by_user', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+  at: tz('at').notNull().default(sql`current_timestamp(6)`),
 })
 
-export const sharedResultFile = pgTable(
+export const sharedResultFile = mysqlTable(
   'shared_result_file',
   {
-    resultId: text('result_id').notNull().references((): AnyPgColumn => sharedResult.id, { onDelete: 'cascade' }),
-    fileId: text('file_id').notNull().references((): AnyPgColumn => fileObject.id),
+    resultId: varchar('result_id', { length: 191 }).notNull().references((): AnyMySqlColumn => sharedResult.id, { onDelete: 'cascade' }),
+    fileId: varchar('file_id', { length: 191 }).notNull().references((): AnyMySqlColumn => fileObject.id),
   },
   (t) => [primaryKey({ columns: [t.resultId, t.fileId] })],
 )
 
-export const activityLog = pgTable(
+export const activityLog = mysqlTable(
   'activity_log',
   {
-    id: text('id').primaryKey(),
+    id: varchar('id', { length: 191 }).primaryKey(),
     type: text('type').notNull(),
-    userId: text('user_id').notNull().references((): AnyPgColumn => appUser.id),
-    taskId: text('task_id').references((): AnyPgColumn => task.id, { onDelete: 'set null' }),
-    assistantId: text('assistant_id').references((): AnyPgColumn => assistant.id, { onDelete: 'set null' }),
-    srId: text('sr_id').references((): AnyPgColumn => serviceRequest.id, { onDelete: 'set null' }),
-    payload: jsonb('payload').notNull().default(sql`'{}'`),
-    at: tz('at').notNull().defaultNow(),
+    userId: varchar('user_id', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
+    taskId: varchar('task_id', { length: 191 }).references((): AnyMySqlColumn => task.id, { onDelete: 'set null' }),
+    assistantId: varchar('assistant_id', { length: 191 }).references((): AnyMySqlColumn => assistant.id, { onDelete: 'set null' }),
+    srId: varchar('sr_id', { length: 191 }).references((): AnyMySqlColumn => serviceRequest.id, { onDelete: 'set null' }),
+    payload: jsonObject('payload').notNull().default(sql`'{}'`),
+    at: tz('at').notNull().default(sql`current_timestamp(6)`),
   },
   (t) => [index('activity_by_task').on(t.taskId, t.at)],
 )
 
-export const notification = pgTable(
+export const notification = mysqlTable(
   'notification',
   {
-    id: text('id').primaryKey(),
-    userId: text('user_id').notNull().references((): AnyPgColumn => appUser.id),
+    id: varchar('id', { length: 191 }).primaryKey(),
+    userId: varchar('user_id', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
     title: text('title').notNull(),
-    body: text('body').notNull().default(''),
+    body: longtext('body').notNull().default(''),
     link: text('link').notNull(),
-    at: tz('at').notNull().defaultNow(),
+    at: tz('at').notNull().default(sql`current_timestamp(6)`),
     readAt: tz('read_at'),
   },
-  (t) => [index('notification_unread').on(t.userId).where(sql`${t.readAt} is null`)],
+  (t) => [index('notification_unread').on(t.userId, t.readAt)],
 )
 
-export const appSetting = pgTable('app_setting', {
-  key: text('key').primaryKey(),
-  value: jsonb('value').notNull(),
+export const appSetting = mysqlTable('app_setting', {
+  key: varchar('key', { length: 191 }).primaryKey(),
+  value: jsonObject('value').notNull(),
 })
 
 // ── 인증 세션 (S0 추가 — 서버 세션, architecture §5) ───────────────────────
-export const appSession = pgTable(
+export const appSession = mysqlTable(
   'app_session',
   {
-    id: text('id').primaryKey(),
-    userId: text('user_id').notNull().references((): AnyPgColumn => appUser.id, { onDelete: 'cascade' }),
-    createdAt: tz('created_at').notNull().defaultNow(),
+    id: varchar('id', { length: 191 }).primaryKey(),
+    userId: varchar('user_id', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id, { onDelete: 'cascade' }),
+    createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
     expiresAt: tz('expires_at').notNull(),
   },
   (t) => [index('app_session_user').on(t.userId)],
