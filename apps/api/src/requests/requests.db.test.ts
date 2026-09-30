@@ -2,9 +2,11 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
-import { drizzle } from 'drizzle-orm/postgres-js'
+import { drizzle } from 'drizzle-orm/mysql2'
+import type { Db } from '../db/db.module.js'
+import type { Pool } from 'mysql2/promise'
+import { createPool } from '../db/connection.js'
 import { eq } from 'drizzle-orm'
-import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { OpenAICompatibleProvider, type ChatProvider } from '@mes/llm'
 import { loadConfig } from '../config/config.js'
@@ -22,8 +24,8 @@ import { toLlmSettings } from '../llm/presets.js'
 describe('RequestService DB', () => {
   let temp: Awaited<ReturnType<typeof createTempDb>>
   let root: string
-  let client: postgres.Sql
-  let db: ReturnType<typeof drizzle>
+  let client: Pool
+  let db: Db
   let tasks: DbTasksService
   let service: RequestsService
   let assistantId: string
@@ -35,7 +37,7 @@ describe('RequestService DB', () => {
     temp = await createTempDb('requests')
     root = await mkdtemp(join(tmpdir(), 'mes-request-'))
     await runMigrations(temp.url)
-    client = postgres(temp.url)
+    client = createPool(temp.url)
     db = drizzle(client)
     await seedCatalog(db)
     await db.insert(appUser).values({ id: 'member', name: 'Member', initials: 'M', color: '#123456' })
@@ -54,6 +56,20 @@ describe('RequestService DB', () => {
     expect((await tasks.messages(thread.id)).map((item) => [item.role, item.status])).toEqual([['user', 'done'], ['assistant', 'done']])
     expect(JSON.stringify(await service.snapshot(started.id))).not.toMatch(/apiKey|remoteId/)
     expect((await db.select().from(chatRequest).where(eq(chatRequest.id, started.id)))[0]?.replyMessageId).toBe(started.replyMessageId)
+  })
+
+  it('rejects idempotency keys beyond the column limit for starts and retries', async () => {
+    const { thread } = await tasks.create('member', { assistantId })
+    await expect(service.start('member', thread.id, { content: 'test' }, 'x'.repeat(192))).rejects.toMatchObject({ status: 400 })
+    const run = await service.start('member', thread.id, { content: 'test' }, 'valid-key')
+    await run.done
+    await expect(service.retry('member', run.id, {}, 'x'.repeat(192))).rejects.toMatchObject({ status: 400 })
+  })
+
+  it('rejects a missing attachment before writing request rows', async () => {
+    const { thread } = await tasks.create('member', { assistantId })
+    await expect(service.start('member', thread.id, { content: 'test', attachmentIds: ['missing-file'] }, 'missing-attachment')).rejects.toMatchObject({ status: 400 })
+    expect(await db.select().from(chatRequest).where(eq(chatRequest.threadId, thread.id))).toEqual([])
   })
 
   it('hides a conversation with request history while preserving its audit rows', async () => {

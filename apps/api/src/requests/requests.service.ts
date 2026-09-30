@@ -5,6 +5,7 @@ import { buildChatRequest, createProvider, suggestTitle, type ChatProvider } fro
 import type { LlmSettings, Message, RequestInfo, RequestInput, ServiceRequest, Thread } from '@mes/domain'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
+import { isDuplicateKey } from '../db/errors.js'
 import { activityLog, appSetting, assistant, chatRequest, chatRequestInput, fileObject, message, messageAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { DbLlmPorts } from '../llm/dbLlmPorts.js'
@@ -36,7 +37,6 @@ const publicInfo = (info: RequestInfo | undefined) => info ? { ...info, inputs: 
   const { remoteId: _remoteId, ...visible } = item
   return visible
 }) } : undefined
-const isUnique = (error: unknown) => !!error && typeof error === 'object' && 'code' in error && error.code === '23505'
 
 @Injectable()
 export class RequestsService implements OnModuleDestroy {
@@ -146,6 +146,7 @@ export class RequestsService implements OnModuleDestroy {
 
   async start(actor: string, threadId: string, body: StartBody, key: string): Promise<StartedRequest> {
     if (!key?.trim()) throw new BadRequestException('Idempotency-Key가 필요합니다')
+    if ([...key].length > 191) throw new BadRequestException('Idempotency-Key가 너무 깁니다')
     const attachments = [...new Set(body.attachmentIds ?? [])]
     const oneShot = [...new Set(body.oneShotFileIds ?? [])]
     if ((!body.content?.trim() && !attachments.length) || oneShot.some((id) => !attachments.includes(id))) throw new BadRequestException('요청 내용 또는 첨부가 올바르지 않습니다')
@@ -172,7 +173,7 @@ export class RequestsService implements OnModuleDestroy {
         if (attachments.length) await tx.insert(messageAttachment).values(attachments.map((fileId) => ({ messageId: userMessageId, fileId })))
         if (owner.taskId) {
           const selected = attachments.filter((fileId) => !oneShot.includes(fileId))
-          for (const [index, fileId] of selected.entries()) await tx.insert(taskInput).values({ taskId: owner.taskId, fileId, weight: 'reference', sortOrder: index, selectedBy: actor }).onConflictDoNothing()
+          for (const [index, fileId] of selected.entries()) await tx.insert(taskInput).values({ taskId: owner.taskId, fileId, weight: 'reference', sortOrder: index, selectedBy: actor }).onDuplicateKeyUpdate({ set: { taskId: owner.taskId } })
           await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, owner.taskId))
         }
         const hasSelectedFiles = owner.taskId ? !!(await tx.select({ fileId: taskInput.fileId }).from(taskInput).where(eq(taskInput.taskId, owner.taskId)).limit(1)).length : false
@@ -189,7 +190,7 @@ export class RequestsService implements OnModuleDestroy {
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         return { id: requestId, replyMessageId, userMessageId, deadlineAt }
       })
-    } catch (error) { if (isUnique(error)) throw new ConflictException({ code: 'REQUEST_ACTIVE' }); throw error }
+    } catch (error) { if (isDuplicateKey(error)) throw new ConflictException({ code: 'REQUEST_ACTIVE' }); throw error }
     if (acquired.duplicate) return this.replay(await this.getRow(acquired.id))
     this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId } })
     const done = this.run(acquired.id, oneShot, [], acquired.deadlineAt!)
@@ -198,6 +199,7 @@ export class RequestsService implements OnModuleDestroy {
 
   async retry(actor: string, requestId: string, body: RetryBody, key: string): Promise<StartedRequest> {
     if (!key?.trim()) throw new BadRequestException('Idempotency-Key가 필요합니다')
+    if ([...key].length > 191) throw new BadRequestException('Idempotency-Key가 너무 깁니다')
     const original = await this.getRow(requestId)
     const duplicate = await this.db.select().from(chatRequest).where(and(eq(chatRequest.threadId, original.threadId), eq(chatRequest.idempotencyKey, key)))
     if (duplicate[0]) return this.replay(duplicate[0])
@@ -262,9 +264,9 @@ export class RequestsService implements OnModuleDestroy {
 
   private async saveBuilt(id: string, info: RequestInfo): Promise<boolean> {
     return this.db.transaction(async (tx) => {
-      const [updated] = await tx.update(chatRequest).set({ provider: info.provider, transport: info.transport, model: info.model,
-        bytes: info.bytes, limitBytes: info.limitBytes, phase: null }).where(and(eq(chatRequest.id, id), eq(chatRequest.status, 'pending'))).returning({ id: chatRequest.id })
-      if (!updated) return false
+      const updated = await tx.update(chatRequest).set({ provider: info.provider, transport: info.transport, model: info.model,
+        bytes: info.bytes, limitBytes: info.limitBytes, phase: null }).where(and(eq(chatRequest.id, id), eq(chatRequest.status, 'pending')))
+      if (!updated[0].affectedRows) return false
       if (info.inputs.length) await tx.insert(chatRequestInput).values(info.inputs.map((item: RequestInput, seq) => ({ requestId: id, seq, kind: item.kind, weight: item.weight,
         fileId: item.kind === 'file' ? item.fileId : null, fileVersion: item.kind === 'file' ? item.version : null,
         sourceLabel: item.kind === 'file' ? `${item.name}${item.source ? ` · ${item.source}` : ''}` : item.code, oneShot: item.kind === 'file' ? !!item.oneShot : false,
@@ -281,12 +283,12 @@ export class RequestsService implements OnModuleDestroy {
     const row = await this.getRow(id)
     try { return await this.db.transaction(async (tx) => {
       const owner = await this.lockedOwner(tx, row.threadId).catch((e) => { if (e instanceof ConflictException && status !== 'succeeded') return undefined; throw e })
-      const [updated] = await tx.update(chatRequest).set({ status, error: error ?? null, finishedAt: new Date(), phase: null,
-        snapshot: snapshot ?? row.snapshot, leaseUntil: null }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE), ...(expired ? [lt(chatRequest.leaseUntil, sql`now()`)] : []))).returning({ id: chatRequest.id })
-      if (!updated) return false
-      const [reply] = await tx.update(message).set({ status: status === 'succeeded' ? 'done' : 'error', error: error ?? null,
-        ...(content !== undefined ? { content: content || (error ? `⚠️ ${error}` : '') } : {}) }).where(and(eq(message.id, row.replyMessageId), eq(message.status, 'streaming'))).returning({ id: message.id })
-      if (!reply) throw new FencedTransition()
+      const updated = await tx.update(chatRequest).set({ status, error: error ?? null, finishedAt: new Date(), phase: null,
+        snapshot: snapshot ?? row.snapshot, leaseUntil: null }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE), ...(expired ? [lt(chatRequest.leaseUntil, sql`current_timestamp(6)`)] : [])))
+      if (!updated[0].affectedRows) return false
+      const reply = await tx.update(message).set({ status: status === 'succeeded' ? 'done' : 'error', error: error ?? null,
+        ...(content !== undefined ? { content: content || (error ? `⚠️ ${error}` : '') } : {}) }).where(and(eq(message.id, row.replyMessageId), eq(message.status, 'streaming')))
+      if (!reply[0].affectedRows) throw new FencedTransition()
       await tx.insert(activityLog).values({ id: randomUUID(), type: `request.${status === 'succeeded' ? 'completed' : status === 'cancelled' ? 'cancelled' : 'failed'}`,
         userId: row.requestedBy, taskId: owner?.taskId ?? null, srId: owner?.srId ?? null, payload: { requestId: id, bytes: info?.bytes ?? row.bytes, model: info?.model ?? row.model } })
       return true
@@ -303,7 +305,7 @@ export class RequestsService implements OnModuleDestroy {
   }
 
   async sweep(): Promise<number> {
-    const expired = await this.db.select({ id: chatRequest.id }).from(chatRequest).where(and(inArray(chatRequest.status, ACTIVE), lt(chatRequest.leaseUntil, sql`now()`)))
+    const expired = await this.db.select({ id: chatRequest.id }).from(chatRequest).where(and(inArray(chatRequest.status, ACTIVE), lt(chatRequest.leaseUntil, sql`current_timestamp(6)`)))
     let count = 0
     for (const row of expired) if (await this.transition(row.id, 'interrupted', STALE, undefined, undefined, undefined, true)) {
       count++
@@ -334,8 +336,8 @@ export class RequestsService implements OnModuleDestroy {
     }, ms) }
     arm(Math.max(1, deadlineAt - Date.now()))
     const lease = setInterval(() => { void this.db.update(chatRequest).set({ leaseUntil: new Date(Date.now() + this.config.request.leaseMs) })
-      .where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE))).returning({ id: chatRequest.id })
-      .then((rows) => { if (!rows.length) controller.abort('lost') }).catch(() => controller.abort('lost')) }, this.config.request.keepaliveMs)
+      .where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
+      .then((result) => { if (!result[0].affectedRows) controller.abort('lost') }).catch(() => controller.abort('lost')) }, this.config.request.keepaliveMs)
     lease.unref?.()
     let acc = '', info: RequestInfo | undefined, snapshot: unknown, snapshotBytes: Buffer | undefined, failure: string | undefined
     let dirty = false
@@ -344,8 +346,8 @@ export class RequestsService implements OnModuleDestroy {
       if (!dirty || !replyId || controller.signal.aborted) return
       dirty = false
       const content = acc
-      const [updated] = await this.db.update(message).set({ content }).where(and(eq(message.id, replyId), eq(message.status, 'streaming'))).returning({ id: message.id })
-      if (!updated) controller.abort('lost')
+      const updated = await this.db.update(message).set({ content }).where(and(eq(message.id, replyId), eq(message.status, 'streaming')))
+      if (!updated[0].affectedRows) controller.abort('lost')
     }
     const flushTimer = setInterval(() => { void flush().catch(() => controller.abort('lost')) }, this.config.request.flushMs)
     flushTimer.unref?.()
@@ -397,8 +399,8 @@ export class RequestsService implements OnModuleDestroy {
         snapshot = { storageKey: key }
       }
       if (controller.signal.aborted) return
-      const [streaming] = await this.db.update(chatRequest).set({ status: 'streaming' }).where(and(eq(chatRequest.id, id), eq(chatRequest.status, 'pending'))).returning({ id: chatRequest.id })
-      if (!streaming) { controller.abort('lost'); return }
+      const streaming = await this.db.update(chatRequest).set({ status: 'streaming' }).where(and(eq(chatRequest.id, id), eq(chatRequest.status, 'pending')))
+      if (!streaming[0].affectedRows) { controller.abort('lost'); return }
       const iterator = this.provider.stream({ model: built.model, messages: built.messages, files: built.files, meta: built.meta, signal: controller.signal })[Symbol.asyncIterator]()
       for (;;) {
         const chunk = await Promise.race([iterator.next(), deadline, stopped])
