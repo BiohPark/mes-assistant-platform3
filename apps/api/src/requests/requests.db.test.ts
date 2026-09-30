@@ -116,6 +116,98 @@ describe('RequestService DB', () => {
     for (const item of result) if (item.status === 'fulfilled') await item.value.done
   })
 
+  it('keeps start and retry lease times on the DB clock when the app clock differs', async () => {
+    const failing: ChatProvider = { ...provider, async *stream() { yield { type: 'error', message: '모델 오류' } } }
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root })
+    const runner = new RequestsService(db, config, failing)
+    const { thread } = await tasks.create('member', { assistantId })
+    const actualNow = Date.now.bind(Date)
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => actualNow() + 3_600_000)
+    try {
+      const first = await runner.start('member', thread.id, { content: '첫 요청' }, 'db-clock-start')
+      const [startTime] = await client.query<import('mysql2').RowDataPacket[]>('select current_timestamp(6) as now')
+      const [started] = await db.select({ leaseUntil: chatRequest.leaseUntil }).from(chatRequest).where(eq(chatRequest.id, first.id))
+      expect(Math.abs(started!.leaseUntil!.getTime() - (startTime[0]!.now as Date).getTime() - config.request.leaseMs)).toBeLessThan(2000)
+      await first.done
+      const retried = await runner.retry('member', first.id, {}, 'db-clock-retry')
+      const [retryTime] = await client.query<import('mysql2').RowDataPacket[]>('select current_timestamp(6) as now')
+      const [retryRow] = await db.select({ leaseUntil: chatRequest.leaseUntil }).from(chatRequest).where(eq(chatRequest.id, retried.id))
+      expect(Math.abs(retryRow!.leaseUntil!.getTime() - (retryTime[0]!.now as Date).getTime() - config.request.leaseMs)).toBeLessThan(2000)
+      await retried.done
+    } finally { nowSpy.mockRestore() }
+  })
+
+  it('renews a live lease on the DB clock when the app clock differs', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const waiting: ChatProvider = { ...provider, async *stream() { await gate; yield { type: 'done' } } }
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
+      REQUEST_KEEPALIVE_MS: '20' })
+    const runner = new RequestsService(db, config, waiting)
+    const { thread } = await tasks.create('member', { assistantId })
+    const actualNow = Date.now.bind(Date)
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => actualNow() + 3_600_000)
+    let run: Awaited<ReturnType<RequestsService['start']>> | undefined
+    try {
+      run = await runner.start('member', thread.id, { content: '갱신' }, 'db-clock-renew')
+      await db.update(chatRequest).set({ leaseUntil: new Date(0) }).where(eq(chatRequest.id, run.id))
+      let renewed: Date | null = null
+      for (let i = 0; i < 100; i++) {
+        const [row] = await db.select({ leaseUntil: chatRequest.leaseUntil }).from(chatRequest).where(eq(chatRequest.id, run.id))
+        renewed = row!.leaseUntil
+        if (renewed && renewed.getTime() > 0) break
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      const [time] = await client.query<import('mysql2').RowDataPacket[]>('select current_timestamp(6) as now')
+      expect(Math.abs(renewed!.getTime() - (time[0]!.now as Date).getTime() - config.request.leaseMs)).toBeLessThan(2000)
+    } finally { release(); if (run) await run.done; nowSpy.mockRestore() }
+  })
+
+  it('preserves unrelated duplicate-key errors on start and retry', async () => {
+    const { thread } = await tasks.create('member', { assistantId })
+    const duplicate = Object.assign(new Error('other unique key'), { errno: 1062 })
+    const transactionSpy = vi.spyOn(db, 'transaction').mockRejectedValueOnce(duplicate)
+    try { await expect(service.start('member', thread.id, { content: '첫 요청' }, 'other-unique-start')).rejects.toBe(duplicate) }
+    finally { transactionSpy.mockRestore() }
+    const failing: ChatProvider = { ...provider, async *stream() { yield { type: 'error', message: '모델 오류' } } }
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), failing)
+    const first = await runner.start('member', thread.id, { content: '재시도' }, 'failed-for-unique')
+    await first.done
+    const retrySpy = vi.spyOn(db, 'transaction').mockRejectedValueOnce(duplicate)
+    try { await expect(service.retry('member', first.id, {}, 'other-unique-retry')).rejects.toBe(duplicate) }
+    finally { retrySpy.mockRestore() }
+  })
+
+  it('reports an active request after duplicate-key errors on start and retry', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const waiting: ChatProvider = { ...provider, async *stream() { await gate; yield { type: 'done' } } }
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), waiting)
+    const { thread } = await tasks.create('member', { assistantId })
+    const duplicate = Object.assign(new Error('active unique key'), { errno: 1062 })
+    const first = await runner.start('member', thread.id, { content: '진행 중' }, 'active-first')
+    try {
+      const startSpy = vi.spyOn(db, 'transaction').mockRejectedValueOnce(duplicate)
+      try { await expect(service.start('member', thread.id, { content: '다음' }, 'active-second')).rejects.toMatchObject({ status: 409, response: { code: 'REQUEST_ACTIVE' } }) }
+      finally { startSpy.mockRestore() }
+    } finally { release(); await first.done }
+
+    const failing: ChatProvider = { ...provider, async *stream() { yield { type: 'error', message: '모델 오류' } } }
+    const failedRunner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), failing)
+    const failed = await failedRunner.start('member', thread.id, { content: '실패' }, 'failed-active-test')
+    await failed.done
+    let releaseRetry!: () => void
+    const retryGate = new Promise<void>((resolve) => { releaseRetry = resolve })
+    const retryRunner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }),
+      { ...provider, async *stream() { await retryGate; yield { type: 'done' } } })
+    const active = await retryRunner.retry('member', failed.id, {}, 'active-retry-first')
+    try {
+      const retrySpy = vi.spyOn(db, 'transaction').mockRejectedValueOnce(duplicate)
+      try { await expect(service.retry('member', failed.id, {}, 'active-retry-second')).rejects.toMatchObject({ status: 409, response: { code: 'REQUEST_ACTIVE' } }) }
+      finally { retrySpy.mockRestore() }
+    } finally { releaseRetry(); await active.done }
+  })
+
   it('keeps the active slot until the reply is stored, then releases it', async () => {
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })

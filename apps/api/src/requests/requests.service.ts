@@ -20,6 +20,7 @@ export interface RetryBody { excludeFileIds?: string[]; forceInlineFileIds?: str
 export interface StartedRequest { id: string; replyMessageId: string; userMessageId: string; done: Promise<void> }
 
 const ACTIVE = ['pending', 'streaming']
+const dbLeaseUntil = (ms: number) => sql`timestampadd(microsecond, ${ms * 1000}, current_timestamp(6))`
 const STOPPED = '요청을 중지했습니다.'
 const STALE = '응답이 중단되었습니다 — 요청한 화면이 닫혔거나 연결이 끊겼습니다. 자동으로 다시 보내지 않았습니다.'
 const errorCode = (status: string, error: string | null, bytes: number) => {
@@ -144,6 +145,15 @@ export class RequestsService implements OnModuleDestroy {
     return { id: row.id, replyMessageId: row.replyMessageId, userMessageId: row.userMessageId, done: Promise.resolve() }
   }
 
+  private async hasActiveOrKey(threadId: string, key: string): Promise<boolean> {
+    const [sameKey] = await this.db.select({ id: chatRequest.id }).from(chatRequest)
+      .where(and(eq(chatRequest.threadId, threadId), eq(chatRequest.idempotencyKey, key))).limit(1)
+    if (sameKey) return true
+    const [active] = await this.db.select({ id: chatRequest.id }).from(chatRequest)
+      .where(and(eq(chatRequest.threadId, threadId), inArray(chatRequest.status, ACTIVE))).limit(1)
+    return !!active
+  }
+
   async start(actor: string, threadId: string, body: StartBody, key: string): Promise<StartedRequest> {
     if (!key?.trim()) throw new BadRequestException('Idempotency-Key가 필요합니다')
     if ([...key].length > 191) throw new BadRequestException('Idempotency-Key가 너무 깁니다')
@@ -185,12 +195,15 @@ export class RequestsService implements OnModuleDestroy {
         await tx.insert(chatRequest).values({ id: requestId, threadId, userMessageId, replyMessageId, requestedBy: actor, idempotencyKey: key,
           status: 'pending', provider: this.config.llm.mode, transport: this.config.llm.mode === 'live' && this.config.llm.preset === 'openwebui' ? 'openwebui' : 'inline',
           model: owner.modelId ?? currentTask?.modelId ?? currentAssistant?.modelId ?? this.config.llm.defaultModel ?? 'glm-5.2',
-          bytes: 0, limitBytes, leaseUntil: new Date(Date.now() + this.config.request.leaseMs) })
+          bytes: 0, limitBytes, leaseUntil: dbLeaseUntil(this.config.request.leaseMs) })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'message.sent', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         return { id: requestId, replyMessageId, userMessageId, deadlineAt }
       })
-    } catch (error) { if (isDuplicateKey(error)) throw new ConflictException({ code: 'REQUEST_ACTIVE' }); throw error }
+    } catch (error) {
+      if (isDuplicateKey(error) && await this.hasActiveOrKey(threadId, key)) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
+      throw error
+    }
     if (acquired.duplicate) return this.replay(await this.getRow(acquired.id))
     this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId } })
     const done = this.run(acquired.id, oneShot, [], acquired.deadlineAt!)
@@ -232,9 +245,12 @@ export class RequestsService implements OnModuleDestroy {
       await tx.insert(chatRequest).values({ id, threadId: original.threadId, userMessageId: original.userMessageId, replyMessageId, requestedBy: actor,
         retryOf: original.id, idempotencyKey: key, status: 'pending', provider: this.config.llm.mode,
         transport: this.config.llm.mode === 'live' && this.config.llm.preset === 'openwebui' ? 'openwebui' : 'inline',
-        model: original.model, bytes: 0, limitBytes, leaseUntil: new Date(Date.now() + this.config.request.leaseMs) })
+        model: original.model, bytes: 0, limitBytes, leaseUntil: dbLeaseUntil(this.config.request.leaseMs) })
       await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId: id, retryOf: original.id } })
       return { id, replyMessageId, userMessageId: original.userMessageId, deadlineAt, oneShot: files.map((item) => item.fileId).filter((fileId) => !exclude.includes(fileId) && !selected.some((item) => item.fileId === fileId)) }
+    }).catch(async (error: unknown) => {
+      if (isDuplicateKey(error) && await this.hasActiveOrKey(original.threadId, key)) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
+      throw error
     })
     if (acquired.duplicate) return this.replay(await this.getRow(acquired.id))
     this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId } })
@@ -335,7 +351,7 @@ export class RequestsService implements OnModuleDestroy {
       controller.abort('timeout'); rejectDeadline?.(new Error('응답 시간 초과 — 제한 시간 안에 응답이 오지 않았습니다.'))
     }, ms) }
     arm(Math.max(1, deadlineAt - Date.now()))
-    const lease = setInterval(() => { void this.db.update(chatRequest).set({ leaseUntil: new Date(Date.now() + this.config.request.leaseMs) })
+    const lease = setInterval(() => { void this.db.update(chatRequest).set({ leaseUntil: dbLeaseUntil(this.config.request.leaseMs) })
       .where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
       .then((result) => { if (!result[0].affectedRows) controller.abort('lost') }).catch(() => controller.abort('lost')) }, this.config.request.keepaliveMs)
     lease.unref?.()
