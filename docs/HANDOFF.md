@@ -42,6 +42,8 @@ apps/api/src
   auth/        oidc.service(OIDC RP, PKCE·state·nonce) · session.service(app_session, 토큰 해시) · users.service(첫 로그인 생성·최초 SO)
                guards(SessionGuard 기본 로그인 필수·@Public 예외 → RolesGuard @Roles) · auth.controller(login·callback·logout·me)
   health/      GET /api/health (DB 상태)
+  events/      GET /api/events SSE(메모리 이벤트 버스·재전송 버퍼) · POST /threads/:id/typing · 서비스는 커밋 뒤 발행
+  context/     참조 대화(후보·선택·스냅샷·요약 초안·삭제 보호)
 apps/web/src
   app/         AuthGate(/api/me, 401→SSO) · AppShell(데모 셸) · TopBar(사용자·로그아웃) · LoggedOutPage · router
   features/home/HomePage   S0 빈 허브
@@ -104,6 +106,15 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 
 ## 6. 진행 현황
 
+### 완료 — S3 (2026-10-01, `main` 병합 · 태그 `s3-done`)
+
+- ① 요청 서비스(`s3-request`, 839ed7c): `chat_request` 상태 기계·대화당 진행 중 1건·SSE 스트리밍·중지·재시도·시간 제한·lease·정리·멱등 키·OpenWebUI 파일 전달·요청 기록. 리뷰 11건 반영
+- (사이) DB 엔진 전환 D40(`db-mariadb-done`): PostgreSQL → MariaDB, 계획·매핑 규칙 [db-mariadb-plan.md](next-project/db-mariadb-plan.md)
+- ② 참조 대화(`s3-context`, 8cf6259): 직접 태그 공유 후보·선택 3모드·스냅샷 고정·갱신·요약 초안(보조 호출)·삭제 보호·새 대화 참조 지정. 결함 수정: 메시지 순서는 `seq`(같은 밀리초의 질문·답변), 삭제 시 자기 참조 입력 정리. 데모 테스트 10건 대응
+- ③ 추정·이벤트·presence(`s3-tray-events`): 추정 API(전송과 같은 조립 함수·동일성 계약 — 빈 초안·첨부 순서까지), `/api/events` SSE(커서·5분/1000건 재전송·resync·15 s 하트비트·배압 시 단절), typing presence(5 s), 트레이·한도 초과 차단·다른 PC 진행 표시·폴링 제거. 리뷰 6건 반영
+- 검증(③ 기준): 단위 256 · DB 101(MariaDB 11.8·10.4) · E2E mock 17·live 17 · CI 7잡 녹색. 대응표 S3 21행 전부 ✅(남은 ⬜ 35)
+- **이월**: SSE 프록시·다중 인스턴스(KI-8, S5) · 업로드 뒤 한도 초과로 막힌 파일은 자료함에 남음(사람이 정리) · 사내 모델 도구 호출 지원 확인(S4-10)
+
 ### 완료 — S2 (2026-09-28, `main` 병합 · 태그 `s2-done`)
 
 - ① 카탈로그: 코드 테이블(D36)·BO 역할(D37)·개발 시드·카탈로그 읽기 API·허브 카드(검색·Lv1/Lv2 필터)
@@ -134,7 +145,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | S4 | 코드 관리 화면·API(SO), SO·BO 지정 화면 — DDL은 S2 ①에서(D36·D37) | PRD FR-63 |
 | **남은 위험** | ① 실제 Windows 실기 미확인(문서 명령은 PowerShell 7.6으로 검증, CI windows 잡은 push 후) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
 | ~~DB 전환~~ 병합 완료 | D40. `feat/db-mariadb` → `main` 병합(`1eb0335`), 태그 `db-mariadb-done`. 되돌림 기준점 태그 `pre-mariadb`(PostgreSQL 마지막 상태). 검증: 단위 232 · DB 85(11.8 3회 연속·10.4) · E2E mock 10·live 11, 구조 대조 일치, codex-critic 스키마 리뷰 4건·코드 리뷰 3건 반영, CI 7잡 녹색(Windows 설치 가이드 잡이 MariaDB 11.8 MSI로 설치·마이그레이션·DB 테스트까지 실행). 남은 확인: 사내 PC에서 설치 가이드 4장 (b) 경로 실기, macOS Homebrew 경로 | tasks/db-mariadb · [db-mariadb-plan.md](next-project/db-mariadb-plan.md) |
-| **진행(S3)** | [S3-design.md](next-project/S3-design.md) 확정(D39). ① `s3-request` 완료·병합(839ed7c). ② `s3-context` **완료·main 병합(8cf6259)**(단위 238 · DB 96(11.8·10.4) · E2E mock 14·live 15, 데모 테스트 10건 대응, 대응표 7행 ✅, CI 7잡 녹색) → **③ `s3-tray-events` 착수**(`feat/s3-tray-events`) | tasks/s3-tray-events |
+| **진행(S3)** | [S3-design.md](next-project/S3-design.md) 확정(D39). ① `s3-request` 완료·병합(839ed7c). S3 ①·②·③ 모두 완료 — 위 "완료 — S3" 참조. 다음: **S4**([S4-kickoff.md](next-project/S4-kickoff.md), D41) — 착수 시 태스크별 워커·쓰기 범위 승인 | tasks/s3-tray-events |
 | ~~S1 ②~~ 병합 완료 | 서버 대리 호출 기반 `feat/s1-llm-proxy` — `LLM_MODE`·`LLM_PRESET`(openwebui/openai-compatible)·`GET /api/llm/models`·`/status`, `LlmPorts` DB 어댑터 1차, `FileStorageService`(realpath 루트·내부 링크 거부), 웹 모델 목록·SO 배지. codex-critic 4건+누락 1건 반영. 검증 단위 165·DB 15·E2E 2, CI 5/5(Windows 8.3 경로·CI 환경 의존 2건 수정 후). **OpenAI 실키 수동 확인은 사용자 키 필요** | tasks/s1-llm-proxy |
 | ~~S1 ①~~ 병합 완료 | 앱 자체 로그인·회원가입(D34) `feat/s1-auth-local` — codex-main 구현 + codex-critic 리뷰 4건 반영. 검증 단위 142·DB 9·E2E 2. CI 녹색 확인 후 `main` 병합(사용자 승인) | tasks/s1-auth-local · [요구사항 검토](status/requirements-review-2026-09-28.md) |
 | 착수 전 확인 | OpenWebUI 버전(사용자 추후 회신), 비기능 제안값(PRD §6), **사내 모델의 도구 호출(function calling) 지원 여부**(S4-10 — 미지원이면 시스템 어시스턴트가 제안 카드 없이 답만 냄) | next-project/README |
@@ -162,6 +173,8 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 - 마이그레이션 0002(S2 ①)는 `assistant.level1/level2`를 코드 FK 컬럼(NOT NULL, 기본값 없음)으로 교체한다 — **기존 assistant 행이 있는 DB에는 적용이 실패**한다. S0·S1에는 에이전트 생성 경로가 없어 실제로는 빈 테이블이지만, 손으로 넣은 개발 DB는 `docker compose down -v`(또는 DB 재생성) 후 `db:migrate` → `db:seed`
 - 데모 저장소는 읽기 전용 — 수정·커밋 금지
 - **메시지 순서는 `seq`(스레드 안 순번)로만 가른다.** 질문과 답변 메시지는 같은 트랜잭션에서 만들어져 `createdAt`이 밀리초까지 같다 — 시각으로 정렬하고 동률을 ID로 가르면 순서가 뒤집힌다(S3 ② E3d에서 발견, 도메인 `conversationContext`는 `seq` 우선). 새 정렬·경계 판정에 `createdAt`을 쓰지 말 것
+- **추정 = 전송**: 트레이 추정과 실제 전송은 `buildChatRequest` 하나를 쓴다. 입력 상태(빈 초안의 본문, 새 첨부의 순서, 참조 대화, 설정)까지 같아야 한다 — 어느 한쪽만 고치면 동일성 DB 테스트가 깨진다(S3 ③ 리뷰에서 두 번 어긋났던 곳)
+- SSE 클라이언트는 첫 연결·범위 밖 `Last-Event-ID`에 `resync`(전체 무효화)를 받는다. 배압이면 서버가 끊고 재접속으로 복구 — 무한 버퍼링 금지
 - 요청은 서버 RequestService만 보낸다(S3). 트레이 추정은 `buildChatRequest({ dryRun: true })` — 실제 전송과 같은 함수
 - 대화 생성은 `POST /api/tasks` 한 번(`firstMessage`로 첫 팀 의견까지 같은 트랜잭션). 클라이언트 인계(autoSend) 경로는 없다 — 생성 요청 자체의 네트워크 재전송 중복(idempotency key)은 S3 RequestService와 함께
 - 완료된 대화의 수정·태그·팀 의견은 서버가 트랜잭션 안에서 행을 잠그고 재검사해 409 — 클라이언트 검사만 믿지 않는다
