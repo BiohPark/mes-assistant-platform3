@@ -10,6 +10,8 @@ import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
 export interface PendingAttachment {
   file: File
   once: boolean
+  uploadedId?: string
+  uploadedTaskId?: string
 }
 
 interface ComposerProps {

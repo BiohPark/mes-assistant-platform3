@@ -1,3 +1,11 @@
+import type { RequestInfo } from '@mes/domain'
+
+export type RequestEstimate = RequestInfo & { overLimit: boolean; attachmentLimit: number }
+export async function estimateRequest(threadId: string, body: { draft?: string; attachmentIds?: string[]; oneShotFileIds?: string[] }): Promise<RequestEstimate> {
+  return check(await fetch(`/api/threads/${encodeURIComponent(threadId)}/requests/estimate`, { method: 'POST', credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).then((response) => response.json()) as Promise<RequestEstimate>
+}
+
 export interface RequestInputRecord {
   kind: 'file' | 'conversation'
   weight: 'main' | 'reference'

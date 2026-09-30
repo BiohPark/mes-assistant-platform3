@@ -17,6 +17,7 @@ function refresh(taskId?: string) {
   void queryClient.invalidateQueries({ queryKey: ['assistant-stats'] })
   void queryClient.invalidateQueries({ queryKey: ['tag-suggest'] })
   void queryClient.invalidateQueries({ queryKey: ['activity'] })
+  void queryClient.invalidateQueries({ queryKey: ['estimate'] })
   if (taskId) {
     void queryClient.invalidateQueries({ queryKey: ['task', taskId] })
     void queryClient.invalidateQueries({ queryKey: ['activity', taskId] })
