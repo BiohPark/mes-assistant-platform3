@@ -1,6 +1,8 @@
-import { drizzle } from 'drizzle-orm/postgres-js'
+import { drizzle } from 'drizzle-orm/mysql2'
+import type { Db } from '../db/db.module.js'
 import { eq, sql } from 'drizzle-orm'
-import postgres from 'postgres'
+import type { Pool } from 'mysql2/promise'
+import { createPool } from '../db/connection.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { rolesOf } from '../auth/roles.js'
 import { appUser, assistant, assistantChecklistTemplate, assistantExpectedIo, code, codeGroup } from '../db/schema.js'
@@ -12,12 +14,12 @@ import { DbCatalogReader } from './catalog.service.js'
 
 describe('catalog DB', () => {
   let temp: Awaited<ReturnType<typeof createTempDb>>
-  let client: postgres.Sql
-  let db: ReturnType<typeof drizzle>
+  let client: Pool
+  let db: Db
   beforeAll(async () => {
     temp = await createTempDb('catalog')
     await runMigrations(temp.url)
-    client = postgres(temp.url, { onnotice: () => undefined })
+    client = createPool(temp.url)
     db = drizzle(client)
   })
   afterAll(async () => { await client?.end(); await temp?.drop() })
@@ -54,7 +56,7 @@ describe('catalog DB', () => {
   })
 
   it('rejects unknown code FK and exposes BO as requester', async () => {
-    await expect(db.insert(assistant).values({ id: 'bad', name: 'bad', level1CodeId: 'missing', level2CodeId: 'missing', sortOrder: 99, ownerId: 'seed-system', status: 'open', color: '#000', createdBy: 'seed-system' })).rejects.toThrow()
+    await expect(db.insert(assistant).values({ id: 'bad', name: 'bad', level1CodeId: 'missing', level2CodeId: 'missing', sortOrder: 99, ownerId: 'seed-system', status: 'open', color: '#000', createdBy: 'seed-system' })).rejects.toMatchObject({ cause: { errno: 1452 } })
     await db.insert(appUser).values({ id: 'bo', name: '가상 요청자', initials: '가', color: '#123456', isBusinessOwner: true })
     const [bo] = await db.select().from(appUser).where(eq(appUser.id, 'bo'))
     expect(rolesOf(bo!)).toEqual(['member', 'requester'])
