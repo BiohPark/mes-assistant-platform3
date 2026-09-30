@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common'
 import { applyTaskStatus, isSrTag, normalizeTag, tagKey, tagSuggestions, type Task, type TaskStatus, type Thread } from '@mes/domain'
 import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
-import { unionAll } from 'drizzle-orm/pg-core'
+import { unionAll } from 'drizzle-orm/mysql-core'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appUser, assistant, chatRequest, conversationInput, fileObject, message, messageAttachment, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, chatRequest, conversationInput, dbLock, fileObject, message, messageAttachment, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 
 export interface CreateTaskInput {
   assistantId: string
@@ -28,6 +28,7 @@ export interface TaskFilter { assistantId?: string; status?: string[]; tags?: st
 const id = () => randomUUID()
 const iso = (value: Date | null | undefined) => value?.toISOString()
 const uniqueTags = (values: string[]) => [...new Map(values.map((value) => normalizeTag(value)).filter(Boolean).map((value) => [tagKey(value), value])).values()]
+const checkTagLength = (label: string) => { if ([...tagKey(label)].length > 191) throw new BadRequestException('태그가 너무 깁니다') }
 
 @Injectable()
 export class DbTasksService {
@@ -88,6 +89,7 @@ export class DbTasksService {
   }
 
   async create(actor: string, input: CreateTaskInput, idempotencyKey?: string) {
+    if (idempotencyKey && [...idempotencyKey].length > 191) throw new BadRequestException('Idempotency-Key가 너무 깁니다')
     if (idempotencyKey) {
       const [existing] = await this.db.select({ id: task.id }).from(task).where(eq(task.idempotencyKey, idempotencyKey))
       if (existing) { const found = await this.get(existing.id); return { task: found, thread: found.thread! } }
@@ -96,17 +98,20 @@ export class DbTasksService {
     if (!selected) throw new NotFoundException('에이전트를 찾을 수 없습니다')
     if (selected.status === 'retired') throw new ConflictException('폐기된 에이전트로는 시작할 수 없습니다')
     const tags = uniqueTags(input.tags ?? [])
+    tags.forEach(checkTagLength)
     const taskId = id()
     const threadId = id()
     const now = new Date()
     const createdId = await this.db.transaction(async (tx) => {
       const year = now.getFullYear()
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('task-code'), ${year})`)
+      const lockKey = `task-code:${year}`
+      await tx.insert(dbLock).values({ lockKey }).onDuplicateKeyUpdate({ set: { lockKey } })
+      await tx.select().from(dbLock).where(eq(dbLock.lockKey, lockKey)).for('update')
       if (idempotencyKey) {
         const [duplicate] = await tx.select({ id: task.id }).from(task).where(eq(task.idempotencyKey, idempotencyKey))
         if (duplicate) return duplicate.id
       }
-      const [max] = await tx.select({ value: sql<number>`coalesce(max(substring(${task.code} from 9)::int), 0)` }).from(task).where(sql`${task.code} like ${`WK-${year}-%`}`)
+      const [max] = await tx.select({ value: sql<number>`coalesce(max(cast(substring(${task.code}, 9) as unsigned)), 0)` }).from(task).where(sql`${task.code} like ${`WK-${year}-%`}`)
       const code = `WK-${year}-${String(Number(max?.value ?? 0) + 1).padStart(4, '0')}`
       await tx.insert(task).values({ id: taskId, code, assistantId: selected.id,
         title: input.title?.trim() || `${selected.name} 대화 ${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
@@ -120,7 +125,7 @@ export class DbTasksService {
       }
       for (const label of tags) {
         const key = tagKey(label)
-        await tx.insert(tag).values({ key, label, kind: isSrTag(label) ? 'sr' : 'keyword' }).onConflictDoNothing()
+        await tx.insert(tag).values({ key, label, kind: isSrTag(label) ? 'sr' : 'keyword' }).onDuplicateKeyUpdate({ set: { key } })
         await tx.insert(taskTag).values({ taskId, tagKey: key, addedBy: actor })
         await tx.insert(activityLog).values({ id: id(), type: 'tag.added', userId: actor, taskId, payload: { tag: label } })
       }
@@ -197,12 +202,14 @@ export class DbTasksService {
   async addTag(actor: string, taskId: string, raw: string): Promise<void> {
     const label = normalizeTag(raw)
     if (!label) throw new BadRequestException('태그가 필요합니다')
+    checkTagLength(label)
     const key = tagKey(label)
     await this.db.transaction(async (tx) => {
       await this.ensureEditable(tx, taskId)
-      await tx.insert(tag).values({ key, label, kind: isSrTag(label) ? 'sr' : 'keyword' }).onConflictDoNothing()
-      const added = await tx.insert(taskTag).values({ taskId, tagKey: key, addedBy: actor }).onConflictDoNothing().returning()
-      if (added.length) {
+      await tx.insert(tag).values({ key, label, kind: isSrTag(label) ? 'sr' : 'keyword' }).onDuplicateKeyUpdate({ set: { key } })
+      const [existing] = await tx.select({ taskId: taskTag.taskId }).from(taskTag).where(and(eq(taskTag.taskId, taskId), eq(taskTag.tagKey, key)))
+      if (!existing) {
+        await tx.insert(taskTag).values({ taskId, tagKey: key, addedBy: actor })
         await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, taskId))
         await tx.insert(activityLog).values({ id: id(), type: 'tag.added', userId: actor, taskId, payload: { tag: label } })
       }
@@ -212,8 +219,8 @@ export class DbTasksService {
   async removeTag(actor: string, taskId: string, raw: string): Promise<void> {
     await this.db.transaction(async (tx) => {
       await this.ensureEditable(tx, taskId)
-      const removed = await tx.delete(taskTag).where(and(eq(taskTag.taskId, taskId), eq(taskTag.tagKey, tagKey(raw)))).returning()
-      if (removed.length) {
+      const removed = await tx.delete(taskTag).where(and(eq(taskTag.taskId, taskId), eq(taskTag.tagKey, tagKey(raw))))
+      if (removed[0].affectedRows) {
         await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, taskId))
         await tx.insert(activityLog).values({ id: id(), type: 'tag.removed', userId: actor, taskId, payload: { tag: normalizeTag(raw) } })
       }
@@ -251,7 +258,7 @@ export class DbTasksService {
         const valid = await tx.select({ id: fileObject.id }).from(fileObject).where(and(inArray(fileObject.id, attachmentIds), eq(fileObject.originTaskId, target.taskId), sql`${fileObject.deletedAt} is null`))
         if (valid.length !== attachmentIds.length) throw new BadRequestException('첨부 파일이 이 대화에 없습니다')
       }
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${threadId}))`)
+      await tx.select({ id: thread.id }).from(thread).where(eq(thread.id, threadId)).for('update')
       const [max] = await tx.select({ value: sql<number>`coalesce(max(${message.seq}), 0)` }).from(message).where(eq(message.threadId, threadId))
       await tx.insert(message).values({ id: messageId, threadId, seq: Number(max?.value ?? 0) + 1, role: 'user', kind: 'discussion', content: input.content.trim(), authorId: actor, status: 'done' })
       if (attachmentIds.length) await tx.insert(messageAttachment).values(attachmentIds.map((fileId) => ({ messageId, fileId })))
