@@ -8,6 +8,7 @@ import type { Db } from '../db/db.module.js'
 import { appSetting, appUser, assistant, assistantChecklistTemplate, assistantExpectedIo, code, checklistItem, fileObject, fileRemoteRef, serviceRequest, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { toLlmSettings } from './presets.js'
+import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
 
 const iso = (date: Date) => date.toISOString()
 const missing = (name: string): never => { throw new Error(`NotImplemented: ${name} (S2/S3)`) }
@@ -126,7 +127,17 @@ export class DbLlmPorts implements LlmPorts {
     const rows = await this.db.select({ id: fileObject.id }).from(fileObject).where(and(eq(fileObject.originSrId, srId), isNull(fileObject.deletedAt)))
     return (await this.getFiles(rows.map((row) => row.id))).filter((file): file is FileAsset => !!file)
   }
-  async loadConversationInputs() { return [] }
+  async loadConversationInputs(taskId: string) {
+    const loaded = await new DbConversationInputsService(this.db).load(taskId)
+    const sources = await this.getTasks(loaded.map((item) => item.input.sourceTaskId))
+    const assistants = await this.getAssistants()
+    return loaded.flatMap((item, index) => {
+      const source = sources[index]
+      if (!source) return []
+      return [{ input: item.input, snapshot: item.snapshot, source,
+        assistant: assistants.find((agent) => agent.id === source.assistantId), messages: item.messages }]
+    })
+  }
   async updateFileRemoteIds(fileId: string, remoteIds: Record<string, string>): Promise<void> {
     const key = remoteKey(toLlmSettings(this.config.llm))
     const remoteId = remoteIds[key]

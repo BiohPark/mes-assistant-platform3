@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common'
-import { applyTaskStatus, isSrTag, normalizeTag, tagKey, tagSuggestions, type Task, type TaskStatus, type Thread } from '@mes/domain'
+import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type Task, type TaskStatus, type Thread } from '@mes/domain'
 import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
 import { unionAll } from 'drizzle-orm/mysql-core'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appUser, assistant, chatRequest, conversationInput, dbLock, fileObject, message, messageAttachment, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, chatRequest, chatRequestInput, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 
 export interface CreateTaskInput {
   assistantId: string
@@ -90,6 +90,7 @@ export class DbTasksService {
 
   async create(actor: string, input: CreateTaskInput, idempotencyKey?: string) {
     if (idempotencyKey && [...idempotencyKey].length > 191) throw new BadRequestException('Idempotency-Key가 너무 깁니다')
+    if (input.referenceTaskId && [...input.referenceTaskId].length > 191) throw new BadRequestException('참조 대화 ID가 너무 깁니다')
     if (idempotencyKey) {
       const [existing] = await this.db.select({ id: task.id }).from(task).where(eq(task.idempotencyKey, idempotencyKey))
       if (existing) { const found = await this.get(existing.id); return { task: found, thread: found.thread! } }
@@ -102,6 +103,7 @@ export class DbTasksService {
     const taskId = id()
     const threadId = id()
     const now = new Date()
+    const warnings: string[] = []
     const createdId = await this.db.transaction(async (tx) => {
       const year = now.getFullYear()
       const lockKey = `task-code:${year}`
@@ -129,11 +131,32 @@ export class DbTasksService {
         await tx.insert(taskTag).values({ taskId, tagKey: key, addedBy: actor })
         await tx.insert(activityLog).values({ id: id(), type: 'tag.added', userId: actor, taskId, payload: { tag: label } })
       }
+      if (input.referenceTaskId) {
+        const [source] = await tx.select().from(task).where(and(eq(task.id, input.referenceTaskId), isNull(task.deletedAt))).for('update')
+        const sourceTags = source ? await tx.select({ key: taskTag.tagKey }).from(taskTag).where(eq(taskTag.taskId, source.id)) : []
+        if (!source || !sourceTags.some((item) => tags.some((label) => tagKey(label) === item.key))) {
+          warnings.push('참조 대화와 직접 공유하는 태그가 없어 선택하지 않았습니다.')
+        } else {
+          const [sourceThread] = await tx.select({ id: thread.id }).from(thread).where(eq(thread.taskId, source.id))
+          const rows = sourceThread ? await tx.select().from(message).where(eq(message.threadId, sourceThread.id)).orderBy(message.seq) : []
+          const chosen = eligibleMessages(rows.map((row) => ({ id: row.id, threadId: row.threadId, seq: row.seq, role: row.role as Message['role'],
+            kind: row.kind as Message['kind'], content: row.content, status: row.status as Message['status'], authorId: row.authorId ?? undefined,
+            createdAt: row.createdAt.toISOString(), attachmentIds: [] })))
+          if (!chosen.length) warnings.push('참조 대화에 전달할 메시지가 없어 선택하지 않았습니다.')
+          else {
+            const snapshotId = id()
+            await tx.insert(contextSnapshot).values({ id: snapshotId, sourceTaskId: source.id, mode: 'full', upToMessageId: chosen.at(-1)!.id, createdBy: actor })
+            await tx.insert(contextSnapshotMessage).values(chosen.map((row, seq) => ({ snapshotId, messageId: row.id, seq })))
+            await tx.insert(conversationInput).values({ id: id(), taskId, sourceTaskId: source.id, weight: 'main', mode: 'full', snapshotId, selectedBy: actor })
+            await tx.insert(activityLog).values({ id: id(), type: 'context.selected', userId: actor, taskId, payload: { code: source.code, mode: 'full', messages: chosen.length, weight: 'main' } })
+          }
+        }
+      }
       await tx.insert(activityLog).values({ id: id(), type: 'task.created', userId: actor, taskId, assistantId: selected.id, payload: { assistantName: selected.name } })
       return taskId
     })
     const created = await this.get(createdId)
-    return { task: created, thread: created.thread! }
+    return { task: created, thread: created.thread!, warnings }
   }
 
   async list(filter: TaskFilter = {}): Promise<Task[]> {
@@ -281,7 +304,10 @@ export class DbTasksService {
       const [owner] = await tx.select({ id: task.id }).from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt))).for('update')
       if (!owner) throw new NotFoundException('대화를 찾을 수 없습니다')
       const [selectedAsContext] = await tx.select({ id: conversationInput.id }).from(conversationInput).where(eq(conversationInput.sourceTaskId, taskId)).limit(1)
-      if (selectedAsContext) throw new ConflictException('다른 대화가 이 대화를 참조 입력으로 사용합니다')
+      if (selectedAsContext) throw new ConflictException({ code: 'REFERENCED', message: '다른 대화가 이 대화를 참조 입력으로 사용합니다' })
+      const [usedSnapshot] = await tx.select({ id: chatRequestInput.requestId }).from(chatRequestInput)
+        .innerJoin(contextSnapshot, eq(chatRequestInput.snapshotId, contextSnapshot.id)).where(eq(contextSnapshot.sourceTaskId, taskId)).limit(1)
+      if (usedSnapshot) throw new ConflictException({ code: 'REFERENCED', message: '요청 기록이 이 대화를 참조합니다' })
       const ownFiles = await tx.select({ id: fileObject.id }).from(fileObject).where(eq(fileObject.originTaskId, taskId))
       if (ownFiles.length) {
         const used = await tx.select().from(taskInput).where(inArray(taskInput.fileId, ownFiles.map((file) => file.id)))
@@ -290,6 +316,7 @@ export class DbTasksService {
       const [activeRequest] = await tx.select({ id: chatRequest.id }).from(chatRequest).innerJoin(thread, eq(chatRequest.threadId, thread.id))
         .where(and(eq(thread.taskId, taskId), inArray(chatRequest.status, ['pending', 'streaming']))).limit(1)
       if (activeRequest) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
+      await tx.delete(conversationInput).where(eq(conversationInput.taskId, taskId))
       await tx.update(task).set({ deletedAt: new Date() }).where(eq(task.id, taskId))
     })
   }
