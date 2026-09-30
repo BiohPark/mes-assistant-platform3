@@ -14,11 +14,12 @@ describe('requests HTTP', () => {
   const config = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' })
   const sessions: SessionStore = { create: vi.fn(async () => ({ token: '', expiresAt: new Date() })), resolve: vi.fn(async () => ({ id: 'u', name: 'User', role: '', isSystemOwner: false })), destroy: vi.fn(async () => undefined) }
   const start = vi.fn(async () => ({ id: 'r', userMessageId: 'u1', replyMessageId: 'a1', done: Promise.resolve() }))
+  const estimate = vi.fn(async () => ({ bytes: 10, limitBytes: 100, overLimit: false, attachmentLimit: 10, inputs: [] }))
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CONFIG).useValue(config)
       .overrideProvider(SESSION_STORE).useValue(sessions)
-      .overrideProvider(RequestsService).useValue({ start, subscribe: (_id: string, listener: (event: unknown) => void) => {
+      .overrideProvider(RequestsService).useValue({ start, estimate, subscribe: (_id: string, listener: (event: unknown) => void) => {
         listener({ event: 'started', data: { requestId: 'r', userMessageId: 'u1', replyMessageId: 'a1' } })
         listener({ event: 'completed', data: { requestInfo: {} } })
         return () => undefined
@@ -35,5 +36,12 @@ describe('requests HTTP', () => {
     expect(response.headers['content-type']).toMatch(/text\/event-stream/)
     expect(response.text).toContain('event: completed')
     expect(start).toHaveBeenCalledWith('u', 't', { content: 'x'.repeat(270_000) }, 'key')
+  })
+
+  it('accepts estimate draft without an idempotency key', async () => {
+    const response = await request(app.getHttpServer()).post('/api/threads/t/requests/estimate').set('Cookie', 'mes_session=x')
+      .send({ draft: 'x'.repeat(270_000), attachmentIds: [] }).expect(201)
+    expect(response.body).toMatchObject({ overLimit: false, attachmentLimit: 10 })
+    expect(estimate).toHaveBeenCalledWith('u', 't', { draft: 'x'.repeat(270_000), attachmentIds: [] })
   })
 })

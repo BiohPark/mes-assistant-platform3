@@ -7,6 +7,7 @@ import { writeEvent } from './sse.js'
 
 const startSchema = z.object({ content: z.string(), attachmentIds: z.array(z.string().min(1)).optional(), oneShotFileIds: z.array(z.string().min(1)).optional() }).strict()
 const retrySchema = z.object({ excludeFileIds: z.array(z.string().min(1)).optional(), forceInlineFileIds: z.array(z.string().min(1)).optional() }).strict()
+const estimateSchema = z.object({ draft: z.string().optional(), attachmentIds: z.array(z.string().min(1)).optional(), oneShotFileIds: z.array(z.string().min(1)).optional() }).strict()
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const parsed = schema.safeParse(value)
   if (!parsed.success) throw new BadRequestException('요청 형식이 올바르지 않습니다')
@@ -34,6 +35,11 @@ export class ThreadRequestsController {
     @Body() body: unknown, @Res() res: Response) {
     const started = await this.requests.start(req.user!.id, threadId, parse(startSchema, body), key ?? '')
     stream(res, this.requests, started.id)
+  }
+
+  @Post('estimate')
+  estimate(@Req() req: AuthedRequest, @Param('threadId') threadId: string, @Body() body: unknown) {
+    return this.requests.estimate(req.user!.id, threadId, parse(estimateSchema, body ?? {}))
   }
 }
 

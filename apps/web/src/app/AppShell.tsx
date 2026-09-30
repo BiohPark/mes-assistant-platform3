@@ -4,6 +4,9 @@ import { cn } from '@/lib/utils'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AuthGate } from './AuthGate'
+import { useEvents } from './useEvents'
+
+function LiveEvents() { useEvents(); return null }
 
 // 화면은 스프린트마다 늘린다 (데모 NAV: SR 접수·리포트·설정은 S2 이후)
 const NAV = [{ to: '/', label: '에이전트 허브', icon: LayoutGrid, end: true }]
@@ -11,6 +14,7 @@ const NAV = [{ to: '/', label: '에이전트 허브', icon: LayoutGrid, end: tru
 export function AppShell() {
   return (
     <AuthGate>
+      <LiveEvents />
       <TooltipProvider>
         <div className="flex h-full bg-muted/30">
           <aside className="flex w-14 shrink-0 flex-col items-center border-r bg-sidebar py-3 lg:w-52 lg:items-stretch lg:px-3">

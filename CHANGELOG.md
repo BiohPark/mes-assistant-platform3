@@ -4,6 +4,14 @@ MES Agent Hub의 주요 변경. 스프린트(architecture §9) 단위로 기록�
 
 ## [Unreleased]
 
+### S3 — 참조 대화·요청 서비스·추정·실시간 (2026-10-01, `s3-done`)
+
+- 요청 서비스: `chat_request` 상태 기계, 대화당 진행 중 1건, SSE 스트리밍, 중지·재시도, 시간 제한·생존 신호·정리, `Idempotency-Key`, OpenWebUI 파일 전달, 요청 기록 조회, 대화 소프트 삭제
+- 참조 대화: 직접 태그 공유 후보, 선택 3모드(전체·메시지·요약), 스냅샷 고정·갱신, 요약 초안(보조 호출), 삭제 보호, 새 대화의 참조 지정. 메시지 순서는 서버 순번 기준
+- 추정·트레이: `POST …/requests/estimate`(전송과 같은 조립 함수), 한도 초과 시 전송 차단과 조절 안내(자동 절단 없음)
+- 실시간: `GET /api/events` SSE(커서·재전송 버퍼·resync·하트비트·배압 처리), 다른 PC 진행 표시, "입력 중" 표시. 폴링 제거
+- E2E: requests(S5–S8)·requests-live(E2)·context(E3a–d)·tray(E4·E6·실시간). codex-critic 리뷰 3회(20건) 반영
+
 ### DB 엔진 전환 — PostgreSQL → MariaDB (2026-10-01, D40, `db-mariadb-done`)
 
 - DB를 MariaDB 단독 설치로 전환(기준 11.8 LTS, 호환 하한 10.4). 드라이버 `mysql2`, 초기 마이그레이션 1개로 재시작(옮길 운영 데이터 없음)

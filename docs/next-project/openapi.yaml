@@ -320,11 +320,11 @@ paths:
   /threads/{threadId}/requests/estimate:
     post:
       tags: [requests]
-      summary: 지금 보내면 AI가 받을 것 (트레이) — 실제 전송과 같은 조립, 업로드 없이 첨부 예정으로 계산
+      summary: 지금 보내면 AI가 받을 것 (트레이) — 실제 전송과 같은 조립 함수(dryRun)·같은 입력 상태. 완료 대화도 조회 가능(전송만 차단). S3 ③
       parameters: [{ $ref: '#/components/parameters/threadId' }]
-      requestBody: { content: { application/json: { schema: { type: object, properties: { draft: { type: string }, oneShotFileIds: { type: array, items: { type: string } } } } } } }
+      requestBody: { content: { application/json: { schema: { type: object, properties: { draft: { type: string }, attachmentIds: { type: array, items: { type: string }, description: '업로드했지만 아직 고정하지 않은 초안 첨부 — 전송 시 규칙대로 ☑ 고정될 것으로 가정' }, oneShotFileIds: { type: array, items: { type: string } } } } } } }
       responses:
-        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/RequestInfo' } } } }
+        '200': { description: 'RequestInfo + overLimit(초과면 전송 차단 — 자동 절단·요약 없음) · limitBytes · attachmentLimit', content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/RequestInfo' }, { type: object, properties: { overLimit: { type: boolean }, limitBytes: { type: integer }, attachmentLimit: { type: integer } } }] } } } }
   /threads/{threadId}/requests:
     post:
       tags: [requests]
@@ -473,8 +473,15 @@ paths:
   /events:
     get:
       tags: [misc]
-      summary: 사용자별 변경 알림 SSE (task.updated, message.appended, request.updated, notification.created)
+      summary: 변경 알림 SSE (세션 인증). 이벤트 task.created · task.updated · message.appended · request.updated(status·phase) · file.updated · input.updated · context.updated · presence.typing(until, 저장 없음) · notification.created(S4) · resync. id는 `{bootId}:{seq}`, 15 s 하트비트, 5분/1000건 재전송 버퍼. Last-Event-ID가 범위 밖·bootId 불일치·첫 연결(커서 없음)이면 현재 커서를 담은 resync를 먼저 보낸다(클라이언트는 전체 무효화). 느린 클라이언트(배압)는 연결을 끊는다 — 재접속으로 복구. S3 ③ · S3-design §3.3
+      parameters: [{ name: Last-Event-ID, in: header, required: false, schema: { type: string } }]
       responses: { '200': { description: text/event-stream, content: { text/event-stream: { schema: { type: string } } } } }
+  /threads/{threadId}/typing:
+    post:
+      tags: [misc]
+      summary: '"입력 중" 신호 — presence.typing 이벤트 발행(until = +5 s), 저장 없음. S3 ③'
+      parameters: [{ $ref: '#/components/parameters/threadId' }]
+      responses: { '204': { description: 발행 } }
   /settings:
     get:
       tags: [misc]

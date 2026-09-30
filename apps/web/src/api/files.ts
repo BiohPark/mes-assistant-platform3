@@ -40,6 +40,7 @@ function refresh(taskId?: string) {
   void queryClient.invalidateQueries({ queryKey: ['candidates'] })
   void queryClient.invalidateQueries({ queryKey: ['tasks'] })
   void queryClient.invalidateQueries({ queryKey: ['task'] })
+  void queryClient.invalidateQueries({ queryKey: ['estimate'] })
   if (taskId) void queryClient.invalidateQueries({ queryKey: ['task', taskId] })
 }
 

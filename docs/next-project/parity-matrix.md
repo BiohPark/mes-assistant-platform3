@@ -29,10 +29,10 @@
 |---|---|---|---|---|---|
 | `AppShell.tsx` | 사이드바·NAV·Toaster·시스템 assistant 서랍 | 화면 §3 | S0 → 화면별 NAV 추가 | 변경(NAV는 화면이 생길 때 추가, 서랍은 결정 U1) | ✅ 셸 |
 | `TopBar.tsx` | 제목·LLM 모드 배지·시스템 assistant 버튼·알림 종·사용자 전환 | — | S0 → S4 | 변경(사용자 전환 → 로그인 사용자·로그아웃. 배지는 S1에서 SO 전용으로(`/api/llm/status`). 버튼은 U1·S4) | ✅ 일부(셸·배지) |
-| `chatRunner.ts` (+test) | 요청 실행기: 활성 1건·생존 신호·시간 제한·재시도·중지·끊긴 응답 정리 | FR-33 | S3 | 변경(서버 RequestService, `lease_until`·주기 작업) — 테스트 먼저 이식 | ⬜ |
+| `chatRunner.ts` (+test) | 요청 실행기: 활성 1건·생존 신호·시간 제한·재시도·중지·끊긴 응답 정리 | FR-33 | S3 | 변경(서버 RequestService, `lease_until`·주기 작업) — 테스트 먼저 이식 | ✅ |
 | `hooks.ts` | 현재 사용자·설정·사용자 목록 훅 | — | S2 | 변경(TanStack Query) | ✅ 일부(S2 ①: 사용자 목록·카탈로그. 설정 훅은 S4 설정 API 뒤) |
 | `NotificationBell.tsx` | 알림 종(읽음 처리 후 이동) | FR-41 | S4 | 변경(API·SSE) | ⬜ |
-| `presence.ts` | 같은 브라우저 탭 간 "입력 중" 표시(BroadcastChannel) | — | S3 | 변경(U5(a): SSE 이벤트로 다른 PC까지, 휘발성·DB 저장 없음) | ⬜ |
+| `presence.ts` | 같은 브라우저 탭 간 "입력 중" 표시(BroadcastChannel) | — | S3 | 변경(U5(a): SSE 이벤트로 다른 PC까지, 휘발성·DB 저장 없음) | ✅ |
 | `router.tsx` | 라우트·리포트 지연 로딩 | — | S0 → 화면별 | 그대로 | ✅ 일부 |
 | `tabUser.ts` | 탭별 사용자 전환(시연용) | — | — | **제외** — 로그인 사용자로 대체(architecture §3) | — |
 | `uiStore.ts` | 홈 필터·칸반 빈 열 접기·서랍 열림(브라우저 저장) | 화면 §3 | S2 | 그대로(개인 화면 설정은 브라우저) | ✅ S2 ① |
@@ -79,8 +79,8 @@
 |---|---|---|---|---|---|
 | `ChatView.tsx` | 채팅 화면·입력 중 표시·추천 칩 | FR-04 | S2·S3 | 변경(SSE) · presence U5 · 칩 U2 | ✅ S2 ②·S3 ①(스트리밍·중지. presence U5는 S3 ③) |
 | `Composer.tsx` | 입력창·첨부(기본 고정, "이번 메시지만") | FR-10 | S2 | 변경(업로드 API) | ✅ S2 ②·③·S3 ①(텍스트·첨부·AI 전송·중지) |
-| `ContextTray.tsx` | "이번 요청에 사용" 트레이·크기·초과 시 조절 | FR-30·31 | S3 | 변경(서버 추정 API) | ⬜ |
-| `useRequestEstimate.ts` | 트레이 추정(dryRun 같은 조립 함수) | FR-30 | S3 | 변경(서버 추정 API) | ⬜ |
+| `ContextTray.tsx` | "이번 요청에 사용" 트레이·크기·초과 시 조절 | FR-30·31 | S3 | 변경(서버 추정 API) | ✅ |
+| `useRequestEstimate.ts` | 트레이 추정(dryRun 같은 조립 함수) | FR-30 | S3 | 변경(서버 추정 API) | ✅ |
 | `MessageBubble.tsx` | 답변·사용한 자료·실패 복구(재시도·빼고 다시·텍스트로) | FR-32·34 | S3 | 변경(API) | ✅ S3 ① |
 | `RequestInfoDialog.tsx` | 전송 기록 뷰어·원본 JSON | FR-34 | S3 | 변경(API) | ✅ S3 ① |
 | `requestLabels.ts` | 전달 방식 표기(트레이·사용한 자료 공통) | FR-30·34 | S3 | 그대로 | ✅ S3 ① |
@@ -198,8 +198,8 @@
 | E3b 메시지 범위를 고르면 고른 메시지만 | FR-21 | S3 | ✅ |
 | E3c 요약은 누를 때만 만들고 확인·수정한 요약이 간다 | FR-21 | S3 | ✅ |
 | E3d 선택 시점 고정, 새 메시지는 갱신을 눌러야 | FR-22 | S3 | ✅ |
-| E4 요청 크기 한도 초과 시 전송 차단·안내(자동 절단 없음) | FR-31 | S3 | ⬜ |
-| E6 답변의 "사용한 자료"에서 전송 기록을 앱 안에서 본다 | FR-34 | S3 | ⬜ |
+| E4 요청 크기 한도 초과 시 전송 차단·안내(자동 절단 없음) | FR-31 | S3 | ✅ |
+| E6 답변의 "사용한 자료"에서 전송 기록을 앱 안에서 본다 | FR-34 | S3 | ✅ |
 | `support/fakeOpenWebUI.ts` · `support/app.ts` | — | S1·S2 | 변경(가짜 OpenWebUI는 compose 서비스, 로그인 단계 추가) — S0 `docker/fake-openwebui` ✅ 최소판 |
 
 | E5 보호(단위): 프롬프트 생성 실패 → 입력창 풀림 · 두 탭 동시 전송 1건 · 응답 중 완료 거부 · 끊긴 응답 정리 · 중지한 답변 덮어쓰기 방지 · 백업에 키·원격 ID 없음 | FR-33·61 | S3 (`chatRunner.test.ts` 먼저 이식) | ✅ S3 ①(requests.db.test 11건 + 키·원격 ID 비노출) |

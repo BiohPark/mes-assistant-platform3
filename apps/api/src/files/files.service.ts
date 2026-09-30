@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common'
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
+import { EventsService } from '../events/events.service.js'
 import { activityLog, fileObject, tag, task, taskInput, taskTag } from '../db/schema.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { FileStorageService, createStorageKey, sha256 } from './fileStorage.service.js'
@@ -27,7 +28,8 @@ export function fileMeta(row: FileRow) {
 @Injectable()
 export class DbFilesService {
   constructor(@Inject(DB) private readonly db: Db, @Inject(FILE_STORAGE) private readonly storage: FileStorageService,
-    @Inject(CONFIG) private readonly config: Pick<AppConfig, 'fileMaxBytes' | 'fileMaxPerRequest'>) {}
+    @Inject(CONFIG) private readonly config: Pick<AppConfig, 'fileMaxBytes' | 'fileMaxPerRequest'>,
+    @Inject(EventsService) private readonly events?: EventsService) {}
 
   private async row(fileId: string, tx: Db | Tx = this.db) {
     const [row] = await tx.select({ file: fileObject }).from(fileObject).leftJoin(task, eq(fileObject.originTaskId, task.id))
@@ -74,6 +76,7 @@ export class DbFilesService {
         const [inserted] = await tx.select().from(fileObject).where(eq(fileObject.id, fileId))
         return inserted!
       })
+      this.events?.publish('file.updated', { taskId })
       return fileMeta(row)
     } catch (error) {
       await this.storage.remove(storageKey)
@@ -114,17 +117,19 @@ export class DbFilesService {
   }
 
   async setOutput(actor: string, fileId: string, isOutput: boolean) {
-    await this.db.transaction(async (tx) => {
+    const taskId = await this.db.transaction(async (tx) => {
       const row = await this.row(fileId, tx)
       if (row.kind !== 'task_file' || !row.originTaskId) throw new BadRequestException('대화 파일만 산출물로 지정할 수 있습니다')
       await this.editable(row.originTaskId, tx)
       await tx.update(fileObject).set({ isOutput }).where(eq(fileObject.id, fileId))
       await tx.insert(activityLog).values({ id: id(), taskId: row.originTaskId, userId: actor, type: 'file.tagged_output', payload: { name: row.originalName, isOutput } })
+      return row.originTaskId
     })
+    this.events?.publish('file.updated', { taskId })
   }
 
   async remove(fileId: string) {
-    await this.db.transaction(async (tx) => {
+    const taskId = await this.db.transaction(async (tx) => {
       const row = await this.row(fileId, tx)
       if (row.kind !== 'task_file' || !row.originTaskId) throw new BadRequestException('대화 파일만 삭제할 수 있습니다')
       await this.editable(row.originTaskId, tx)
@@ -137,7 +142,10 @@ export class DbFilesService {
       if (selected.some((item) => item.taskId !== row.originTaskId)) throw new ConflictException('다른 대화에서 입력으로 사용 중인 파일은 삭제할 수 없습니다')
       await tx.delete(taskInput).where(eq(taskInput.fileId, fileId))
       await tx.update(fileObject).set({ deletedAt: new Date(), isOutput: false }).where(eq(fileObject.id, fileId))
+      return row.originTaskId
     })
+    this.events?.publish('file.updated', { taskId })
+    this.events?.publish('input.updated', { taskId })
   }
 
   private async candidateRows(taskId: string, tx: Db | Tx = this.db) {
@@ -208,6 +216,7 @@ export class DbFilesService {
       } else await tx.delete(taskInput).where(and(eq(taskInput.taskId, taskId), eq(taskInput.fileId, fileId)))
       await tx.insert(activityLog).values({ id: id(), taskId, userId: actor, type: weight ? 'input.selected' : 'input.removed', payload: { name: row.originalName, version: row.version, weight } })
     })
+    this.events?.publish('input.updated', { taskId })
   }
 
   async switchInputVersion(actor: string, taskId: string, fromFileId: string, toFileId: string) {
@@ -235,5 +244,6 @@ export class DbFilesService {
       else await tx.insert(taskInput).values({ ...selected[0]!, fileId: toFileId, selectedBy: actor, selectedAt: new Date() })
       await tx.insert(activityLog).values({ id: id(), taskId, userId: actor, type: 'input.selected', payload: { name: to.originalName, version: to.version, weight } })
     })
+    this.events?.publish('input.updated', { taskId })
   }
 }

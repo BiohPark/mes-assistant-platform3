@@ -61,6 +61,35 @@ it('sends an AI request through SSE and leaves pinning to the server', async () 
   expect((sent.init?.headers as Record<string, string> | undefined)?.['Idempotency-Key']).toBeTruthy()
 })
 
+it.each(['over-limit', 'estimate failure'] as const)('reuses the uploaded draft attachment after %s', async (firstResult) => {
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+  let estimates = 0
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, init })
+    if (url === '/api/files') return new Response(JSON.stringify({ id: 'f', name: 'note.txt' }), { status: 201 })
+    if (url === '/api/threads/h/requests/estimate') {
+      const hasAttachment = (JSON.parse(String(init?.body)) as { attachmentIds?: string[] }).attachmentIds?.includes('f')
+      if (hasAttachment) estimates++
+      if (hasAttachment && estimates === 1 && firstResult === 'estimate failure') return new Response(JSON.stringify({ message: '추정 실패' }), { status: 500 })
+      return new Response(JSON.stringify({ bytes: 300, limitBytes: 256, inputs: [], srCodes: [], overLimit: hasAttachment && estimates === 1,
+        attachmentLimit: 10 }), { status: 201 })
+    }
+    if (url === '/api/threads/h/requests') return new Response('event: started\ndata: {"requestId":"r","replyMessageId":"a","userMessageId":"u"}\n\nevent: completed\ndata: {"requestInfo":{}}\n\n', { status: 201 })
+    return new Response('[]', { status: 200 })
+  }))
+  const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
+  const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '질문' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(toastError).toHaveBeenCalled())
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(calls.some((call) => call.url === '/api/threads/h/requests')).toBe(true))
+  expect(calls.filter((call) => call.url === '/api/files')).toHaveLength(1)
+  expect(JSON.parse(String(calls.find((call) => call.url === '/api/threads/h/requests')?.init?.body))).toMatchObject({ attachmentIds: ['f'] })
+})
+
 it('shows the phase of a request running in another tab', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/threads/h/messages') return new Response(JSON.stringify([{ id: 'a', requestId: 'remote', threadId: 'h', seq: 1,
@@ -71,4 +100,18 @@ it('shows the phase of a request running in another tab', async () => {
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   await waitFor(() => expect(screen.getByText('파일 올리는 중 1/1')).toBeVisible())
+})
+
+it('disables AI send when the estimate exceeds the request budget', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/threads/h/requests/estimate') return new Response(JSON.stringify({ provider: 'mock', transport: 'inline', model: 'mock',
+      bytes: 300, limitBytes: 256, inputs: [], srCodes: [], overLimit: true, attachmentLimit: 10 }), { status: 201 })
+    return new Response('[]', { status: 200 })
+  }))
+  const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '길어진 초안' } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeDisabled())
+  expect(screen.getByRole('alert')).toHaveTextContent('요청 크기 한도')
 })

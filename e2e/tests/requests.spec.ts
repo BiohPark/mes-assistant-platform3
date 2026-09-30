@@ -18,10 +18,10 @@ test('S6 크기 초과 실패가 기록되고 입력창을 다시 사용할 수 
   const task = await setup(page)
   await page.getByRole('button', { name: '팀 의견 (AI 미전송)' }).click()
   await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('x'.repeat(270_000))
-  // CI에서만 실패한 이력(run 36394xxxxxx) — 요청 POST의 응답 상태를 함께 단언해 413/401/행 없음을 구분한다
-  const responsePromise = page.waitForResponse((res) => res.url().includes('/requests') && res.request().method() === 'POST')
-  await page.getByRole('button', { name: '전송', exact: true }).click()
-  const response = await responsePromise
+  // 트레이는 초과 전송을 막으므로 서버의 기록형 실패 계약은 API 경로에서 확인한다.
+  const response = await page.request.post(`/api/threads/${task.threadId}/requests`, {
+    headers: { 'Idempotency-Key': `over-${Date.now()}` }, data: { content: 'x'.repeat(270_000) },
+  })
   expect(response.status(), `요청 POST 응답 ${response.status()} ${await response.text().catch(() => '')}`.slice(0, 300)).toBe(201) // SSE 시작은 201
   await expect(page.getByText(/요청 크기 한도 초과/).first()).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('textbox', { name: '팀 의견 입력' })).toBeEnabled()

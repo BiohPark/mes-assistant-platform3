@@ -22,6 +22,7 @@ function refresh(taskId: string) {
   void queryClient.invalidateQueries({ queryKey: ['conversation-inputs', taskId] })
   void queryClient.invalidateQueries({ queryKey: ['candidates', taskId] })
   void queryClient.invalidateQueries({ queryKey: ['task', taskId] })
+  void queryClient.invalidateQueries({ queryKey: ['estimate'] })
 }
 export const listConversationInputs = (taskId: string) => request<LoadedConversationInput[]>(path(taskId))
 export async function selectConversation(taskId: string, sourceTaskId: string, body: SelectConversation) {

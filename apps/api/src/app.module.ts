@@ -9,6 +9,7 @@ import { TasksModule } from './tasks/tasks.module.js'
 import { FilesModule } from './files/files.module.js'
 import { RequestsModule } from './requests/requests.module.js'
 import { ConversationInputsModule } from './context/conversation-inputs.module.js'
+import { EventsModule } from './events/events.module.js'
 
-@Module({ imports: [ConfigModule, DbModule, HealthModule, AuthModule, LlmModule, CatalogModule, TasksModule, FilesModule, RequestsModule, ConversationInputsModule] })
+@Module({ imports: [ConfigModule, DbModule, HealthModule, AuthModule, EventsModule, LlmModule, CatalogModule, TasksModule, FilesModule, RequestsModule, ConversationInputsModule] })
 export class AppModule {}

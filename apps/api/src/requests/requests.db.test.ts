@@ -19,6 +19,7 @@ import { DbTasksService } from '../tasks/tasks.service.js'
 import { RequestsService } from './requests.service.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { DbLlmPorts } from '../llm/dbLlmPorts.js'
+import { EventsService } from '../events/events.service.js'
 import { toLlmSettings } from '../llm/presets.js'
 
 describe('RequestService DB', () => {
@@ -56,6 +57,100 @@ describe('RequestService DB', () => {
     expect((await tasks.messages(thread.id)).map((item) => [item.role, item.status])).toEqual([['user', 'done'], ['assistant', 'done']])
     expect(JSON.stringify(await service.snapshot(started.id))).not.toMatch(/apiKey|remoteId/)
     expect((await db.select().from(chatRequest).where(eq(chatRequest.id, started.id)))[0]?.replyMessageId).toBe(started.replyMessageId)
+  })
+
+  it('estimates the same request info before sending and permits completed conversations', async () => {
+    const { task: owner, thread } = await tasks.create('member', { assistantId })
+    const estimate = await service.estimate('member', thread.id, { draft: '같은 본문' })
+    const started = await service.start('member', thread.id, { content: '같은 본문' }, 'estimate-equal')
+    await started.done
+    const completed: Array<Record<string, unknown>> = []
+    service.subscribe(started.id, (event) => { if (event.event === 'completed') completed.push(event.data) })
+    const actual = completed[0]?.requestInfo as import('@mes/domain').RequestInfo
+    expect(estimate).toMatchObject({ overLimit: false, attachmentLimit: expect.any(Number) })
+    expect({ provider: estimate.provider, transport: estimate.transport, model: estimate.model, limitBytes: estimate.limitBytes,
+      bytes: estimate.bytes, srCodes: estimate.srCodes, inputs: estimate.inputs }).toEqual({ provider: actual.provider, transport: actual.transport,
+      model: actual.model, limitBytes: actual.limitBytes, bytes: actual.bytes, srCodes: actual.srCodes, inputs: actual.inputs })
+    await tasks.setStatus('member', owner.id, 'done')
+    await expect(service.estimate('member', thread.id, { draft: '조회만' })).resolves.toMatchObject({ overLimit: false })
+  })
+
+  it('keeps file delivery and byte estimates identical for pinned and one-shot attachments', async () => {
+    const { task: owner, thread } = await tasks.create('member', { assistantId })
+    const files = [crypto.randomUUID(), crypto.randomUUID()]
+    for (const [index, fileId] of files.entries()) {
+      const storageKey = `test/${fileId}.txt`
+      await new FileStorageService(root).write(storageKey, Buffer.from(`file ${index}`))
+      await db.insert(fileObject).values({ id: fileId, kind: 'task_file', originTaskId: owner.id, originalName: `input-${index}.txt`,
+        mime: 'text/plain', sizeBytes: 6, sha256: 'a'.repeat(64), storageKey, source: 'upload', version: 1, uploadedBy: 'member' })
+    }
+    const body = { draft: '첨부 확인', attachmentIds: files, oneShotFileIds: [files[1]!] }
+    const estimate = await service.estimate('member', thread.id, body)
+    const started = await service.start('member', thread.id, { content: body.draft, attachmentIds: files, oneShotFileIds: body.oneShotFileIds }, 'estimate-files')
+    await started.done
+    const completed: Array<Record<string, unknown>> = []
+    service.subscribe(started.id, (event) => { if (event.event === 'completed') completed.push(event.data) })
+    const actual = completed[0]?.requestInfo as import('@mes/domain').RequestInfo
+    const comparable = (info: import('@mes/domain').RequestInfo) => ({ provider: info.provider, transport: info.transport, model: info.model,
+      bytes: info.bytes, limitBytes: info.limitBytes, srCodes: info.srCodes, inputs: info.inputs })
+    expect(comparable(estimate)).toEqual(comparable(actual))
+    expect(actual.inputs).toMatchObject([{ kind: 'file', oneShot: false, delivery: 'inline' }, { kind: 'file', oneShot: true, delivery: 'inline' }])
+  })
+
+  it('matches an attachment-only request with a blank draft', async () => {
+    const { task: owner, thread } = await tasks.create('member', { assistantId })
+    const fileId = crypto.randomUUID(), storageKey = `test/${fileId}.txt`
+    await new FileStorageService(root).write(storageKey, Buffer.from('file'))
+    await db.insert(fileObject).values({ id: fileId, kind: 'task_file', originTaskId: owner.id, originalName: 'only.txt',
+      mime: 'text/plain', sizeBytes: 4, sha256: 'a'.repeat(64), storageKey, source: 'upload', version: 1, uploadedBy: 'member' })
+    const estimate = await service.estimate('member', thread.id, { draft: '  ', attachmentIds: [fileId] })
+    const started = await service.start('member', thread.id, { content: '  ', attachmentIds: [fileId] }, 'attachment-only')
+    await started.done
+    const completed: Array<Record<string, unknown>> = []
+    service.subscribe(started.id, (event) => { if (event.event === 'completed') completed.push(event.data) })
+    const actual = completed[0]?.requestInfo as import('@mes/domain').RequestInfo
+    expect(estimate.bytes).toBe(actual.bytes)
+    expect(estimate.inputs).toEqual(actual.inputs)
+    expect((await tasks.messages(thread.id))[0]?.content).toBe('')
+  })
+
+  it('appends a pinned attachment after two existing selected files in estimate and request', async () => {
+    const { task: owner, thread } = await tasks.create('member', { assistantId })
+    const files = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]
+    for (const [index, fileId] of files.entries()) {
+      const storageKey = `test/${fileId}.txt`
+      await new FileStorageService(root).write(storageKey, Buffer.from(`file ${index}`))
+      await db.insert(fileObject).values({ id: fileId, kind: 'task_file', originTaskId: owner.id, originalName: `input-${index}.txt`,
+        mime: 'text/plain', sizeBytes: 6, sha256: 'a'.repeat(64), storageKey, source: 'upload', version: 1, uploadedBy: 'member' })
+    }
+    await db.insert(taskInput).values(files.slice(0, 2).map((fileId, index) => ({ taskId: owner.id, fileId, weight: 'reference' as const,
+      sortOrder: index, selectedBy: 'member' })))
+    const estimate = await service.estimate('member', thread.id, { draft: '추가', attachmentIds: [files[2]!] })
+    const started = await service.start('member', thread.id, { content: '추가', attachmentIds: [files[2]!] }, 'ordered-inputs')
+    await started.done
+    const completed: Array<Record<string, unknown>> = []
+    service.subscribe(started.id, (event) => { if (event.event === 'completed') completed.push(event.data) })
+    const actual = completed[0]?.requestInfo as import('@mes/domain').RequestInfo
+    expect(estimate.inputs).toEqual(actual.inputs)
+    expect(actual.inputs.filter((input) => input.kind === 'file').map((input) => input.fileId)).toEqual(files)
+    expect((await db.select().from(taskInput).where(eq(taskInput.taskId, owner.id))).sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((input) => input.sortOrder)).toEqual([0, 1, 2])
+  })
+
+  it('publishes request creation only after its row commits', async () => {
+    const events = new EventsService()
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32),
+      APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), provider, events)
+    const { thread } = await tasks.create('member', { assistantId })
+    let observed: Promise<unknown> | undefined
+    events.subscribe((event) => {
+      if (event.event === 'request.updated' && event.data.status === 'pending' && !observed) {
+        observed = db.select({ id: chatRequest.id }).from(chatRequest).where(eq(chatRequest.id, event.data.requestId))
+      }
+    })
+    const started = await runner.start('member', thread.id, { content: '커밋 확인' }, 'post-commit-event')
+    expect(await observed).toEqual([{ id: started.id }])
+    await started.done
   })
 
   it('rejects idempotency keys beyond the column limit for starts and retries', async () => {

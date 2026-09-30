@@ -9,12 +9,12 @@ import { formatSize } from '@/api/files'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
-export function ConversationPickerDialog({ taskId, candidate, current, onClose }: { taskId: string; candidate: ConversationCandidate;
-  current?: LoadedConversationInput; onClose: () => void }) {
+export function ConversationPickerDialog({ taskId, candidate, current, initialMode, onClose }: { taskId: string; candidate: ConversationCandidate;
+  current?: LoadedConversationInput; initialMode?: 'full' | 'messages' | 'summary'; onClose: () => void }) {
   const source = useQuery({ queryKey: ['task', candidate.taskId], queryFn: () => getTask(candidate.taskId) })
   const history = useQuery({ queryKey: ['messages', source.data?.threadId], queryFn: () => getMessages(source.data!.threadId!), enabled: !!source.data?.threadId })
   const messages = eligibleMessages(history.data ?? [])
-  const [mode, setMode] = useState<'full' | 'messages' | 'summary'>(current?.snapshot.mode ?? 'full')
+  const [mode, setMode] = useState<'full' | 'messages' | 'summary'>(initialMode ?? current?.snapshot.mode ?? 'full')
   const [picked, setPicked] = useState<string[] | null>(current?.snapshot.mode === 'messages' ? current.snapshot.messageIds : null)
   const [anchor, setAnchor] = useState<number | null>(null)
   const [weight, setWeight] = useState<'main' | 'reference'>(current?.input.weight ?? 'reference')
