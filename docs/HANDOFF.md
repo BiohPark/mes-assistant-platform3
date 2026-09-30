@@ -96,6 +96,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | D36 | **코드 관리 1차 설계(FR-63, S2-1a)**: 공통 코드 테이블 `code_group`·`code`, assistant `level1/level2`는 코드 참조. 프로그램 로직이 분기하는 상태(task·SR·요청 status)는 check 제약 유지(전이 규칙·테스트가 값에 묶임). 관리 화면·API는 S4 | 사용자 (2026-09-28, S2-kickoff) |
 | D37 | **BO 역할 저장(KI-2, S2-2a)**: `app_user.is_business_owner boolean` — SO와 같은 패턴, SO∧BO 조합 가능. `roles`의 `requester`가 여기서 나옴. 지정 화면은 S4 | 사용자 (2026-09-28) |
 | D38 | S2 세부: 완료 기준은 데모 E1 S1·S3·S4(parity 배정) · 태스크 4개 순차 · PC 간 실시간은 S3 SSE · 파일 한도는 설정값(50 MB/20개) · 업무 코드 `WK-YYYY-NNNN` 서버 발급 · 개발 시드 `pnpm db:seed`(운영 거부) · S2 파일 접근은 로그인 사용자 전원 · S2 E2E는 LLM 호출 없음 | 사용자 (2026-09-28, [S2-kickoff §세부 결정](next-project/S2-kickoff.md)) |
+| D41 | **S4 세부 결정 확정**([S4-kickoff.md](next-project/S4-kickoff.md)) — 모두 추천안: S4-1 비밀번호는 본인 변경 + SO 임시 비밀번호 발급(다음 로그인 때 변경 강제) · S4-2 코드 그룹은 시스템 정의, SO는 코드만 관리 · S4-3 에이전트 이미지는 로그인 사용자 전원 열람·업로드는 SO · S4-4 요청자(BO)는 자기 SR 첨부와 "결과 공유"에 담긴 파일만 · S4-6 완료 리포트는 데모 형식 · S4-7 노트 첨부는 자료함 파일 참조 · S4-8 알림은 데모 4종 · S4-9 리포트 집계는 데모 정의 · S4-10 시스템 어시스턴트는 데모 그대로(live 도구 정의 전송, mock 규칙 기반). 태스크 순서: admin → sr → task-extras → notify-reports → system-assistant | 사용자 (2026-10-01) |
 | D40 | **DB 엔진 전환**: PostgreSQL 16 → **MariaDB**(단독 설치, 기준 11.8 LTS·호환 하한 10.4). D20·D32의 DB 부분을 대체. 방식은 이관(기존 테스트를 기준으로 DB 계층만 재작성), 옮길 운영 데이터 없음 → 초기 마이그레이션 1개로 재시작. 계획·매핑 규칙·검수 관문: [db-mariadb-plan.md](next-project/db-mariadb-plan.md) | 사용자 (2026-09-30) |
 | D39 | **S3 상세 설계 확정**([S3-design.md](next-project/S3-design.md) 개정 1) + D3-1~7 모두 추천안: SR 스코프 미리 개방 · 보조 호출 기록 없음 · 스냅샷 파일 임계 1 MiB · 이벤트 버퍼 5분/1000건·15 s·resync · 완료 대화 추정 허용 · **대화 삭제는 소프트 삭제로 전환**(`task.deleted_at`) · 멱등 키 헤더 필수 | 사용자 (2026-09-28) |
 | D33 | 역할 호칭: **SO = System Owner, BO = Business Owner(= PRD의 요청자, SR 접수 현업)**. "담당자"는 에이전트를 컨트롤하는 사람이라는 뜻일 뿐 권한 등급이 아님 → 로그인한 기본 사용자(`member`). 권한 등급은 기본 사용자·SO·BO 셋 | 사용자 (2026-09-28) |
@@ -135,7 +136,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | **진행(S3)** | [S3-design.md](next-project/S3-design.md) 확정(D39). ① `s3-request` 완료·병합(839ed7c). **② `s3-context` 착수**(`feat/s3-context`, MariaDB 전제 반영) → ③ `s3-tray-events` | tasks/s3-context |
 | ~~S1 ②~~ 병합 완료 | 서버 대리 호출 기반 `feat/s1-llm-proxy` — `LLM_MODE`·`LLM_PRESET`(openwebui/openai-compatible)·`GET /api/llm/models`·`/status`, `LlmPorts` DB 어댑터 1차, `FileStorageService`(realpath 루트·내부 링크 거부), 웹 모델 목록·SO 배지. codex-critic 4건+누락 1건 반영. 검증 단위 165·DB 15·E2E 2, CI 5/5(Windows 8.3 경로·CI 환경 의존 2건 수정 후). **OpenAI 실키 수동 확인은 사용자 키 필요** | tasks/s1-llm-proxy |
 | ~~S1 ①~~ 병합 완료 | 앱 자체 로그인·회원가입(D34) `feat/s1-auth-local` — codex-main 구현 + codex-critic 리뷰 4건 반영. 검증 단위 142·DB 9·E2E 2. CI 녹색 확인 후 `main` 병합(사용자 승인) | tasks/s1-auth-local · [요구사항 검토](status/requirements-review-2026-09-28.md) |
-| 착수 전 확인 | OpenWebUI 버전(사용자 추후 회신), 비기능 제안값(PRD §6) | next-project/README |
+| 착수 전 확인 | OpenWebUI 버전(사용자 추후 회신), 비기능 제안값(PRD §6), **사내 모델의 도구 호출(function calling) 지원 여부**(S4-10 — 미지원이면 시스템 어시스턴트가 제안 카드 없이 답만 냄) | next-project/README |
 | 중간 | IdP 로그아웃, 요청자 역할 저장 | [KNOWN_ISSUES](../KNOWN_ISSUES.md) KI-1·KI-2 |
 
 ## 7. 주의사항 (함정)
