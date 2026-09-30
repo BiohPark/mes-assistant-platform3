@@ -2,7 +2,7 @@ import mysql from 'mysql2/promise'
 
 /** 앱·도구·테스트가 공유하는 연결 설정. 새 물리 연결마다 세션 정책을 적용한다. */
 export function createPool(databaseUrl: string, connectionLimit = 10) {
-  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit, timezone: 'Z', flags: ['FOUND_ROWS'] })
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit, timezone: 'Z', jsonStrings: true, flags: ['FOUND_ROWS'] })
   const getConnection = pool.pool.getConnection.bind(pool.pool)
   const configured = new WeakSet<object>()
   pool.pool.getConnection = (callback) => getConnection((error, connection) => {
