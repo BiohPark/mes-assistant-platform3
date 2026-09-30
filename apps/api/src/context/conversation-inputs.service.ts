@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { byteLength, eligibleMessages, newMessagesSince, type ContextSnapshot, type ConversationInput, type Message } from '@mes/domain'
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
+import { EventsService } from '../events/events.service.js'
 import { activityLog, assistant, contextSnapshot, contextSnapshotMessage, conversationInput, message, tag, task, taskTag, thread } from '../db/schema.js'
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
@@ -18,7 +19,7 @@ const eligible = (rows: (typeof message.$inferSelect)[]): Message[] => eligibleM
 
 @Injectable()
 export class DbConversationInputsService {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(@Inject(DB) private readonly db: Db, @Inject(EventsService) private readonly events?: EventsService) {}
 
   private async taskRow(taskId: string, tx: Db | Tx = this.db) {
     const [row] = await tx.select().from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt)))
@@ -129,6 +130,7 @@ export class DbConversationInputsService {
       else await tx.insert(conversationInput).values({ id: id(), taskId, sourceTaskId, snapshotId, mode: options.mode, weight: options.weight ?? 'reference', selectedBy: actor })
       await tx.insert(activityLog).values({ id: id(), type: existing ? 'context.refreshed' : 'context.selected', userId: actor, taskId, payload: { code: locked.find((row) => row.id === sourceTaskId)?.code, mode: options.mode, messages: chosen.length, weight: options.weight ?? existing?.weight ?? 'reference' } })
     })
+    this.events?.publish('context.updated', { taskId })
     return (await this.list(taskId)).find((row) => row.input.sourceTaskId === sourceTaskId)!
   }
 
@@ -147,6 +149,7 @@ export class DbConversationInputsService {
       if (!result[0].affectedRows) throw new NotFoundException('선택을 찾을 수 없습니다')
       await tx.insert(activityLog).values({ id: id(), type: 'context.selected', userId: actor, taskId, payload: { sourceTaskId, weight } })
     })
+    this.events?.publish('context.updated', { taskId })
   }
   async remove(actor: string, taskId: string, sourceTaskId: string) {
     await this.db.transaction(async (tx) => {
@@ -156,6 +159,7 @@ export class DbConversationInputsService {
       const result = await tx.delete(conversationInput).where(and(eq(conversationInput.taskId, taskId), eq(conversationInput.sourceTaskId, sourceTaskId)))
       if (result[0].affectedRows) await tx.insert(activityLog).values({ id: id(), type: 'context.removed', userId: actor, taskId, payload: { sourceTaskId } })
     })
+    this.events?.publish('context.updated', { taskId })
   }
   async preview(sourceTaskId: string) { await this.taskRow(sourceTaskId); return this.messages(sourceTaskId) }
 }

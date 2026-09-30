@@ -37,6 +37,7 @@ export function configureApp<T extends INestApplication>(app: T, config: AppConf
   }
   app.use('/api/tasks/:id/outputs', jsonBody(config.fileMaxBytes + 1024 * 1024))
   app.use(/^\/api\/threads\/[^/]+\/requests\/?$/, jsonBody(2 * 1024 * 1024))
+  app.use(/^\/api\/threads\/[^/]+\/requests\/estimate\/?$/, jsonBody(2 * 1024 * 1024))
   app.enableShutdownHooks()
   return app
 }

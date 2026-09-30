@@ -17,7 +17,8 @@ const scopeHash = (key: string) => createHash('sha256').update(key).digest('hex'
 /** LLM prompt builder에서 필요한 S1 DB 읽기 어댑터. */
 export class DbLlmPorts implements LlmPorts {
   private readonly storageKeys = new Map<string, string>()
-  constructor(private readonly db: Db, private readonly config: AppConfig, private readonly currentUserId: string, private readonly storage = new FileStorageService(config.fileStorageRoot)) {}
+  constructor(private readonly db: Db, private readonly config: AppConfig, private readonly currentUserId: string,
+    private readonly storage = new FileStorageService(config.fileStorageRoot), private readonly draftInputs?: { taskId: string; fileIds: string[] }) {}
 
   async getSettings(): Promise<Settings> {
     const rows = await this.db.select().from(appSetting)
@@ -59,7 +60,13 @@ export class DbLlmPorts implements LlmPorts {
     }))
   }
 
-  async getTask(id: string): Promise<Task | undefined> { return (await this.getTasks([id]))[0] }
+  async getTask(id: string): Promise<Task | undefined> {
+    const owner = (await this.getTasks([id]))[0]
+    if (!owner || this.draftInputs?.taskId !== id) return owner
+    const extra = this.draftInputs.fileIds.filter((fileId) => !owner.inputs.some((item) => item.fileId === fileId))
+    return { ...owner, inputs: [...owner.inputs, ...extra.map((fileId, index) => ({ fileId, weight: 'reference' as const,
+      selectedAt: new Date(0).toISOString(), selectedBy: this.currentUserId, sortOrder: owner.inputs.length + index }))] }
+  }
 
   async getTasks(ids: string[]): Promise<(Task | undefined)[]> {
     if (!ids.length) return []

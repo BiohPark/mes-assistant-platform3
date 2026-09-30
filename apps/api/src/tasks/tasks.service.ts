@@ -5,6 +5,7 @@ import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
 import { unionAll } from 'drizzle-orm/mysql-core'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appUser, assistant, chatRequest, chatRequestInput, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { EventsService } from '../events/events.service.js'
 
 export interface CreateTaskInput {
   assistantId: string
@@ -32,7 +33,7 @@ const checkTagLength = (label: string) => { if ([...tagKey(label)].length > 191)
 
 @Injectable()
 export class DbTasksService {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(@Inject(DB) private readonly db: Db, @Inject(EventsService) private readonly events?: EventsService) {}
 
   private async row(taskId: string) {
     const [row] = await this.db.select().from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt)))
@@ -156,6 +157,14 @@ export class DbTasksService {
       return taskId
     })
     const created = await this.get(createdId)
+    if (createdId === taskId) {
+      this.events?.publish('task.created', { taskId, assistantId: selected.id })
+      if (input.firstMessage?.trim()) {
+        const [first] = await this.db.select({ id: message.id }).from(message).where(eq(message.threadId, threadId)).orderBy(message.seq).limit(1)
+        if (first) this.events?.publish('message.appended', { threadId, taskId, messageId: first.id })
+      }
+      if (input.referenceTaskId && !warnings.length) this.events?.publish('context.updated', { taskId })
+    }
     return { task: created, thread: created.thread!, warnings }
   }
 
@@ -199,6 +208,7 @@ export class DbTasksService {
       }
       if (patch.modelId !== undefined) await tx.insert(activityLog).values({ id: id(), type: 'model.changed', userId: actor, taskId, payload: { modelId: patch.modelId } })
     })
+    this.events?.publish('task.updated', { taskId })
     return this.get(taskId)
   }
 
@@ -219,6 +229,7 @@ export class DbTasksService {
         lastActivityAt: new Date() }).where(eq(task.id, taskId))
       await tx.insert(activityLog).values({ id: id(), type, userId: actor, taskId, assistantId: current.assistantId, payload: { from: current.status, to: status, ...(reason && { reason }) } })
     })
+    this.events?.publish('task.updated', { taskId })
     return this.get(taskId)
   }
 
@@ -237,6 +248,7 @@ export class DbTasksService {
         await tx.insert(activityLog).values({ id: id(), type: 'tag.added', userId: actor, taskId, payload: { tag: label } })
       }
     })
+    this.events?.publish('task.updated', { taskId })
   }
 
   async removeTag(actor: string, taskId: string, raw: string): Promise<void> {
@@ -248,6 +260,7 @@ export class DbTasksService {
         await tx.insert(activityLog).values({ id: id(), type: 'tag.removed', userId: actor, taskId, payload: { tag: normalizeTag(raw) } })
       }
     })
+    this.events?.publish('task.updated', { taskId })
   }
 
   async suggestions(prefix: string, exclude: string[] = []) {
@@ -272,7 +285,7 @@ export class DbTasksService {
     if (input.kind !== 'discussion') throw new BadRequestException('AI 요청은 S3에서 지원합니다')
     if (!input.content?.trim() && !input.attachmentIds?.length) throw new BadRequestException('내용이 필요합니다')
     const messageId = id()
-    await this.db.transaction(async (tx) => {
+    const taskId = await this.db.transaction(async (tx) => {
       const [target] = await tx.select().from(thread).where(eq(thread.id, threadId))
       if (!target?.taskId) throw new NotFoundException('스레드를 찾을 수 없습니다')
       await this.ensureEditable(tx, target.taskId)
@@ -287,7 +300,9 @@ export class DbTasksService {
       if (attachmentIds.length) await tx.insert(messageAttachment).values(attachmentIds.map((fileId) => ({ messageId, fileId })))
       await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, target.taskId!))
       await tx.insert(activityLog).values({ id: id(), type: 'message.sent', userId: actor, taskId: target.taskId, payload: { kind: 'discussion' } })
+      return target.taskId
     })
+    this.events?.publish('message.appended', { threadId, taskId, messageId })
     return (await this.messages(threadId)).find((item) => item.id === messageId)
   }
 
@@ -319,5 +334,6 @@ export class DbTasksService {
       await tx.delete(conversationInput).where(eq(conversationInput.taskId, taskId))
       await tx.update(task).set({ deletedAt: new Date() }).where(eq(task.id, taskId))
     })
+    this.events?.publish('task.updated', { taskId })
   }
 }
