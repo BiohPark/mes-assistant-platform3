@@ -22,7 +22,8 @@ async function scopeOf(taskId: string): Promise<{ scope: ChatScope; thread: Thre
 }
 
 async function historyOf(threadId: string) {
-  return db.messages.where('threadId').equals(threadId).sortBy('createdAt')
+  return (await db.messages.where('threadId').equals(threadId).sortBy('createdAt')).sort((a, b) =>
+    a.seq !== undefined && b.seq !== undefined ? a.seq - b.seq : a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
 }
 
 beforeEach(async () => {
