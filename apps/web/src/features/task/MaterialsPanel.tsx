@@ -8,8 +8,9 @@ import { useActor } from '@/app/hooks'
 import { FileList } from './FileList'
 import { FilePreviewDialog } from './FilePreviewDialog'
 import { InputToggle } from './InputToggle'
+import { ConversationInputs } from './ConversationInputs'
 
-type Tab = 'inputs' | 'shared' | 'own'
+type Tab = 'inputs' | 'shared' | 'conversations' | 'own'
 export function MaterialsPanel({ task }: { task: Task }) {
   const actor = useActor()
   const uploadRef = useRef<HTMLInputElement>(null)
@@ -36,7 +37,7 @@ export function MaterialsPanel({ task }: { task: Task }) {
   }
   return <div className="space-y-3 text-xs" data-testid="materials-panel">
     <div role="tablist" aria-label="자료 탭" className="flex gap-1 border-b pb-2">
-      {([['inputs', 'AI 입력'], ['shared', '공유 자료함'], ['own', '이 대화 파일']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`rounded px-2 py-1 ${tab === value ? 'bg-muted font-medium' : ''}`}>{label}</button>)}
+      {([['inputs', 'AI 입력'], ['shared', '공유 자료함'], ['conversations', '대화'], ['own', '이 대화 파일']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`rounded px-2 py-1 ${tab === value ? 'bg-muted font-medium' : ''}`}>{label}</button>)}
     </div>
     {(candidates.isError || own.isError) && <div role="alert">자료를 불러오지 못했습니다. <button type="button" className="underline" onClick={() => { void candidates.refetch(); void own.refetch() }}>다시 시도</button></div>}
     {tab === 'inputs' && <div data-testid="materials-inputs" className="space-y-2">
@@ -54,6 +55,8 @@ export function MaterialsPanel({ task }: { task: Task }) {
         </div>
       })}
     </div>}
+    {tab === 'inputs' && <><div className="border-t pt-2 text-xs font-medium">참조 대화</div><ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} selectedOnly /></>}
+    {tab === 'conversations' && <ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} />}
     {tab === 'shared' && <div data-testid="materials-shared" className="space-y-2">
       <input aria-label="공유 자료함 검색" placeholder="파일 이름으로 찾기" value={search} onChange={(event) => setSearch(event.target.value)} className="w-full rounded border px-2 py-1" />
       {!shared.length && <div className="rounded border border-dashed p-3 text-center text-muted-foreground">같은 태그 대화의 파일이 없습니다.</div>}

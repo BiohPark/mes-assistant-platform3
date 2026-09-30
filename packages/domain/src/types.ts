@@ -119,7 +119,7 @@ export interface ContextSnapshot {
   id: ID
   sourceTaskId: ID
   mode: ContextMode
-  /** full·messages: 전달할 메시지 ID (시간순) */
+  /** full·messages: 전달할 ID, summary: 요약 출처 ID (원본 순번순) */
   messageIds: ID[]
   /** 선택 시점의 마지막 적격 메시지 — 이후 메시지는 "새 메시지"로 안내 */
   upToMessageId?: ID
@@ -258,6 +258,8 @@ export interface RequestInfo {
 
 export interface Message {
   id: ID
+  /** 서버가 부여한 스레드 내 순번. 없는 메시지는 생성 시각으로 정렬한다. */
+  seq?: number
   requestId?: ID
   threadId: ID
   role: MessageRole

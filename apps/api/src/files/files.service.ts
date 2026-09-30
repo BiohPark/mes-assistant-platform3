@@ -5,6 +5,7 @@ import { DB, type Db } from '../db/db.module.js'
 import { activityLog, fileObject, tag, task, taskInput, taskTag } from '../db/schema.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { FileStorageService, createStorageKey, sha256 } from './fileStorage.service.js'
+import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
 
 export const FILE_STORAGE = Symbol('FILE_STORAGE')
 type FileRow = typeof fileObject.$inferSelect
@@ -180,7 +181,7 @@ export class DbFilesService {
         ...(selectedById.has(row.id) && { selected: selectedById.get(row.id) }),
         ...(head !== row.id && { newerVersionId: head }), ...(olderVersionIds.length && { olderVersionIds }) }
     })
-    return { files, conversations: [] }
+    return { files, conversations: await new DbConversationInputsService(this.db).candidates(taskId) }
   }
 
   async filesForTask(taskId: string) {

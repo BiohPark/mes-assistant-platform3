@@ -32,9 +32,10 @@ export function eligibleMessages(messages: Message[]): Message[] {
   )
 }
 
-const byTime = (a: Message, b: Message) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)
+const byTime = (a: Message, b: Message) => a.seq !== undefined && b.seq !== undefined
+  ? a.seq - b.seq : a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)
 
-/** 스냅샷이 가리키는 메시지를 시간순으로. 사라진 ID는 건너뛴다. */
+/** 스냅샷이 가리키는 메시지를 원본 순번순으로. 사라진 ID는 건너뛴다. */
 export function snapshotMessages(messageIds: ID[], messages: Message[]): Message[] {
   const wanted = new Set(messageIds)
   return messages.filter((m) => wanted.has(m.id)).sort(byTime)
@@ -43,8 +44,8 @@ export function snapshotMessages(messageIds: ID[], messages: Message[]): Message
 /** 스냅샷 경계 이후에 생긴 적격 메시지 수 ("새 메시지 N · 갱신" 안내용) */
 export function newMessagesSince(snapshot: Pick<ContextSnapshot, 'upToMessageId' | 'upToCreatedAt'>, messages: Message[]): number {
   const eligible = eligibleMessages([...messages].sort(byTime))
-  if (!snapshot.upToCreatedAt) return eligible.length
   const idx = snapshot.upToMessageId ? eligible.findIndex((m) => m.id === snapshot.upToMessageId) : -1
   if (idx >= 0) return eligible.length - idx - 1
+  if (!snapshot.upToCreatedAt) return eligible.length
   return eligible.filter((m) => m.createdAt > snapshot.upToCreatedAt!).length
 }

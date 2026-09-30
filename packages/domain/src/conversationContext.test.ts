@@ -65,4 +65,14 @@ describe('snapshotMessages / newMessagesSince', () => {
     expect(newMessagesSince({ upToMessageId: 'm3', upToCreatedAt: '2026-01-01T00:00:03Z' }, rows)).toBe(0)
     expect(newMessagesSince({}, rows)).toBe(3)
   })
+
+  it('uses sequence for same-time turns and the snapshot boundary', () => {
+    const sameTime = '2026-01-01T00:00:02Z'
+    const turns = [msg('z-question', sameTime, { seq: 1 }), msg('a-answer', sameTime, { seq: 2, role: 'assistant' }),
+      msg('y-question', sameTime, { seq: 3 }), msg('b-answer', sameTime, { seq: 4, role: 'assistant' })]
+    expect(snapshotMessages(['b-answer', 'y-question', 'a-answer', 'z-question'], turns).map((m) => m.id))
+      .toEqual(['z-question', 'a-answer', 'y-question', 'b-answer'])
+    expect(newMessagesSince({ upToMessageId: 'a-answer', upToCreatedAt: sameTime }, turns)).toBe(2)
+    expect(newMessagesSince({ upToMessageId: 'a-answer' }, turns)).toBe(2)
+  })
 })

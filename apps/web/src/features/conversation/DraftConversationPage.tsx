@@ -17,6 +17,7 @@ import { Markdown } from '@/components/Markdown'
 import { UserAvatar } from '@/components/UserAvatar'
 import { Composer, type PendingAttachment } from '@/features/chat/Composer'
 import { suggestionsFrom } from '@/features/chat/suggestions'
+import { toast } from 'sonner'
 
 /** 카드 클릭은 초안만 연다. 첫 팀 의견을 보낼 때 대화와 스레드가 생성된다. */
 export function DraftConversationPage() {
@@ -44,7 +45,8 @@ export function DraftConversationPage() {
     sending.current = true
     setBusy(true)
     try {
-      const { task } = await startConversation(actor, { assistantId: assistant.id, tags, ...(refId && { referenceTaskId: refId }), ...(!attachments.length && text.trim() && { firstMessage: text.trim() }) })
+      const { task, warnings } = await startConversation(actor, { assistantId: assistant.id, tags, ...(refId && { referenceTaskId: refId }), ...(!attachments.length && text.trim() && { firstMessage: text.trim() }) })
+      for (const warning of warnings) toast.warning(warning)
       try {
         if (attachments.length) {
           const uploaded: string[] = []
@@ -90,7 +92,7 @@ export function DraftConversationPage() {
           <div className="space-y-1.5"><div className="text-xs font-medium">태그</div>
             <TagInput tags={tags} suggest={suggest} onAdd={(value) => setTags((current) => current.some((item) => tagKey(item) === tagKey(value)) ? current : [...current, value])} onRemove={(value) => setTags((current) => current.filter((item) => item !== value))} placeholder="SR 번호·키워드" />
           </div>
-          {refId && <div className="rounded-xl border border-amber-300 bg-amber-50/40 p-3 text-xs">참조 대화 {refId} · 참조 선택은 S3에서 지원합니다.</div>}
+          {refId && <div className="rounded-xl border border-amber-300 bg-amber-50/40 p-3 text-xs">참조 대화 {refId} · 같은 태그가 있으면 주 입력으로 선택합니다.</div>}
           {assistant.usageExample && <div className="rounded-xl border"><button type="button" className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-medium" onClick={() => setShowUsage(!showUsage)}><Info className="size-3.5" />사용법 {showUsage ? '접기' : '보기'}</button>{showUsage && <Markdown content={assistant.usageExample} className="border-t px-3 py-2 text-sm" />}</div>}
           {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">폐기된 에이전트입니다. <Link to="/" className="underline">다른 에이전트 고르기</Link></div>}
         </div>

@@ -29,7 +29,8 @@ export class TasksController {
   @Post()
   async create(@Req() req: AuthedRequest, @Body() body: unknown, @Headers('idempotency-key') key?: string) {
     const input = parse(createSchema, body)
-    return (await (key ? this.tasks.create(req.user!.id, input, key) : this.tasks.create(req.user!.id, input))).task
+    const created = await (key ? this.tasks.create(req.user!.id, input, key) : this.tasks.create(req.user!.id, input))
+    return { ...created.task, ...(created.warnings?.length && { warnings: created.warnings }) }
   }
 
   @Get()
@@ -88,7 +89,13 @@ export class ThreadsController {
   constructor(@Inject(DbTasksService) private readonly tasks: DbTasksService, @Inject(CONFIG) private readonly config: AppConfig) {}
 
   @Get(':id/messages')
-  messages(@Param('id') id: string) { return this.tasks.messages(id) }
+  async messages(@Param('id') id: string, @Query() query: Record<string, unknown>) {
+    const rows = await this.tasks.messages(id)
+    const ids = values(query.ids)
+    if (!ids.length) return rows
+    const selected = new Set(ids.flatMap((value) => value.split(',')).filter(Boolean))
+    return rows.filter((row) => selected.has(row.id))
+  }
 
   @Post(':id/messages')
   append(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {

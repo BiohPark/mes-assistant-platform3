@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common'
 import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
-import { buildChatRequest, createProvider, suggestTitle, type ChatProvider } from '@mes/llm'
+import { buildChatRequest, createProvider, suggestTitle, summarizeConversation, SummaryBudgetError, type ChatProvider } from '@mes/llm'
 import type { LlmSettings, Message, RequestInfo, RequestInput, ServiceRequest, Thread } from '@mes/domain'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
@@ -64,6 +64,17 @@ export class RequestsService implements OnModuleDestroy {
   onModuleDestroy() { if (this.sweepTimer) clearInterval(this.sweepTimer) }
   listModels() { return this.provider.listModels() }
   ping() { return this.provider.ping() }
+  async draftConversationSummary(actor: string, taskId: string, messages: Message[], signal?: AbortSignal) {
+    const ports = new DbLlmPorts(this.db, this.config, actor)
+    const [owner, agents, users, settings] = await Promise.all([ports.getTask(taskId), ports.getAssistants(), ports.getUsers(), ports.getSettings()])
+    if (!owner) throw new NotFoundException('대화를 찾을 수 없습니다')
+    const limitBytes = settings.requestBudgetBytes ?? this.config.request.budgetBytes
+    if (Buffer.byteLength(messages.map((item) => item.content).join('\n\n')) > limitBytes) throw new HttpException('요약할 원문이 요청 크기 한도를 넘습니다', 413)
+    const model = owner.modelId ?? agents.find((item) => item.id === owner.assistantId)?.modelId ?? this.config.llm.defaultModel ?? 'glm-5.2'
+    const userMap = new Map(users.map((user) => [user.id, user]))
+    try { return await this.runAuxiliary(actor, 'summary', (auxSignal) => summarizeConversation(this.provider, model, messages, userMap, { limitBytes, signal: auxSignal }), { signal }) }
+    catch (error) { if (error instanceof SummaryBudgetError) throw new HttpException(error.message, 413); throw error }
+  }
   async runAuxiliary<T>(actor: string, _kind: 'title' | 'summary' | 'checklist', operation: (signal: AbortSignal) => Promise<T>,
     options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<T> {
     if (this.auxiliaryUsers.has(actor)) throw new HttpException('보조 요청이 이미 진행 중입니다', 429)

@@ -23,10 +23,10 @@ function refresh(taskId?: string) {
   }
 }
 
-export async function startConversation(_actor: Actor, input: StartConversationInput): Promise<{ task: Task; thread: Thread }> {
-  const task = await request<Task>('/tasks', 'POST', input)
+export async function startConversation(_actor: Actor, input: StartConversationInput): Promise<{ task: Task; thread: Thread; warnings: string[] }> {
+  const task = await request<Task & { warnings?: string[] }>('/tasks', 'POST', input)
   refresh(task.id)
-  return { task, thread: { id: task.threadId!, taskId: task.id, title: '대화', createdAt: task.createdAt, createdBy: task.createdBy, archived: false } }
+  return { task, thread: { id: task.threadId!, taskId: task.id, title: '대화', createdAt: task.createdAt, createdBy: task.createdBy, archived: false }, warnings: task.warnings ?? [] }
 }
 
 export async function listTasks(filter: TaskFilter = {}): Promise<Task[]> {
