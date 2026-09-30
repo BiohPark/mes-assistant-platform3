@@ -32,6 +32,9 @@ describe('세션·사용자 저장소 (MariaDB)', () => {
     OIDC_CLIENT_SECRET: 's',
     INITIAL_SYSTEM_OWNERS: 'dev-owner',
   })
+  const expectStatus = (status: number) => (response: { status: number; body: unknown }) => {
+    expect(response.status, JSON.stringify(response.body)).toBe(status)
+  }
 
   it('local 회원가입 → 비밀번호 조회 → 로그인 세션 resolve', async () => {
     const local = { ...config, authMode: 'local' as const, oidc: undefined }
@@ -57,9 +60,9 @@ describe('세션·사용자 저장소 (MariaDB)', () => {
     try {
       await app.init()
       await request(app.getHttpServer()).get('/api/health').expect(200, { status: 'ok', db: 'up' })
-      const signup = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'api-local-member', password: 'password-1234' }).expect(201)
+      const signup = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'api-local-member', password: 'password-1234' }).expect(expectStatus(201))
       expect(signup.body.roles).toEqual(['member'])
-      const login = await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'api-local-member', password: 'password-1234' }).expect(200)
+      const login = await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'api-local-member', password: 'password-1234' }).expect(expectStatus(200))
       const cookie = String(login.headers['set-cookie']).split(';')[0]!
       const me = await request(app.getHttpServer()).get('/api/me').set('Cookie', cookie).expect(200)
       expect(me.body.id).toBe(signup.body.id)
@@ -148,10 +151,10 @@ describe('세션·사용자 저장소 (MariaDB)', () => {
     const app = configureApp(moduleRef.createNestApplication(), local)
     try {
       await app.init()
-      const first = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(201)
+      const first = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(expectStatus(201))
       expect(first.body.roles).toEqual(['member', 'system_owner'])
-      await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(409)
-      const second = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'second-owner', password: 'password-1234' }).expect(201)
+      await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(expectStatus(409))
+      const second = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'second-owner', password: 'password-1234' }).expect(expectStatus(201))
       expect(second.body.roles).toEqual(['member'])
       const oidc = new DbUserDirectory(db, { ...config, initialSystemOwners: ['late-oidc-owner'] })
       const late = await oidc.upsertFromClaims({ sub: 'late-oidc-owner' })

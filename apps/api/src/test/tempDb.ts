@@ -7,7 +7,8 @@ export async function createTempDb(label: string) {
   if (!base) throw new Error('DATABASE_URL이 없습니다 — docker compose up 후 .env를 준비하세요')
   const name = `t_${label}_${randomUUID().replaceAll('-', '').slice(0, 12)}`
   const admin = createPool(base, 1)
-  await admin.query(`create database \`${name}\` character set utf8mb4 collate utf8mb4_nopad_bin`)
+  try { await admin.query(`create database \`${name}\` character set utf8mb4 collate utf8mb4_nopad_bin`) }
+  catch (error) { await admin.end().catch(() => undefined); throw error }
   const url = new URL(base)
   url.pathname = `/${name}`
   return {

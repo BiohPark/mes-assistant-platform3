@@ -23,7 +23,7 @@ class SoOnlyController {
 }
 
 const config = loadConfig({
-  DATABASE_URL: 'postgres://u:p@localhost:1/none',
+  DATABASE_URL: 'mysql://u:p@localhost:1/none',
   SESSION_SECRET: 's'.repeat(32),
   APP_ORIGIN: 'http://localhost:5173',
   AUTH_MODE: 'oidc',
