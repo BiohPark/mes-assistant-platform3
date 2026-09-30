@@ -21,8 +21,8 @@ services:
 
   mariadb:
     image: mariadb:11.8
-    # 문자 비교를 대소문자·바이트 그대로(PostgreSQL과 같은 의미)로 고정한다
-    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_bin"]
+    # 문자 비교를 대소문자·끝 공백까지 그대로(PostgreSQL과 같은 의미)로 고정한다
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_nopad_bin"]
     environment:
       MARIADB_DATABASE: ${MARIADB_DATABASE:-mes_hub}
       MARIADB_USER: ${MARIADB_USER:-mes}
