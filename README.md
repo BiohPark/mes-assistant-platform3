@@ -29,7 +29,7 @@ docker/             개발용 의존 서비스 설정 (Keycloak realm — OIDC �
 ```bash
 pnpm install
 pnpm setup:env          # .env.example → .env (로컬 개발용 가상 값)
-docker compose up -d --wait   # PostgreSQL 16 · 가짜 OpenWebUI (Keycloak은 --profile oidc)
+docker compose up -d --wait   # MariaDB 11.8 · 가짜 OpenWebUI (Keycloak은 --profile oidc)
 pnpm db:migrate
 pnpm db:seed             # 개발용 가상 카탈로그(운영 거부)
 pnpm dev                # api http://localhost:3000/api · web http://localhost:5173
@@ -47,7 +47,7 @@ api·web은 Docker 없이 Node로 직접 빌드·실행한다(`pnpm build` → `
 |---|---|
 | 타입 검사 | `pnpm typecheck` |
 | 단위 테스트 (DB 없이) | `pnpm test` |
-| DB 통합 테스트 | `pnpm test:db` (compose의 PostgreSQL 필요) |
+| DB 통합 테스트 | `pnpm test:db` (compose의 MariaDB 필요) |
 | E2E | `pnpm test:e2e` (compose 필요, 처음 한 번 `pnpm --filter @mes/e2e install:browsers`) |
 | 린트 | `pnpm lint` |
 | 빌드 | `pnpm build` |
@@ -55,7 +55,7 @@ api·web은 Docker 없이 Node로 직접 빌드·실행한다(`pnpm build` → `
 | 마이그레이션 적용 | `pnpm db:migrate` |
 | 개발용 시드(가상 카탈로그·코드) | `pnpm db:seed` |
 
-DB 스키마는 [docs/architecture/postgres-draft.sql](docs/architecture/postgres-draft.sql)과 1:1이다 — 한쪽을 바꾸면 다른 쪽도 바꾸고 `pnpm test:db`로 대조한다.
+DB는 MariaDB(기준 11.8 LTS, 10.4 이상)다. 스키마 정본은 `apps/api/src/db/schema.ts`와 `apps/api/drizzle/` — 스키마를 바꾸면 `db:generate`로 마이그레이션을 만들고, 어긋나면 `pnpm test`가 알려 준다. 규칙은 [docs/next-project/db-mariadb-plan.md](docs/next-project/db-mariadb-plan.md) §3.
 
 ## 저장소 규칙
 

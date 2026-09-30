@@ -30,7 +30,7 @@ if (flag === '--list') {
   process.exit(0)
 }
 
-// 네이티브 명령(pnpm·psql·git)의 실패도 즉시 중단 (PowerShell 7.3+)
+// 네이티브 명령(pnpm·mariadb·git)의 실패도 즉시 중단 (PowerShell 7.3+)
 const script = [
   "$ErrorActionPreference = 'Stop'",
   '$PSNativeCommandUseErrorActionPreference = $true',
