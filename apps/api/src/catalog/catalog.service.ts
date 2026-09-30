@@ -42,10 +42,10 @@ export class DbCatalogReader implements CatalogReader {
   async stats(): Promise<AssistantStats[]> {
     const rows = await this.db.select({
       assistantId: assistant.id,
-      open: sql<number>`count(*) filter (where ${task.status} = 'todo')::int`,
-      inProgress: sql<number>`count(*) filter (where ${task.status} = 'in_progress')::int`,
-      onHold: sql<number>`count(*) filter (where ${task.status} = 'on_hold')::int`,
-      done: sql<number>`count(*) filter (where ${task.status} = 'done')::int`,
+      open: sql<number>`count(case when ${task.status} = 'todo' then 1 end)`,
+      inProgress: sql<number>`count(case when ${task.status} = 'in_progress' then 1 end)`,
+      onHold: sql<number>`count(case when ${task.status} = 'on_hold' then 1 end)`,
+      done: sql<number>`count(case when ${task.status} = 'done' then 1 end)`,
     }).from(assistant).leftJoin(task, and(eq(task.assistantId, assistant.id), isNull(task.deletedAt))).groupBy(assistant.id).orderBy(asc(assistant.sortOrder))
     return rows
   }

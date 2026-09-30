@@ -1,6 +1,8 @@
-import { drizzle } from 'drizzle-orm/postgres-js'
+import { drizzle } from 'drizzle-orm/mysql2'
+import type { Db } from '../db/db.module.js'
+import type { Pool } from 'mysql2/promise'
+import { createPool } from '../db/connection.js'
 import { eq } from 'drizzle-orm'
-import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { appUser, assistant, fileObject, message, messageAttachment, task, taskInput, thread } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
@@ -16,14 +18,14 @@ import { join } from 'node:path'
 
 describe('tasks DB', () => {
   let temp: Awaited<ReturnType<typeof createTempDb>>
-  let client: postgres.Sql
-  let db: ReturnType<typeof drizzle>
+  let client: Pool
+  let db: Db
   let service: DbTasksService
   let assistantId: string
   beforeAll(async () => {
     temp = await createTempDb('tasks')
     await runMigrations(temp.url)
-    client = postgres(temp.url, { onnotice: () => undefined })
+    client = createPool(temp.url)
     db = drizzle(client)
     await seedCatalog(db)
     await db.insert(appUser).values({ id: 'member', name: 'Member', initials: 'M', color: '#123456' })
@@ -48,6 +50,13 @@ describe('tasks DB', () => {
     const second = await service.create('member', { assistantId }, 'same-draft')
     expect(second.task.id).toBe(first.task.id)
     expect(second.thread.id).toBe(first.thread.id)
+  })
+
+  it('rejects tag keys and draft idempotency keys beyond the column limit', async () => {
+    await expect(service.create('member', { assistantId, tags: ['x'.repeat(192)] })).rejects.toMatchObject({ status: 400 })
+    await expect(service.create('member', { assistantId }, 'x'.repeat(192))).rejects.toMatchObject({ status: 400 })
+    const created = await service.create('member', { assistantId })
+    await expect(service.addTag('member', created.task.id, 'x'.repeat(192))).rejects.toMatchObject({ status: 400 })
   })
 
   it('rejects retired assistants and locks completed task edits until a reasoned reopen', async () => {
@@ -127,6 +136,12 @@ describe('tasks DB', () => {
     expect(await service.messages(withoutMessage.thread.id)).toEqual([])
   })
 
+  it('assigns distinct ordered sequence numbers to concurrent discussion messages', async () => {
+    const { thread: createdThread } = await service.create('member', { assistantId })
+    await Promise.all(Array.from({ length: 6 }, (_, index) => service.appendMessage('member', createdThread.id, { content: `parallel-${index}`, kind: 'discussion' })))
+    expect((await service.messages(createdThread.id)).map((item) => item.seq)).toEqual([1, 2, 3, 4, 5, 6])
+  })
+
   it('records a one-shot file on a discussion message without selecting it as task input', async () => {
     const { task: created, thread: createdThread } = await service.create('member', { assistantId })
     await db.insert(fileObject).values({ id: 'one-shot', kind: 'task_file', originTaskId: created.id, originalName: 'note.txt', mime: 'text/plain', sizeBytes: 1, sha256: 'a'.repeat(64), storageKey: `test/${created.id}/one-shot`, source: 'upload', version: 1, uploadedBy: 'member' })
@@ -159,7 +174,7 @@ describe('tasks DB', () => {
   it('filters by SQL criteria and assembles list items like get', async () => {
     const first = (await service.create('member', { assistantId, tags: ['filter-one'] })).task
     const second = (await service.create('member', { assistantId, tags: ['filter-two'] })).task
-    await db.insert(appUser).values({ id: 'assignee', name: 'Assignee', initials: 'A', color: '#123456' }).onConflictDoNothing()
+    await db.insert(appUser).values({ id: 'assignee', name: 'Assignee', initials: 'A', color: '#123456' }).onDuplicateKeyUpdate({ set: { id: 'assignee' } })
     await service.update('member', first.id, { assigneeIds: ['assignee'] })
     await service.setStatus('member', second.id, 'done')
     expect((await service.list({ assistantId, status: ['in_progress'], tags: ['filter-one'], mine: 'member' })).find((item) => item.id === first.id)).toEqual(await service.get(first.id))

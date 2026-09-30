@@ -11,7 +11,7 @@ import { SESSION_STORE, type SessionStore } from '../auth/session.service.js'
 import { LLM_PROVIDER } from './llm.controller.js'
 import { toLlmSettings } from './presets.js'
 
-const config = loadConfig({ DATABASE_URL: 'postgres://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', LLM_MODE: 'live', LLM_BASE_URL: 'http://localhost:3101', LLM_API_KEY: 'top-secret' })
+const config = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', LLM_MODE: 'live', LLM_BASE_URL: 'http://localhost:3101', LLM_API_KEY: 'top-secret' })
 const sessions: SessionStore = {
   create: vi.fn(async () => ({ token: '', expiresAt: new Date() })),
   resolve: vi.fn(async (token: string) => token === 'owner' ? { id: 'o', name: 'Owner', role: '', isSystemOwner: true } : token === 'member' ? { id: 'm', name: 'Member', role: '', isSystemOwner: false } : null),

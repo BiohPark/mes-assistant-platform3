@@ -1,7 +1,7 @@
 import { Controller, Get, Inject, Module, Res } from '@nestjs/common'
 import type { Health } from '@mes/contracts'
 import type { Response } from 'express'
-import type postgres from 'postgres'
+import type { Pool } from 'mysql2/promise'
 import { Public } from '../auth/public.decorator.js'
 import { DB_CLIENT } from '../db/db.module.js'
 
@@ -28,10 +28,10 @@ export class HealthController {
       provide: HEALTH_PROBE,
       inject: [DB_CLIENT],
       useFactory:
-        (client: postgres.Sql): HealthProbe =>
+        (client: Pool): HealthProbe =>
         async () => {
           try {
-            await client`select 1`
+            await client.query('select 1')
             return true
           } catch {
             return false

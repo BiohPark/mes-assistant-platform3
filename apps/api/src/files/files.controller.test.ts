@@ -14,7 +14,7 @@ import { HEALTH_PROBE } from '../health/health.controller.js'
 import { DbFilesService } from './files.service.js'
 import { contentDisposition } from './files.controller.js'
 
-const config = loadConfig({ DATABASE_URL: 'postgres://u:p@localhost:1/none', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local', FILE_MAX_BYTES: '12000000' })
+const config = loadConfig({ DATABASE_URL: 'mysql://u:p@localhost:1/none', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local', FILE_MAX_BYTES: '12000000' })
 const meta = { id: 'f', name: '한글?.txt', mime: 'text/plain', size: 3, version: 1, isOutput: false }
 
 describe('files HTTP API', () => {

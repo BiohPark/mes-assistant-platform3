@@ -1,8 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { drizzle } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
+import { drizzle } from 'drizzle-orm/mysql2'
+import type { Pool } from 'mysql2/promise'
+import { createPool } from '../db/connection.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { appUser, assistant, taskInput } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
@@ -14,7 +15,7 @@ import { DbFilesService } from './files.service.js'
 
 describe('files DB', () => {
   let temp: Awaited<ReturnType<typeof createTempDb>>
-  let client: postgres.Sql
+  let client: Pool
   let root: string
   let files: DbFilesService
   let tasks: DbTasksService
@@ -22,7 +23,7 @@ describe('files DB', () => {
   beforeAll(async () => {
     temp = await createTempDb('files')
     await runMigrations(temp.url)
-    client = postgres(temp.url, { onnotice: () => undefined })
+    client = createPool(temp.url)
     const db = drizzle(client)
     await seedCatalog(db)
     await db.insert(appUser).values({ id: 'member', name: 'Member', initials: 'M', color: '#123456' })
@@ -108,6 +109,35 @@ describe('files DB', () => {
     const uploaded = await files.upload('member', a.id, 'manual.txt', 'text/plain', Buffer.from('x'), true)
     expect(uploaded.isOutput).toBe(true)
     expect((await tasks.get(a.id)).outputFileIds).toContain(uploaded.id)
+  })
+
+  it('keeps concurrent uploads in one unbroken version chain', async () => {
+    const owner = (await tasks.create('member', { assistantId })).task
+    const uploaded = await Promise.all(Array.from({ length: 6 }, (_, index) => files.upload('member', owner.id, 'parallel.txt', 'text/plain', Buffer.from(String(index)))))
+    expect(uploaded.map((file) => file.version).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6])
+    const byId = new Map(uploaded.map((file) => [file.id, file]))
+    const chain = uploaded.sort((a, b) => b.version - a.version)
+    expect(chain.map((file) => file.previousId)).toEqual([...chain.slice(1).map((file) => file.id), undefined])
+    expect((await files.versions(chain[0]!.id)).map((file) => file.id)).toEqual(chain.map((file) => file.id))
+    expect(byId.size).toBe(6)
+  })
+
+  it('selects files across two tasks in both directions concurrently', async () => {
+    const a = (await tasks.create('member', { assistantId, tags: ['cross'] })).task
+    const b = (await tasks.create('member', { assistantId, tags: ['cross'] })).task
+    const af = await files.upload('member', a.id, 'a.txt', 'text/plain', Buffer.from('a'))
+    const bf = await files.upload('member', b.id, 'b.txt', 'text/plain', Buffer.from('b'))
+    await Promise.all([files.setInput('member', a.id, bf.id, 'main'), files.setInput('member', b.id, af.id, 'main')])
+    expect((await tasks.get(a.id)).inputs).toMatchObject([{ fileId: bf.id }])
+    expect((await tasks.get(b.id)).inputs).toMatchObject([{ fileId: af.id }])
+  })
+
+  it('rejects a missing target version before changing the selected file', async () => {
+    const owner = (await tasks.create('member', { assistantId })).task
+    const file = await files.upload('member', owner.id, 'version.txt', 'text/plain', Buffer.from('one'))
+    await files.setInput('member', owner.id, file.id, 'main')
+    await expect(files.switchInputVersion('member', owner.id, file.id, 'missing-version')).rejects.toMatchObject({ status: 404 })
+    expect((await tasks.get(owner.id)).inputs).toMatchObject([{ fileId: file.id }])
   })
 
   it('merges an already selected target version and retains its order', async () => {

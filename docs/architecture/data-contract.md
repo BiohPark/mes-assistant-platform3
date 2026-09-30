@@ -2,7 +2,7 @@
 
 작성일: 2026-09-26 · 대상: 데모 스키마 v4 (`src/db/schema.ts`) · 상태: **설계 문서** — 실제 서버·DB는 새 저장소에서 구현한다.
 
-이 문서는 데모가 다루는 데이터를 **무엇을 DB에 두고, 무엇을 파일로, 무엇을 두지 않을지** 나누고, 새 저장소가 그대로 옮겨 쓸 수 있는 형태(엔티티·불변 조건·API·DDL)로 정리한다. DDL 초안: [postgres-draft.sql](postgres-draft.sql). 배경: [../fusion-design.md](../fusion-design.md) §1·§8.
+이 문서는 데모가 다루는 데이터를 **무엇을 DB에 두고, 무엇을 파일로, 무엇을 두지 않을지** 나누고, 새 저장소가 그대로 옮겨 쓸 수 있는 형태(엔티티·불변 조건·API·DDL)로 정리한다. DDL 초안: [postgres-draft.sql](postgres-draft.sql)(전환 전 기록 — 현재 DDL 정본은 `apps/api/src/db/schema.ts`·`apps/api/drizzle/`, HANDOFF D40). 배경: [../fusion-design.md](../fusion-design.md) §1·§8.
 
 ## 1. 저장 분류
 
@@ -126,7 +126,7 @@
 
 | 항목 | 권장 | 비고 |
 |---|---|---|
-| DB | PostgreSQL | 사내 표준 DB가 있으면 그쪽. `jsonb` 사용처(activity payload·request snapshot)만 대체 필요 |
+| DB | **MariaDB**(D40, 2026-09-30 — 초안의 PostgreSQL에서 전환) | `jsonb` 사용처는 `json`, 조건부 유일 인덱스는 생성 컬럼으로 대체. [../next-project/db-mariadb-plan.md](../next-project/db-mariadb-plan.md) |
 | 서버 | **TypeScript 풀스택 — NestJS + Drizzle** (D20, 2026-09-27) | 데모의 도메인·프롬프트 조립 코드를 서버에서 그대로 재사용. 초안의 Spring Boot는 철회. 상세 [../next-project/architecture.md](../next-project/architecture.md) |
 | 파일 저장 | 로컬 디스크·NAS (`FileStorageService`) | S3 호환 저장소로 바꿀 수 있게 인터페이스 유지 |
 | 인증·권한 | 사내 SSO(OIDC/SAML 표준, D21), 에이전트 관리·전역 설정은 SO만(D19), 요청자 공개 범위 서버 강제 | 데모는 사용자 전환이 시연용 |

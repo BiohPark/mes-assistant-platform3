@@ -12,7 +12,7 @@ import { CONFIG, loadConfig } from '../config/config.js'
 import { HEALTH_PROBE } from '../health/health.controller.js'
 import { DbTasksService } from './tasks.service.js'
 
-const config = loadConfig({ DATABASE_URL: 'postgres://u:p@localhost:1/none', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
+const config = loadConfig({ DATABASE_URL: 'mysql://u:p@localhost:1/none', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
 
 describe('tasks HTTP API', () => {
   let app: INestApplication

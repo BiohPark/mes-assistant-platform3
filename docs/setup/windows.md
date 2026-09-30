@@ -17,8 +17,8 @@
 | Git for Windows | 2.40 이상 | `winget install --id Git.Git -e` · [git-scm.com](https://git-scm.com/download/win) | 저장소 받기 |
 | Node.js | **22.x** (22.12 이상) | nvm-windows: `winget install --id CoreyButler.NVMforWindows -e` 후 새 터미널에서 `nvm install 22` → `nvm use 22` · 또는 [nodejs.org](https://nodejs.org/)의 22.x 설치 파일 | api·web 실행 |
 | pnpm | 10.x | Node 22에 포함된 corepack으로 (아래) | 패키지 관리 |
-| PostgreSQL | **16** | (a) Docker로 띄우기 — 설치 불필요 · (b) 직접 설치: `winget install --id PostgreSQL.PostgreSQL.16 -e` | DB |
-| Docker Desktop | 최신 | `winget install --id Docker.DockerDesktop -e` (WSL 2 필요, 설치 뒤 재부팅) | **개발용** Keycloak·가짜 OpenWebUI (·PostgreSQL) |
+| MariaDB | **11.8 LTS** (10.4 이상) | (a) Docker로 띄우기 — 설치 불필요 · (b) 직접 설치: [mariadb.org 다운로드](https://mariadb.org/download/)의 Windows MSI(11.8) 또는 `winget install --id MariaDB.Server -e` | DB |
+| Docker Desktop | 최신 | `winget install --id Docker.DockerDesktop -e` (WSL 2 필요, 설치 뒤 재부팅) | **개발용** Keycloak·가짜 OpenWebUI (·MariaDB) |
 
 Node 23 이상은 쓰지 않는다(`engines`가 22로 고정). 여러 버전이 필요하면 nvm-windows로 전환한다.
 
@@ -39,12 +39,12 @@ pnpm --version      # 10.x
 ```
 
 ```powershell
-psql --version      # (b) 직접 설치한 경우: psql (PostgreSQL) 16.x
+mariadb --version   # (b) 직접 설치한 경우: mariadb from 11.8.x-MariaDB
 docker --version    # Docker Desktop을 쓰는 경우
 docker compose version
 ```
 
-`psql`을 찾지 못하면 `C:\Program Files\PostgreSQL\16\bin`을 사용자 환경 변수 `Path`에 추가하고 터미널을 새로 연다.
+`mariadb`를 찾지 못하면 `C:\Program Files\MariaDB 11.8\bin`을 사용자 환경 변수 `Path`에 추가하고 터미널을 새로 연다.
 
 ## 2. 저장소 받기
 
@@ -80,14 +80,14 @@ pnpm setup:env
 
 | 항목 | 뜻 | 개발 기본값 |
 |---|---|---|
-| `POSTGRES_DB` · `POSTGRES_USER` · `POSTGRES_PASSWORD` | Docker PostgreSQL을 만들 때 쓰는 DB·사용자·비밀번호 | `mes_hub` · `mes` · 가상 값 |
-| `POSTGRES_PORT` | Docker PostgreSQL의 호스트 포트 | `5432` |
+| `MARIADB_DATABASE` · `MARIADB_USER` · `MARIADB_PASSWORD` · `MARIADB_ROOT_PASSWORD` | Docker MariaDB를 만들 때 쓰는 DB·사용자·비밀번호·root 비밀번호 | `mes_hub` · `mes` · 가상 값 |
+| `MARIADB_PORT` | Docker MariaDB의 호스트 포트 | `3306` |
 | `KEYCLOAK_PORT` · `KEYCLOAK_ADMIN_PASSWORD` · `DEV_USER_PASSWORD` | Keycloak(OIDC 모드 전용, `--profile oidc`) 포트·관리 콘솔 비밀번호·테스트 계정 비밀번호 | 가상 값 |
 | `FAKE_OPENWEBUI_PORT` | 가짜 OpenWebUI 포트 | `3101` |
 | `API_PORT` | api 포트 (web 개발 서버의 `/api` 프록시도 이 값을 따른다) | `3000` |
 | `AUTH_MODE` | 로그인 방식: `local`(앱 자체 로그인, 기본) 또는 `oidc`(SSO) | `local` |
 | `APP_ORIGIN` | 브라우저가 여는 앱 주소. OIDC 콜백은 `{APP_ORIGIN}/api/auth/callback`. `https://`면 Secure 쿠키 | `http://localhost:5173` |
-| `DATABASE_URL` | api가 붙는 PostgreSQL | `postgres://mes:…@localhost:5432/mes_hub` |
+| `DATABASE_URL` | api가 붙는 MariaDB | `mysql://mes:…@localhost:3306/mes_hub` |
 | `SESSION_SECRET` | 쿠키 서명 비밀(32자 이상). 운영은 무작위 값 | 가상 값 |
 | `OIDC_ISSUER` · `OIDC_CLIENT_ID` · `OIDC_CLIENT_SECRET` | SSO(OIDC) 발급자·앱 ID·비밀 — `AUTH_MODE=oidc`일 때만 필수 | 개발 Keycloak realm `mes-dev` |
 | `INITIAL_SYSTEM_OWNERS` | 가입·로그인 때 System Owner로 만들 사용자 — `local`: 로그인 ID / `oidc`: `preferred_username` 또는 `sub`, 쉼표 구분 | `dev-owner` |
@@ -105,7 +105,7 @@ pnpm setup:env
 
 둘 중 하나를 고른다.
 
-### (a) Docker로 PostgreSQL 기동 — 개발 기본
+### (a) Docker로 MariaDB 기동 — 개발 기본
 
 Docker Desktop을 켠 뒤:
 
@@ -113,21 +113,27 @@ Docker Desktop을 켠 뒤:
 docker compose up -d --wait
 ```
 
-PostgreSQL 16·가짜 OpenWebUI가 함께 뜬다(`--wait`는 준비될 때까지 기다린다). DB·사용자는 `.env` 값으로 자동 생성된다. Keycloak은 OIDC 모드에서만 필요하다(5장).
+MariaDB 11.8·가짜 OpenWebUI가 함께 뜬다(`--wait`는 준비될 때까지 기다린다). DB·사용자는 `.env` 값으로 자동 생성된다. Keycloak은 OIDC 모드에서만 필요하다(5장).
 
-### (b) Windows에 PostgreSQL 16 직접 설치
+### (b) Windows에 MariaDB 직접 설치
 
-설치 프로그램에서 정한 `postgres`(슈퍼유저) 비밀번호를 이 터미널에 넣어 둔다:
+MSI 설치 프로그램은 기본값대로 두면 된다(Windows 서비스로 등록, 포트 3306). 설치 때 정한 `root` 비밀번호를 이 터미널에 넣어 둔다:
 
 ```powershell
-$env:PGPASSWORD = "<설치 때 정한 postgres 비밀번호>"
+$env:MYSQL_PWD = "<설치 때 정한 root 비밀번호>"
 ```
 
-앱 사용자·DB를 만든다. 비밀번호는 `.env`의 `DATABASE_URL`과 같아야 한다(개발 기본값 그대로 두면 아래 명령 그대로). `CREATEDB`는 DB 통합 테스트가 임시 DB를 만들기 때문에 필요하다(운영 DB 사용자에는 주지 않는다):
+DB와 앱 사용자를 만든다. 비밀번호는 `.env`의 `DATABASE_URL`과 같아야 한다(개발 기본값 그대로 두면 아래 명령 그대로).
+
+- DB는 반드시 `utf8mb4` · `utf8mb4_nopad_bin`으로 만든다(대소문자·끝 공백까지 구분). 다르면 `pnpm db:migrate`가 거부한다.
+- 마지막 줄의 `t_*` 권한은 DB 통합 테스트가 임시 DB를 만들기 때문에 필요하다(운영 DB 사용자에는 주지 않는다).
+- 운영에서는 `'mes'@'%'` 대신 api 서버 주소로 접속 호스트를 좁힌다.
 
 ```powershell ci
-psql -U postgres -h localhost -c "CREATE USER mes WITH PASSWORD 'dev-postgres-password' CREATEDB;"
-psql -U postgres -h localhost -c "CREATE DATABASE mes_hub OWNER mes;"
+mariadb -u root -e "CREATE DATABASE mes_hub CHARACTER SET utf8mb4 COLLATE utf8mb4_nopad_bin;"
+mariadb -u root -e "CREATE USER 'mes'@'localhost' IDENTIFIED BY 'dev-mariadb-password', 'mes'@'%' IDENTIFIED BY 'dev-mariadb-password';"
+mariadb -u root -e "GRANT ALL PRIVILEGES ON mes_hub.* TO 'mes'@'localhost', 'mes'@'%';"
+mariadb -u root -e 'GRANT ALL PRIVILEGES ON `t\_%`.* TO ''mes''@''localhost'', ''mes''@''%'';'
 ```
 
 이 경로에서는 Docker가 전혀 필요 없다 — 로그인은 앱 자체 회원가입이다(5장).
@@ -239,8 +245,8 @@ pnpm test:db
 | `pnpm typecheck` | 타입 검사 | — |
 | `pnpm lint` | 린트(경고도 실패) | — |
 | `pnpm test` | 단위 테스트 | — (DB 없이) |
-| `pnpm test:db` | DB 통합 테스트(스키마 대조 포함) | PostgreSQL + `CREATEDB` 권한 |
-| `pnpm test:e2e` | 브라우저 E2E(회원가입 → 로그인 → 빈 허브) | PostgreSQL, 처음 한 번 `pnpm --filter @mes/e2e install:browsers` |
+| `pnpm test:db` | DB 통합 테스트(제약 동작·동시성 포함) | MariaDB + 임시 DB(`t_*`) 권한 |
+| `pnpm test:e2e` | 브라우저 E2E(회원가입 → 로그인 → 빈 허브) | MariaDB, 처음 한 번 `pnpm --filter @mes/e2e install:browsers` |
 
 `pnpm test:e2e`는 api·web을 알아서 띄운다(이미 떠 있으면 재사용). CI의 Windows 잡은 E2E를 아직 돌리지 않는다(S1 이후 추가).
 
@@ -265,13 +271,14 @@ api를 Windows 서비스로 상시 실행하는 후보:
 | `pnpm : 이 시스템에서 스크립트를 실행할 수 없으므로 …pnpm.ps1 파일을 로드할 수 없습니다` | PowerShell 실행 정책. `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 후 터미널 재시작 |
 | `corepack enable`이 `EPERM` | Node 설치 폴더 쓰기 권한. 관리자 PowerShell에서 한 번 실행하거나 `npm install -g pnpm@10` |
 | `Unsupported engine` / Node 버전 경고 | Node 22가 아님. `node --version` 확인 → `nvm use 22` |
-| `EADDRINUSE` / `Port 5173 is already in use` | 포트 충돌. 쓰는 프로세스 찾기: `Get-NetTCPConnection -LocalPort 5173 \| Select-Object OwningProcess` → `Stop-Process -Id <PID>`. 또는 `.env`에서 `API_PORT`·`KEYCLOAK_PORT`·`POSTGRES_PORT` 변경(`APP_ORIGIN`·Keycloak 콜백은 5173 기준이라 web 포트를 바꾸면 `APP_ORIGIN`도 함께) |
-| 5432 충돌 (직접 설치한 PostgreSQL과 Docker PostgreSQL이 둘 다 뜸) | 한쪽만 쓴다. Docker 쪽을 쓰면 `.env`의 `POSTGRES_PORT=5433`·`DATABASE_URL`의 포트도 5433으로 |
+| `EADDRINUSE` / `Port 5173 is already in use` | 포트 충돌. 쓰는 프로세스 찾기: `Get-NetTCPConnection -LocalPort 5173 \| Select-Object OwningProcess` → `Stop-Process -Id <PID>`. 또는 `.env`에서 `API_PORT`·`KEYCLOAK_PORT`·`MARIADB_PORT` 변경(`APP_ORIGIN`·Keycloak 콜백은 5173 기준이라 web 포트를 바꾸면 `APP_ORIGIN`도 함께) |
+| 3306 충돌 (직접 설치한 MariaDB·MySQL과 Docker MariaDB가 둘 다 뜸) | 한쪽만 쓴다. Docker 쪽을 쓰면 `.env`의 `MARIADB_PORT=3307`·`DATABASE_URL`의 포트도 3307로 |
+| `pnpm db:migrate`가 `DB 문자셋/정렬은 utf8mb4/utf8mb4_nopad_bin이어야 합니다` | DB를 다른 정렬로 만들었다. 비어 있는 DB면 `ALTER DATABASE mes_hub CHARACTER SET utf8mb4 COLLATE utf8mb4_nopad_bin;` 후 다시 실행 |
 | `git diff`에 모든 줄이 바뀐 것으로 보임 / `^M` | CRLF로 체크아웃됨. `git config --global core.autocrlf false` 후 `git rm --cached -r . ; git reset --hard` (작업 중인 변경은 먼저 커밋·보관) |
 | `Filename too long` / `ENAMETOOLONG` | 긴 경로. 2장의 `core.longpaths`·`LongPathsEnabled`, 저장소를 `C:\dev\` 같은 짧은 경로로 |
 | `pnpm install`이 매우 느림 | 백신 실시간 검사가 `node_modules`를 검사. 저장소 폴더와 pnpm 스토어(`pnpm store path`)를 Microsoft Defender 제외 목록에 추가(회사 정책 확인) |
-| 로그인 뒤 "서버에 연결할 수 없습니다" | api가 안 떠 있거나 DB 연결 실패. http://localhost:3000/api/health 확인 → `db: down`이면 PostgreSQL·`DATABASE_URL` 확인 → "다시 시도" |
+| 로그인 뒤 "서버에 연결할 수 없습니다" | api가 안 떠 있거나 DB 연결 실패. http://localhost:3000/api/health 확인 → `db: down`이면 MariaDB·`DATABASE_URL` 확인 → "다시 시도" |
 | 로그인 화면에서 "ID 또는 비밀번호가 올바르지 않습니다" | ID 오타 또는 다른 비밀번호. 계정이 없으면 회원가입. 초기화하려면 개발 DB를 비운다(`docker compose down -v` 또는 DB 재생성) |
 | (OIDC) Keycloak 로그인 뒤 `Invalid parameter: redirect_uri` | `APP_ORIGIN`이 Keycloak에 등록된 콜백과 다름. `.env` 수정 후 `docker compose --profile oidc up -d --force-recreate keycloak` |
 | `docker compose up`이 `.env에 … 필요` 로 멈춤 | `.env`가 없음 → `pnpm setup:env` |
-| `pnpm db:migrate`가 `password authentication failed` | `DATABASE_URL`의 사용자·비밀번호가 4장에서 만든 값과 다름 |
+| `pnpm db:migrate`가 `Access denied for user` | `DATABASE_URL`의 사용자·비밀번호가 4장에서 만든 값과 다름 |

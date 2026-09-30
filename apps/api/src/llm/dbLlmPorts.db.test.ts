@@ -1,6 +1,8 @@
-import { drizzle } from 'drizzle-orm/postgres-js'
+import { drizzle } from 'drizzle-orm/mysql2'
+import type { Db } from '../db/db.module.js'
+import type { Pool } from 'mysql2/promise'
+import { createPool } from '../db/connection.js'
 import { eq } from 'drizzle-orm'
-import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { loadConfig } from '../config/config.js'
 import { runMigrations } from '../db/migrate.js'
@@ -10,10 +12,10 @@ import { DbLlmPorts } from './dbLlmPorts.js'
 
 describe('DbLlmPorts', () => {
   let temp: Awaited<ReturnType<typeof createTempDb>>
-  let client: postgres.Sql
-  let db: ReturnType<typeof drizzle>
-  const config = loadConfig({ DATABASE_URL: 'postgres://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' })
-  beforeAll(async () => { temp = await createTempDb('llm_ports'); await runMigrations(temp.url); client = postgres(temp.url); db = drizzle(client) })
+  let client: Pool
+  let db: Db
+  const config = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' })
+  beforeAll(async () => { temp = await createTempDb('llm_ports'); await runMigrations(temp.url); client = createPool(temp.url); db = drizzle(client) })
   afterAll(async () => { await client?.end(); await temp?.drop() })
 
   it('빈 DB는 설정 기본값과 빈 카탈로그를 반환한다', async () => {

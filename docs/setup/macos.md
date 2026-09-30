@@ -9,7 +9,7 @@
 | Git | Xcode 명령행 도구(`xcode-select --install`) 또는 `brew install git` |
 | Node.js 22 | 버전 관리자 하나: [mise](https://mise.jdx.dev/) `mise use node@22`(저장소의 `mise.toml`을 읽음) · nvm `nvm install 22 && nvm use 22`(`.nvmrc`) · 또는 `brew install node@22` |
 | pnpm 10 | `corepack enable` (Windows와 같음) 또는 `npm install -g pnpm@10` |
-| PostgreSQL 16 (직접 설치 경로) | `brew install postgresql@16` → `brew services start postgresql@16`. 슈퍼유저는 설치한 macOS 사용자다 |
+| MariaDB 11.8 (직접 설치 경로) | `brew install mariadb@11.8` → `brew services start mariadb@11.8`. 설치한 macOS 사용자가 비밀번호 없이 관리자로 접속한다 |
 | Docker | Docker Desktop 또는 [OrbStack](https://orbstack.dev/) (`brew install --cask orbstack`). compose 파일은 표준 기능만 써서 둘 다 된다 |
 
 설치 확인은 Windows와 같다(`git --version`, `node --version`, `pnpm --version`, `docker compose version`).
@@ -27,14 +27,16 @@ mise를 쓰는데 `node --version`이 22가 아니면 저장소 폴더 안에서
 
 ## 4. DB 셋업 — (b) 직접 설치
 
-Homebrew PostgreSQL은 슈퍼유저가 macOS 사용자라 `-U postgres`와 비밀번호가 필요 없다:
+Homebrew MariaDB는 macOS 사용자가 관리자라 `-u root`와 비밀번호가 필요 없다(이 경로는 CI가 검증하지 않는다):
 
 ```bash
-psql -d postgres -c "CREATE USER mes WITH PASSWORD 'dev-postgres-password' CREATEDB;"
-psql -d postgres -c "CREATE DATABASE mes_hub OWNER mes;"
+mariadb -e "CREATE DATABASE mes_hub CHARACTER SET utf8mb4 COLLATE utf8mb4_nopad_bin;"
+mariadb -e "CREATE USER 'mes'@'localhost' IDENTIFIED BY 'dev-mariadb-password', 'mes'@'%' IDENTIFIED BY 'dev-mariadb-password';"
+mariadb -e "GRANT ALL PRIVILEGES ON mes_hub.* TO 'mes'@'localhost', 'mes'@'%';"
+mariadb -e "GRANT ALL PRIVILEGES ON \`t\\_%\`.* TO 'mes'@'localhost', 'mes'@'%';"
 ```
 
-`psql`을 못 찾으면 `export PATH="$(brew --prefix postgresql@16)/bin:$PATH"` (`~/.zshrc`에 추가).
+`mariadb`를 못 찾으면 `export PATH="$(brew --prefix mariadb@11.8)/bin:$PATH"` (`~/.zshrc`에 추가).
 
 ## 5–7. 로그인·기동·테스트
 
@@ -49,6 +51,6 @@ Windows와 같다. `pnpm dev` → http://localhost:5173 → 회원가입(예: `d
 | 증상 | 해결 |
 |---|---|
 | 포트 충돌 | `lsof -i :5173` → `kill <PID>` |
-| 5432 충돌(Homebrew PostgreSQL과 Docker PostgreSQL) | 한쪽만 쓴다 — `brew services stop postgresql@16` 또는 `.env`의 `POSTGRES_PORT=5433`·`DATABASE_URL` 포트 변경 |
+| 3306 충돌(Homebrew MariaDB·MySQL과 Docker MariaDB) | 한쪽만 쓴다 — `brew services stop mariadb@11.8` 또는 `.env`의 `MARIADB_PORT=3307`·`DATABASE_URL` 포트 변경 |
 | `docker: command not found` | Docker Desktop/OrbStack 앱을 한 번 실행해 CLI를 설치 |
 | Playwright 브라우저 없음 | `pnpm --filter @mes/e2e install:browsers` |

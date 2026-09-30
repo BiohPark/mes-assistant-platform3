@@ -131,7 +131,7 @@ export class DbLlmPorts implements LlmPorts {
     const key = remoteKey(toLlmSettings(this.config.llm))
     const remoteId = remoteIds[key]
     if (remoteId) await this.db.insert(fileRemoteRef).values({ fileId, scopeHash: scopeHash(key), remoteId })
-      .onConflictDoUpdate({ target: [fileRemoteRef.fileId, fileRemoteRef.scopeHash], set: { remoteId, uploadedAt: new Date() } })
+      .onDuplicateKeyUpdate({ set: { remoteId, uploadedAt: new Date() } })
   }
   async readFileBytes(file?: FileAsset): Promise<Uint8Array> {
     if (!file) return missing('readFileBytes')

@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
 
-// 전제: docker compose up -d (PostgreSQL·가짜 OpenWebUI) 와 루트 .env
+// 전제: docker compose up -d (MariaDB·가짜 OpenWebUI) 와 루트 .env
 const envFile = resolve(import.meta.dirname, '../.env')
 if (existsSync(envFile)) process.loadEnvFile(envFile)
 

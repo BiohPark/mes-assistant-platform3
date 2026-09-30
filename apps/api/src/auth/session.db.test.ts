@@ -2,8 +2,10 @@ import 'reflect-metadata'
 import { Test } from '@nestjs/testing'
 import request from 'supertest'
 import { eq } from 'drizzle-orm'
-import { drizzle } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
+import { drizzle } from 'drizzle-orm/mysql2'
+import type { Db } from '../db/db.module.js'
+import type { Pool } from 'mysql2/promise'
+import { createPool } from '../db/connection.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { loadConfig } from '../config/config.js'
 import { CONFIG } from '../config/config.js'
@@ -16,13 +18,13 @@ import { createTempDb } from '../test/tempDb.js'
 import { DbSessionStore } from './session.service.js'
 import { DbUserDirectory } from './users.service.js'
 
-describe('세션·사용자 저장소 (PostgreSQL)', () => {
+describe('세션·사용자 저장소 (MariaDB)', () => {
   let temp: Awaited<ReturnType<typeof createTempDb>>
-  let client: postgres.Sql
-  let db: ReturnType<typeof drizzle>
+  let client: Pool
+  let db: Db
   const config = loadConfig({
     AUTH_MODE: 'oidc',
-    DATABASE_URL: 'postgres://unused',
+    DATABASE_URL: 'mysql://unused',
     SESSION_SECRET: 's'.repeat(32),
     APP_ORIGIN: 'http://localhost:5173',
     OIDC_ISSUER: 'http://localhost:8180/realms/mes-dev',
@@ -30,6 +32,9 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
     OIDC_CLIENT_SECRET: 's',
     INITIAL_SYSTEM_OWNERS: 'dev-owner',
   })
+  const expectStatus = (status: number) => (response: { status: number; body: unknown }) => {
+    expect(response.status, JSON.stringify(response.body)).toBe(status)
+  }
 
   it('local 회원가입 → 비밀번호 조회 → 로그인 세션 resolve', async () => {
     const local = { ...config, authMode: 'local' as const, oidc: undefined }
@@ -45,7 +50,7 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
 
   it('실제 DB에서 signup → login → 세션 resolve', async () => {
     const local = { ...config, authMode: 'local' as const, oidc: undefined }
-    const apiClient = postgres(temp.url, { max: 2, onnotice: () => undefined })
+    const apiClient = createPool(temp.url, 2)
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CONFIG).useValue(local)
       .overrideProvider(DB_CLIENT).useValue(apiClient)
@@ -54,9 +59,10 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
     const app = configureApp(moduleRef.createNestApplication(), local)
     try {
       await app.init()
-      const signup = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'api-local-member', password: 'password-1234' }).expect(201)
+      await request(app.getHttpServer()).get('/api/health').expect(200, { status: 'ok', db: 'up' })
+      const signup = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'api-local-member', password: 'password-1234' }).expect(expectStatus(201))
       expect(signup.body.roles).toEqual(['member'])
-      const login = await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'api-local-member', password: 'password-1234' }).expect(200)
+      const login = await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'api-local-member', password: 'password-1234' }).expect(expectStatus(200))
       const cookie = String(login.headers['set-cookie']).split(';')[0]!
       const me = await request(app.getHttpServer()).get('/api/me').set('Cookie', cookie).expect(200)
       expect(me.body.id).toBe(signup.body.id)
@@ -68,7 +74,7 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
   beforeAll(async () => {
     temp = await createTempDb('session')
     await runMigrations(temp.url)
-    client = postgres(temp.url, { max: 2, onnotice: () => undefined })
+    client = createPool(temp.url, 2)
     db = drizzle(client)
   })
   afterAll(async () => {
@@ -86,6 +92,17 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
     const [row] = await db.select().from(appUser).where(eq(appUser.id, a.id))
     expect(row?.ssoSubject).toBe('http://localhost:8180/realms/mes-dev#kc-100')
     expect(row?.initials.length).toBeGreaterThan(0)
+  })
+
+  it('SSO 식별자는 512자까지 저장하고 초과하면 명확히 거부한다', async () => {
+    const users = new DbUserDirectory(db, config)
+    const issuerLength = config.oidc!.issuer.length
+    const acceptedSub = 's'.repeat(512 - issuerLength - 1)
+    const accepted = await users.upsertFromClaims({ sub: acceptedSub })
+    expect((await db.select({ subject: appUser.ssoSubject }).from(appUser).where(eq(appUser.id, accepted.id)))[0]?.subject?.length).toBe(512)
+    const tooLong = users.upsertFromClaims({ sub: `${acceptedSub}s` })
+    await expect(tooLong).rejects.toThrow(/SSO.*512/)
+    await expect(tooLong).rejects.toMatchObject({ status: 400 })
   })
 
   it('주체는 (issuer, sub)로 식별 — IdP를 바꾸면 같은 sub라도 다른 사용자 (권한을 이어받지 않음)', async () => {
@@ -125,7 +142,7 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
   it('DB SO 부트스트랩은 한 번만 되고 dev-owner 중복 가입은 409', async () => {
     await db.update(appUser).set({ isSystemOwner: false })
     const local = { ...config, authMode: 'local' as const, oidc: undefined, initialSystemOwners: ['dev-owner', 'second-owner'] }
-    const apiClient = postgres(temp.url, { max: 2, onnotice: () => undefined })
+    const apiClient = createPool(temp.url, 2)
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CONFIG).useValue(local)
       .overrideProvider(DB_CLIENT).useValue(apiClient)
@@ -134,10 +151,10 @@ describe('세션·사용자 저장소 (PostgreSQL)', () => {
     const app = configureApp(moduleRef.createNestApplication(), local)
     try {
       await app.init()
-      const first = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(201)
+      const first = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(expectStatus(201))
       expect(first.body.roles).toEqual(['member', 'system_owner'])
-      await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(409)
-      const second = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'second-owner', password: 'password-1234' }).expect(201)
+      await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(expectStatus(409))
+      const second = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'second-owner', password: 'password-1234' }).expect(expectStatus(201))
       expect(second.body.roles).toEqual(['member'])
       const oidc = new DbUserDirectory(db, { ...config, initialSystemOwners: ['late-oidc-owner'] })
       const late = await oidc.upsertFromClaims({ sub: 'late-oidc-owner' })

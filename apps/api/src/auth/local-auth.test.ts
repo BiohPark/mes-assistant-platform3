@@ -12,7 +12,7 @@ import * as passwordService from './password.js'
 import { SESSION_STORE, type AuthUser, type SessionStore } from './session.service.js'
 import { USER_DIRECTORY, type UserDirectory } from './users.service.js'
 
-const config = loadConfig({ DATABASE_URL: 'postgres://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', INITIAL_SYSTEM_OWNERS: 'dev-owner' })
+const config = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', INITIAL_SYSTEM_OWNERS: 'dev-owner' })
 const rows = new Map<string, { user: AuthUser; hash: string; active: boolean }>()
 const sessions: SessionStore = {
   create: vi.fn(async () => ({ token: 'local-token', expiresAt: new Date(Date.now() + 3600_000) })),

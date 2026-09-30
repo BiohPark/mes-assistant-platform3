@@ -13,7 +13,7 @@ import { CONFIG, loadConfig } from '../config/config.js'
 import { HEALTH_PROBE } from '../health/health.controller.js'
 import { CATALOG, type CatalogReader } from './catalog.service.js'
 
-const config = loadConfig({ DATABASE_URL: 'postgres://u:p@localhost:1/none', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
+const config = loadConfig({ DATABASE_URL: 'mysql://u:p@localhost:1/none', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
 const assistant = AssistantSchema.parse({ id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'assistant_level1:SDLC', level2CodeId: 'assistant_level2:분석', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z', revision: 0 })
 
 describe('catalog read API', () => {

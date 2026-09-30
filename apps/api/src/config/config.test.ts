@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { loadConfig } from './config.js'
 
 const base = {
-  DATABASE_URL: 'postgres://u:p@localhost:5432/db',
+  DATABASE_URL: 'mysql://u:p@localhost:3306/db',
   SESSION_SECRET: 'x'.repeat(32),
   APP_ORIGIN: 'http://localhost:5173',
   OIDC_ISSUER: 'http://localhost:8180/realms/mes-dev',

@@ -30,44 +30,46 @@ jobs:
 
   setup-guide:
     # docs/setup/windows.md의 ```powershell ci 블록을 그대로 실행 — 문서와 실제가 어긋나면 실패
-    # (PostgreSQL은 문서 4장 (b) "직접 설치" 경로. Windows 러너는 리눅스 컨테이너를 못 돌려 Keycloak·E2E는 제외)
+    # (MariaDB는 문서 4장 (b) "직접 설치" 경로. Windows 러너는 리눅스 컨테이너를 못 돌려 Keycloak·E2E는 제외)
     name: 설치 가이드 검증 (windows.md)
     runs-on: windows-latest
     env:
-      PGPASSWORD: postgres
       COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - uses: ikalnytskyi/action-setup-postgres@v7
+      # root는 비밀번호 없이 뜬다. 문서의 사람용 절차는 4장 (b)의 $env:MYSQL_PWD 줄로 설치 때 정한 비밀번호를 준다.
+      - uses: ankane/setup-mariadb@v1
         with:
-          postgres-version: '16'
-          username: postgres
-          password: postgres
-      # action-setup-postgres가 PG* 환경을 덮어써 잡 env의 PGPASSWORD가 비어 있게 된다 → psql이 비밀번호 프롬프트에서 멈춘다(run 36355928533).
-      # 스텝 env가 우선하므로 여기서 다시 준다. 문서의 사람용 절차는 4장 (b)의 $env:PGPASSWORD 줄이 같은 역할.
+          mariadb-version: '11.8'
+      - run: mariadb -u root -e "select version()"
       - run: node scripts/run-doc-commands.mjs docs/setup/windows.md
-        env:
-          PGPASSWORD: postgres
 
   db:
-    name: DB 통합 테스트 (PostgreSQL 16)
+    name: DB 통합 테스트 (MariaDB ${{ matrix.mariadb }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 11.8 = 기준(LTS), 10.4 = 호환 하한 — docs/next-project/db-mariadb-plan.md
+        mariadb: ['11.8', '10.4']
     services:
-      postgres:
-        image: postgres:16-alpine
+      mariadb:
+        image: mariadb:${{ matrix.mariadb }}
         env:
-          POSTGRES_DB: mes_hub
-          POSTGRES_USER: mes
-          POSTGRES_PASSWORD: ci-only-password
-        ports: ['5432:5432']
+          MARIADB_DATABASE: mes_hub
+          MARIADB_ROOT_PASSWORD: ci-only-password
+          MYSQL_DATABASE: mes_hub
+          MYSQL_ROOT_PASSWORD: ci-only-password
+        ports: ['3306:3306']
         options: >-
-          --health-cmd "pg_isready -U mes -d mes_hub"
-          --health-interval 5s --health-timeout 3s --health-retries 20
+          --health-cmd "mariadb-admin ping -h 127.0.0.1 -uroot -pci-only-password --silent"
+          --health-interval 5s --health-timeout 3s --health-retries 30
     env:
-      DATABASE_URL: postgres://mes:ci-only-password@localhost:5432/mes_hub
+      # 테스트는 임시 DB(t_*)를 만들고 지운다 — CI는 root로 붙는다(서비스 컨테이너에는 초기화 스크립트를 못 싣는다)
+      DATABASE_URL: mysql://root:ci-only-password@127.0.0.1:3306/mes_hub
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
