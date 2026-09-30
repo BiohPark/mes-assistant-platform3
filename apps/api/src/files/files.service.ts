@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common'
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, fileObject, tag, task, taskInput, taskTag } from '../db/schema.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
@@ -29,13 +29,14 @@ export class DbFilesService {
     @Inject(CONFIG) private readonly config: Pick<AppConfig, 'fileMaxBytes' | 'fileMaxPerRequest'>) {}
 
   private async row(fileId: string, tx: Db | Tx = this.db) {
-    const [row] = await tx.select().from(fileObject).where(and(eq(fileObject.id, fileId), isNull(fileObject.deletedAt)))
+    const [row] = await tx.select({ file: fileObject }).from(fileObject).leftJoin(task, eq(fileObject.originTaskId, task.id))
+      .where(and(eq(fileObject.id, fileId), isNull(fileObject.deletedAt), or(isNull(fileObject.originTaskId), isNull(task.deletedAt))))
     if (!row) throw new NotFoundException('파일을 찾을 수 없습니다')
-    return row
+    return row.file
   }
 
   private async editable(taskId: string, tx: Tx) {
-    const [owner] = await tx.select().from(task).where(eq(task.id, taskId)).for('update')
+    const [owner] = await tx.select().from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt))).for('update')
     if (!owner) throw new NotFoundException('대화를 찾을 수 없습니다')
     if (owner.status === 'done') throw new ConflictException('완료된 대화는 재개한 뒤 수정하세요')
     return owner
@@ -135,10 +136,12 @@ export class DbFilesService {
   }
 
   private async candidateRows(taskId: string, tx: Db | Tx = this.db) {
-    const [me] = await tx.select().from(task).where(eq(task.id, taskId))
+    const [me] = await tx.select().from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt)))
     if (!me) throw new NotFoundException('대화를 찾을 수 없습니다')
     const myTags = await tx.select({ key: taskTag.tagKey }).from(taskTag).where(eq(taskTag.taskId, taskId))
-    const matching = myTags.length ? await tx.select({ taskId: taskTag.taskId, key: taskTag.tagKey, label: tag.label }).from(taskTag).innerJoin(tag, eq(taskTag.tagKey, tag.key)).where(inArray(taskTag.tagKey, myTags.map((item) => item.key))) : []
+    const matching = myTags.length ? await tx.select({ taskId: taskTag.taskId, key: taskTag.tagKey, label: tag.label }).from(taskTag)
+      .innerJoin(tag, eq(taskTag.tagKey, tag.key)).innerJoin(task, eq(taskTag.taskId, task.id))
+      .where(and(inArray(taskTag.tagKey, myTags.map((item) => item.key)), isNull(task.deletedAt))) : []
     const via = new Map<string, string[]>()
     for (const item of matching) if (item.taskId !== taskId) via.set(item.taskId, [...(via.get(item.taskId) ?? []), item.label])
     const sourceIds = [taskId, ...via.keys()]
@@ -146,10 +149,13 @@ export class DbFilesService {
     const rows = sourceRows.filter((row) => !row.deletedAt)
     const selected = await tx.select().from(taskInput).where(eq(taskInput.taskId, taskId))
     const detachedIds = selected.map((item) => item.fileId).filter((fileId) => !rows.some((row) => row.id === fileId))
-    const detached = detachedIds.length ? await tx.select().from(fileObject).where(and(inArray(fileObject.id, detachedIds), isNull(fileObject.deletedAt))) : []
-    const extraOrigins = [...new Set(detached.map((row) => row.originTaskId).filter((value): value is string => !!value && !sourceIds.includes(value)))]
+    const detached = detachedIds.length ? await tx.select({ file: fileObject }).from(fileObject)
+      .leftJoin(task, eq(fileObject.originTaskId, task.id))
+      .where(and(inArray(fileObject.id, detachedIds), isNull(fileObject.deletedAt), or(isNull(fileObject.originTaskId), isNull(task.deletedAt)))) : []
+    const detachedFiles = detached.map((item) => item.file)
+    const extraOrigins = [...new Set(detachedFiles.map((row) => row.originTaskId).filter((value): value is string => !!value && !sourceIds.includes(value)))]
     const extraRows = extraOrigins.length ? await tx.select().from(fileObject).where(inArray(fileObject.originTaskId, extraOrigins)) : []
-    return { rows: [...rows, ...detached], chainRows: [...sourceRows, ...extraRows], selected, via }
+    return { rows: [...rows, ...detachedFiles], chainRows: [...sourceRows, ...extraRows], selected, via }
   }
 
   async candidates(taskId: string) {
@@ -176,7 +182,7 @@ export class DbFilesService {
   async filesForTask(taskId: string) {
     const rows = await this.db.select({ taskId: task.id, file: fileObject }).from(task)
       .leftJoin(fileObject, and(eq(fileObject.originTaskId, task.id), isNull(fileObject.deletedAt)))
-      .where(eq(task.id, taskId))
+      .where(and(eq(task.id, taskId), isNull(task.deletedAt)))
     if (!rows.length) throw new NotFoundException('대화를 찾을 수 없습니다')
     return rows.flatMap((row) => row.file ? [fileMeta(row.file)] : [])
   }

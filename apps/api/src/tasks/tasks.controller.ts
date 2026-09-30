@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, Req } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Patch, Post, Put, Query, Req } from '@nestjs/common'
 import type { AuthedRequest } from '../auth/guards.js'
 import { DbTasksService } from './tasks.service.js'
 import { z } from 'zod'
@@ -27,8 +27,9 @@ export class TasksController {
   constructor(@Inject(DbTasksService) private readonly tasks: DbTasksService) {}
 
   @Post()
-  async create(@Req() req: AuthedRequest, @Body() body: unknown) {
-    return (await this.tasks.create(req.user!.id, parse(createSchema, body))).task
+  async create(@Req() req: AuthedRequest, @Body() body: unknown, @Headers('idempotency-key') key?: string) {
+    const input = parse(createSchema, body)
+    return (await (key ? this.tasks.create(req.user!.id, input, key) : this.tasks.create(req.user!.id, input))).task
   }
 
   @Get()

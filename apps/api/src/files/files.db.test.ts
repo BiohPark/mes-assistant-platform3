@@ -78,6 +78,17 @@ describe('files DB', () => {
     await expect(files.setInput('member', a.id, direct.id, 'main')).rejects.toMatchObject({ status: 409 })
   })
 
+  it('hides files owned by a deleted task from candidates and task files', async () => {
+    const source = (await tasks.create('member', { assistantId, tags: ['visible'] })).task
+    const consumer = (await tasks.create('member', { assistantId, tags: ['visible'] })).task
+    const file = await files.upload('member', source.id, 'hidden.txt', 'text/plain', Buffer.from('hidden'))
+    expect((await files.candidates(consumer.id)).files.map((item) => item.file.id)).toContain(file.id)
+    await tasks.delete(source.id)
+    expect((await files.candidates(consumer.id)).files.map((item) => item.file.id)).not.toContain(file.id)
+    await expect(files.filesForTask(source.id)).rejects.toMatchObject({ status: 404 })
+    await expect(files.setOutput('member', file.id, true)).rejects.toMatchObject({ status: 404 })
+  })
+
   it('keeps outputs versioned and input order main before reference', async () => {
     const a = (await tasks.create('member', { assistantId })).task
     const first = await files.saveOutput('member', a.id, 'answer.md', '# one')

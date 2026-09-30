@@ -116,7 +116,9 @@ create table task (
   last_activity_at timestamptz not null default now(),
   started_at       timestamptz,
   completed_at     timestamptz,
-  completed_by     text references app_user(id)
+  completed_by     text references app_user(id),
+  idempotency_key  text unique,
+  deleted_at       timestamptz
 );
 create index task_assistant on task(assistant_id);
 create index task_last_activity on task(last_activity_at desc);
@@ -253,10 +255,13 @@ create table chat_request (
   snapshot         jsonb,                          -- 원본 요청 본문 (키 제외)
   lease_until      timestamptz,                    -- 서버 작업 생존 신호
   created_at       timestamptz not null default now(),
-  finished_at      timestamptz
+  finished_at      timestamptz,
+  idempotency_key  text,
+  phase            text
 );
 -- 대화당 진행 중 요청 1건
 create unique index chat_request_one_active on chat_request(thread_id) where status in ('pending', 'streaming');
+alter table chat_request add constraint chat_request_thread_id_idempotency_key_key unique (thread_id, idempotency_key);
 
 create table chat_request_input (
   request_id     text not null references chat_request(id) on delete cascade,

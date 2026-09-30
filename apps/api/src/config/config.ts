@@ -33,6 +33,14 @@ const EnvSchema = z.object({
   LLM_BASE_URL: z.string().default(''),
   LLM_API_KEY: z.string().default(''),
   LLM_DEFAULT_MODEL: z.string().optional(),
+  REQUEST_FIRST_TOKEN_MS: z.coerce.number().int().positive().default(60_000),
+  REQUEST_FILES_FIRST_TOKEN_MS: z.coerce.number().int().positive().default(360_000),
+  REQUEST_IDLE_MS: z.coerce.number().int().positive().default(60_000),
+  REQUEST_LEASE_MS: z.coerce.number().int().positive().default(30_000),
+  REQUEST_KEEPALIVE_MS: z.coerce.number().int().positive().default(10_000),
+  REQUEST_SWEEP_MS: z.coerce.number().int().positive().default(30_000),
+  REQUEST_FLUSH_MS: z.coerce.number().int().positive().default(250),
+  REQUEST_BUDGET_BYTES: z.coerce.number().int().positive().default(262_144),
 }).superRefine((e, ctx) => {
   if (e.AUTH_MODE === 'oidc') {
     if (!e.OIDC_ISSUER || !z.url().safeParse(e.OIDC_ISSUER).success) ctx.addIssue({ code: 'custom', path: ['OIDC_ISSUER'], message: '유효한 URL이 필요합니다' })
@@ -77,6 +85,9 @@ export function loadConfig(env: Record<string, string | undefined>) {
     fileMaxBytes: e.FILE_MAX_BYTES,
     fileMaxPerRequest: e.FILE_MAX_PER_REQUEST,
     llm: { mode: e.LLM_MODE, preset: e.LLM_PRESET, baseUrl: e.LLM_BASE_URL, apiKey: e.LLM_API_KEY, defaultModel: e.LLM_DEFAULT_MODEL },
+    request: { firstTokenMs: e.REQUEST_FIRST_TOKEN_MS, filesFirstTokenMs: e.REQUEST_FILES_FIRST_TOKEN_MS,
+      idleMs: e.REQUEST_IDLE_MS, leaseMs: e.REQUEST_LEASE_MS, keepaliveMs: e.REQUEST_KEEPALIVE_MS,
+      sweepMs: e.REQUEST_SWEEP_MS, flushMs: e.REQUEST_FLUSH_MS, budgetBytes: e.REQUEST_BUDGET_BYTES },
   }
 }
 

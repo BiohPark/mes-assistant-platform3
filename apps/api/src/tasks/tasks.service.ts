@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common'
 import { applyTaskStatus, isSrTag, normalizeTag, tagKey, tagSuggestions, type Task, type TaskStatus, type Thread } from '@mes/domain'
-import { and, desc, eq, exists, inArray, or, sql } from 'drizzle-orm'
+import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
 import { unionAll } from 'drizzle-orm/pg-core'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appUser, assistant, fileObject, message, messageAttachment, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, chatRequest, conversationInput, fileObject, message, messageAttachment, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 
 export interface CreateTaskInput {
   assistantId: string
@@ -34,13 +34,13 @@ export class DbTasksService {
   constructor(@Inject(DB) private readonly db: Db) {}
 
   private async row(taskId: string) {
-    const [row] = await this.db.select().from(task).where(eq(task.id, taskId))
+    const [row] = await this.db.select().from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt)))
     if (!row) throw new NotFoundException('대화를 찾을 수 없습니다')
     return row
   }
 
   private async lockedRow(tx: Parameters<Parameters<Db['transaction']>[0]>[0], taskId: string) {
-    const [row] = await tx.select().from(task).where(eq(task.id, taskId)).for('update')
+    const [row] = await tx.select().from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt))).for('update')
     if (!row) throw new NotFoundException('대화를 찾을 수 없습니다')
     return row
   }
@@ -87,7 +87,11 @@ export class DbTasksService {
     return (await this.assemble([await this.row(taskId)]))[0]!
   }
 
-  async create(actor: string, input: CreateTaskInput) {
+  async create(actor: string, input: CreateTaskInput, idempotencyKey?: string) {
+    if (idempotencyKey) {
+      const [existing] = await this.db.select({ id: task.id }).from(task).where(eq(task.idempotencyKey, idempotencyKey))
+      if (existing) { const found = await this.get(existing.id); return { task: found, thread: found.thread! } }
+    }
     const [selected] = await this.db.select().from(assistant).where(eq(assistant.id, input.assistantId))
     if (!selected) throw new NotFoundException('에이전트를 찾을 수 없습니다')
     if (selected.status === 'retired') throw new ConflictException('폐기된 에이전트로는 시작할 수 없습니다')
@@ -95,15 +99,19 @@ export class DbTasksService {
     const taskId = id()
     const threadId = id()
     const now = new Date()
-    await this.db.transaction(async (tx) => {
+    const createdId = await this.db.transaction(async (tx) => {
       const year = now.getFullYear()
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('task-code'), ${year})`)
+      if (idempotencyKey) {
+        const [duplicate] = await tx.select({ id: task.id }).from(task).where(eq(task.idempotencyKey, idempotencyKey))
+        if (duplicate) return duplicate.id
+      }
       const [max] = await tx.select({ value: sql<number>`coalesce(max(substring(${task.code} from 9)::int), 0)` }).from(task).where(sql`${task.code} like ${`WK-${year}-%`}`)
       const code = `WK-${year}-${String(Number(max?.value ?? 0) + 1).padStart(4, '0')}`
       await tx.insert(task).values({ id: taskId, code, assistantId: selected.id,
         title: input.title?.trim() || `${selected.name} 대화 ${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
         titleSource: input.title?.trim() ? 'manual' : 'default', status: 'in_progress',
-        ownerId: actor, priority: 'normal', createdBy: actor, startedAt: now, lastActivityAt: now })
+        ownerId: actor, priority: 'normal', createdBy: actor, startedAt: now, lastActivityAt: now, idempotencyKey })
       await tx.insert(taskAssignee).values({ taskId, userId: actor })
       await tx.insert(thread).values({ id: threadId, taskId, title: '대화', createdBy: actor })
       if (input.firstMessage?.trim()) {
@@ -117,12 +125,15 @@ export class DbTasksService {
         await tx.insert(activityLog).values({ id: id(), type: 'tag.added', userId: actor, taskId, payload: { tag: label } })
       }
       await tx.insert(activityLog).values({ id: id(), type: 'task.created', userId: actor, taskId, assistantId: selected.id, payload: { assistantName: selected.name } })
+      return taskId
     })
-    return { task: await this.get(taskId), thread: { id: threadId, taskId, title: '대화', createdAt: now.toISOString(), createdBy: actor, archived: false } }
+    const created = await this.get(createdId)
+    return { task: created, thread: created.thread! }
   }
 
   async list(filter: TaskFilter = {}): Promise<Task[]> {
     const conditions = [
+      isNull(task.deletedAt),
       ...(filter.assistantId ? [eq(task.assistantId, filter.assistantId)] : []),
       ...(filter.status?.length ? [inArray(task.status, filter.status)] : []),
       ...(filter.mine ? [or(
@@ -166,6 +177,11 @@ export class DbTasksService {
   async setStatus(actor: string, taskId: string, status: TaskStatus, reason?: string): Promise<Task> {
     await this.db.transaction(async (tx) => {
       const current = await this.lockedRow(tx, taskId)
+      if (status === 'done') {
+        const [active] = await tx.select({ id: chatRequest.id }).from(chatRequest).innerJoin(thread, eq(chatRequest.threadId, thread.id))
+          .where(and(eq(thread.taskId, taskId), inArray(chatRequest.status, ['pending', 'streaming']))).limit(1)
+        if (active) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
+      }
       if (current.status === status) return
       if (current.status === 'done' && !reason?.trim()) throw new BadRequestException('재개 사유가 필요합니다')
       const next = applyTaskStatus((await this.assemble([current]))[0]!, status, actor, new Date().toISOString())
@@ -211,11 +227,14 @@ export class DbTasksService {
   async messages(threadId: string) {
     const [target] = await this.db.select().from(thread).where(eq(thread.id, threadId))
     if (!target?.taskId) throw new NotFoundException('스레드를 찾을 수 없습니다')
+    await this.row(target.taskId)
     const rows = await this.db.select().from(message).where(eq(message.threadId, threadId)).orderBy(message.seq)
     const attachments = rows.length ? await this.db.select().from(messageAttachment).where(inArray(messageAttachment.messageId, rows.map((row) => row.id))) : []
+    const requests = await this.db.select({ id: chatRequest.id, replyMessageId: chatRequest.replyMessageId }).from(chatRequest).where(eq(chatRequest.threadId, threadId))
     return rows.map((row) => ({
       id: row.id, threadId: row.threadId, seq: row.seq, role: row.role, kind: row.kind,
-      content: row.content, authorId: row.authorId, status: row.status, createdAt: row.createdAt.toISOString(), attachmentIds: attachments.filter((item) => item.messageId === row.id).map((item) => item.fileId),
+      content: row.content, authorId: row.authorId, status: row.status, error: row.error, createdAt: row.createdAt.toISOString(), attachmentIds: attachments.filter((item) => item.messageId === row.id).map((item) => item.fileId),
+      ...(requests.find((item) => item.replyMessageId === row.id) ? { requestId: requests.find((item) => item.replyMessageId === row.id)!.id } : {}),
     }))
   }
 
@@ -252,21 +271,19 @@ export class DbTasksService {
 
   async delete(taskId: string): Promise<void> {
     await this.db.transaction(async (tx) => {
-      const [owner] = await tx.select({ id: task.id }).from(task).where(eq(task.id, taskId)).for('update')
+      const [owner] = await tx.select({ id: task.id }).from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt))).for('update')
       if (!owner) throw new NotFoundException('대화를 찾을 수 없습니다')
+      const [selectedAsContext] = await tx.select({ id: conversationInput.id }).from(conversationInput).where(eq(conversationInput.sourceTaskId, taskId)).limit(1)
+      if (selectedAsContext) throw new ConflictException('다른 대화가 이 대화를 참조 입력으로 사용합니다')
       const ownFiles = await tx.select({ id: fileObject.id }).from(fileObject).where(eq(fileObject.originTaskId, taskId))
       if (ownFiles.length) {
         const used = await tx.select().from(taskInput).where(inArray(taskInput.fileId, ownFiles.map((file) => file.id)))
         if (used.some((item) => item.taskId !== taskId)) throw new ConflictException('다른 대화가 이 대화의 파일을 입력으로 사용합니다')
       }
-      await tx.delete(thread).where(eq(thread.taskId, taskId))
-      await tx.delete(taskInput).where(eq(taskInput.taskId, taskId))
-      if (ownFiles.length) {
-        const fileIds = ownFiles.map((file) => file.id)
-        await tx.update(fileObject).set({ previousId: null }).where(inArray(fileObject.id, fileIds))
-        await tx.delete(fileObject).where(inArray(fileObject.id, fileIds))
-      }
-      await tx.delete(task).where(eq(task.id, taskId))
+      const [activeRequest] = await tx.select({ id: chatRequest.id }).from(chatRequest).innerJoin(thread, eq(chatRequest.threadId, thread.id))
+        .where(and(eq(thread.taskId, taskId), inArray(chatRequest.status, ['pending', 'streaming']))).limit(1)
+      if (activeRequest) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
+      await tx.update(task).set({ deletedAt: new Date() }).where(eq(task.id, taskId))
     })
   }
 }

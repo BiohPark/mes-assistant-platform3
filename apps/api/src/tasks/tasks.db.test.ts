@@ -8,6 +8,7 @@ import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from './tasks.service.js'
 import { DbFilesService } from '../files/files.service.js'
+import { DbCatalogReader } from '../catalog/catalog.service.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -42,6 +43,13 @@ describe('tasks DB', () => {
     expect((await db.select().from(thread).where(eq(thread.taskId, created[0]!.task.id)))).toHaveLength(1)
   })
 
+  it('uses an optional idempotency key to return one draft under retries', async () => {
+    const first = await service.create('member', { assistantId }, 'same-draft')
+    const second = await service.create('member', { assistantId }, 'same-draft')
+    expect(second.task.id).toBe(first.task.id)
+    expect(second.thread.id).toBe(first.thread.id)
+  })
+
   it('rejects retired assistants and locks completed task edits until a reasoned reopen', async () => {
     await db.update(assistant).set({ status: 'retired' }).where(eq(assistant.id, assistantId))
     await expect(service.create('member', { assistantId })).rejects.toMatchObject({ status: 409 })
@@ -58,8 +66,11 @@ describe('tasks DB', () => {
     expect((await service.activity(created.id))[0]).toMatchObject({ type: 'task.reopened', payload: { reason: '다시 진행' } })
   })
 
-  it('filters tasks, records discussion messages in sequence and cascades deletion', async () => {
+  it('filters tasks, records discussion messages and retains a soft-deleted task', async () => {
+    const stats = new DbCatalogReader(db)
+    const before = (await stats.stats()).find((item) => item.assistantId === assistantId)!.inProgress
     const { task: created, thread: createdThread } = await service.create('member', { assistantId, tags: ['alpha'] })
+    expect((await stats.stats()).find((item) => item.assistantId === assistantId)!.inProgress).toBe(before + 1)
     expect((await service.list({ assistantId, tags: ['alpha'], mine: 'member' })).map((item) => item.id)).toContain(created.id)
     expect((await service.list({ status: ['done'], tags: ['alpha'] })).map((item) => item.id)).not.toContain(created.id)
     await service.appendMessage('member', createdThread.id, { content: '첫 의견', kind: 'discussion' })
@@ -67,12 +78,15 @@ describe('tasks DB', () => {
     expect((await service.messages(createdThread.id)).map((item) => [item.seq, item.content, item.kind])).toEqual([[1, '첫 의견', 'discussion'], [2, '둘째 의견', 'discussion']])
     expect((await service.activity(created.id)).some((item) => item.type === 'message.sent')).toBe(true)
     await service.delete(created.id)
-    expect(await db.select().from(task).where(eq(task.id, created.id))).toHaveLength(0)
-    expect(await db.select().from(thread).where(eq(thread.id, createdThread.id))).toHaveLength(0)
-    expect(await db.select().from(message).where(eq(message.threadId, createdThread.id))).toHaveLength(0)
+    expect((await db.select().from(task).where(eq(task.id, created.id)))[0]?.deletedAt).toBeTruthy()
+    expect(await db.select().from(thread).where(eq(thread.id, createdThread.id))).toHaveLength(1)
+    expect(await db.select().from(message).where(eq(message.threadId, createdThread.id))).toHaveLength(2)
+    expect((await service.list()).map((item) => item.id)).not.toContain(created.id)
+    expect((await stats.stats()).find((item) => item.assistantId === assistantId)!.inProgress).toBe(before)
+    await expect(service.messages(createdThread.id)).rejects.toMatchObject({ status: 404 })
   })
 
-  it('deletes its own file but protects a file selected by another task', async () => {
+  it('retains its own file but protects a file selected by another task', async () => {
     const { task: source } = await service.create('member', { assistantId })
     const { task: consumer } = await service.create('member', { assistantId })
     await db.insert(fileObject).values({ id: 'owned-file', kind: 'task_file', originTaskId: source.id, originalName: 'x.txt', mime: 'text/plain', sizeBytes: 1, sha256: 'a'.repeat(64), storageKey: `test/${source.id}`, source: 'upload', version: 1, uploadedBy: 'member' })
@@ -80,7 +94,7 @@ describe('tasks DB', () => {
     await expect(service.delete(source.id)).rejects.toMatchObject({ status: 409 })
     await db.delete(taskInput).where(eq(taskInput.taskId, consumer.id))
     await service.delete(source.id)
-    expect(await db.select().from(fileObject).where(eq(fileObject.id, 'owned-file'))).toHaveLength(0)
+    expect(await db.select().from(fileObject).where(eq(fileObject.id, 'owned-file'))).toHaveLength(1)
   })
 
   it('serializes deleting a source task with selecting its file', async () => {

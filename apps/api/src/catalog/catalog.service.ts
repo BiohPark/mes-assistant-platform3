@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
 import type { Assistant, AssistantStats, CatalogCode, CatalogUser } from '@mes/contracts'
-import { asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { appUser, assistant, assistantChecklistTemplate, assistantExpectedIo, code, task } from '../db/schema.js'
 
@@ -46,7 +46,7 @@ export class DbCatalogReader implements CatalogReader {
       inProgress: sql<number>`count(*) filter (where ${task.status} = 'in_progress')::int`,
       onHold: sql<number>`count(*) filter (where ${task.status} = 'on_hold')::int`,
       done: sql<number>`count(*) filter (where ${task.status} = 'done')::int`,
-    }).from(assistant).leftJoin(task, eq(task.assistantId, assistant.id)).groupBy(assistant.id).orderBy(asc(assistant.sortOrder))
+    }).from(assistant).leftJoin(task, and(eq(task.assistantId, assistant.id), isNull(task.deletedAt))).groupBy(assistant.id).orderBy(asc(assistant.sortOrder))
     return rows
   }
 

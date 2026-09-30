@@ -47,6 +47,7 @@ export interface BuildOptions {
   /** 크기 추정: OpenWebUI 업로드 없이 첨부 예정으로 계산 */
   dryRun?: boolean
   signal?: AbortSignal
+  deadlineAt?: number
   onProgress?: DeliverOptions['onProgress']
 }
 
@@ -119,7 +120,8 @@ async function deliver(settings: Settings, entries: FileEntry[], opts: BuildOpti
   const viaFilesApi = usesFilesApi(settings.llm)
   const forceInline = new Set(opts.forceInlineFileIds ?? [])
   const toAttach = viaFilesApi ? entries.filter((e) => !(forceInline.has(e.file.id) && isTextFile(e.file))) : []
-  const result = toAttach.length && !opts.dryRun ? await deliverFiles(settings.llm, toAttach.map((e) => e.file), { signal: opts.signal, onProgress: opts.onProgress }, ports) : undefined
+  const result = toAttach.length && !opts.dryRun ? await deliverFiles(settings.llm, toAttach.map((e) => e.file), { signal: opts.signal, onProgress: opts.onProgress,
+    processTimeoutMs: opts.deadlineAt === undefined ? undefined : Math.max(1, Math.min(300_000, opts.deadlineAt - Date.now())) }, ports) : undefined
   const failedReason = new Map(result?.failed.map((f) => [f.file.id, f.reason]) ?? [])
   const attachIds = new Set(toAttach.map((e) => e.file.id))
 
@@ -284,7 +286,7 @@ export async function buildChatRequest(scope: ChatScope, thread: Thread, history
       provider: settings.llm.mode,
       transport,
       model,
-      bytes: requestBytes({ model, messages, files }),
+      bytes: requestBytes({ model, messages }),
       limitBytes,
       inputs: built.inputs,
       srCodes: built.srCodes,

@@ -111,6 +111,15 @@ describe('deliverFiles', () => {
     expect(r.attached.has('f404')).toBe(true)
   })
 
+  it('reuploads when a cached remote file disappeared', async () => {
+    const f = { ...asset('cached'), remoteIds: { [remoteKey(settings)]: 'gone' } }
+    await db.files.add(f)
+    const srv = fakeServer({ status: (id) => id === 'gone' ? new Response('missing', { status: 404 }) : new Response(JSON.stringify({ status: 'completed' }), { status: 200 }) })
+    const result = await deliverFiles(settings, [f], { pollMs: 1 })
+    expect(srv.uploads()).toBe(1)
+    expect(result.attached.get('cached')?.id).toBe('remote-1')
+  })
+
   it('reports processing failures without caching', async () => {
     const f = asset('fp')
     await db.files.add(f)

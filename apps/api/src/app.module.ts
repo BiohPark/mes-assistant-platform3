@@ -7,6 +7,7 @@ import { LlmModule } from './llm/llm.module.js'
 import { CatalogModule } from './catalog/catalog.module.js'
 import { TasksModule } from './tasks/tasks.module.js'
 import { FilesModule } from './files/files.module.js'
+import { RequestsModule } from './requests/requests.module.js'
 
-@Module({ imports: [ConfigModule, DbModule, HealthModule, AuthModule, LlmModule, CatalogModule, TasksModule, FilesModule] })
+@Module({ imports: [ConfigModule, DbModule, HealthModule, AuthModule, LlmModule, CatalogModule, TasksModule, FilesModule, RequestsModule] })
 export class AppModule {}

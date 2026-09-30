@@ -39,3 +39,36 @@ it('uploads a pinned attachment and stores it on the discussion message', async 
   expect(calls.some((call) => call.url === '/api/tasks/t/inputs/f' && call.method === 'PUT')).toBe(true)
   expect(JSON.parse(String(calls.find((call) => call.url === '/api/threads/h/messages' && call.method === 'POST')?.body))).toMatchObject({ attachmentIds: ['f'] })
 })
+
+it('sends an AI request through SSE and leaves pinning to the server', async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, init })
+    if (url === '/api/files') return new Response(JSON.stringify({ id: 'f', name: 'note.txt' }), { status: 201 })
+    if (url === '/api/threads/h/requests') return new Response('event: started\ndata: {"requestId":"r","replyMessageId":"a","userMessageId":"u"}\n\nevent: completed\ndata: {"requestInfo":{}}\n\n', { status: 201 })
+    return new Response('[]', { status: 200 })
+  }))
+  const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
+  const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '질문' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(calls.some((call) => call.url === '/api/threads/h/requests')).toBe(true))
+  expect(calls.some((call) => call.url === '/api/tasks/t/inputs/f')).toBe(false)
+  const sent = calls.find((call) => call.url === '/api/threads/h/requests')!
+  expect(JSON.parse(String(sent.init?.body))).toMatchObject({ content: '질문', attachmentIds: ['f'], oneShotFileIds: [] })
+  expect((sent.init?.headers as Record<string, string> | undefined)?.['Idempotency-Key']).toBeTruthy()
+})
+
+it('shows the phase of a request running in another tab', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/threads/h/messages') return new Response(JSON.stringify([{ id: 'a', requestId: 'remote', threadId: 'h', seq: 1,
+      role: 'assistant', content: '', status: 'streaming', createdAt: new Date().toISOString(), attachmentIds: [] }]), { status: 200 })
+    if (url === '/api/requests/remote') return new Response(JSON.stringify({ id: 'remote', status: 'pending', phase: '파일 올리는 중 1/1' }), { status: 200 })
+    return new Response('[]', { status: 200 })
+  }))
+  const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  await waitFor(() => expect(screen.getByText('파일 올리는 중 1/1')).toBeVisible())
+})

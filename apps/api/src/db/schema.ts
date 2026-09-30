@@ -156,6 +156,8 @@ export const task = pgTable(
     startedAt: tz('started_at'),
     completedAt: tz('completed_at'),
     completedBy: text('completed_by').references((): AnyPgColumn => appUser.id),
+    idempotencyKey: text('idempotency_key'),
+    deletedAt: tz('deleted_at'),
   },
   (t) => [
     check('task_title_source_check', inList(t.titleSource, ['default', 'ai', 'manual'])),
@@ -163,6 +165,7 @@ export const task = pgTable(
     check('task_priority_check', inList(t.priority, ['low', 'normal', 'high', 'urgent'])),
     index('task_assistant').on(t.assistantId),
     index('task_last_activity').on(sql`${t.lastActivityAt} desc`),
+    unique('task_idempotency_key_key').on(t.idempotencyKey),
   ],
 )
 
@@ -348,6 +351,8 @@ export const chatRequest = pgTable(
     requestedBy: text('requested_by').notNull().references((): AnyPgColumn => appUser.id),
     retryOf: text('retry_of').references((): AnyPgColumn => chatRequest.id),
     status: text('status').notNull(),
+    idempotencyKey: text('idempotency_key'),
+    phase: text('phase'),
     provider: text('provider').notNull(),
     transport: text('transport').notNull(),
     model: text('model').notNull(),
@@ -367,6 +372,7 @@ export const chatRequest = pgTable(
     check('chat_request_provider_check', inList(t.provider, ['mock', 'live'])),
     check('chat_request_transport_check', inList(t.transport, ['inline', 'openwebui'])),
     uniqueIndex('chat_request_one_active').on(t.threadId).where(sql`${t.status} in ('pending', 'streaming')`),
+    unique('chat_request_thread_id_idempotency_key_key').on(t.threadId, t.idempotencyKey),
   ],
 )
 

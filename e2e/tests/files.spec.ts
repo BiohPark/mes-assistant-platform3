@@ -20,7 +20,7 @@ test('S1 첨부를 입력에 고정하고 새 버전은 직접 전환한다', as
   await page.getByRole('link', { name: /새 대화/ }).first().click()
   await page.locator('input[type="file"]').setInputFiles({ name: 'e2e-note.txt', mimeType: 'text/plain', buffer: Buffer.from('first') })
   await expect(page.getByText('입력으로 고정')).toBeVisible()
-  await page.getByRole('button', { name: '전송' }).click()
+  await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page).toHaveURL(/\/c\/[^/]+$/)
   await openMaterials(page)
   await expect(page.getByTestId('materials-inputs')).toContainText('e2e-note.txt v1')

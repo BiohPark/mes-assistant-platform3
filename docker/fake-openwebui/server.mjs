@@ -7,6 +7,7 @@ const MODELS = [
   { id: 'fake-general', name: '가짜 범용 에이전트' },
   { id: 'fake-writer', name: '가짜 문서 작성 에이전트' },
 ]
+const uploads = new Map()
 
 function json(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
@@ -33,11 +34,22 @@ const server = createServer(async (req, res) => {
   }
   if (req.method === 'POST' && url.pathname === '/api/v1/files/') {
     const body = await readBody(req)
-    return json(res, 200, { id: randomUUID(), filename: 'upload', meta: { size: body.length } })
+    const filename = /filename="([^"]+)"/.exec(body.toString('latin1'))?.[1] ?? 'upload'
+    if (filename.startsWith('fail-')) return json(res, 500, { detail: 'Upload failed' })
+    const id = randomUUID()
+    uploads.set(id, { filename, at: Date.now() })
+    return json(res, 200, { id, filename, meta: { size: body.length } })
+  }
+  const statusMatch = /^\/api\/v1\/files\/([^/]+)\/process\/status$/.exec(url.pathname)
+  if (req.method === 'GET' && statusMatch) {
+    const upload = uploads.get(statusMatch[1])
+    if (!upload) return json(res, 404, { detail: 'Not Found' })
+    const wait = upload.filename.startsWith('stuck-') ? Infinity : upload.filename.startsWith('slow-') ? 8000 : 1500
+    return json(res, 200, { status: Date.now() - upload.at >= wait ? 'completed' : 'pending' })
   }
   if (req.method === 'POST' && url.pathname === '/api/chat/completions') {
     const payload = JSON.parse((await readBody(req)).toString('utf8') || '{}')
-    const text = `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${lastUserText(payload.messages)}`
+    const text = `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${lastUserText(payload.messages)} [files: ${payload.files?.length ?? 0}]`
     const id = `chatcmpl-${randomUUID()}`
     if (!payload.stream) {
       return json(res, 200, { id, object: 'chat.completion', model: payload.model, choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }] })
