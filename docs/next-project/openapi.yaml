@@ -76,20 +76,55 @@ paths:
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
 
-  /users:
+  /catalog/users:
     get:
       tags: [misc]
+      summary: 사용자 목록 (로그인 사용자 전원 — 담당자·소유자 표시용). S4 ①에서 /users에서 이동
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/User' } } } } }
+  /users:
+    get:
+      tags: [admin]
+      summary: 계정 관리 목록 (SO 전용 — 역할·활성·변경 강제 상태 포함). S4 ①
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/User' } } } } }
+        '403': { $ref: '#/components/responses/Problem' }
   /users/{userId}/system-owner:
     put:
-      tags: [misc]
-      summary: SO 지정·해제 (SO 전용)
+      tags: [admin]
+      summary: SO 지정·해제 (SO 전용). 마지막 활성 SO 해제는 409
       parameters: [{ $ref: '#/components/parameters/userId' }]
       requestBody: { content: { application/json: { schema: { type: object, required: [value], properties: { value: { type: boolean } } } } } }
       responses:
         '204': { description: 변경됨 }
         '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /users/{userId}/business-owner:
+    put:
+      tags: [admin]
+      summary: BO(요청자) 지정·해제 (SO 전용, D37). S4 ①
+      parameters: [{ $ref: '#/components/parameters/userId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [value], properties: { value: { type: boolean } } } } } }
+      responses: { '204': { description: 변경됨 } }
+  /users/{userId}/active:
+    put:
+      tags: [admin]
+      summary: 계정 활성·비활성 (SO 전용). 비활성은 로그인 거부·세션 무효. 마지막 활성 SO 비활성화는 409. S4 ①
+      parameters: [{ $ref: '#/components/parameters/userId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [value], properties: { value: { type: boolean } } } } } }
+      responses: { '204': { description: 변경됨 }, '409': { $ref: '#/components/responses/Problem' } }
+  /users/{userId}/temporary-password:
+    post:
+      tags: [admin]
+      summary: 임시 비밀번호 발급 (SO 전용, S4-1). 응답에 1회만 노출·DB에는 해시만, 기존 세션 삭제, 다음 로그인 때 변경 강제(mustChangePassword)
+      parameters: [{ $ref: '#/components/parameters/userId' }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: object, required: [temporaryPassword], properties: { temporaryPassword: { type: string } } } } } } }
+  /auth/password:
+    post:
+      tags: [auth]
+      summary: 본인 비밀번호 변경 (현재 비밀번호 확인, 다른 세션 무효화). 변경 강제 상태에서는 이 API와 /auth/logout·/me 외 403 PASSWORD_CHANGE_REQUIRED. S4 ①
+      requestBody: { content: { application/json: { schema: { type: object, required: [currentPassword, newPassword], properties: { currentPassword: { type: string }, newPassword: { $ref: '#/components/schemas/Password' } } } } } }
+      responses: { '204': { description: 변경됨 }, '400': { $ref: '#/components/responses/Problem' } }
 
   /assistants:
     get:
@@ -111,16 +146,46 @@ paths:
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: object, required: [assistantId, open, inProgress, onHold, done], properties: { assistantId: { type: string }, open: { type: integer }, inProgress: { type: integer }, onHold: { type: integer }, done: { type: integer } } } } } } }
   /codes:
+    post:
+      tags: [admin]
+      summary: 코드 추가 (SO 전용, S4-2). 그룹은 시스템 정의 — 새 그룹은 만들 수 없다
+      requestBody: { content: { application/json: { schema: { type: object, required: [groupKey, code, name], properties: { groupKey: { type: string }, code: { type: string }, name: { type: string }, sortOrder: { type: integer } } } } } }
+      responses: { '201': { description: 생성 }, '403': { $ref: '#/components/responses/Problem' } }
     get:
       tags: [misc]
-      summary: 코드 목록 (FR-63, D36 — active만; group으로 필터)
+      summary: 코드 목록 (FR-63, D36 — active만; group으로 필터. includeInactive=true는 SO 전용)
       parameters: [{ name: group, in: query, schema: { type: string, description: 'code_group.key (예 assistant_level1)' } }]
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: object, required: [id, groupKey, code, name, sortOrder, active], properties: { id: { type: string }, groupKey: { type: string }, code: { type: string }, name: { type: string }, sortOrder: { type: integer }, active: { type: boolean } } } } } } }
+  /codes/manage:
+    get:
+      tags: [admin]
+      summary: 코드 관리 목록 (SO 전용 — 비활성 포함)
+      parameters: [{ name: group, in: query, schema: { type: string } }]
+      responses: { '200': { description: OK } }
+  /codes/{codeId}:
+    patch:
+      tags: [admin]
+      summary: 코드 수정 (SO 전용) — 이름·순서·활성. 삭제 없음(참조 무결성). 비활성 코드는 새 선택 불가
+      parameters: [{ name: codeId, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { name: { type: string }, sortOrder: { type: integer }, active: { type: boolean } } } } } }
+      responses: { '204': { description: 변경됨 } }
+  /assistants/{assistantId}/image:
+    post:
+      tags: [assistants]
+      summary: 에이전트 이미지 업로드·교체 (SO 전용, S4-3). 이전 이미지는 소프트 삭제. 열람은 로그인 사용자 전원(파일 API)
+      parameters: [{ $ref: '#/components/parameters/assistantId' }]
+      requestBody: { content: { multipart/form-data: { schema: { type: object, properties: { file: { type: string, format: binary } } } } } }
+      responses: { '200': { description: OK } }
+    delete:
+      tags: [assistants]
+      summary: 에이전트 이미지 제거 (SO 전용)
+      parameters: [{ $ref: '#/components/parameters/assistantId' }]
+      responses: { '204': { description: 제거 } }
   /assistants/{assistantId}:
     patch:
       tags: [assistants]
-      summary: 에이전트 수정 (SO 전용)
+      summary: 에이전트 수정 (SO 전용). 부분 수정은 기대 입출력·체크리스트를 보존. 접수 에이전트는 중단 불가(409)
       parameters: [{ $ref: '#/components/parameters/assistantId' }]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/AssistantInput' } } } }
       responses:
@@ -135,8 +200,8 @@ paths:
   /assistants/order:
     put:
       tags: [assistants]
-      summary: 공통 순서 저장 (SO 전용, revision 충돌 시 409)
-      requestBody: { content: { application/json: { schema: { type: object, required: [ids, revision], properties: { ids: { type: array, items: { type: string } }, revision: { type: integer } } } } } }
+      summary: 공통 순서 저장 (SO 전용). 행을 ID 순으로 잠근 뒤 revisions(에이전트별)와 비교 — 하나라도 다르면 409
+      requestBody: { content: { application/json: { schema: { type: object, required: [ids, revisions], properties: { ids: { type: array, items: { type: string } }, revisions: { type: object, additionalProperties: { type: integer } } } } } } }
       responses:
         '204': { description: 저장 }
         '409': { $ref: '#/components/responses/Problem' }
@@ -485,6 +550,7 @@ paths:
   /settings:
     get:
       tags: [misc]
+      summary: 전역 설정 조회 (로그인 사용자 전원 — 웹이 기본 모델·한도를 표시). S4 ①
       responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Settings' } } } } }
     patch:
       tags: [misc]
@@ -718,4 +784,5 @@ components:
         defaultModel: { type: string }
         fileDelivery: { enum: [inline, openwebui] }
         requestBudgetBytes: { type: integer, minimum: 1024, maximum: 16777216 }
-        srIntakeAssistantId: { type: string }
+        srIntakeAssistantId: { type: string, nullable: true, description: '중단된 에이전트는 409' }
+        link1Rule: { type: string, description: '링크1 미입력 시 기본 규칙 (U9, SO 전역 설정)' }
