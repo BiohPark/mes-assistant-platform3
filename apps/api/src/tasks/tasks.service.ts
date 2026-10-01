@@ -4,9 +4,10 @@ import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSu
 import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
 import { unionAll } from 'drizzle-orm/mysql-core'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appUser, assistant, chatRequest, chatRequestInput, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, assistantChecklistTemplate, chatRequest, chatRequestInput, checklistItem, checklistReview, checklistReviewItem, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, tag, task, taskAssignee, taskFeedback, taskInput, taskTag, thread } from '../db/schema.js'
 import { EventsService } from '../events/events.service.js'
 import { assertTaskAccess, assertThreadAccess } from '../sr/access.js'
+import type { TaskExtrasService } from './task-extras.service.js'
 
 export interface CreateTaskInput {
   assistantId: string
@@ -34,7 +35,8 @@ const checkTagLength = (label: string) => { if ([...tagKey(label)].length > 191)
 
 @Injectable()
 export class DbTasksService {
-  constructor(@Inject(DB) private readonly db: Db, @Inject(EventsService) private readonly events?: EventsService) {}
+  constructor(@Inject(DB) private readonly db: Db, @Inject(EventsService) private readonly events?: EventsService,
+    @Inject('TASK_EXTRAS') private readonly extras?: TaskExtrasService) {}
 
   private async row(taskId: string) {
     const [row] = await this.db.select().from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt)))
@@ -57,24 +59,42 @@ export class DbTasksService {
   private async assemble(rows: (typeof task.$inferSelect)[]): Promise<(Task & { thread?: Thread })[]> {
     if (!rows.length) return []
     const ids = rows.map((row) => row.id)
-    const [tags, assigneesAndThreads, materials] = await Promise.all([
-      this.db.select({ taskId: taskTag.taskId, label: tag.label }).from(taskTag).innerJoin(tag, eq(taskTag.tagKey, tag.key)).where(inArray(taskTag.taskId, ids)).orderBy(taskTag.addedAt),
-      this.db.select({ taskId: thread.taskId, userId: taskAssignee.userId, taskThread: thread }).from(thread).leftJoin(taskAssignee, eq(taskAssignee.taskId, thread.taskId)).where(inArray(thread.taskId, ids)),
+    const [details, materials, extras] = await Promise.all([
+      this.db.select({ taskId: task.id, label: tag.label, userId: taskAssignee.userId, taskThread: thread }).from(task)
+        .leftJoin(taskTag, eq(taskTag.taskId, task.id)).leftJoin(tag, eq(taskTag.tagKey, tag.key))
+        .leftJoin(taskAssignee, eq(taskAssignee.taskId, task.id)).leftJoin(thread, eq(thread.taskId, task.id))
+        .where(inArray(task.id, ids)).orderBy(taskTag.addedAt),
       unionAll(
         this.db.select({ taskId: taskInput.taskId, fileId: taskInput.fileId, weight: taskInput.weight, sortOrder: taskInput.sortOrder, selectedBy: taskInput.selectedBy, selectedAt: taskInput.selectedAt, isOutput: sql<boolean>`false` }).from(taskInput).where(inArray(taskInput.taskId, ids)),
         this.db.select({ taskId: sql<string>`coalesce(${fileObject.originTaskId}, '')`, fileId: fileObject.id, weight: sql<string>`null`, sortOrder: sql<number>`null`, selectedBy: sql<string>`null`, selectedAt: sql<Date>`null`, isOutput: sql<boolean>`true` }).from(fileObject).where(and(inArray(fileObject.originTaskId, ids), eq(fileObject.isOutput, true), sql`${fileObject.deletedAt} is null`)),
       ),
+      this.db.select({ taskId: task.id, check: checklistItem, review: checklistReview, reviewItem: checklistReviewItem, feedback: taskFeedback }).from(task)
+        .leftJoin(checklistItem, eq(checklistItem.taskId, task.id))
+        .leftJoin(checklistReview, eq(checklistReview.taskId, task.id))
+        .leftJoin(checklistReviewItem, eq(checklistReviewItem.reviewId, checklistReview.id))
+        .leftJoin(taskFeedback, eq(taskFeedback.taskId, task.id)).where(inArray(task.id, ids)),
     ])
     return rows.map((row) => {
       const taskId = row.id
-      const taskThread = assigneesAndThreads.find((item) => item.taskId === taskId)?.taskThread
+      const taskThread = details.find((item) => item.taskId === taskId)?.taskThread
+      const extra = extras.filter((item) => item.taskId === taskId)
+      const checks = [...new Map(extra.filter((item) => item.check).map((item) => [item.check!.id, item.check!])).values()].sort((a, b) => a.sortOrder - b.sortOrder)
+      const reviews = [...new Map(extra.filter((item) => item.review).map((item) => [item.review!.id, item.review!])).values()].sort((a, b) => b.at.getTime() - a.at.getTime())
+      const review = reviews[0]
+      const reviewItems = review ? [...new Map(extra.filter((item) => item.review?.id === review.id && item.reviewItem).map((item) => [item.reviewItem!.itemId, item.reviewItem!])).values()] : []
+      const feedback = extra.find((item) => item.feedback)?.feedback
       return {
         id: row.id, code: row.code, assistantId: row.assistantId, title: row.title,
         titleSource: row.titleSource as Task['titleSource'], summary: row.summary,
         status: row.status as TaskStatus, ownerId: row.ownerId,
-        assigneeIds: assigneesAndThreads.filter((item) => item.taskId === taskId && item.userId !== null).map((item) => item.userId!), priority: row.priority as Task['priority'],
-        ...(row.dueDate && { dueDate: row.dueDate }), tags: tags.filter((item) => item.taskId === taskId).map((item) => item.label),
-        checklist: [], inputs: materials.filter((item) => item.taskId === taskId && !item.isOutput).sort((a, b) => (a.weight === b.weight ? a.sortOrder! - b.sortOrder! : a.weight === 'main' ? -1 : 1)).map((item) => ({ fileId: item.fileId, weight: item.weight as 'main' | 'reference', selectedBy: item.selectedBy!, selectedAt: item.selectedAt!.toISOString() })),
+        assigneeIds: [...new Set(details.filter((item) => item.taskId === taskId && item.userId !== null).map((item) => item.userId!))], priority: row.priority as Task['priority'],
+        ...(row.dueDate && { dueDate: row.dueDate }), tags: [...new Set(details.filter((item) => item.taskId === taskId && item.label !== null).map((item) => item.label!))],
+        checklist: checks.map((item) => ({ id: item.id, label: item.label, required: item.required, checked: item.checked,
+          ...(item.checkedBy && { checkedBy: item.checkedBy }), ...(item.checkedAt && { checkedAt: item.checkedAt.toISOString() }) })),
+        ...(review && { checklistReview: { by: review.byUser, at: review.at.toISOString(), met: review.met, total: review.total,
+          source: review.source as 'ai' | 'rule', items: reviewItems.map((item) => ({ itemId: item.itemId, met: item.met, note: item.note })) } }),
+        ...(feedback && { feedback: { rating: feedback.rating, comment: feedback.comment, by: feedback.byUser, at: feedback.at.toISOString() } }),
+        inputs: materials.filter((item) => item.taskId === taskId && !item.isOutput).sort((a, b) => (a.weight === b.weight ? a.sortOrder! - b.sortOrder! : a.weight === 'main' ? -1 : 1)).map((item) => ({ fileId: item.fileId, weight: item.weight as 'main' | 'reference', selectedBy: item.selectedBy!, selectedAt: item.selectedAt!.toISOString() })),
         outputFileIds: materials.filter((item) => item.taskId === taskId && item.isOutput).map((item) => item.fileId), ...(taskThread && { threadId: taskThread.id,
           thread: { id: taskThread.id, taskId, title: taskThread.title, createdAt: taskThread.createdAt.toISOString(), createdBy: taskThread.createdBy, archived: false, ...(taskThread.modelId && { modelId: taskThread.modelId }) } }),
         ...(row.modelId && { modelId: row.modelId }), createdAt: row.createdAt.toISOString(),
@@ -124,6 +144,9 @@ export class DbTasksService {
         ownerId: actor, priority: 'normal', createdBy: actor, startedAt: now, lastActivityAt: now, idempotencyKey })
       await tx.insert(taskAssignee).values({ taskId, userId: actor })
       await tx.insert(thread).values({ id: threadId, taskId, title: '대화', createdBy: actor })
+      const template = await tx.select().from(assistantChecklistTemplate).where(eq(assistantChecklistTemplate.assistantId, selected.id)).orderBy(assistantChecklistTemplate.sortOrder)
+      if (template.length) await tx.insert(checklistItem).values(template.map((item) => ({ id: id(), taskId, templateItemId: item.id,
+        sortOrder: item.sortOrder, label: item.label, required: item.required })))
       if (input.firstMessage?.trim()) {
         await tx.insert(message).values({ id: id(), threadId, seq: 1, role: 'user', kind: 'discussion', content: input.firstMessage.trim(), authorId: actor, status: 'done' })
         await tx.insert(activityLog).values({ id: id(), type: 'message.sent', userId: actor, taskId, payload: { kind: 'discussion' } })
@@ -219,18 +242,17 @@ export class DbTasksService {
   }
 
   async setStatus(actor: string, taskId: string, status: TaskStatus, reason?: string): Promise<Task> {
+    if (status === 'done') {
+      if (!this.extras) throw new Error('완료 서비스가 연결되지 않았습니다')
+      return this.extras.complete(actor, taskId)
+    }
     await assertTaskAccess(this.db, actor, taskId)
     await this.db.transaction(async (tx) => {
       const current = await this.lockedRow(tx, taskId)
-      if (status === 'done') {
-        const [active] = await tx.select({ id: chatRequest.id }).from(chatRequest).innerJoin(thread, eq(chatRequest.threadId, thread.id))
-          .where(and(eq(thread.taskId, taskId), inArray(chatRequest.status, ['pending', 'streaming']))).limit(1)
-        if (active) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
-      }
       if (current.status === status) return
       if (current.status === 'done' && !reason?.trim()) throw new BadRequestException('재개 사유가 필요합니다')
       const next = applyTaskStatus((await this.assemble([current]))[0]!, status, actor, new Date().toISOString())
-      const type = current.status === 'done' ? 'task.reopened' : ({ done: 'task.completed', in_progress: 'task.started', on_hold: 'task.hold', todo: 'task.status_changed' } as const)[status]
+      const type = current.status === 'done' ? 'task.reopened' : ({ in_progress: 'task.started', on_hold: 'task.hold', todo: 'task.status_changed' } as const)[status]
       await tx.update(task).set({ status, startedAt: next.startedAt ? new Date(next.startedAt) : null,
         completedAt: next.completedAt ? new Date(next.completedAt) : null, completedBy: next.completedBy ?? null,
         lastActivityAt: new Date() }).where(eq(task.id, taskId))

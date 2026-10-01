@@ -9,6 +9,11 @@ import { seedCatalog } from '../db/seed.js'
 import { appUser, assistant, chatRequest, chatRequestInput, contextSnapshot, contextSnapshotMessage, conversationInput, message } from '../db/schema.js'
 import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
+import { TaskExtrasService } from '../tasks/task-extras.service.js'
+import { FileStorageService } from '../files/fileStorage.service.js'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { loadConfig } from '../config/config.js'
 import { RequestsService } from '../requests/requests.service.js'
 import { MockProvider } from '@mes/llm'
@@ -20,6 +25,7 @@ describe('conversation inputs DB', () => {
   let client: Pool
   let db: Db
   let tasks: DbTasksService
+  let reportRoot: string
   let service: DbConversationInputsService
   let assistantId: string
   const actor = 'context-member'
@@ -31,10 +37,13 @@ describe('conversation inputs DB', () => {
     await seedCatalog(db)
     await db.insert(appUser).values({ id: actor, name: 'Member', initials: 'M', color: '#123456' })
     assistantId = (await db.select().from(assistant))[0]!.id
-    tasks = new DbTasksService(db)
+    reportRoot = await mkdtemp(join(tmpdir(), 'mes-context-report-'))
+    const extras = new TaskExtrasService(db, { kind: 'mock' } as never, { runAuxiliary: async () => undefined } as never,
+      new FileStorageService(reportRoot), { publish: () => undefined } as never)
+    tasks = new DbTasksService(db, undefined, extras)
     service = new DbConversationInputsService(db)
   })
-  afterAll(async () => { await client?.end(); await temp?.drop() })
+  afterAll(async () => { await client?.end(); await temp?.drop(); if (reportRoot) await rm(reportRoot, { recursive: true, force: true }) })
 
   async function make(tags: string[], turns: string[] = []) {
     const created = await tasks.create(actor, { assistantId, tags })

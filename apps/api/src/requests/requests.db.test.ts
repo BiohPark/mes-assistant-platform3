@@ -16,6 +16,7 @@ import { seedCatalog } from '../db/seed.js'
 import { appUser, assistant } from '../db/schema.js'
 import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
+import { TaskExtrasService } from '../tasks/task-extras.service.js'
 import { RequestsService } from './requests.service.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { DbLlmPorts } from '../llm/dbLlmPorts.js'
@@ -43,8 +44,9 @@ describe('RequestService DB', () => {
     await seedCatalog(db)
     await db.insert(appUser).values({ id: 'member', name: 'Member', initials: 'M', color: '#123456' })
     assistantId = (await db.select().from(assistant))[0]!.id
-    tasks = new DbTasksService(db)
     service = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), provider)
+    const extras = new TaskExtrasService(db, provider, service, new FileStorageService(root), new EventsService())
+    tasks = new DbTasksService(db, undefined, extras)
   })
   afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); await rm(root, { recursive: true, force: true }) })
 

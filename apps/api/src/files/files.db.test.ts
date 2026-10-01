@@ -10,6 +10,7 @@ import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
+import { TaskExtrasService } from '../tasks/task-extras.service.js'
 import { FileStorageService } from './fileStorage.service.js'
 import { DbFilesService } from './files.service.js'
 
@@ -30,7 +31,9 @@ describe('files DB', () => {
     assistantId = (await db.select().from(assistant))[0]!.id
     root = await mkdtemp(join(tmpdir(), 'mes-files-'))
     files = new DbFilesService(db, new FileStorageService(root), { fileMaxBytes: 1024, fileMaxPerRequest: 2 } as never)
-    tasks = new DbTasksService(db)
+    const extras = new TaskExtrasService(db, { kind: 'mock' } as never, { runAuxiliary: async () => undefined } as never,
+      new FileStorageService(root), { publish: () => undefined } as never)
+    tasks = new DbTasksService(db, undefined, extras)
   })
   afterAll(async () => { await client?.end(); await temp?.drop(); if (root) await rm(root, { recursive: true, force: true }) })
 
