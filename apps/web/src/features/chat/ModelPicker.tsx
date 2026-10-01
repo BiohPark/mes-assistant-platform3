@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, ChevronDown, Cpu, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { MODEL_SOURCE_LABEL, resolveModel, type Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
 import { setTaskModel } from '@/api/tasks'
+import { getSettings } from '@/api/admin'
 import { useActor } from '@/app/hooks'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +19,8 @@ export function ModelPicker({ task, assistant, disabled }: { task: Task; assista
   const [custom, setCustom] = useState('')
   const [saving, setSaving] = useState(false)
   const { models, loading, reload, error } = useModelList()
-  const resolved = resolveModel({ task, assistant })
+  const settings = useQuery({ queryKey: ['settings'], queryFn: getSettings }).data
+  const resolved = resolveModel({ task, assistant, settings: { model: settings?.defaultModel ?? '' } })
   const current = task.modelId ?? ''
   const missingOnServer = models.length > 0 && !!resolved.modelId && !models.includes(resolved.modelId)
   async function choose(modelId: string) {

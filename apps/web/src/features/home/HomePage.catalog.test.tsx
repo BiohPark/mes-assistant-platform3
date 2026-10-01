@@ -19,7 +19,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async (input: string) => {
     if (input === '/api/assistants') return jsonResponse(200, items)
     if (input === '/api/assistants/stats') return jsonResponse(200, items.map((item) => ({ assistantId: item.id, open: 0, inProgress: 0, onHold: 0, done: 0 })))
-    if (input === '/api/users') return jsonResponse(200, [])
+    if (input === '/api/catalog/users') return jsonResponse(200, [])
     return jsonResponse(404)
   }))
 })
@@ -58,7 +58,7 @@ describe('HomePage catalog', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string) => {
       if (input === '/api/assistants') return jsonResponse(200, items.map((item) => item.level1CodeId === 'assistant_level1:SDLC' ? { ...item, level1: '개발 생명주기', level2: '자료 분석' } : item))
       if (input === '/api/assistants/stats') return jsonResponse(200, [])
-      if (input === '/api/users') return jsonResponse(200, [])
+      if (input === '/api/catalog/users') return jsonResponse(200, [])
       return jsonResponse(404)
     }))
     renderHome()
@@ -80,7 +80,7 @@ describe('HomePage catalog', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string) => {
       if (input === '/api/assistants') return jsonResponse(200, twelve)
       if (input === '/api/assistants/stats') return jsonResponse(502)
-      if (input === '/api/users') return jsonResponse(200, [])
+      if (input === '/api/catalog/users') return jsonResponse(200, [])
       return jsonResponse(404)
     }))
     renderHome()
@@ -92,7 +92,7 @@ describe('HomePage catalog', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string) => {
       if (input === '/api/assistants') return jsonResponse(200, items)
       if (input === '/api/assistants/stats') return new Promise<Response>(() => undefined)
-      if (input === '/api/users') return jsonResponse(200, [])
+      if (input === '/api/catalog/users') return jsonResponse(200, [])
       return jsonResponse(404)
     }))
     renderHome()

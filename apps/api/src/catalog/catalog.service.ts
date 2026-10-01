@@ -8,7 +8,7 @@ export interface CatalogReader {
   assistants(): Promise<Assistant[]>
   stats(): Promise<AssistantStats[]>
   users(): Promise<CatalogUser[]>
-  codes(group?: string): Promise<CatalogCode[]>
+  codes(group?: string, includeInactive?: boolean): Promise<CatalogCode[]>
 }
 export const CATALOG = Symbol('CATALOG')
 
@@ -57,7 +57,7 @@ export class DbCatalogReader implements CatalogReader {
     }).from(appUser).where(eq(appUser.active, true)).orderBy(asc(appUser.name), asc(appUser.id))
   }
 
-  async codes(group?: string): Promise<CatalogCode[]> {
-    return this.db.select().from(code).where(group ? sql`${code.active} = true and ${code.groupKey} = ${group}` : eq(code.active, true)).orderBy(asc(code.sortOrder), asc(code.id))
+  async codes(group?: string, includeInactive = false): Promise<CatalogCode[]> {
+    return this.db.select().from(code).where(and(group ? eq(code.groupKey, group) : undefined, includeInactive ? undefined : eq(code.active, true))).orderBy(asc(code.sortOrder), asc(code.id))
   }
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { BadRequestException, Inject, Injectable } from '@nestjs/common'
+import { BadRequestException, Inject, Injectable, UnauthorizedException } from '@nestjs/common'
 import { eq, sql } from 'drizzle-orm'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
@@ -56,7 +56,7 @@ export class DbUserDirectory implements UserDirectory {
   async findByLoginId(loginId: string) {
     const [row] = await this.db.select({
       id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner,
-      hash: appUser.passwordHash, active: appUser.active,
+      hash: appUser.passwordHash, active: appUser.active, mustChangePassword: appUser.mustChangePassword,
     }).from(appUser).where(eq(appUser.loginId, loginId))
     if (!row?.hash) return null
     const { hash, active, ...user } = row
@@ -82,7 +82,8 @@ export class DbUserDirectory implements UserDirectory {
         if (!existing) throw error
         await tx.update(appUser).set({ name, initials: initialsOf(name) }).where(eq(appUser.id, existing.id))
       }
-      const [row] = await tx.select({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner }).from(appUser).where(eq(appUser.ssoSubject, subject))
+      const [row] = await tx.select({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner, active: appUser.active }).from(appUser).where(eq(appUser.ssoSubject, subject))
+      if (!row?.active) throw new UnauthorizedException('비활성 계정은 로그인할 수 없습니다')
       return row!
     })
   }

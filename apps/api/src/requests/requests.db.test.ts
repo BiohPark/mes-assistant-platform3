@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { OpenAICompatibleProvider, type ChatProvider } from '@mes/llm'
 import { loadConfig } from '../config/config.js'
 import { runMigrations } from '../db/migrate.js'
-import { chatRequest, fileObject, message, task, taskInput } from '../db/schema.js'
+import { appSetting, chatRequest, fileObject, message, task, taskInput } from '../db/schema.js'
 import { seedCatalog } from '../db/seed.js'
 import { appUser, assistant } from '../db/schema.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -599,6 +599,26 @@ describe('RequestService DB', () => {
     expect(retried.userMessageId).toBe(first.userMessageId)
     expect((await tasks.messages(thread.id)).filter((item) => item.role === 'user')).toHaveLength(1)
     await expect(service.retry('member', first.id, {}, 'retry-other')).rejects.toMatchObject({ status: 409 })
+  })
+  it('재시도에도 현재 전역 파일 전달 방식을 적용한다', async () => {
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173',
+      FILE_STORAGE_ROOT: root, LLM_MODE: 'live', LLM_BASE_URL: 'http://localhost:3101', LLM_API_KEY: 'test-key' })
+    const failing: ChatProvider = { ...provider, async *stream() { yield { type: 'error', message: '모델 오류' } } }
+    const runner = new RequestsService(db, config, failing)
+    try {
+      await db.insert(appSetting).values({ key: 'fileDelivery', value: 'openwebui' }).onDuplicateKeyUpdate({ set: { value: 'openwebui' } })
+      const { thread } = await tasks.create('member', { assistantId })
+      const first = await runner.start('member', thread.id, { content: '재시도' }, 'delivery-setting-first')
+      await first.done
+      expect((await db.select().from(chatRequest).where(eq(chatRequest.id, first.id)))[0]?.transport).toBe('openwebui')
+      await db.update(appSetting).set({ value: 'inline' }).where(eq(appSetting.key, 'fileDelivery'))
+      const retried = await runner.retry('member', first.id, {}, 'delivery-setting-retry')
+      await retried.done
+      expect((await db.select().from(chatRequest).where(eq(chatRequest.id, retried.id)))[0]?.transport).toBe('inline')
+    } finally {
+      runner.onModuleDestroy()
+      await db.delete(appSetting).where(eq(appSetting.key, 'fileDelivery'))
+    }
   })
 
   it('records a build failure and can retry after excluding its selected file', async () => {

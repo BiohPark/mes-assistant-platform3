@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { assistantExternalUrl, openWebUiBase } from './links'
+import { assistantExternalUrl, assistantLink1, openWebUiBase } from './links'
 
 describe('openWebUiBase', () => {
   it('strips trailing /api', () => {
@@ -17,5 +17,13 @@ describe('assistantExternalUrl', () => {
   })
   it('encodes model id', () => {
     expect(assistantExternalUrl('http://x/api', 'a b')).toBe('http://x/?model=a%20b')
+  })
+})
+
+describe('assistantLink1', () => {
+  it('전역 규칙에 모델 ID를 인코딩해 넣고 직접 지정한 주소를 우선한다', () => {
+    const assistant = { id: 'agent', modelId: 'model A' }
+    expect(assistantLink1('', assistant, 'https://example.test/?model={modelId}&assistant={assistantId}')).toBe('https://example.test/?model=model%20A&assistant=agent')
+    expect(assistantLink1('', { ...assistant, link1: 'https://direct.test/' }, 'https://example.test/')).toBe('https://direct.test/')
   })
 })

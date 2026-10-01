@@ -13,6 +13,7 @@ interface AssistantCardProps {
   row: AssistantRow
   owner?: CatalogUser
   baseUrl: string
+  link1Rule?: string
 }
 
 /** 카드 본문(표시 전용). 일반 카드와 편집 모드 카드가 같이 쓴다. */
@@ -51,7 +52,7 @@ export const CARD_CLASS = 'group relative flex aspect-square flex-col gap-3 roun
  * 카드 클릭 = 바로 대화할 준비(초안). 첫 전송 때 대화가 만들어진다.
  * stretched-link 패턴: 본문 위에 투명 Link, hover 액션은 그 위(z-10). <a> 중첩을 피한다.
  */
-export function AssistantCard({ row, owner, baseUrl }: AssistantCardProps) {
+export function AssistantCard({ row, owner, baseUrl, link1Rule }: AssistantCardProps) {
   const a = row.assistant
   const retired = a.status === 'retired'
   return (
@@ -71,8 +72,8 @@ export function AssistantCard({ row, owner, baseUrl }: AssistantCardProps) {
             </Link>
           </Button>
         )}
-        {(a.link1 || baseUrl) && <Button size="xs" variant="ghost" asChild>
-          <a href={assistantLink1(baseUrl, a)} target="_blank" rel="noreferrer" title="OpenWebUI에서 열기">
+        {(a.link1 || link1Rule || baseUrl) && <Button size="xs" variant="ghost" asChild>
+          <a href={assistantLink1(baseUrl, a, link1Rule)} target="_blank" rel="noreferrer" title="OpenWebUI에서 열기">
             <ExternalLink data-icon="inline-start" />
             OpenWebUI
           </a>

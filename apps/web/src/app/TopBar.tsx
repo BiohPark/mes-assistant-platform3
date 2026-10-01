@@ -1,4 +1,5 @@
-import { ChevronDown, LogOut } from 'lucide-react'
+import { ChevronDown, LogOut, KeyRound } from 'lucide-react'
+import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { useQuery } from '@tanstack/react-query'
 import { LlmStatusSchema } from '@mes/contracts'
@@ -24,10 +25,11 @@ const goToLoggedOut = () => window.location.assign('/logged-out')
 
 export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarProps) {
   const me = useMe()
+  const navigate = useNavigate()
   const isOwner = me.roles.includes('system_owner')
   const llmStatus = useQuery({
     queryKey: ['llm', 'status'],
-    enabled: isOwner,
+    enabled: isOwner && !me.mustChangePassword,
     queryFn: async () => {
       const response = await fetch('/api/llm/status', { credentials: 'same-origin' })
       if (!response.ok) throw new Error(`LLM 상태 조회 실패 (HTTP ${response.status})`)
@@ -54,6 +56,7 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
             {isOwner && <span className="ml-1.5 rounded bg-primary/10 px-1.5 py-0.5 text-primary">System Owner</span>}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => void navigate('/password')}><KeyRound />비밀번호 변경</DropdownMenuItem>
           <DropdownMenuItem
             onClick={() =>
               logout().then(onLoggedOut, () => toast.error('로그아웃하지 못했습니다. 다시 시도하세요.'))

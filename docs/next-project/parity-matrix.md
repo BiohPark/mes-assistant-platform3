@@ -16,10 +16,10 @@
 | `/new/:assistantId` | 새 대화 초안(지연 생성, `?tag=`·`?ref=`) | FR-01·02·20 | S2 | 변경(API) | ✅ S2 ②(첨부로 생성은 ③, `?ref` 선택은 S3) |
 | `/c/:taskId` | 대화 화면 | FR-01–41 | S2–S4 | 변경(API) | ✅ 골격(S2 ②: 헤더·팀 의견·이력. 자료 ③, AI S3, 체크·노트 S4) |
 | `/tasks/:taskId` | 옛 주소 → `/c/:taskId` 리다이렉트 | — | S2 | 그대로 | ✅ S2 ② |
-| `/assistants/manage` | 에이전트 관리 | FR-60 | S4 | 변경(SO 전용 서버 강제) | ⬜ |
+| `/assistants/manage` | 에이전트 관리 | FR-60 | S4 | 변경(SO 전용 서버 강제) | ✅ |
 | `/sr` · `/sr/manage` | SR 접수 · 관리 | FR-50·51 | S4 | 변경(요청자 범위 서버 강제) | ⬜ |
 | `/reports` | 리포트(지연 로딩) | FR-62 | S4 | 변경(서버 집계) | ⬜ |
-| `/settings` | 설정 | FR-61 | S4 | 변경(전역=SO·서버, 키 입력 삭제) | ⬜ |
+| `/settings` | 설정 | FR-61 | S4 | 변경(전역=SO·서버, 키 입력 삭제) | ✅ |
 | `*` → `/` | 없는 경로 | — | S0 | 그대로 | ✅ |
 | (신규) `/login` · `/signup` · `/logged-out` | 앱 자체 로그인·회원가입·로그아웃(D34, `AUTH_MODE=oidc`면 SSO) | 화면 §3 | S0 → S1 | 신규 | ✅ |
 
@@ -46,7 +46,7 @@
 |---|---|---|---|---|---|
 | `HomePage.tsx` | 카드↔칸반 세그먼트 토글(URL `view`) | 화면 §3 | S2 | 변경(API) | ✅ 카드 뷰(S2 ①) · 칸반은 ② |
 | `AssistantCard.tsx` | 에이전트 카드 본문 | 화면 §3 | S2 | 그대로(이미지는 S4 이미지 API 뒤, 지금은 이니셜. OpenWebUI 열기 버튼의 기본 링크 규칙은 U9(a) S4 전역 설정 뒤 — 지금은 link1이 있을 때만) | ✅ S2 ①(링크 기본 규칙은 S4) |
-| `SortableAssistantGrid.tsx` | SO 편집 모드 드래그 순서(저장/취소, 필터 중 차단) | FR-60 | S2(표시)·S4(편집 권한) | 변경(충돌 검사 `revision`) | ⬜ |
+| `SortableAssistantGrid.tsx` | SO 편집 모드 드래그 순서(저장/취소, 필터 중 차단) | FR-60 | S2(표시)·S4(편집 권한) | 변경(충돌 검사 `revision`) | ✅ |
 | `CardMapFilterBar.tsx` | 카드 검색·Lv1/Lv2 필터·중단 에이전트 보기 | — | S2 | 그대로(U4(a)) | ✅ S2 ① |
 | `useAssistantStats.ts` | 카드별 대화 집계 | 화면 §3 | S2 | 변경(서버 집계 `GET /api/assistants/stats`) | ✅ S2 ① |
 | `ConversationKanban.tsx` | 전체 대화 칸반(열=에이전트, 필터 URL 공유) | 화면 §3, D3 | S2 | 변경(API) | ✅ S2 ② |
@@ -100,13 +100,13 @@
 | `sr/SrDetailSheet.tsx` | 진행 현황·연결 업무 시작(이어가기/새 대화) | FR-51 | S4 | 변경(API) | ⬜ |
 | `sr/ShareResultDialog.tsx` | 결과 공유(텍스트 + 산출물) | FR-51 | S4 | 변경(API) | ⬜ |
 | `sr/SharedResults.tsx` | 요청자: 공유된 결과만 | FR-51 | S4 | 변경(서버 강제) | ⬜ |
-| `assistants/ManagePage.tsx` | 에이전트 관리 화면 | FR-60 | S4 | 변경(SO 전용) | ⬜ |
-| `assistants/AssistantTable.tsx` | 목록·모델 ID 인라인 매핑 | FR-60·35 | S4 | 변경(API) · 목록은 U6 | ⬜ |
-| `assistants/AssistantEditorSheet.tsx` | 전 항목 편집·체크리스트 기본값·삭제 보호 | FR-60·40 | S4 | 변경(API) | ⬜ |
-| `assistants/ImageDropzone.tsx` | 에이전트 이미지 | FR-60 | S4 | 변경(파일 API) | ⬜ |
+| `assistants/ManagePage.tsx` | 에이전트 관리 화면 | FR-60 | S4 | 변경(SO 전용) | ✅ |
+| `assistants/AssistantTable.tsx` | 목록·모델 ID 인라인 매핑 | FR-60·35 | S4 | 변경(API) · 목록은 U6 | ✅ |
+| `assistants/AssistantEditorSheet.tsx` | 전 항목 편집·체크리스트 기본값·삭제 보호 | FR-60·40 | S4 | 변경(API) | ✅ |
+| `assistants/ImageDropzone.tsx` | 에이전트 이미지 | FR-60 | S4 | 변경(파일 API) | ✅ |
 | `reports/ReportsPage.tsx` | 완료 추이·에이전트별 리드타임·사용자별 활동·SR 상태·자료 흐름·태그별 대화·에이전트별 현황·피드백 다이제스트 | FR-62 | S4 | 변경(서버 집계, 완료 이벤트 시각 기준) | ⬜ |
 | `reports/charts.tsx` | 차트 팔레트 | FR-62 | S4 | 그대로 | ⬜ |
-| `settings/SettingsPage.tsx` | 아래 "설정 항목" 표 | FR-61 | S4 | 변경 | ⬜ |
+| `settings/SettingsPage.tsx` | 아래 "설정 항목" 표 | FR-61 | S4 | 변경 | ✅ |
 | `system-assistant/SystemAssistantDrawer.tsx` | 플랫폼 조작용 시스템 assistant(제안 카드 → 확인 후 적용) | — | S4 | 변경(U1(a): 서버 대리 호출, 제안 카드 → 사용자 확인 → 기존 API·권한 그대로) | ⬜ |
 | `system-assistant/actions.ts` | 도구 호출 → 제안 변환 | — | S4 | U1(a) | ⬜ |
 
@@ -137,12 +137,12 @@
 | `chat.ts` | `createThread` `setActiveThread` `nextMessageTime` `appendMessage` `isLiveReply` `assertNoActiveReply` `updateMessage` `deleteThread` `STALE_MS` `STALE_ERROR` | FR-04·33 | S2·S3 | 변경(`message.seq`, 활성 1건은 DB 인덱스) | ✅ S2 ②·S3 ①(활성 응답·정리는 chat_request로) |
 | `conversationInputs.ts` (+test) | `selectConversation` `applyConversationSummary` `refreshConversationInput` `setConversationWeight` `removeConversationInput` `findConversationInput` `loadConversationInputs` | FR-20–23 | S3 | 변경(서버) — 테스트 먼저 | ✅ |
 | `files.ts` (+test) | `fileVersions` `uploadFile` `saveAssistantOutput` `setOutputTag` `deleteFile` `filesForTask` `downloadBlob` `isTextFile` `formatSize` | FR-10–15 | S2 | 변경(`FileStorageService`, 소프트 삭제) — 테스트 먼저 | ✅ S2 ③(`blob`은 서버 `/content`) |
-| `assistants.ts` (+test) | `newChecklistTemplateItem` `defaultChecklistTemplate` `createAssistant` `updateAssistant` `setAssistantStatus` `setAssistantImage` `deleteAssistant` `reorderAssistants` | FR-60·40 | S2(읽기)·S4(편집) | 변경(SO 전용, `revision` 충돌 검사) — 테스트 먼저 | ⬜ |
+| `assistants.ts` (+test) | `newChecklistTemplateItem` `defaultChecklistTemplate` `createAssistant` `updateAssistant` `setAssistantStatus` `setAssistantImage` `deleteAssistant` `reorderAssistants` | FR-60·40 | S2(읽기)·S4(편집) | 변경(SO 전용, `revision` 충돌 검사) — 테스트 먼저 | ✅ |
 | `sr.ts` | `startSrConversation` `submitSr` `setSrTitle` `conversationsForSr` `startTaskFromSr` `updateSrContent` `setSrStatus` `deleteDraftSr` `shareSrResult` | FR-50·51 | S4 | 변경(서버, 요청자 범위 강제) | ⬜ |
 | `notes.ts` | `addNote` `deleteNote` | FR-41 | S4 | 변경(서버) | ⬜ |
 | `notifications.ts` (+test) | `notify` `unreadCount` `markRead` `markAllRead` | FR-41 | S4 | 변경(서버·SSE) — 테스트 먼저 | ⬜ |
 | `activity.ts` | `logActivity` | FR-41 | S2 | 변경(서버, 추가만) | ✅ S2 ② |
-| `settings.ts` | `getSettings` `setLlmSettings` `setRequestBudget` `setSrIntakeAssistant` | FR-61 | S4 | 변경(`app_setting`, SO 전용, 키 제외) | ⬜ |
+| `settings.ts` | `getSettings` `setLlmSettings` `setRequestBudget` `setSrIntakeAssistant` | FR-61 | S4 | 변경(`app_setting`, SO 전용, 키 제외) | ✅ |
 | `settings.ts` | `DEFAULT_USER_ID` `setCurrentUser` | — | — | **제외** — 로그인 사용자 | — |
 | `conversations.test.ts` | 대화 생성·태그·입력 규칙 테스트 | FR-01·02·10 | S2 | 테스트 먼저 이식 | ✅ S2 ②·③(DB 테스트로 이식) |
 | (db) `schema.ts` · `migrations/*` · `seed/*` | Dexie 스키마·시드 | — | S0 | **제외** — Drizzle(✅), 시드는 개발 픽스처로만 | ✅ |
@@ -174,11 +174,11 @@
 |---|---|---|---|
 | LLM 모드 Mock / Live | — | S1 | 변경(U8(a): 서버 배포 설정 `LLM_MODE` — 개발·E2E는 Mock, 운영은 Live. 화면 전환 없음, SO에게 배지만) ✅ S1 |
 | 사내 API 프리셋 · Base URL · API Key 입력 | FR-61 | S1 | **제외** — 서버 비밀 저장소·배포 설정(키를 화면에 두지 않음) |
-| 기본 모델 | FR-61·35 | S4 | 변경(SO 전용 전역 설정) |
-| 입력 파일 전달 방식(OpenWebUI 첨부 / 본문) | FR-61 | S4 | 변경(SO 전용) |
-| 요청 크기 한도(KB) | FR-61·31 | S4 | 변경(SO 전용) |
-| SR 접수 에이전트 | FR-61·50 | S4 | 변경(SO 전용) |
-| 링크1 기본 규칙(링크1 미입력 시) | — | S4 | 변경(U9(a): SO 전역 설정) |
+| 기본 모델 | FR-61·35 | S4 | 변경(SO 전용 전역 설정) ✅ S4 ① |
+| 입력 파일 전달 방식(OpenWebUI 첨부 / 본문) | FR-61 | S4 | 변경(SO 전용) ✅ S4 ① |
+| 요청 크기 한도(KB) | FR-61·31 | S4 | 변경(SO 전용) ✅ S4 ① |
+| SR 접수 에이전트 | FR-61·50 | S4 | 변경(SO 전용) ✅ S4 ① |
+| 링크1 기본 규칙(링크1 미입력 시) | — | S4 | 변경(U9(a): SO 전역 설정) ✅ S4 ① |
 | JSON 내보내기 · 가져오기 · 시드로 초기화 | — | S5 | 변경(U7(a): 가져오기 → S5 이관 도구 · 내보내기·시드 초기화 **제외** — 서버 DB 백업·마이그레이션으로 대체) |
 
 ## 9. E2E 시나리오 (데모 `e2e/`) — 같은 기준으로 새 저장소에서 통과시킨다

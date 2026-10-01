@@ -27,7 +27,9 @@ export class DbLlmPorts implements LlmPorts {
     const budget = values.get('requestBudgetBytes')
     return {
       id: 'app', currentUserId: this.currentUserId,
-      llm: toLlmSettings(this.config.llm),
+      llm: { ...toLlmSettings(this.config.llm),
+        ...(typeof values.get('defaultModel') === 'string' ? { model: values.get('defaultModel') as string } : {}),
+        ...(values.get('fileDelivery') === 'inline' || values.get('fileDelivery') === 'openwebui' ? { fileDelivery: values.get('fileDelivery') as 'inline' | 'openwebui' } : {}) },
       ...(typeof sr === 'string' ? { srIntakeAssistantId: sr } : {}),
       requestBudgetBytes: typeof budget === 'number' ? budget : this.config.request.budgetBytes,
     }

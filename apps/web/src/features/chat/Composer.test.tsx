@@ -1,10 +1,15 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Composer } from './Composer'
+
+function renderComposer(props: React.ComponentProps<typeof Composer>) {
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Composer {...props} /></QueryClientProvider>)
+}
 
 it('sends text as discussion while AI and file controls are unavailable', async () => {
   const send = vi.fn(async () => undefined)
-  render(<Composer streaming={false} onSend={send} onStop={() => undefined} allowAttachments={false} />)
+  renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: false })
   expect(screen.queryByRole('button', { name: '파일 첨부' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '팀 의견 (AI 미전송)' })).not.toBeInTheDocument()
   fireEvent.change(screen.getByPlaceholderText('팀 의견을 남기세요 (AI에게 전송되지 않음)'), { target: { value: '안녕하세요' } })
@@ -14,7 +19,7 @@ it('sends text as discussion while AI and file controls are unavailable', async 
 
 it('keeps text during a failed send and clears it after a successful retry', async () => {
   const send = vi.fn().mockRejectedValueOnce(new Error('실패')).mockResolvedValueOnce(undefined)
-  render(<Composer streaming={false} onSend={send} onStop={() => undefined} />)
+  renderComposer({ streaming: false, onSend: send, onStop: () => undefined })
   const input = screen.getByRole('textbox', { name: '팀 의견 입력' })
   fireEvent.change(input, { target: { value: '남길 의견' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
@@ -27,7 +32,7 @@ it('keeps text during a failed send and clears it after a successful retry', asy
 
 it('pins attachments by default and lets a sender mark one as message-only', async () => {
   const send = vi.fn(async () => undefined)
-  const { container } = render(<Composer streaming={false} onSend={send} onStop={() => undefined} allowAttachments allowPin />)
+  const { container } = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, allowPin: true })
   const file = new File(['abc'], 'note.txt', { type: 'text/plain' })
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [file] } })
   expect(screen.getByText('입력으로 고정')).toBeInTheDocument()
@@ -39,7 +44,7 @@ it('pins attachments by default and lets a sender mark one as message-only', asy
 
 it('rejects more than 20 attachments before sending', async () => {
   const send = vi.fn(async () => undefined)
-  const { container } = render(<Composer streaming={false} onSend={send} onStop={() => undefined} allowAttachments />)
+  const { container } = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true })
   const files = Array.from({ length: 21 }, (_, index) => new File(['x'], `f${index}.txt`))
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files } })
   expect(screen.getByRole('alert')).toHaveTextContent('20')
