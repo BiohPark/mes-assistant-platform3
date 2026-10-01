@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common'
 import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type Task, type TaskStatus, type Thread } from '@mes/domain'
 import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
 import { unionAll } from 'drizzle-orm/mysql-core'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appUser, assistant, chatRequest, chatRequestInput, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 import { EventsService } from '../events/events.service.js'
+import { assertTaskAccess, assertThreadAccess } from '../sr/access.js'
 
 export interface CreateTaskInput {
   assistantId: string
@@ -85,11 +86,12 @@ export class DbTasksService {
     })
   }
 
-  async get(taskId: string): Promise<Task & { thread?: Thread }> {
+  async get(taskId: string, actor?: string): Promise<Task & { thread?: Thread }> {
+    if (actor) await assertTaskAccess(this.db, actor, taskId)
     return (await this.assemble([await this.row(taskId)]))[0]!
   }
 
-  async create(actor: string, input: CreateTaskInput, idempotencyKey?: string) {
+  async create(actor: string, input: CreateTaskInput, idempotencyKey?: string, srId?: string) {
     if (idempotencyKey && [...idempotencyKey].length > 191) throw new BadRequestException('Idempotency-Key가 너무 깁니다')
     if (input.referenceTaskId && [...input.referenceTaskId].length > 191) throw new BadRequestException('참조 대화 ID가 너무 깁니다')
     if (idempotencyKey) {
@@ -116,7 +118,7 @@ export class DbTasksService {
       }
       const [max] = await tx.select({ value: sql<number>`coalesce(max(cast(substring(${task.code}, 9) as unsigned)), 0)` }).from(task).where(sql`${task.code} like ${`WK-${year}-%`}`)
       const code = `WK-${year}-${String(Number(max?.value ?? 0) + 1).padStart(4, '0')}`
-      await tx.insert(task).values({ id: taskId, code, assistantId: selected.id,
+      await tx.insert(task).values({ id: taskId, code, assistantId: selected.id, srId,
         title: input.title?.trim() || `${selected.name} 대화 ${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
         titleSource: input.title?.trim() ? 'manual' : 'default', status: 'in_progress',
         ownerId: actor, priority: 'normal', createdBy: actor, startedAt: now, lastActivityAt: now, idempotencyKey })
@@ -168,9 +170,12 @@ export class DbTasksService {
     return { task: created, thread: created.thread!, warnings }
   }
 
-  async list(filter: TaskFilter = {}): Promise<Task[]> {
+  async list(filter: TaskFilter = {}, actor?: string): Promise<Task[]> {
+    const [viewer] = actor ? await this.db.select({ isBusinessOwner: appUser.isBusinessOwner, isSystemOwner: appUser.isSystemOwner }).from(appUser).where(eq(appUser.id, actor)) : []
     const conditions = [
       isNull(task.deletedAt),
+      ...(viewer?.isBusinessOwner && !viewer.isSystemOwner ? [or(eq(task.createdBy, actor!), eq(task.ownerId, actor!),
+        exists(this.db.select({ id: taskAssignee.taskId }).from(taskAssignee).where(and(eq(taskAssignee.taskId, task.id), eq(taskAssignee.userId, actor!)))))] : []),
       ...(filter.assistantId ? [eq(task.assistantId, filter.assistantId)] : []),
       ...(filter.status?.length ? [inArray(task.status, filter.status)] : []),
       ...(filter.mine ? [or(
@@ -184,6 +189,7 @@ export class DbTasksService {
   }
 
   async update(actor: string, taskId: string, patch: TaskPatch): Promise<Task> {
+    await assertTaskAccess(this.db, actor, taskId)
     if (patch.title !== undefined && !patch.title.trim()) throw new BadRequestException('제목이 필요합니다')
     const userIds = [...new Set([patch.ownerId, ...(patch.assigneeIds ?? [])].filter((value): value is string => !!value))]
     if (userIds.length) {
@@ -213,6 +219,7 @@ export class DbTasksService {
   }
 
   async setStatus(actor: string, taskId: string, status: TaskStatus, reason?: string): Promise<Task> {
+    await assertTaskAccess(this.db, actor, taskId)
     await this.db.transaction(async (tx) => {
       const current = await this.lockedRow(tx, taskId)
       if (status === 'done') {
@@ -234,6 +241,7 @@ export class DbTasksService {
   }
 
   async addTag(actor: string, taskId: string, raw: string): Promise<void> {
+    await assertTaskAccess(this.db, actor, taskId)
     const label = normalizeTag(raw)
     if (!label) throw new BadRequestException('태그가 필요합니다')
     checkTagLength(label)
@@ -252,6 +260,7 @@ export class DbTasksService {
   }
 
   async removeTag(actor: string, taskId: string, raw: string): Promise<void> {
+    await assertTaskAccess(this.db, actor, taskId)
     await this.db.transaction(async (tx) => {
       await this.ensureEditable(tx, taskId)
       const removed = await tx.delete(taskTag).where(and(eq(taskTag.taskId, taskId), eq(taskTag.tagKey, tagKey(raw))))
@@ -267,10 +276,13 @@ export class DbTasksService {
     return tagSuggestions(await this.list(), [], prefix, exclude)
   }
 
-  async messages(threadId: string) {
+  async messages(threadId: string, actor?: string) {
     const [target] = await this.db.select().from(thread).where(eq(thread.id, threadId))
-    if (!target?.taskId) throw new NotFoundException('스레드를 찾을 수 없습니다')
-    await this.row(target.taskId)
+    if (!target) throw new NotFoundException('스레드를 찾을 수 없습니다')
+    if (target.srId) {
+      if (!actor) throw new ForbiddenException('접수 대화 접근 권한이 필요합니다')
+      await assertThreadAccess(this.db, actor, threadId)
+    } else if (target.taskId) { if (actor) await assertThreadAccess(this.db, actor, threadId); await this.row(target.taskId) }
     const rows = await this.db.select().from(message).where(eq(message.threadId, threadId)).orderBy(message.seq)
     const attachments = rows.length ? await this.db.select().from(messageAttachment).where(inArray(messageAttachment.messageId, rows.map((row) => row.id))) : []
     const requests = await this.db.select({ id: chatRequest.id, replyMessageId: chatRequest.replyMessageId }).from(chatRequest).where(eq(chatRequest.threadId, threadId))
@@ -287,26 +299,28 @@ export class DbTasksService {
     const messageId = id()
     const taskId = await this.db.transaction(async (tx) => {
       const [target] = await tx.select().from(thread).where(eq(thread.id, threadId))
-      if (!target?.taskId) throw new NotFoundException('스레드를 찾을 수 없습니다')
-      await this.ensureEditable(tx, target.taskId)
+      if (!target) throw new NotFoundException('스레드를 찾을 수 없습니다')
+      await assertThreadAccess(this.db, actor, threadId)
+      if (target.taskId) await this.ensureEditable(tx, target.taskId)
       const attachmentIds = [...new Set(input.attachmentIds ?? [])]
       if (attachmentIds.length) {
-        const valid = await tx.select({ id: fileObject.id }).from(fileObject).where(and(inArray(fileObject.id, attachmentIds), eq(fileObject.originTaskId, target.taskId), sql`${fileObject.deletedAt} is null`))
+        const valid = await tx.select({ id: fileObject.id }).from(fileObject).where(and(inArray(fileObject.id, attachmentIds), target.srId ? eq(fileObject.originSrId, target.srId) : eq(fileObject.originTaskId, target.taskId!), sql`${fileObject.deletedAt} is null`))
         if (valid.length !== attachmentIds.length) throw new BadRequestException('첨부 파일이 이 대화에 없습니다')
       }
       await tx.select({ id: thread.id }).from(thread).where(eq(thread.id, threadId)).for('update')
       const [max] = await tx.select({ value: sql<number>`coalesce(max(${message.seq}), 0)` }).from(message).where(eq(message.threadId, threadId))
       await tx.insert(message).values({ id: messageId, threadId, seq: Number(max?.value ?? 0) + 1, role: 'user', kind: 'discussion', content: input.content.trim(), authorId: actor, status: 'done' })
       if (attachmentIds.length) await tx.insert(messageAttachment).values(attachmentIds.map((fileId) => ({ messageId, fileId })))
-      await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, target.taskId!))
-      await tx.insert(activityLog).values({ id: id(), type: 'message.sent', userId: actor, taskId: target.taskId, payload: { kind: 'discussion' } })
-      return target.taskId
+      if (target.taskId) await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, target.taskId))
+      await tx.insert(activityLog).values({ id: id(), type: 'message.sent', userId: actor, taskId: target.taskId, srId: target.srId, payload: { kind: 'discussion' } })
+      return target.taskId ?? ''
     })
     this.events?.publish('message.appended', { threadId, taskId, messageId })
-    return (await this.messages(threadId)).find((item) => item.id === messageId)
+    return (await this.messages(threadId, actor)).find((item) => item.id === messageId)
   }
 
-  async activity(taskId: string) {
+  async activity(taskId: string, actor?: string) {
+    if (actor) await assertTaskAccess(this.db, actor, taskId)
     await this.row(taskId)
     return (await this.db.select().from(activityLog).where(eq(activityLog.taskId, taskId)).orderBy(desc(activityLog.at))).map((row) => ({
       id: row.id, taskId: row.taskId, assistantId: row.assistantId, userId: row.userId, type: row.type,
@@ -314,7 +328,8 @@ export class DbTasksService {
     }))
   }
 
-  async delete(taskId: string): Promise<void> {
+  async delete(taskId: string, actor?: string): Promise<void> {
+    if (actor) await assertTaskAccess(this.db, actor, taskId)
     await this.db.transaction(async (tx) => {
       const [owner] = await tx.select({ id: task.id }).from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt))).for('update')
       if (!owner) throw new NotFoundException('대화를 찾을 수 없습니다')

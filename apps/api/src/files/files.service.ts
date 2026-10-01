@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common'
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common'
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { EventsService } from '../events/events.service.js'
@@ -7,6 +7,8 @@ import { activityLog, fileObject, tag, task, taskInput, taskTag } from '../db/sc
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { FileStorageService, createStorageKey, sha256 } from './fileStorage.service.js'
 import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
+import { assertFileAccess, assertSrAccess, assertTaskAccess } from '../sr/access.js'
+import { serviceRequest } from '../db/schema.js'
 
 export const FILE_STORAGE = Symbol('FILE_STORAGE')
 type FileRow = typeof fileObject.$inferSelect
@@ -20,6 +22,7 @@ function validName(name: string): string {
 
 export function fileMeta(row: FileRow) {
   return { id: row.id, originTaskId: row.originTaskId ?? undefined, name: row.originalName,
+    ...(row.originSrId && { originSrId: row.originSrId }),
     mime: row.mime, size: row.sizeBytes, sha256: row.sha256, uploadedBy: row.uploadedBy,
     uploadedAt: row.uploadedAt.toISOString(), source: row.source, isOutput: row.isOutput,
     version: row.version, previousId: row.previousId ?? undefined }
@@ -52,11 +55,35 @@ export class DbFilesService {
     }
   }
 
-  async get(fileId: string) { return fileMeta(await this.row(fileId)) }
-  async content(fileId: string) { return this.storage.read((await this.row(fileId)).storageKey) }
-  async contentStream(fileId: string) { return this.storage.createReadStream((await this.row(fileId)).storageKey) }
+  async get(fileId: string, actor?: string) { if (actor) await assertFileAccess(this.db, actor, fileId); return fileMeta(await this.row(fileId)) }
+  async content(fileId: string, actor?: string) { if (actor) await assertFileAccess(this.db, actor, fileId); return this.storage.read((await this.row(fileId)).storageKey) }
+  async contentStream(fileId: string, actor?: string) { if (actor) await assertFileAccess(this.db, actor, fileId); return this.storage.createReadStream((await this.row(fileId)).storageKey) }
+
+  async uploadSr(actor: string, srId: string, name: string, mime: string, bytes: Uint8Array) {
+    validName(name)
+    if (bytes.byteLength > this.config.fileMaxBytes) throw new PayloadTooLargeException('파일 크기 한도를 초과했습니다')
+    const sr = await assertSrAccess(this.db, actor, srId)
+    if (sr.requesterId !== actor || sr.status === 'done' || sr.status === 'rejected') throw new ConflictException('종료되지 않은 SR의 요청자만 첨부할 수 있습니다')
+    const storageKey = createStorageKey(name)
+    await this.storage.write(storageKey, bytes)
+    try {
+      const row = await this.db.transaction(async (tx) => {
+        const [locked] = await tx.select().from(serviceRequest).where(eq(serviceRequest.id, srId)).for('update')
+        if (!locked || locked.status === 'done' || locked.status === 'rejected') throw new ConflictException('종료된 SR에는 첨부할 수 없습니다')
+        const [prev] = await tx.select().from(fileObject).where(and(eq(fileObject.originSrId, srId), eq(fileObject.originalName, name), isNull(fileObject.deletedAt))).orderBy(desc(fileObject.version)).limit(1)
+        const fileId = id()
+        await tx.insert(fileObject).values({ id: fileId, kind: 'sr_attachment', originSrId: srId, originalName: name,
+          mime: mime || 'application/octet-stream', sizeBytes: bytes.byteLength, sha256: sha256(bytes), storageKey,
+          source: 'upload', isOutput: false, version: (prev?.version ?? 0) + 1, previousId: prev?.id, uploadedBy: actor })
+        const [inserted] = await tx.select().from(fileObject).where(eq(fileObject.id, fileId))
+        return inserted!
+      })
+      return fileMeta(row)
+    } catch (error) { await this.storage.remove(storageKey); throw error }
+  }
 
   private async create(actor: string, taskId: string, name: string, mime: string, bytes: Uint8Array, source: 'upload' | 'assistant', isOutput: boolean) {
+    await assertTaskAccess(this.db, actor, taskId)
     validName(name)
     if (bytes.byteLength > this.config.fileMaxBytes) throw new PayloadTooLargeException('파일 크기 한도를 초과했습니다')
     const storageKey = createStorageKey(name)
@@ -91,15 +118,16 @@ export class DbFilesService {
     return this.create(actor, taskId, name, 'text/markdown', Buffer.from(content), 'assistant', true)
   }
 
-  async versions(fileId: string) {
+  async versions(fileId: string, actor?: string) {
+    if (actor) await assertFileAccess(this.db, actor, fileId)
     const start = await this.row(fileId)
-    const siblings = await this.db.select().from(fileObject).where(and(eq(fileObject.originTaskId, start.originTaskId!), eq(fileObject.originalName, start.originalName)))
+    const siblings = await this.db.select().from(fileObject).where(and(start.originSrId ? eq(fileObject.originSrId, start.originSrId) : eq(fileObject.originTaskId, start.originTaskId!), eq(fileObject.originalName, start.originalName)))
     const byId = new Map(siblings.map((row) => [row.id, row]))
     const descendants = siblings.filter((row) => !row.deletedAt && (row.id === start.id || this.isAncestor(start.id, row, byId)))
     const head = descendants.sort((a, b) => b.version - a.version)[0]!
     const result: ReturnType<typeof fileMeta>[] = []
     let current: FileRow | undefined = head
-    while (current) { if (!current.deletedAt) result.push(fileMeta(current)); current = current.previousId ? byId.get(current.previousId) : undefined }
+    while (current) { if (!current.deletedAt) { if (actor) await assertFileAccess(this.db, actor, current.id); result.push(fileMeta(current)) } current = current.previousId ? byId.get(current.previousId) : undefined }
     return result
   }
 
@@ -117,6 +145,9 @@ export class DbFilesService {
   }
 
   async setOutput(actor: string, fileId: string, isOutput: boolean) {
+    await assertFileAccess(this.db, actor, fileId)
+    const source = await this.row(fileId)
+    if (source.originTaskId) await assertTaskAccess(this.db, actor, source.originTaskId)
     const taskId = await this.db.transaction(async (tx) => {
       const row = await this.row(fileId, tx)
       if (row.kind !== 'task_file' || !row.originTaskId) throw new BadRequestException('대화 파일만 산출물로 지정할 수 있습니다')
@@ -128,7 +159,12 @@ export class DbFilesService {
     this.events?.publish('file.updated', { taskId })
   }
 
-  async remove(fileId: string) {
+  async remove(fileId: string, actor?: string) {
+    if (actor) {
+      await assertFileAccess(this.db, actor, fileId)
+      const source = await this.row(fileId)
+      if (source.originTaskId) await assertTaskAccess(this.db, actor, source.originTaskId)
+    }
     const taskId = await this.db.transaction(async (tx) => {
       const row = await this.row(fileId, tx)
       if (row.kind !== 'task_file' || !row.originTaskId) throw new BadRequestException('대화 파일만 삭제할 수 있습니다')
@@ -171,7 +207,8 @@ export class DbFilesService {
     return { rows: [...rows, ...detachedFiles], chainRows: [...sourceRows, ...extraRows], selected, via }
   }
 
-  async candidates(taskId: string) {
+  async candidates(taskId: string, actor?: string) {
+    if (actor) await assertTaskAccess(this.db, actor, taskId)
     const { rows, chainRows, selected, via } = await this.candidateRows(taskId)
     const originIds = [...new Set(rows.map((row) => row.originTaskId).filter((id): id is string => !!id))]
     const origins = originIds.length ? await this.db.select({ id: task.id, assistantId: task.assistantId }).from(task).where(inArray(task.id, originIds)) : []
@@ -192,10 +229,15 @@ export class DbFilesService {
         ...(selectedById.has(row.id) && { selected: selectedById.get(row.id) }),
         ...(head !== row.id && { newerVersionId: head }), ...(olderVersionIds.length && { olderVersionIds }) }
     })
-    return { files, conversations: await new DbConversationInputsService(this.db).candidates(taskId) }
+    const visible = actor ? (await Promise.all(files.map(async (item) => {
+      try { await assertFileAccess(this.db, actor, item.file.id); return item }
+      catch (error) { if (error instanceof ForbiddenException) return null; throw error }
+    }))).filter((item): item is (typeof files)[number] => item !== null) : files
+    return { files: visible, conversations: await new DbConversationInputsService(this.db).candidates(taskId, actor) }
   }
 
-  async filesForTask(taskId: string) {
+  async filesForTask(taskId: string, actor?: string) {
+    if (actor) await assertTaskAccess(this.db, actor, taskId)
     const rows = await this.db.select({ taskId: task.id, file: fileObject }).from(task)
       .leftJoin(fileObject, and(eq(fileObject.originTaskId, task.id), isNull(fileObject.deletedAt)))
       .where(and(eq(task.id, taskId), isNull(task.deletedAt)))
@@ -204,6 +246,8 @@ export class DbFilesService {
   }
 
   async setInput(actor: string, taskId: string, fileId: string, weight: 'main' | 'reference' | null) {
+    await assertTaskAccess(this.db, actor, taskId)
+    await assertFileAccess(this.db, actor, fileId)
     await this.db.transaction(async (tx) => {
       const source = await this.row(fileId, tx)
       if (source.kind !== 'task_file' || !source.originTaskId) throw new BadRequestException('선택할 수 없는 파일입니다')
@@ -223,6 +267,9 @@ export class DbFilesService {
   }
 
   async switchInputVersion(actor: string, taskId: string, fromFileId: string, toFileId: string) {
+    await assertTaskAccess(this.db, actor, taskId)
+    await assertFileAccess(this.db, actor, fromFileId)
+    await assertFileAccess(this.db, actor, toFileId)
     await this.db.transaction(async (tx) => {
       const source = await this.row(fromFileId, tx)
       if (!source.originTaskId) throw new BadRequestException('대화 파일만 선택할 수 있습니다')

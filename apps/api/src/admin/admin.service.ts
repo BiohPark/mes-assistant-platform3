@@ -166,7 +166,10 @@ export class AdminService {
         if (!row) throw new BadRequestException('접수 에이전트를 찾을 수 없습니다')
         if (row.status === 'retired') throw new ConflictException('폐기된 에이전트는 접수 에이전트로 지정할 수 없습니다')
       }
-      for (const [key, value] of Object.entries(patch)) await tx.insert(appSetting).values({ key, value }).onDuplicateKeyUpdate({ set: { value } })
+      for (const [key, value] of Object.entries(patch)) {
+        if (key === 'srIntakeAssistantId' && value === null) await tx.delete(appSetting).where(eq(appSetting.key, key))
+        else await tx.insert(appSetting).values({ key, value }).onDuplicateKeyUpdate({ set: { value } })
+      }
     })
     return this.getSettings()
   }

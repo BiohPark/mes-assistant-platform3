@@ -503,7 +503,7 @@ paths:
   /service-requests:
     get:
       tags: [service-requests]
-      summary: 목록 (요청자는 자기 것만)
+      summary: 목록 (요청자(BO)는 자기 것만 — 서버 강제. 담당자·SO는 전체). S4 ②
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ServiceRequest' } } } } }
     post:
@@ -511,10 +511,47 @@ paths:
       summary: 접수 대화 시작 (draft, 코드 없음)
       responses:
         '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }
+  /service-requests/{srId}:
+    get:
+      tags: [service-requests]
+      summary: 상세 (결과 목록·연결 대화·접수 스레드 첨부). 요청자 범위 강제
+      parameters: [{ $ref: '#/components/parameters/srId' }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }, '403': { $ref: '#/components/responses/Problem' } }
+    delete:
+      tags: [service-requests]
+      summary: draft 삭제 (draft만)
+      parameters: [{ $ref: '#/components/parameters/srId' }]
+      responses: { '204': { description: 삭제 }, '409': { $ref: '#/components/responses/Problem' } }
+  /service-requests/{srId}/draft:
+    get:
+      tags: [service-requests]
+      summary: 접수 전환용 초안 — 접수 대화에서 제목(보조 호출, 기록 없음)·본문 초안
+      parameters: [{ $ref: '#/components/parameters/srId' }]
+      responses: { '200': { description: OK } }
+  /service-requests/{srId}/title:
+    patch:
+      tags: [service-requests]
+      summary: 제목 수정 (요청자·SO만, 수정은 titleSource=manual)
+      parameters: [{ $ref: '#/components/parameters/srId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [title], properties: { title: { type: string } } } } } }
+      responses: { '204': { description: 변경 }, '403': { $ref: '#/components/responses/Problem' } }
+  /service-requests/{srId}/content:
+    patch:
+      tags: [service-requests]
+      summary: 접수 내용 수정 (제목·본문·첨부 선택)
+      parameters: [{ $ref: '#/components/parameters/srId' }]
+      responses: { '204': { description: 변경 } }
+  /service-requests/{srId}/status:
+    patch:
+      tags: [service-requests]
+      summary: 상태 변경 (담당자·SO) — 요청자에게 알림
+      parameters: [{ $ref: '#/components/parameters/srId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [status], properties: { status: { enum: [submitted, reviewing, in_progress, responded, done, rejected] } } } } } }
+      responses: { '204': { description: 변경 } }
   /service-requests/{srId}/submit:
     post:
       tags: [service-requests]
-      summary: 접수로 전환 (코드 발급·태그·알림)
+      summary: 접수로 전환 (SR-YYYY-NNNN 발급·태그·접수 에이전트 소유자 알림)
       parameters: [{ $ref: '#/components/parameters/srId' }]
       requestBody: { content: { application/json: { schema: { type: object, required: [title, body], properties: { title: { type: string }, titleSource: { enum: [ai, manual] }, body: { type: string }, attachmentIds: { type: array, items: { type: string } } } } } } }
       responses:
@@ -522,7 +559,7 @@ paths:
   /service-requests/{srId}/tasks:
     post:
       tags: [service-requests]
-      summary: 연결 업무 시작 (진행 중 대화가 있으면 이어가기 후보를 먼저 돌려줌)
+      summary: 연결 업무 시작 (진행 중 연결 대화가 있으면 forceNew 없이는 후보 반환, draft는 409). 서버가 task.sr_id로 연결을 기록 — SR 처리자 권한의 근거(태그 아님)
       parameters: [{ $ref: '#/components/parameters/srId' }]
       requestBody: { content: { application/json: { schema: { type: object, required: [assistantId], properties: { assistantId: { type: string }, forceNew: { type: boolean } } } } } }
       responses:
@@ -530,10 +567,15 @@ paths:
   /service-requests/{srId}/results:
     post:
       tags: [service-requests]
-      summary: 요청자에게 결과 공유 (텍스트 + 열람 가능한 산출물). 내부 대화는 공유되지 않음
+      summary: 요청자에게 결과 공유 (텍스트 또는 파일 1개 이상). 내부 대화는 공유되지 않음. 상태 responded(종료 상태 done·rejected는 유지). 요청자에게 알림
       parameters: [{ $ref: '#/components/parameters/srId' }]
       requestBody: { content: { application/json: { schema: { type: object, properties: { taskId: { type: string }, text: { type: string }, fileIds: { type: array, items: { type: string } } } } } } }
-      responses: { '201': { description: 공유 } }
+      responses: { '201': { description: 공유 }, '400': { $ref: '#/components/responses/Problem' } }
+    get:
+      tags: [service-requests]
+      summary: 공유된 결과 목록 — 요청자는 이것과 자기 첨부만 열람(S4-4). 파일 다운로드도 같은 범위로 강제
+      parameters: [{ $ref: '#/components/parameters/srId' }]
+      responses: { '200': { description: OK } }
 
   /events:
     get:

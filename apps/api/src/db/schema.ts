@@ -155,6 +155,7 @@ export const task = mysqlTable(
     id: varchar('id', { length: 191 }).primaryKey(),
     code: varchar('code', { length: 191 }).notNull().unique('task_code_key'),
     assistantId: varchar('assistant_id', { length: 191 }).notNull().references((): AnyMySqlColumn => assistant.id),
+    srId: varchar('sr_id', { length: 191 }).references((): AnyMySqlColumn => serviceRequest.id),
     title: text('title').notNull(),
     titleSource: text('title_source').notNull(),
     summary: longtext('summary').notNull().default(''),

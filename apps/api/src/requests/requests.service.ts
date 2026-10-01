@@ -11,6 +11,7 @@ import { FileStorageService } from '../files/fileStorage.service.js'
 import { EventsService } from '../events/events.service.js'
 import { DbLlmPorts } from '../llm/dbLlmPorts.js'
 import { LLM_PROVIDER } from '../llm/provider.token.js'
+import { assertThreadAccess } from '../sr/access.js'
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 type EventName = 'started' | 'phase' | 'delta' | 'completed' | 'failed'
@@ -66,6 +67,20 @@ export class RequestsService implements OnModuleDestroy {
   onModuleDestroy() { if (this.sweepTimer) clearInterval(this.sweepTimer) }
   listModels() { return this.provider.listModels() }
   ping() { return this.provider.ping() }
+  async suggestSrTitle(actor: string, threadId: string): Promise<string | undefined> {
+    await assertThreadAccess(this.db, actor, threadId)
+    const [owner] = await this.db.select().from(thread).where(eq(thread.id, threadId))
+    if (!owner?.srId) throw new BadRequestException('접수 대화가 아닙니다')
+    const rows = await this.db.select().from(message).where(eq(message.threadId, threadId)).orderBy(message.seq)
+    const history: Message[] = rows.filter((row) => row.status === 'done').map((row) => ({ id: row.id, threadId,
+      seq: row.seq, role: row.role as Message['role'], kind: row.kind as Message['kind'], content: row.content,
+      authorId: row.authorId ?? undefined, status: row.status as Message['status'], createdAt: row.createdAt.toISOString(), attachmentIds: [] }))
+    if (!history.some((row) => row.role === 'user')) return undefined
+    const [setting] = await this.db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'srIntakeAssistantId'))
+    const [intake] = typeof setting?.value === 'string' ? await this.db.select().from(assistant).where(eq(assistant.id, setting.value)) : []
+    const model = owner.modelId ?? intake?.modelId ?? this.config.llm.defaultModel ?? 'glm-5.2'
+    return this.runAuxiliary(actor, 'title', (signal) => suggestTitle(this.provider, model, history, signal))
+  }
   async draftConversationSummary(actor: string, taskId: string, messages: Message[], signal?: AbortSignal) {
     const ports = new DbLlmPorts(this.db, this.config, actor)
     const [owner, agents, users, settings] = await Promise.all([ports.getTask(taskId), ports.getAssistants(), ports.getUsers(), ports.getSettings()])
@@ -163,6 +178,7 @@ export class RequestsService implements OnModuleDestroy {
   }
 
   async estimate(actor: string, threadId: string, body: EstimateBody): Promise<RequestInfo & { overLimit: boolean; attachmentLimit: number }> {
+    await assertThreadAccess(this.db, actor, threadId)
     const [owner] = await this.db.select().from(thread).where(eq(thread.id, threadId))
     if (!owner) throw new NotFoundException('스레드를 찾을 수 없습니다')
     if (owner.taskId) {
@@ -177,7 +193,7 @@ export class RequestsService implements OnModuleDestroy {
     if (oneShot.some((id) => !attachments.includes(id))) throw new BadRequestException('첨부 파일 ID가 올바르지 않습니다')
     if (attachments.length) {
       const valid = await this.db.select({ id: fileObject.id }).from(fileObject).where(and(inArray(fileObject.id, attachments),
-        eq(fileObject.originTaskId, owner.taskId ?? ''), isNull(fileObject.deletedAt)))
+        owner.srId ? eq(fileObject.originSrId, owner.srId) : eq(fileObject.originTaskId, owner.taskId!), isNull(fileObject.deletedAt)))
       if (valid.length !== attachments.length) throw new BadRequestException('첨부 파일이 이 대화에 없습니다')
     }
     const pinned = attachments.filter((id) => !oneShot.includes(id))
@@ -218,6 +234,7 @@ export class RequestsService implements OnModuleDestroy {
   }
 
   async start(actor: string, threadId: string, body: StartBody, key: string): Promise<StartedRequest> {
+    await assertThreadAccess(this.db, actor, threadId)
     if (!key?.trim()) throw new BadRequestException('Idempotency-Key가 필요합니다')
     if ([...key].length > 191) throw new BadRequestException('Idempotency-Key가 너무 깁니다')
     const attachments = [...new Set(body.attachmentIds ?? [])]
@@ -236,7 +253,7 @@ export class RequestsService implements OnModuleDestroy {
         const [attachmentSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'fileMaxPerRequest'))
         if (attachments.length > (typeof attachmentSetting?.value === 'number' ? attachmentSetting.value : this.config.fileMaxPerRequest)) throw new HttpException({ code: 'ATTACHMENT_LIMIT' }, 413)
         if (attachments.length) {
-          const valid = await tx.select({ id: fileObject.id }).from(fileObject).where(and(inArray(fileObject.id, attachments), eq(fileObject.originTaskId, owner.taskId ?? ''), isNull(fileObject.deletedAt)))
+          const valid = await tx.select({ id: fileObject.id }).from(fileObject).where(and(inArray(fileObject.id, attachments), owner.srId ? eq(fileObject.originSrId, owner.srId) : eq(fileObject.originTaskId, owner.taskId!), isNull(fileObject.deletedAt)))
           if (valid.length !== attachments.length) throw new BadRequestException('첨부 파일이 이 대화에 없습니다')
         }
         const [max] = await tx.select({ seq: sql<number>`coalesce(max(${message.seq}), 0)` }).from(message).where(eq(message.threadId, threadId))
@@ -287,6 +304,8 @@ export class RequestsService implements OnModuleDestroy {
   }
 
   async retry(actor: string, requestId: string, body: RetryBody, key: string): Promise<StartedRequest> {
+    const [originalThread] = await this.db.select({ threadId: chatRequest.threadId }).from(chatRequest).where(eq(chatRequest.id, requestId))
+    if (originalThread) await assertThreadAccess(this.db, actor, originalThread.threadId)
     if (!key?.trim()) throw new BadRequestException('Idempotency-Key가 필요합니다')
     if ([...key].length > 191) throw new BadRequestException('Idempotency-Key가 너무 깁니다')
     const original = await this.getRow(requestId)
@@ -346,8 +365,9 @@ export class RequestsService implements OnModuleDestroy {
     if (!row) throw new NotFoundException('요청을 찾을 수 없습니다')
     return row
   }
-  async get(id: string) {
+  async get(id: string, actor?: string) {
     const row = await this.getRow(id)
+    if (actor) await assertThreadAccess(this.db, actor, row.threadId)
     const inputs = await this.db.select().from(chatRequestInput).where(eq(chatRequestInput.requestId, id)).orderBy(chatRequestInput.seq)
     return { id: row.id, threadId: row.threadId, status: row.status, phase: row.phase, code: errorCode(row.status, row.error, row.bytes), provider: row.provider, transport: row.transport,
       model: row.model, bytes: row.status === 'pending' && row.bytes === 0 ? null : row.bytes, limitBytes: row.limitBytes, error: row.error, retryOf: row.retryOf, createdAt: row.createdAt.toISOString(),
@@ -355,8 +375,9 @@ export class RequestsService implements OnModuleDestroy {
         fileVersion: item.fileVersion, sourceLabel: item.sourceLabel, oneShot: item.oneShot, delivery: item.delivery, sourceTaskId: item.sourceTaskId,
         snapshotId: item.snapshotId, mode: item.mode, messageCount: item.messageCount, bytes: item.bytes, error: item.error })) }
   }
-  async snapshot(id: string) {
+  async snapshot(id: string, actor?: string) {
     const row = await this.getRow(id)
+    if (actor) await assertThreadAccess(this.db, actor, row.threadId)
     const value = row.snapshot as Record<string, unknown> | null
     if (typeof value?.storageKey === 'string') return JSON.parse(Buffer.from(await this.storage.read(value.storageKey)).toString('utf8')) as unknown
     if (!value) throw new NotFoundException('원본 요청이 없습니다')
@@ -401,8 +422,9 @@ export class RequestsService implements OnModuleDestroy {
     } catch (caught) { if (caught instanceof FencedTransition) return false; throw caught }
   }
 
-  async cancel(id: string): Promise<void> {
+  async cancel(id: string, actor?: string): Promise<void> {
     const row = await this.getRow(id)
+    if (actor) await assertThreadAccess(this.db, actor, row.threadId)
     if (!ACTIVE.includes(row.status)) return
     if (await this.transition(id, 'cancelled', STOPPED)) {
       this.runs.get(id)?.abort('cancelled')

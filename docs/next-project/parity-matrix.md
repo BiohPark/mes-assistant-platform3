@@ -17,7 +17,7 @@
 | `/c/:taskId` | 대화 화면 | FR-01–41 | S2–S4 | 변경(API) | ✅ 골격(S2 ②: 헤더·팀 의견·이력. 자료 ③, AI S3, 체크·노트 S4) |
 | `/tasks/:taskId` | 옛 주소 → `/c/:taskId` 리다이렉트 | — | S2 | 그대로 | ✅ S2 ② |
 | `/assistants/manage` | 에이전트 관리 | FR-60 | S4 | 변경(SO 전용 서버 강제) | ✅ |
-| `/sr` · `/sr/manage` | SR 접수 · 관리 | FR-50·51 | S4 | 변경(요청자 범위 서버 강제) | ⬜ |
+| `/sr` · `/sr/manage` | SR 접수 · 관리 | FR-50·51 | S4 | 변경(요청자 범위 서버 강제) | ✅ |
 | `/reports` | 리포트(지연 로딩) | FR-62 | S4 | 변경(서버 집계) | ⬜ |
 | `/settings` | 설정 | FR-61 | S4 | 변경(전역=SO·서버, 키 입력 삭제) | ✅ |
 | `*` → `/` | 없는 경로 | — | S0 | 그대로 | ✅ |
@@ -92,14 +92,14 @@
 ### sr · assistants · reports · settings · system-assistant
 | 데모 모듈 | 하는 일 | FR | 스프린트 | 방식 | 상태 |
 |---|---|---|---|---|---|
-| `sr/SrIntakePage.tsx` | 접수 대화·탭(/sr ↔ /sr/manage) | FR-50 | S4 | 변경(요청자 권한) | ⬜ |
-| `sr/SrList.tsx` | SR 목록(draft는 첫 메시지) | FR-50 | S4 | 변경(API) | ⬜ |
-| `sr/SrConvertDialog.tsx` | draft → 접수 전환·접수 내용 수정(AI 제목) | FR-50 | S4 | 변경(서버 대리 호출) | ⬜ |
-| `sr/SrTitleEditor.tsx` | 제목 수정(요청자·SO만, 수동 제목 보호) | FR-50 | S4 | 변경(서버 강제) | ⬜ |
-| `sr/SrManagePage.tsx` | SR 관리·연결 대화 | FR-51 | S4 | 변경(API) | ⬜ |
-| `sr/SrDetailSheet.tsx` | 진행 현황·연결 업무 시작(이어가기/새 대화) | FR-51 | S4 | 변경(API) | ⬜ |
-| `sr/ShareResultDialog.tsx` | 결과 공유(텍스트 + 산출물) | FR-51 | S4 | 변경(API) | ⬜ |
-| `sr/SharedResults.tsx` | 요청자: 공유된 결과만 | FR-51 | S4 | 변경(서버 강제) | ⬜ |
+| `sr/SrIntakePage.tsx` | 접수 대화·탭(/sr ↔ /sr/manage) | FR-50 | S4 | 변경(요청자 권한) | ✅ |
+| `sr/SrList.tsx` | SR 목록(draft는 첫 메시지) | FR-50 | S4 | 변경(API) | ✅ |
+| `sr/SrConvertDialog.tsx` | draft → 접수 전환·접수 내용 수정(AI 제목) | FR-50 | S4 | 변경(서버 대리 호출) | ✅ |
+| `sr/SrTitleEditor.tsx` | 제목 수정(요청자·SO만, 수동 제목 보호) | FR-50 | S4 | 변경(서버 강제) | ✅ |
+| `sr/SrManagePage.tsx` | SR 관리·연결 대화 | FR-51 | S4 | 변경(API) | ✅ |
+| `sr/SrDetailSheet.tsx` | 진행 현황·연결 업무 시작(이어가기/새 대화) | FR-51 | S4 | 변경(API) | ✅ |
+| `sr/ShareResultDialog.tsx` | 결과 공유(텍스트 + 산출물) | FR-51 | S4 | 변경(API) | ✅ |
+| `sr/SharedResults.tsx` | 요청자: 공유된 결과만 | FR-51 | S4 | 변경(서버 강제) | ✅ |
 | `assistants/ManagePage.tsx` | 에이전트 관리 화면 | FR-60 | S4 | 변경(SO 전용) | ✅ |
 | `assistants/AssistantTable.tsx` | 목록·모델 ID 인라인 매핑 | FR-60·35 | S4 | 변경(API) · 목록은 U6 | ✅ |
 | `assistants/AssistantEditorSheet.tsx` | 전 항목 편집·체크리스트 기본값·삭제 보호 | FR-60·40 | S4 | 변경(API) | ✅ |
@@ -138,7 +138,7 @@
 | `conversationInputs.ts` (+test) | `selectConversation` `applyConversationSummary` `refreshConversationInput` `setConversationWeight` `removeConversationInput` `findConversationInput` `loadConversationInputs` | FR-20–23 | S3 | 변경(서버) — 테스트 먼저 | ✅ |
 | `files.ts` (+test) | `fileVersions` `uploadFile` `saveAssistantOutput` `setOutputTag` `deleteFile` `filesForTask` `downloadBlob` `isTextFile` `formatSize` | FR-10–15 | S2 | 변경(`FileStorageService`, 소프트 삭제) — 테스트 먼저 | ✅ S2 ③(`blob`은 서버 `/content`) |
 | `assistants.ts` (+test) | `newChecklistTemplateItem` `defaultChecklistTemplate` `createAssistant` `updateAssistant` `setAssistantStatus` `setAssistantImage` `deleteAssistant` `reorderAssistants` | FR-60·40 | S2(읽기)·S4(편집) | 변경(SO 전용, `revision` 충돌 검사) — 테스트 먼저 | ✅ |
-| `sr.ts` | `startSrConversation` `submitSr` `setSrTitle` `conversationsForSr` `startTaskFromSr` `updateSrContent` `setSrStatus` `deleteDraftSr` `shareSrResult` | FR-50·51 | S4 | 변경(서버, 요청자 범위 강제) | ⬜ |
+| `sr.ts` | `startSrConversation` `submitSr` `setSrTitle` `conversationsForSr` `startTaskFromSr` `updateSrContent` `setSrStatus` `deleteDraftSr` `shareSrResult` | FR-50·51 | S4 | 변경(서버, 요청자 범위 강제) | ✅ |
 | `notes.ts` | `addNote` `deleteNote` | FR-41 | S4 | 변경(서버) | ⬜ |
 | `notifications.ts` (+test) | `notify` `unreadCount` `markRead` `markAllRead` | FR-41 | S4 | 변경(서버·SSE) — 테스트 먼저 | ⬜ |
 | `activity.ts` | `logActivity` | FR-41 | S2 | 변경(서버, 추가만) | ✅ S2 ② |
@@ -186,7 +186,7 @@
 | 데모 시나리오 | FR | 스프린트 | 상태 |
 |---|---|---|---|
 | S1 컴포저 첨부는 다음 턴에도 AI 입력으로 남는다 | FR-10 | S2 | ✅ S2 ③(files.spec, AI 전송 없이 입력 고정까지) |
-| S2 SR 접수 대화의 첨부는 첨부한 그 메시지에 포함된다 | FR-10·50 | S4 | ⬜ |
+| S2 SR 접수 대화의 첨부는 첨부한 그 메시지에 포함된다 | FR-10·50 | S4 | ✅ |
 | S3 기본 이름으로 두 번 저장한 산출물은 같은 파일의 v2 | FR-11·13 | S2 | ✅ S2 ③(files.spec) |
 | S4 태그 공유 자료를 ★·☑로 고르면 주 입력이 먼저 전달 | FR-12·20·32 | S2 | ✅ S2 ③(files.spec, 선택·순서까지. 전달은 S3) |
 | S5 OpenWebUI 첨부: 처리 완료 확인 후 전송, 주 입력 먼저, 업로드 이름에 버전 | FR-32 | S3(RequestService, S2-3 결정) | ✅ S3 ①(requests-live.spec, 가짜 OpenWebUI live) |

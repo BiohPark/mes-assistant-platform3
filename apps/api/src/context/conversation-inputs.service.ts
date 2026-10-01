@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common'
 import { byteLength, eligibleMessages, newMessagesSince, type ContextSnapshot, type ConversationInput, type Message } from '@mes/domain'
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { EventsService } from '../events/events.service.js'
 import { activityLog, assistant, contextSnapshot, contextSnapshotMessage, conversationInput, message, tag, task, taskTag, thread } from '../db/schema.js'
+import { assertTaskAccess } from '../sr/access.js'
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 type Weight = 'main' | 'reference'
@@ -47,7 +48,8 @@ export class DbConversationInputsService {
     return !!match
   }
 
-  async candidates(taskId: string) {
+  async candidates(taskId: string, actor?: string) {
+    if (actor) await assertTaskAccess(this.db, actor, taskId)
     await this.taskRow(taskId)
     const mine = await this.db.select({ key: taskTag.tagKey }).from(taskTag).where(eq(taskTag.taskId, taskId))
     if (!mine.length) return []
@@ -58,14 +60,18 @@ export class DbConversationInputsService {
     if (!tags.size) return []
     const sources = await this.db.select({ source: task, assistant }).from(task).innerJoin(assistant, eq(assistant.id, task.assistantId))
       .where(and(inArray(task.id, [...tags.keys()]), isNull(task.deletedAt))).orderBy(desc(task.lastActivityAt))
-    const counts = sources.length ? await this.db.select({ taskId: thread.taskId, count: sql<number>`count(*)`, bytes: sql<number>`coalesce(sum(octet_length(${message.content})), 0)` })
+    const visibleSources = actor ? (await Promise.all(sources.map(async (item) => {
+      try { await assertTaskAccess(this.db, actor, item.source.id); return item }
+      catch (error) { if (error instanceof ForbiddenException) return null; throw error }
+    }))).filter((item): item is (typeof sources)[number] => item !== null) : sources
+    const counts = visibleSources.length ? await this.db.select({ taskId: thread.taskId, count: sql<number>`count(*)`, bytes: sql<number>`coalesce(sum(octet_length(${message.content})), 0)` })
       .from(thread).innerJoin(message, eq(message.threadId, thread.id))
-      .where(and(inArray(thread.taskId, sources.map((item) => item.source.id)), inArray(message.role, ['user', 'assistant']),
+      .where(and(inArray(thread.taskId, visibleSources.map((item) => item.source.id)), inArray(message.role, ['user', 'assistant']),
         eq(message.status, 'done'), isNull(message.kind), sql`trim(${message.content}) <> ''`)).groupBy(thread.taskId) : []
     const countsByTask = new Map(counts.map((row) => [row.taskId, row]))
     const selected = await this.db.select().from(conversationInput).where(eq(conversationInput.taskId, taskId))
     const loaded = await this.list(taskId)
-    return sources.map(({ source, assistant: agent }) => {
+    return visibleSources.map(({ source, assistant: agent }) => {
       const count = countsByTask.get(source.id)
       const choice = selected.find((row) => row.sourceTaskId === source.id)
       const detail = choice && loaded.find((row) => row.input.sourceTaskId === source.id)
@@ -76,10 +82,12 @@ export class DbConversationInputsService {
     })
   }
 
-  async load(taskId: string) {
+  async load(taskId: string, actor?: string) {
+    if (actor) await assertTaskAccess(this.db, actor, taskId)
     await this.taskRow(taskId)
     const rows = await this.db.select().from(conversationInput).where(eq(conversationInput.taskId, taskId)).orderBy(conversationInput.selectedAt, conversationInput.id)
     return Promise.all(rows.map(async (row) => {
+      if (actor) await assertTaskAccess(this.db, actor, row.sourceTaskId)
       const [snapshot] = await this.db.select().from(contextSnapshot).where(eq(contextSnapshot.id, row.snapshotId))
       const [source] = await this.db.select({ source: task, assistant }).from(task).innerJoin(assistant, eq(assistant.id, task.assistantId)).where(eq(task.id, row.sourceTaskId))
       if (!snapshot || !source) throw new NotFoundException('참조 대화 기록을 찾을 수 없습니다')
@@ -101,9 +109,11 @@ export class DbConversationInputsService {
         bytes: snapshot.mode === 'summary' ? byteLength(snapshot.summaryText ?? '') : selectedMessages.reduce((n, item) => n + byteLength(item.content), 0) }
     }))
   }
-  async list(taskId: string) { return (await this.load(taskId)).map(({ messages: _messages, ...row }) => row) }
+  async list(taskId: string, actor?: string) { return (await this.load(taskId, actor)).map(({ messages: _messages, ...row }) => row) }
 
   async select(actor: string, taskId: string, sourceTaskId: string, options: SelectConversation, allowDetachedFull = false) {
+    await assertTaskAccess(this.db, actor, taskId)
+    await assertTaskAccess(this.db, actor, sourceTaskId)
     if (taskId === sourceTaskId) throw new BadRequestException({ code: 'SELF_REFERENCE', message: '자기 대화는 참조할 수 없습니다' })
     if (options.weight && !['main', 'reference'].includes(options.weight)) throw new BadRequestException('등급이 올바르지 않습니다')
     const snapshotId = id()
@@ -135,12 +145,15 @@ export class DbConversationInputsService {
   }
 
   async refresh(actor: string, taskId: string, sourceTaskId: string) {
+    await assertTaskAccess(this.db, actor, taskId)
+    await assertTaskAccess(this.db, actor, sourceTaskId)
     const [row] = await this.db.select().from(conversationInput).where(and(eq(conversationInput.taskId, taskId), eq(conversationInput.sourceTaskId, sourceTaskId)))
     if (!row) throw new NotFoundException('선택을 찾을 수 없습니다')
     if (row.mode !== 'full') throw new BadRequestException('전체 원문만 바로 갱신할 수 있습니다')
     return this.select(actor, taskId, sourceTaskId, { mode: 'full', weight: row.weight as Weight }, true)
   }
   async setWeight(actor: string, taskId: string, sourceTaskId: string, weight: Weight) {
+    await assertTaskAccess(this.db, actor, taskId)
     await this.db.transaction(async (tx) => {
       const [current] = await tx.select().from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt))).for('update')
       if (!current) throw new NotFoundException('대화를 찾을 수 없습니다')
@@ -152,6 +165,7 @@ export class DbConversationInputsService {
     this.events?.publish('context.updated', { taskId })
   }
   async remove(actor: string, taskId: string, sourceTaskId: string) {
+    await assertTaskAccess(this.db, actor, taskId)
     await this.db.transaction(async (tx) => {
       const [current] = await tx.select().from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt))).for('update')
       if (!current) throw new NotFoundException('대화를 찾을 수 없습니다')
@@ -161,5 +175,5 @@ export class DbConversationInputsService {
     })
     this.events?.publish('context.updated', { taskId })
   }
-  async preview(sourceTaskId: string) { await this.taskRow(sourceTaskId); return this.messages(sourceTaskId) }
+  async preview(sourceTaskId: string, actor?: string) { if (actor) await assertTaskAccess(this.db, actor, sourceTaskId); await this.taskRow(sourceTaskId); return this.messages(sourceTaskId) }
 }

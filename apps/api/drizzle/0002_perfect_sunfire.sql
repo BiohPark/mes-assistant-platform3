@@ -1,0 +1,2 @@
+ALTER TABLE `task` ADD `sr_id` varchar(191);--> statement-breakpoint
+ALTER TABLE `task` ADD CONSTRAINT `task_sr_id_service_request_id_fk` FOREIGN KEY (`sr_id`) REFERENCES `service_request`(`id`) ON DELETE no action ON UPDATE no action;

@@ -21,7 +21,7 @@ export class ConversationInputsController {
     @Inject(RequestsService) private readonly requests: RequestsService) {}
 
   @Get()
-  list(@Param('id') taskId: string) { return this.context.list(taskId) }
+  list(@Req() req: AuthedRequest, @Param('id') taskId: string) { return this.context.list(taskId, req.user!.id) }
 
   @Put(':sourceTaskId')
   select(@Req() req: AuthedRequest, @Param('id') taskId: string, @Param('sourceTaskId') sourceTaskId: string, @Body() body: unknown) {
@@ -48,10 +48,10 @@ export class ConversationInputsController {
   @Post(':sourceTaskId/summary-draft')
   async draft(@Req() req: AuthedRequest, @Param('id') taskId: string, @Param('sourceTaskId') sourceTaskId: string, @Body() body: unknown) {
     const { messageIds } = parse(draftBody, body)
-    const available = (await this.context.candidates(taskId)).some((item) => item.taskId === sourceTaskId)
-      || (await this.context.list(taskId)).some((item) => item.input.sourceTaskId === sourceTaskId)
+    const available = (await this.context.candidates(taskId, req.user!.id)).some((item) => item.taskId === sourceTaskId)
+      || (await this.context.list(taskId, req.user!.id)).some((item) => item.input.sourceTaskId === sourceTaskId)
     if (!available) throw new ConflictException({ code: 'TAG_NOT_SHARED' })
-    const all = await this.context.preview(sourceTaskId)
+    const all = await this.context.preview(sourceTaskId, req.user!.id)
     if (messageIds && (new Set(messageIds).size !== messageIds.length || messageIds.some((value) => !all.some((item) => item.id === value)))) {
       throw new BadRequestException({ code: 'INVALID_MESSAGE_IDS' })
     }
