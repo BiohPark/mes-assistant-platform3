@@ -14,6 +14,7 @@ const fakePort = process.env.E2E_FAKE_OWUI_PORT ?? '3102'
 export default defineConfig({
   testDir: './tests',
   timeout: 60_000,
+  expect: { timeout: 15_000 }, // 29개 spec 병렬 부하에서 5 s 기본값은 mock 스트리밍·목록 로드에 빠듯하다(S4 ⑤ 검증)
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
