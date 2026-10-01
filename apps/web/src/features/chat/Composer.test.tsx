@@ -30,6 +30,20 @@ it('keeps text during a failed send and clears it after a successful retry', asy
   await waitFor(() => expect(input).toHaveValue(''))
 })
 
+it('clears a drawer submission immediately and preserves text typed during the response', async () => {
+  let finish!: () => void
+  const send = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+  renderComposer({ streaming: false, onSend: send, onStop: () => undefined, clearOnSubmit: true })
+  const input = screen.getByRole('textbox', { name: '팀 의견 입력' })
+  fireEvent.change(input, { target: { value: '첫 질문' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  expect(input).toHaveValue('')
+  fireEvent.change(input, { target: { value: '다음 질문' } })
+  finish()
+  await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+  expect(input).toHaveValue('다음 질문')
+})
+
 it('pins attachments by default and lets a sender mark one as message-only', async () => {
   const send = vi.fn(async () => undefined)
   const { container } = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, allowPin: true })

@@ -674,6 +674,21 @@ paths:
         - { name: userId, in: query, required: false, schema: { type: string }, description: 소유자 또는 담당자 필터 }
       responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } }
 
+  /system-assistant/model:
+    get:
+      tags: [misc]
+      summary: 시스템 assistant 서랍 표시용 — LLM 모드(mock/live)와 기본 모델명. S4 ⑤
+      responses: { '200': { description: '{ mode, model }' } }
+  /system-assistant/messages:
+    post:
+      tags: [misc]
+      summary: 시스템 assistant 서버 대리 호출(U1(a)). 서랍 이력(user/assistant)을 받아 서버가 시스템 프롬프트·도구 정의(SYSTEM_TOOLS)를 붙여 provider를 호출(mock은 규칙 기반)하고 `{ text, toolCalls }`를 돌려준다. 도구 호출은 **제안**일 뿐 — 웹이 카드로 보여 주고 사용자가 "적용"해야 기존 API(POST /tasks · POST /assistants · 태그 추가)를 같은 권한으로 호출한다. 자동 실행·DB 저장·요청 기록 없음(D3-2). 메시지 수·길이·요청 크기 한도(413), 연결 종료 시 모델 호출 중단, 시간 제한. S4 ⑤
+      requestBody: { content: { application/json: { schema: { type: object, required: [messages], properties: { messages: { type: array, items: { type: object, required: [role, content], properties: { role: { type: string, enum: [user, assistant] }, content: { type: string } } } } } } } } }
+      responses:
+        '200': { description: '{ text, toolCalls: [{ id, name, arguments }] }' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '502': { description: 모델 응답 실패 }
+
   /events:
     get:
       tags: [misc]

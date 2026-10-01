@@ -1,4 +1,4 @@
-import { ChevronDown, LogOut, KeyRound } from 'lucide-react'
+import { ChevronDown, LogOut, KeyRound, Sparkles } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { useQuery } from '@tanstack/react-query'
@@ -15,6 +15,7 @@ import {
 import { UserAvatar } from '@/components/UserAvatar'
 import { logout, useMe } from './auth'
 import { NotificationBell } from './NotificationBell'
+import { useUiStore } from './uiStore'
 
 interface TopBarProps {
   title?: React.ReactNode
@@ -28,6 +29,7 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
   const me = useMe()
   const navigate = useNavigate()
   const isOwner = me.roles.includes('system_owner')
+  const setAssistantOpen = useUiStore((state) => state.setAssistantOpen)
   const llmStatus = useQuery({
     queryKey: ['llm', 'status'],
     enabled: isOwner && !me.mustChangePassword,
@@ -42,6 +44,7 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
     <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-background px-4">
       <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h1>
       {actions}
+      <Button variant="ghost" size="icon-sm" aria-label="시스템 assistant 열기" onClick={() => setAssistantOpen(true)}><Sparkles /></Button>
       <NotificationBell />
       {isOwner && llmStatus.data && <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{llmStatus.data.mode === 'mock' ? 'Mock' : 'Live'}</span>}
       <DropdownMenu>

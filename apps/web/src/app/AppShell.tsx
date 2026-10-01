@@ -7,6 +7,7 @@ import { AuthGate } from './AuthGate'
 import { useEvents } from './useEvents'
 import { useMe } from './auth'
 import { PasswordPage } from '@/features/admin/PasswordPage'
+import { SystemAssistantDrawer } from '@/features/system-assistant/SystemAssistantDrawer'
 
 function LiveEvents() { useEvents(); return null }
 
@@ -68,6 +69,7 @@ function AppContent() {
             <Outlet />
           </main>
         </div>
+        <SystemAssistantDrawer />
         <Toaster position="bottom-right" richColors closeButton />
     </>
   )

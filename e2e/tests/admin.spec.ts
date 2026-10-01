@@ -34,6 +34,7 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
     await page.goto('/')
     await expect.poll(async () => await page.getByText('E2E 관리 도우미').count()).toBeGreaterThan(0)
     await page.goto('/assistants/manage')
+    await expect(page.getByText(id, { exact: true })).toBeVisible() // 목록 로드 전에 순서 편집을 누르면 초안이 비어 draggable 카드가 없다
     await page.getByRole('button', { name: '순서 편집' }).click()
     const cards = page.locator('[draggable="true"]')
     await cards.first().dragTo(cards.last()) // 시드 에이전트를 뒤로 — 새 에이전트가 맨 앞에 오면 병렬 spec들이 assistants[0]으로 집어 삭제가 막힌다
