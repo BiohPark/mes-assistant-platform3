@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { CONFIG, type AppConfig } from '../config/config.js'
 
 const createSchema = z.object({
-  assistantId: z.string().min(1), tags: z.array(z.string()).optional(), title: z.string().optional(),
+  assistantId: z.string().min(1), ownerId: z.string().min(1).optional(), assigneeIds: z.array(z.string().min(1)).optional(), tags: z.array(z.string()).optional(), title: z.string().optional(),
   referenceTaskId: z.string().optional(), inputFileIds: z.array(z.string()).optional(), firstMessage: z.string().trim().min(1).optional(),
 }).strict()
 const patchSchema = z.object({

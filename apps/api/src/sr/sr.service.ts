@@ -6,7 +6,7 @@ import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileObject, message, messageAttachment, serviceRequest, sharedResult, sharedResultFile, tag, task, thread } from '../db/schema.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
 import { EventsService } from '../events/events.service.js'
-import { SrNotificationsService } from './notifications.service.js'
+import { NotificationsService } from '../notifications/notifications.service.js'
 import { RequestsService } from '../requests/requests.service.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
@@ -17,12 +17,12 @@ type SrStatus = 'submitted' | 'reviewing' | 'in_progress' | 'responded' | 'done'
 
 @Injectable()
 export class SrService {
-  private readonly notifications: SrNotificationsService
+  private readonly notifications: NotificationsService
   constructor(@Inject(DB) private readonly db: Db, @Inject(DbTasksService) private readonly tasks: DbTasksService,
-    @Inject(EventsService) events: EventsService, @Optional() @Inject(SrNotificationsService) notifications?: SrNotificationsService,
+    @Inject(EventsService) events: EventsService, @Optional() @Inject(NotificationsService) notifications?: NotificationsService,
     @Optional() @Inject(RequestsService) private readonly requests?: RequestsService,
     @Optional() @Inject(CONFIG) private readonly config?: AppConfig) {
-    this.notifications = notifications ?? new SrNotificationsService(db, events)
+    this.notifications = notifications ?? new NotificationsService(db, events)
   }
 
   private async user(actor: string) {
@@ -146,7 +146,7 @@ export class SrService {
     const [setting] = await this.db.select().from(appSetting).where(eq(appSetting.key, 'srIntakeAssistantId'))
     if (typeof setting?.value === 'string') {
       const [intake] = await this.db.select().from(assistant).where(eq(assistant.id, setting.value))
-      if (intake) await this.notifications.send(intake.ownerId, actor, 'SR이 접수되었습니다', `${(await this.row(srId)).code} ${input.title.trim()}`, '/sr/manage')
+      if (intake) await this.notifications.send([intake.ownerId], actor, 'SR이 접수되었습니다', `${(await this.row(srId)).code} ${input.title.trim()}`, '/sr/manage')
     }
     return this.get(actor, srId)
   }
@@ -183,7 +183,7 @@ export class SrService {
     if (row.status === 'draft') throw new ConflictException('접수된 SR만 변경할 수 있습니다')
     if (row.status !== status) {
       await this.db.update(serviceRequest).set({ status, updatedAt: new Date() }).where(eq(serviceRequest.id, srId))
-      await this.notifications.send(row.requesterId, actor, `SR 상태가 변경되었습니다: ${status}`, `${row.code} ${row.title}`, '/sr')
+      await this.notifications.send([row.requesterId], actor, `SR 상태가 변경되었습니다: ${status}`, `${row.code} ${row.title}`, '/sr')
     }
     return this.get(actor, srId)
   }
@@ -246,7 +246,7 @@ export class SrService {
       await tx.update(serviceRequest).set({ status: sql`case when ${serviceRequest.status} in ('done', 'rejected') then ${serviceRequest.status} else 'responded' end`,
         updatedAt: new Date() }).where(eq(serviceRequest.id, srId))
     })
-    await this.notifications.send(row.requesterId, actor, '요청 결과가 공유되었습니다', `${row.code} ${row.title}`, '/sr')
+    await this.notifications.send([row.requesterId], actor, '요청 결과가 공유되었습니다', `${row.code} ${row.title}`, '/sr')
     return (await this.results(actor, srId)).find((item) => item.id === resultId)!
   }
   async results(actor: string, srId: string) { return (await this.get(actor, srId)).results }

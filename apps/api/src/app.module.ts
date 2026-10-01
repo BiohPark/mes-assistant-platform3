@@ -12,6 +12,8 @@ import { ConversationInputsModule } from './context/conversation-inputs.module.j
 import { EventsModule } from './events/events.module.js'
 import { AdminModule } from './admin/admin.module.js'
 import { SrModule } from './sr/sr.module.js'
+import { NotificationsModule } from './notifications/notifications.module.js'
+import { ReportsModule } from './reports/reports.module.js'
 
-@Module({ imports: [ConfigModule, DbModule, HealthModule, AuthModule, EventsModule, LlmModule, CatalogModule, AdminModule, TasksModule, FilesModule, RequestsModule, ConversationInputsModule, SrModule] })
+@Module({ imports: [ConfigModule, DbModule, HealthModule, AuthModule, EventsModule, LlmModule, CatalogModule, AdminModule, TasksModule, FilesModule, RequestsModule, ConversationInputsModule, SrModule, NotificationsModule, ReportsModule] })
 export class AppModule {}
