@@ -18,10 +18,10 @@ test('S6 크기 초과 실패가 기록되고 입력창을 다시 사용할 수 
   const task = await setup(page)
   // 트레이는 초과 전송을 막으므로 서버의 기록형 실패 계약은 API 경로에서 확인한다(입력창에 270k자를 채우면 추정 요청이 반복돼 화면 갱신이 늦어진다 — 채우지 않는다).
   const response = await page.request.post(`/api/threads/${task.threadId}/requests`, {
-    headers: { 'Idempotency-Key': `over-${Date.now()}` }, data: { content: 'x'.repeat(270_000) },
+    headers: { 'Idempotency-Key': `over-${Date.now()}` }, data: { content: 'x'.repeat(70_000) },
   })
   expect(response.status(), `요청 POST 응답 ${response.status()} ${await response.text().catch(() => '')}`.slice(0, 300)).toBe(201) // SSE 시작은 201
-  await expect(page.getByText(/요청 크기 한도 초과/).first()).toBeVisible({ timeout: 45_000 }) // 270k자 메시지 렌더에 로컬 8초·CI 러너는 더 걸린다(run 36823243414에서 15초 초과)
+  await expect(page.getByText(/요청 크기 한도 초과/).first()).toBeVisible({ timeout: 30_000 }) // 큰 메시지 렌더가 CI 러너에서 느리다(run 36823243414)
   await expect(page.getByRole('textbox', { name: '팀 의견 입력' })).toBeEnabled()
   const messages = await (await page.request.get(`/api/threads/${task.threadId}/messages`)).json() as Array<{ requestId?: string; status: string }>
   expect(messages.at(-1)).toMatchObject({ status: 'error', requestId: expect.any(String) })

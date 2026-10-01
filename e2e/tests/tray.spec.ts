@@ -20,7 +20,7 @@ test('E4 추정 한도 초과는 전송을 막고 입력 조절 동작을 보여
   await signup(page, 'limit')
   const task = await createTask(page)
   await page.goto(`/c/${task.id}`)
-  await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('x'.repeat(270_000))
+  await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('x'.repeat(70_000)) // E2E 한도 64 KiB(playwright.config) 초과
   await expect(page.getByRole('alert').filter({ hasText: '요청 크기 한도' })).toBeVisible()
   await expect(page.getByRole('button', { name: '전송', exact: true })).toBeDisabled()
   await expect(page.getByRole('link', { name: '새 대화로 이어가기' })).toHaveAttribute('href', new RegExp(`/new/.+ref=${task.id}`))
