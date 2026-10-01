@@ -16,7 +16,7 @@ export function applyEvent(query: QueryClient, event: string, data: Record<strin
   const invalidate = (key: unknown[]) => { void query.invalidateQueries({ queryKey: key }) }
   if (event === 'task.created' || event === 'task.updated') {
     invalidate(['tasks']); invalidate(['assistant-stats']); invalidate(['tag-suggest']); invalidate(['candidates']); invalidate(['estimate'])
-    if (taskId) { invalidate(['task', taskId]); invalidate(['activity', taskId]) }
+    if (taskId) { invalidate(['task', taskId]); invalidate(['activity', taskId]); invalidate(['notes', taskId]); invalidate(['task-report-preview', taskId]) }
   }
   if (event === 'message.appended' || event === 'request.updated') {
     if (threadId) invalidate(['messages', threadId])

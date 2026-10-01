@@ -16,8 +16,8 @@ import { PriorityBadge, TaskStatusBadge } from '@/components/StatusBadges'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { RelatedStrip } from './RelatedStrip'
+import { TaskCompleteDialog } from './TaskCompleteDialog'
 
-/** 데모 TaskHeader의 제목·상태·태그 작업. S4 완료 리포트는 이 단계에서 제외한다. */
 export function TaskHeader({ task, assistant }: { task: Task; assistant: Assistant }) {
   const actor = useActor()
   const query = useQueryClient()
@@ -27,6 +27,7 @@ export function TaskHeader({ task, assistant }: { task: Task; assistant: Assista
   const [title, setTitle] = useState(task.title)
   const [reopen, setReopen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [complete, setComplete] = useState(false)
   const saving = useRef(false)
   const refresh = () => { void query.invalidateQueries({ queryKey: ['task', task.id] }); void query.invalidateQueries({ queryKey: ['tasks'] }) }
 
@@ -60,7 +61,7 @@ export function TaskHeader({ task, assistant }: { task: Task; assistant: Assista
       <div className="ml-auto flex items-center gap-1">
         {task.status === 'done' ? <Button size="sm" variant="outline" onClick={() => setReopen(true)}><PlayCircle data-icon="inline-start" />다시 열기</Button> : <>
           {task.status === 'on_hold' ? <Button size="sm" variant="outline" onClick={() => void changeStatus('in_progress')}><PlayCircle data-icon="inline-start" />재개</Button> : <Button size="sm" variant="outline" onClick={() => void changeStatus('on_hold')}><PauseCircle data-icon="inline-start" />보류</Button>}
-          <Button size="sm" onClick={() => void changeStatus('done')}><CheckCircle2 data-icon="inline-start" />업무 완료</Button>
+          <Button size="sm" onClick={() => setComplete(true)}><CheckCircle2 data-icon="inline-start" />업무 완료</Button>
         </>}
         <Button variant="ghost" size="icon-sm" aria-label="대화 삭제" onClick={() => setConfirmDelete(true)}><Trash2 /></Button>
       </div>
@@ -72,5 +73,6 @@ export function TaskHeader({ task, assistant }: { task: Task; assistant: Assista
     <div className="mt-2"><RelatedStrip task={task} /></div>
     <ReasonDialog open={reopen} onOpenChange={setReopen} title="완료된 업무를 다시 열까요?" description="재개 사유를 이력에 기록합니다." confirmLabel="재개 확인" onConfirm={(reason) => changeStatus('in_progress', reason)} />
     <ConfirmDialog open={confirmDelete} onOpenChange={setConfirmDelete} title="대화를 삭제할까요?" description="메시지와 이 대화에서 만든 자료가 삭제됩니다." onConfirm={remove} />
+    <TaskCompleteDialog task={task} open={complete} onOpenChange={setComplete} />
   </div>
 }
