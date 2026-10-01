@@ -68,11 +68,11 @@
 | `task/InputToggle.tsx` | ☑참고/★주 입력 토글 | FR-10·20 | S2 | 그대로 | ✅ S2 ③ |
 | `task/ConversationInputs.tsx` | 참조 대화 입력 목록·갱신 안내 | FR-20–22 | S3 | 변경(API) | ✅ |
 | `task/ConversationPickerDialog.tsx` | 전체·메시지 범위·요약 선택 | FR-21 | S3 | 변경(API, 요약은 서버 대리 호출) | ✅ |
-| `task/ChecklistPanel.tsx` | 체크리스트(강제 아님) | FR-40 | S4 | 변경(API) | ⬜ |
-| `task/ChecklistReviewCard.tsx` | AI 달성도 m/n·"판단대로 체크" | FR-40 | S4 | 변경(서버 대리 호출) | ⬜ |
-| `task/NotesPanel.tsx` | 노트(첨부) | FR-41 | S4 | 변경(API) | ⬜ |
+| `task/ChecklistPanel.tsx` | 체크리스트(강제 아님) | FR-40 | S4 | 변경(API) | ✅ |
+| `task/ChecklistReviewCard.tsx` | AI 달성도 m/n·"판단대로 체크" | FR-40 | S4 | 변경(서버 대리 호출) | ✅ |
+| `task/NotesPanel.tsx` | 노트(첨부) | FR-41 | S4 | 변경(API) | ✅ |
 | `task/ActivityPanel.tsx` | 활동 이력 | FR-41 | S2 ②(앞당김) | 변경(API `GET /api/tasks/{id}/activity`) | ✅ S2 ② |
-| `task/TaskCompleteDialog.tsx` | 완료 절차(리포트·입력 출처·피드백) | FR-01·62 | S4 | 변경(API) | ⬜ |
+| `task/TaskCompleteDialog.tsx` | 완료 절차(리포트·입력 출처·피드백) | FR-01·62 | S4 | 변경(API) | ✅ |
 
 ### chat
 | 데모 모듈 | 하는 일 | FR | 스프린트 | 방식 | 상태 |
@@ -133,13 +133,13 @@
 | 데모 모듈 | 함수 | FR | 스프린트 | 방식 | 상태 |
 |---|---|---|---|---|---|
 | `tasks.ts` | `nextCode` `startConversation` `setTaskTitle` `updateTask` `addTag` `removeTag` `assertNotDone` `setInput` `switchInputVersion` `setTaskStatus` `setTaskModel` `setThreadModel` `deleteTask` | FR-01·02·03·10·11·35 | S2 | 변경(서버, 코드는 advisory lock 시퀀스) | ✅ S2 ②·③(`setThreadModel`은 S3) |
-| `tasks.ts` | `toggleChecklist` `addChecklistItem` `removeChecklistItem` `saveChecklistReview` `applyChecklistReview` `giveFeedback` | FR-40·01 | S4 | 변경(서버) | ⬜ |
+| `tasks.ts` | `toggleChecklist` `addChecklistItem` `removeChecklistItem` `saveChecklistReview` `applyChecklistReview` `giveFeedback` | FR-40·01 | S4 | 변경(서버) | ✅ |
 | `chat.ts` | `createThread` `setActiveThread` `nextMessageTime` `appendMessage` `isLiveReply` `assertNoActiveReply` `updateMessage` `deleteThread` `STALE_MS` `STALE_ERROR` | FR-04·33 | S2·S3 | 변경(`message.seq`, 활성 1건은 DB 인덱스) | ✅ S2 ②·S3 ①(활성 응답·정리는 chat_request로) |
 | `conversationInputs.ts` (+test) | `selectConversation` `applyConversationSummary` `refreshConversationInput` `setConversationWeight` `removeConversationInput` `findConversationInput` `loadConversationInputs` | FR-20–23 | S3 | 변경(서버) — 테스트 먼저 | ✅ |
 | `files.ts` (+test) | `fileVersions` `uploadFile` `saveAssistantOutput` `setOutputTag` `deleteFile` `filesForTask` `downloadBlob` `isTextFile` `formatSize` | FR-10–15 | S2 | 변경(`FileStorageService`, 소프트 삭제) — 테스트 먼저 | ✅ S2 ③(`blob`은 서버 `/content`) |
 | `assistants.ts` (+test) | `newChecklistTemplateItem` `defaultChecklistTemplate` `createAssistant` `updateAssistant` `setAssistantStatus` `setAssistantImage` `deleteAssistant` `reorderAssistants` | FR-60·40 | S2(읽기)·S4(편집) | 변경(SO 전용, `revision` 충돌 검사) — 테스트 먼저 | ✅ |
 | `sr.ts` | `startSrConversation` `submitSr` `setSrTitle` `conversationsForSr` `startTaskFromSr` `updateSrContent` `setSrStatus` `deleteDraftSr` `shareSrResult` | FR-50·51 | S4 | 변경(서버, 요청자 범위 강제) | ✅ |
-| `notes.ts` | `addNote` `deleteNote` | FR-41 | S4 | 변경(서버) | ⬜ |
+| `notes.ts` | `addNote` `deleteNote` | FR-41 | S4 | 변경(서버) | ✅ |
 | `notifications.ts` (+test) | `notify` `unreadCount` `markRead` `markAllRead` | FR-41 | S4 | 변경(서버·SSE) — 테스트 먼저 | ⬜ |
 | `activity.ts` | `logActivity` | FR-41 | S2 | 변경(서버, 추가만) | ✅ S2 ② |
 | `settings.ts` | `getSettings` `setLlmSettings` `setRequestBudget` `setSrIntakeAssistant` | FR-61 | S4 | 변경(`app_setting`, SO 전용, 키 제외) | ✅ |
