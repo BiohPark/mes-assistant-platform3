@@ -39,7 +39,7 @@ describe('catalog read API', () => {
   afterEach(async () => { await app.close(); vi.clearAllMocks() })
 
   it('requires login for all catalog routes', async () => {
-    for (const path of ['/api/assistants', '/api/assistants/stats', '/api/users', '/api/codes?group=assistant_level1']) {
+    for (const path of ['/api/assistants', '/api/assistants/stats', '/api/catalog/users', '/api/codes?group=assistant_level1']) {
       await request(app.getHttpServer()).get(path).expect(401)
     }
   })
@@ -47,8 +47,8 @@ describe('catalog read API', () => {
   it('returns mapped assistants, stats, active users and filtered codes', async () => {
     expect((await request(app.getHttpServer()).get('/api/assistants').set('Cookie', 'mes_session=member').expect(200)).body).toEqual([assistant])
     expect((await request(app.getHttpServer()).get('/api/assistants/stats').set('Cookie', 'mes_session=member').expect(200)).body[0].done).toBe(0)
-    expect((await request(app.getHttpServer()).get('/api/users').set('Cookie', 'mes_session=member').expect(200)).body).toHaveLength(1)
+    expect((await request(app.getHttpServer()).get('/api/catalog/users').set('Cookie', 'mes_session=member').expect(200)).body).toHaveLength(1)
     await request(app.getHttpServer()).get('/api/codes?group=assistant_level1').set('Cookie', 'mes_session=member').expect(200)
-    expect(reader.codes).toHaveBeenCalledWith('assistant_level1')
+    expect(reader.codes).toHaveBeenCalledWith('assistant_level1', false)
   })
 })

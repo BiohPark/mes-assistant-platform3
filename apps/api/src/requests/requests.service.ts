@@ -72,7 +72,7 @@ export class RequestsService implements OnModuleDestroy {
     if (!owner) throw new NotFoundException('대화를 찾을 수 없습니다')
     const limitBytes = settings.requestBudgetBytes ?? this.config.request.budgetBytes
     if (Buffer.byteLength(messages.map((item) => item.content).join('\n\n')) > limitBytes) throw new HttpException('요약할 원문이 요청 크기 한도를 넘습니다', 413)
-    const model = owner.modelId ?? agents.find((item) => item.id === owner.assistantId)?.modelId ?? this.config.llm.defaultModel ?? 'glm-5.2'
+    const model = owner.modelId ?? agents.find((item) => item.id === owner.assistantId)?.modelId ?? settings.llm.model
     const userMap = new Map(users.map((user) => [user.id, user]))
     try { return await this.runAuxiliary(actor, 'summary', (auxSignal) => summarizeConversation(this.provider, model, messages, userMap, { limitBytes, signal: auxSignal }), { signal }) }
     catch (error) { if (error instanceof SummaryBudgetError) throw new HttpException(error.message, 413); throw error }
@@ -171,7 +171,9 @@ export class RequestsService implements OnModuleDestroy {
     }
     const attachments = [...new Set(body.attachmentIds ?? [])]
     const oneShot = [...new Set(body.oneShotFileIds ?? [])]
-    if (attachments.length > this.config.fileMaxPerRequest) throw new HttpException({ code: 'ATTACHMENT_LIMIT' }, 413)
+    const [attachmentSetting] = await this.db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'fileMaxPerRequest'))
+    const attachmentLimit = typeof attachmentSetting?.value === 'number' ? attachmentSetting.value : this.config.fileMaxPerRequest
+    if (attachments.length > attachmentLimit) throw new HttpException({ code: 'ATTACHMENT_LIMIT' }, 413)
     if (oneShot.some((id) => !attachments.includes(id))) throw new BadRequestException('첨부 파일 ID가 올바르지 않습니다')
     if (attachments.length) {
       const valid = await this.db.select({ id: fileObject.id }).from(fileObject).where(and(inArray(fileObject.id, attachments),
@@ -190,7 +192,7 @@ export class RequestsService implements OnModuleDestroy {
     const domainThread: Thread = { id: owner.id, ...(owner.taskId ? { taskId: owner.taskId } : { srId: owner.srId! }), title: owner.title,
       createdBy: owner.createdBy, createdAt: owner.createdAt.toISOString(), archived: false, ...(owner.modelId ? { modelId: owner.modelId } : {}) }
     const { info } = await buildChatRequest(scope, domainThread, history, { dryRun: true, oneShotFileIds: oneShot }, ports)
-    return { ...publicInfo(info)!, overLimit: info.bytes > info.limitBytes, attachmentLimit: this.config.fileMaxPerRequest }
+    return { ...publicInfo(info)!, overLimit: info.bytes > info.limitBytes, attachmentLimit }
   }
 
   private async replay(row: typeof chatRequest.$inferSelect): Promise<StartedRequest> {
@@ -231,7 +233,8 @@ export class RequestsService implements OnModuleDestroy {
         if (duplicate) return { id: duplicate.id, replyMessageId: duplicate.replyMessageId, userMessageId: duplicate.userMessageId, duplicate: true }
         const [active] = await tx.select({ id: chatRequest.id }).from(chatRequest).where(and(eq(chatRequest.threadId, threadId), inArray(chatRequest.status, ACTIVE)))
         if (active) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
-        if (attachments.length > this.config.fileMaxPerRequest) throw new HttpException({ code: 'ATTACHMENT_LIMIT' }, 413)
+        const [attachmentSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'fileMaxPerRequest'))
+        if (attachments.length > (typeof attachmentSetting?.value === 'number' ? attachmentSetting.value : this.config.fileMaxPerRequest)) throw new HttpException({ code: 'ATTACHMENT_LIMIT' }, 413)
         if (attachments.length) {
           const valid = await tx.select({ id: fileObject.id }).from(fileObject).where(and(inArray(fileObject.id, attachments), eq(fileObject.originTaskId, owner.taskId ?? ''), isNull(fileObject.deletedAt)))
           if (valid.length !== attachments.length) throw new BadRequestException('첨부 파일이 이 대화에 없습니다')
@@ -257,9 +260,11 @@ export class RequestsService implements OnModuleDestroy {
         const [currentAssistant] = currentTask ? await tx.select().from(assistant).where(eq(assistant.id, currentTask.assistantId)) : []
         const [budgetSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
         const limitBytes = typeof budgetSetting?.value === 'number' ? budgetSetting.value : this.config.request.budgetBytes
+        const [modelSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'defaultModel'))
+        const [deliverySetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'fileDelivery'))
         await tx.insert(chatRequest).values({ id: requestId, threadId, userMessageId, replyMessageId, requestedBy: actor, idempotencyKey: key,
-          status: 'pending', provider: this.config.llm.mode, transport: this.config.llm.mode === 'live' && this.config.llm.preset === 'openwebui' ? 'openwebui' : 'inline',
-          model: owner.modelId ?? currentTask?.modelId ?? currentAssistant?.modelId ?? this.config.llm.defaultModel ?? 'glm-5.2',
+          status: 'pending', provider: this.config.llm.mode, transport: this.config.llm.mode === 'live' && (deliverySetting?.value ?? (this.config.llm.preset === 'openwebui' ? 'openwebui' : 'inline')) === 'openwebui' ? 'openwebui' : 'inline',
+          model: owner.modelId ?? currentTask?.modelId ?? currentAssistant?.modelId ?? (typeof modelSetting?.value === 'string' ? modelSetting.value : this.config.llm.defaultModel ?? 'glm-5.2'),
           bytes: 0, limitBytes, leaseUntil: dbLeaseUntil(this.config.request.leaseMs) })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'message.sent', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
@@ -312,10 +317,11 @@ export class RequestsService implements OnModuleDestroy {
       const replyMessageId = randomUUID(), id = randomUUID()
       const [budgetSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
       const limitBytes = typeof budgetSetting?.value === 'number' ? budgetSetting.value : this.config.request.budgetBytes
+      const [deliverySetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'fileDelivery'))
       await tx.insert(message).values({ id: replyMessageId, threadId: original.threadId, seq: Number(max?.seq ?? 0) + 1, role: 'assistant', content: '', status: 'streaming' })
       await tx.insert(chatRequest).values({ id, threadId: original.threadId, userMessageId: original.userMessageId, replyMessageId, requestedBy: actor,
         retryOf: original.id, idempotencyKey: key, status: 'pending', provider: this.config.llm.mode,
-        transport: this.config.llm.mode === 'live' && this.config.llm.preset === 'openwebui' ? 'openwebui' : 'inline',
+        transport: this.config.llm.mode === 'live' && (deliverySetting?.value ?? (this.config.llm.preset === 'openwebui' ? 'openwebui' : 'inline')) === 'openwebui' ? 'openwebui' : 'inline',
         model: original.model, bytes: 0, limitBytes, leaseUntil: dbLeaseUntil(this.config.request.leaseMs) })
       await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId: id, retryOf: original.id } })
       return { id, replyMessageId, userMessageId: original.userMessageId, taskId: owner.taskId, deadlineAt,

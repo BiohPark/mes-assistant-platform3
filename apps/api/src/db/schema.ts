@@ -47,6 +47,7 @@ export const appUser = mysqlTable('app_user', {
   isSystemOwner: boolean('is_system_owner').notNull().default(false),
   isBusinessOwner: boolean('is_business_owner').notNull().default(false),
   active: boolean('active').notNull().default(true),
+  mustChangePassword: boolean('must_change_password').notNull().default(false),
   createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
   loginId: varchar('login_id', { length: 191 }).unique('app_user_login_id_key'),
   passwordHash: text('password_hash'),

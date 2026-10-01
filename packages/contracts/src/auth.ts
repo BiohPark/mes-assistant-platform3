@@ -16,5 +16,6 @@ export const MeSchema = z.object({
   name: z.string(),
   role: z.string(),
   roles: z.array(RoleSchema),
+  mustChangePassword: z.boolean().optional(),
 })
 export type Me = z.infer<typeof MeSchema>

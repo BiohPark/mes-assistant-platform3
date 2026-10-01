@@ -11,12 +11,14 @@ export interface AuthUser {
   role: string
   isSystemOwner: boolean
   isBusinessOwner?: boolean
+  mustChangePassword?: boolean
 }
 
 export interface SessionStore {
   create(userId: string): Promise<{ token: string; expiresAt: Date }>
   resolve(token: string): Promise<AuthUser | null>
   destroy(token: string): Promise<void>
+  destroyUserSessions?(userId: string): Promise<void>
 }
 
 export const SESSION_STORE = Symbol('SESSION_STORE')
@@ -41,7 +43,7 @@ export class DbSessionStore implements SessionStore {
 
   async resolve(token: string): Promise<AuthUser | null> {
     const [row] = await this.db
-      .select({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner })
+      .select({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner, mustChangePassword: appUser.mustChangePassword })
       .from(appSession)
       .innerJoin(appUser, eq(appUser.id, appSession.userId))
       .where(and(eq(appSession.id, hashToken(token)), gt(appSession.expiresAt, new Date()), eq(appUser.active, true)))

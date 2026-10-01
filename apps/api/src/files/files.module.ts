@@ -9,5 +9,6 @@ import { FilesController, TaskFilesController } from './files.controller.js'
   imports: [MulterModule.registerAsync({ inject: [CONFIG], useFactory: (config: AppConfig) => ({ limits: { fileSize: config.fileMaxBytes, files: 1 } }) })],
   controllers: [FilesController, TaskFilesController],
   providers: [{ provide: FILE_STORAGE, inject: [CONFIG], useFactory: (config: AppConfig) => new FileStorageService(config.fileStorageRoot) }, DbFilesService],
+  exports: [FILE_STORAGE],
 })
 export class FilesModule {}
