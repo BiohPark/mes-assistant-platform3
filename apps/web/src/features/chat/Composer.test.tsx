@@ -7,14 +7,14 @@ function renderComposer(props: React.ComponentProps<typeof Composer>) {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Composer {...props} /></QueryClientProvider>)
 }
 
-it('sends text as discussion while AI and file controls are unavailable', async () => {
+it('sends text to AI by default while team and file controls are unavailable', async () => {
   const send = vi.fn(async () => undefined)
   renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: false })
   expect(screen.queryByRole('button', { name: '파일 첨부' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '팀 의견 (AI 미전송)' })).not.toBeInTheDocument()
-  fireEvent.change(screen.getByPlaceholderText('팀 의견을 남기세요 (AI에게 전송되지 않음)'), { target: { value: '안녕하세요' } })
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '안녕하세요' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
-  await waitFor(() => expect(send).toHaveBeenCalledWith('안녕하세요', [], true))
+  await waitFor(() => expect(send).toHaveBeenCalledWith('안녕하세요', [], false))
 })
 
 it('keeps text during a failed send and clears it after a successful retry', async () => {
@@ -39,7 +39,7 @@ it('pins attachments by default and lets a sender mark one as message-only', asy
   fireEvent.click(screen.getByText('입력으로 고정'))
   expect(screen.getByText('이번 메시지만')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
-  await waitFor(() => expect(send).toHaveBeenCalledWith('', [{ file, once: true }], true))
+  await waitFor(() => expect(send).toHaveBeenCalledWith('', [{ file, once: true }], false))
 })
 
 it('rejects more than 20 attachments before sending', async () => {

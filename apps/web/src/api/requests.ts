@@ -14,6 +14,8 @@ export interface RequestInputRecord {
   sourceLabel?: string | null
   oneShot?: boolean
   delivery?: 'attached' | 'inline' | 'metadata_only' | 'failed' | null
+  mode?: 'full' | 'messages' | 'summary' | null
+  messageCount?: number | null
   bytes: number
   error?: string | null
 }
@@ -30,6 +32,7 @@ export interface RequestRecord {
   limitBytes: number
   error?: string | null
   retryOf?: string | null
+  hasSnapshot: boolean
   inputs: RequestInputRecord[]
 }
 
