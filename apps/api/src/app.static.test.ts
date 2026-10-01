@@ -59,6 +59,19 @@ describe('web 정적 제공', () => {
     await client.get('/%2e%2e/index.html').expect(400)
   })
 
+  it('web 루트가 심볼릭 링크여도 내부 파일을 제공한다', async (context) => {
+    const linkedDist = join(root, 'linked-dist')
+    writeFileSync(join(dist, 'assets', 'plain.js'), 'window.plain = 1')
+    try { symlinkSync(dist, linkedDist, process.platform === 'win32' ? 'junction' : 'dir') }
+    catch (error) {
+      if (process.platform === 'win32' && (error as NodeJS.ErrnoException).code === 'EPERM') { context.skip(); return }
+      throw error
+    }
+    const client = await start(linkedDist)
+    expect((await client.get('/').expect(200)).text).toBe('<h1>web</h1>')
+    expect((await client.get('/assets/plain.js').expect(200)).text).toBe('window.plain = 1')
+  })
+
   it('web 폴더 밖을 가리키는 링크를 제공하지 않는다', async (context) => {
     const secret = join(root, 'secret.txt')
     writeFileSync(secret, 'secret')

@@ -1,7 +1,7 @@
 import type { INestApplication } from '@nestjs/common'
 import { existsSync, realpathSync } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
-import { relative, resolve, sep } from 'node:path'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import cookieParser from 'cookie-parser'
 import type { Request, Response, NextFunction } from 'express'
 import { eq } from 'drizzle-orm'
@@ -15,7 +15,7 @@ export function configureApp<T extends INestApplication>(app: T, config: AppConf
   app.setGlobalPrefix('api')
   app.use(cookieParser(config.sessionSecret))
   if (existsSync(config.webDistDir)) {
-    const webRoot = realpathSync(config.webDistDir)
+    const webRoot = realpathSync.native(config.webDistDir)
     app.use((req: Request, res: Response, next: NextFunction) => {
       const rawPath = req.originalUrl.split('?')[0]
       if (/^\/api(?:\/|$)/i.test(rawPath) || req.method !== 'GET') return next()
@@ -32,7 +32,7 @@ export function configureApp<T extends INestApplication>(app: T, config: AppConf
       const send = async (file: string, immutable: boolean) => {
         const actual = await realpath(file)
         const pathInRoot = relative(webRoot, actual)
-        if (pathInRoot === '..' || pathInRoot.startsWith(`..${sep}`)) return res.status(403).end()
+        if (pathInRoot === '..' || pathInRoot.startsWith(`..${sep}`) || isAbsolute(pathInRoot)) return res.status(403).end()
         res.sendFile(actual, { headers: { 'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache' } }, (error) => { if (error) next(error) })
       }
       void stat(target).then((info) => {
