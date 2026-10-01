@@ -1,4 +1,7 @@
 import type { INestApplication } from '@nestjs/common'
+import { existsSync, realpathSync } from 'node:fs'
+import { realpath, stat } from 'node:fs/promises'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import cookieParser from 'cookie-parser'
 import type { Request, Response, NextFunction } from 'express'
 import { eq } from 'drizzle-orm'
@@ -11,6 +14,36 @@ import { appSetting } from './db/schema.js'
 export function configureApp<T extends INestApplication>(app: T, config: AppConfig): T {
   app.setGlobalPrefix('api')
   app.use(cookieParser(config.sessionSecret))
+  if (existsSync(config.webDistDir)) {
+    const webRoot = realpathSync.native(config.webDistDir)
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      const rawPath = req.originalUrl.split('?')[0]
+      if (/^\/api(?:\/|$)/i.test(rawPath) || req.method !== 'GET') return next()
+      let pathname: string
+      try { pathname = decodeURIComponent(rawPath) }
+      catch { return res.status(400).end() }
+      if (/^\/api(?:\/|$)/i.test(pathname)) return next()
+      if (pathname.includes('\\') || pathname.includes('\0') || pathname.includes('%') || pathname.split('/').some((part) => part === '..' || part === '.')) {
+        return res.status(400).end()
+      }
+      const target = resolve(config.webDistDir, `.${pathname}`)
+      const inside = relative(config.webDistDir, target)
+      if (inside.startsWith(`..${sep}`) || inside === '..' || resolve(target) === resolve(config.webDistDir) && pathname !== '/') return res.status(400).end()
+      const send = async (file: string, immutable: boolean) => {
+        const actual = await realpath(file)
+        const pathInRoot = relative(webRoot, actual)
+        if (pathInRoot === '..' || pathInRoot.startsWith(`..${sep}`) || isAbsolute(pathInRoot)) return res.status(403).end()
+        res.sendFile(actual, { headers: { 'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache' } }, (error) => { if (error) next(error) })
+      }
+      void stat(target).then((info) => {
+        const file = info.isFile() ? target : resolve(config.webDistDir, 'index.html')
+        return send(file, info.isFile() && /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[^/]+$/.test(pathname))
+      }).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') return next(error)
+        void send(resolve(config.webDistDir, 'index.html'), false).catch(next)
+      })
+    })
+  }
   const sessions = app.get<SessionStore>(SESSION_STORE)
   const jsonBody = (configuredLimit: number | (() => Promise<number>)) => async (req: Request, res: Response, next: NextFunction) => {
     if (!req.is('application/json')) return next()

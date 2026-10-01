@@ -45,6 +45,7 @@ Windows와 같다. `pnpm dev` → http://localhost:5173 → 회원가입(예: `d
 ## 8. 운영 배포
 
 운영 대상은 Windows다([windows.md §8](windows.md)). macOS는 개발용으로만 쓴다.
+배포 묶음 생성은 저장소 루트에서 `pnpm release`로 한다.
 
 ## 9. 문제 해결 (macOS 차이)
 
