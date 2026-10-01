@@ -107,8 +107,8 @@
 | `reports/ReportsPage.tsx` | 완료 추이·에이전트별 리드타임·사용자별 활동·SR 상태·자료 흐름·태그별 대화·에이전트별 현황·피드백 다이제스트 | FR-62 | S4 | 변경(서버 집계, 완료 이벤트 시각 기준) | ✅ |
 | `reports/charts.tsx` | 차트 팔레트 | FR-62 | S4 | 그대로 | ✅ |
 | `settings/SettingsPage.tsx` | 아래 "설정 항목" 표 | FR-61 | S4 | 변경 | ✅ |
-| `system-assistant/SystemAssistantDrawer.tsx` | 플랫폼 조작용 시스템 assistant(제안 카드 → 확인 후 적용) | — | S4 | 변경(U1(a): 서버 대리 호출, 제안 카드 → 사용자 확인 → 기존 API·권한 그대로) | ⬜ |
-| `system-assistant/actions.ts` | 도구 호출 → 제안 변환 | — | S4 | U1(a) | ⬜ |
+| `system-assistant/SystemAssistantDrawer.tsx` | 플랫폼 조작용 시스템 assistant(제안 카드 → 확인 후 적용) | — | S4 | 변경(U1(a): 서버 대리 호출, 제안 카드 → 사용자 확인 → 기존 API·권한 그대로) | ✅ |
+| `system-assistant/actions.ts` | 도구 호출 → 제안 변환 | — | S4 | U1(a) | ✅ |
 
 ## 4. `src/llm`
 
