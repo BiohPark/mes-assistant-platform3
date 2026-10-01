@@ -6,7 +6,7 @@
 > 문서와 실제가 어긋나지 않도록, 이 문서에서 ` ```powershell ci ` 로 표시된 명령 블록은 CI의 Windows 잡(`setup-guide`)이 **그대로 실행**한다(`scripts/run-doc-commands.mjs`). GUI 설치·Docker·브라우저 로그인 단계는 사람이 확인한다.
 > 명령이 바뀌면 이 문서를 **같은 커밋에서** 고친다.
 
-현재 단계: **S1 진행 중** — 회원가입·로그인하면 빈 허브가 보인다. 에이전트·대화 기능은 S2부터.
+현재 단계: **S5 진행 중** — 운영 배포 묶음과 Windows 서비스 절차를 확인한다.
 
 ---
 
@@ -85,6 +85,7 @@ pnpm setup:env
 | `KEYCLOAK_PORT` · `KEYCLOAK_ADMIN_PASSWORD` · `DEV_USER_PASSWORD` | Keycloak(OIDC 모드 전용, `--profile oidc`) 포트·관리 콘솔 비밀번호·테스트 계정 비밀번호 | 가상 값 |
 | `FAKE_OPENWEBUI_PORT` | 가짜 OpenWebUI 포트 | `3101` |
 | `API_PORT` | api 포트 (web 개발 서버의 `/api` 프록시도 이 값을 따른다) | `3000` |
+| `WEB_DIST_DIR` | web 정적 파일 위치(선택). 비우면 api 기준 `../web/dist`를 찾고, 폴더가 없으면 제공하지 않는다 | 비움 |
 | `AUTH_MODE` | 로그인 방식: `local`(앱 자체 로그인, 기본) 또는 `oidc`(SSO) | `local` |
 | `APP_ORIGIN` | 브라우저가 여는 앱 주소. OIDC 콜백은 `{APP_ORIGIN}/api/auth/callback`. `https://`면 Secure 쿠키 | `http://localhost:5173` |
 | `DATABASE_URL` | api가 붙는 MariaDB | `mysql://mes:…@localhost:3306/mes_hub` |
@@ -222,14 +223,19 @@ api(워크스페이스 패키지 빌드 → 감시 모드)와 web(Vite)이 함�
 
 **확인**: 브라우저에서 http://localhost:5173 → 회원가입(예: `dev-owner`) → "에이전트 허브"에 **"등록된 에이전트가 없습니다"** 가 보이면 성공. 오른쪽 위 이름 → 로그아웃 → 다시 로그인.
 
-### 운영 모드 (S0 기준 — 배포 방식은 S5에서 확정)
+### 운영 모드 — 단일 주소
 
 ```powershell ci
-pnpm build
+pnpm release
 ```
 
-- api: `pnpm --filter @mes/api start` (루트 `.env`를 읽는다. 운영은 환경 변수로 주입)
-- web: `apps\web\dist`의 **정적 파일**을 웹 서버가 제공하고, 같은 주소의 `/api/*`를 api로 넘겨야 한다(쿠키·OIDC 콜백이 한 주소여야 함). S0에서는 확인용으로 `pnpm --filter @mes/web preview`(http://localhost:5173, `/api` 프록시 포함)를 쓸 수 있다. 운영용 제공 방식(IIS 리버스 프록시 / api가 정적 파일까지 제공 등)은 S5에서 정한다.
+`release\mes-hub`가 생성된다. api가 web 정적 파일을 함께 제공하므로 앱과 `/api/*`는 `APP_ORIGIN`의 같은 주소를 쓴다. 묶음의 `.env.example`을 `.env`로 복사하고 운영 값을 채운 뒤, 묶음 폴더에서 `node --env-file=.env api\dist\main.js`로 실행한다. 대상 PC에는 Node 22와 MariaDB만 필요하고 pnpm은 필요 없다. `WEB_DIST_DIR`을 비우면 묶음의 `web\dist`를 자동으로 찾는다. 개발 모드는 계속 Vite(`pnpm dev`)를 쓴다.
+
+CI는 생성된 묶음을 직접 기동해 정적 페이지와 API를 확인한다. 서비스 설치는 운영 서버에서 8장대로 한다.
+
+```powershell ci
+node scripts/verify-release.mjs
+```
 
 ## 7. 테스트 실행
 
@@ -250,19 +256,17 @@ pnpm test:db
 
 `pnpm test:e2e`는 api·web을 알아서 띄운다(이미 떠 있으면 재사용). CI의 Windows 잡은 E2E를 아직 돌리지 않는다(S1 이후 추가).
 
-## 8. 운영 배포 초안 — Windows 서비스 (S5에서 확정)
+## 8. 운영 배포 — Windows 서비스
 
-> **초안이다.** 방식은 S5에서 정한다. 컨테이너 배포도 후보로 남아 있다.
+1. 서버에 Node 22와 MariaDB를 설치하고, 4장의 문자셋·정렬 및 앱 DB 사용자를 준비한다. 빌드 PC에서 `pnpm release`를 실행해 `release\mes-hub` 전체를 서버에 복사한다.
+2. 묶음 루트에서 `.env.example`을 `.env`로 복사해 `DATABASE_URL`, `SESSION_SECRET`, `APP_ORIGIN`(예: `http://서버주소:3000` 또는 TLS 프록시의 `https://…`), `FILE_STORAGE_ROOT` 등 운영 값으로 바꾼다. 파일 저장소는 배포 묶음 **밖의 절대 경로**로 두고, 로그 폴더(`logs`)와 함께 서비스 계정에 쓰기 권한을 준다. `.env`는 서비스 계정과 관리자만 읽도록 ACL을 제한한다. 비밀값을 XML에 넣지 않는다.
+3. 묶음 루트에서 `node --env-file=.env api\dist\db\migrate.js`로 DB를 마이그레이션한다. 첫 배포라면 관리자가 `INITIAL_SYSTEM_OWNERS`의 ID로 가장 먼저 가입한다.
+4. [WinSW 공식 릴리스](https://github.com/winsw/winsw/releases)에서 Windows x64용 **v3** 실행 파일을 받아 `deploy\windows\mes-hub.exe`로 저장한다(v3는 현재 사전 릴리스). 저장소와 배포 묶음에는 exe가 없다. 관리자 PowerShell에서 `deploy\windows\mes-hub.exe install` 후 `deploy\windows\mes-hub.exe start`를 실행한다. XML은 묶음 루트를 작업 폴더로 하여 `node.exe --env-file=<묶음 루트>\.env api\dist\main.js`를 실행하고, 실패 시 재시작하며 `logs`에 10 MB 단위로 로그를 회전한다. 서비스 계정의 PATH에서 `node.exe`를 찾을 수 있어야 한다.
+5. 브라우저에서 `APP_ORIGIN`을 열고 로그인 및 `/api/health` 응답을 확인한다. 실제 서비스 계정과 ACL·네트워크 접근은 서버에서 확인한다.
 
-api를 Windows 서비스로 상시 실행하는 후보:
+업데이트 전에는 **DB를 백업**하고 기존 묶음 폴더를 별도로 보관한다. `deploy\windows\mes-hub.exe stop` → 새 묶음으로 폴더 교체(기존 `.env`, `deploy\windows\mes-hub.exe`, `logs`를 새 묶음의 같은 위치에 복원) → 위 마이그레이션 → `deploy\windows\mes-hub.exe start` → 브라우저 확인 순서다. 파일 저장소는 묶음 밖에 유지한다. 문제가 생기면 서비스를 중지하고 이전 묶음을 복원해 다시 시작한다. DB 스키마가 바뀐 릴리스는 파일만 되돌려 호환되는지 확인할 수 없으므로 백업 DB 복원 여부를 먼저 판단한다.
 
-| 후보 | 방식 | 메모 |
-|---|---|---|
-| [WinSW](https://github.com/winsw/winsw) | XML 설정 + 실행 파일로 `node dist\main.js`를 서비스 등록 | 단일 exe, 로그 회전, 자동 재시작 |
-| [NSSM](https://nssm.cc/) | `nssm install mes-hub-api node.exe …` | 간단하지만 유지보수가 멈춤 |
-| [node-windows](https://github.com/coreybutler/node-windows) | Node 스크립트로 서비스 등록 | 추가 의존성 |
-
-공통 준비: `pnpm build` → 서비스 작업 폴더 `apps\api` → 실행 `node dist\main.js` → 환경 변수는 서비스 설정으로(`.env` 대신) → 파일 저장 루트 `FILE_STORAGE_ROOT`(예: `D:\mes-hub\storage` 또는 `\\nas\mes-hub`)에 서비스 계정 쓰기 권한 → web 정적 파일은 IIS 등에서 제공하고 `/api`를 api로 프록시.
+IIS를 TLS 앞단으로 둘 때만 ARR 리버스 프록시가 전체 요청을 이 서비스로 넘기게 한다. `/api/events`의 SSE 응답 버퍼링을 끄고 프록시 유휴 시간을 스트림 유지 시간보다 길게 설정한다. 이벤트 브로드캐스트는 **단일 api 인스턴스** 전제다. IIS 없이도 api 포트로 직접 접속할 수 있다.
 
 ## 9. 문제 해결
 
