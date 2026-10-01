@@ -6,8 +6,8 @@ export interface Actor { userId: string }
 export interface StartConversationInput { assistantId: string; tags?: string[]; title?: string; referenceTaskId?: string; inputFileIds?: string[]; firstMessage?: string }
 export interface TaskFilter { assistantId?: string; status?: TaskStatus[]; tags?: string[]; mine?: boolean }
 
-async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
-  const response = await fetch(`/api${path}`, { method, credentials: 'same-origin', ...(body !== undefined && { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) })
+async function request<T>(path: string, method = 'GET', body?: unknown, idempotencyKey?: string): Promise<T> {
+  const response = await fetch(`/api${path}`, { method, credentials: 'same-origin', ...(body !== undefined && { headers: { 'content-type': 'application/json', ...(idempotencyKey && { 'Idempotency-Key': idempotencyKey }) }, body: JSON.stringify(body) }) })
   if (!response.ok) throw new Error((await response.json().catch(() => null))?.message ?? `HTTP ${response.status}`)
   return response.status === 204 ? undefined as T : response.json() as Promise<T>
 }
@@ -24,8 +24,8 @@ function refresh(taskId?: string) {
   }
 }
 
-export async function startConversation(_actor: Actor, input: StartConversationInput): Promise<{ task: Task; thread: Thread; warnings: string[] }> {
-  const task = await request<Task & { warnings?: string[] }>('/tasks', 'POST', input)
+export async function startConversation(_actor: Actor, input: StartConversationInput, idempotencyKey?: string): Promise<{ task: Task; thread: Thread; warnings: string[] }> {
+  const task = await request<Task & { warnings?: string[] }>('/tasks', 'POST', input, idempotencyKey)
   refresh(task.id)
   return { task, thread: { id: task.threadId!, taskId: task.id, title: '대화', createdAt: task.createdAt, createdBy: task.createdBy, archived: false }, warnings: task.warnings ?? [] }
 }

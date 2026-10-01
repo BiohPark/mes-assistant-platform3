@@ -210,6 +210,9 @@ export class DbFilesService {
   async candidates(taskId: string, actor?: string) {
     if (actor) await assertTaskAccess(this.db, actor, taskId)
     const { rows, chainRows, selected, via } = await this.candidateRows(taskId)
+    const originIds = [...new Set(rows.map((row) => row.originTaskId).filter((id): id is string => !!id))]
+    const origins = originIds.length ? await this.db.select({ id: task.id, assistantId: task.assistantId }).from(task).where(inArray(task.id, originIds)) : []
+    const assistantByTask = new Map(origins.map((origin) => [origin.id, origin.assistantId]))
     const selectedById = new Map(selected.map((item) => [item.fileId, item.weight]))
     const byId = new Map(chainRows.map((row) => [row.id, row]))
     const rootOf = (row: FileRow) => { let current = row; const seen = new Set<string>(); while (current.previousId && byId.has(current.previousId) && !seen.has(current.id)) { seen.add(current.id); current = byId.get(current.previousId)! } return current.id }
@@ -222,7 +225,7 @@ export class DbFilesService {
       const head = heads.get(rootOf(row))!.id
       const olderVersionIds: string[] = []
       if (head === row.id) { let previous = row.previousId; while (previous && byId.has(previous)) { if (!byId.get(previous)!.deletedAt) olderVersionIds.push(previous); previous = byId.get(previous)!.previousId } }
-      return { file: fileMeta(row), sourceTaskId: row.originTaskId, viaTags: via.get(row.originTaskId!) ?? [], role: row.isOutput || row.source === 'assistant' ? 'output' : 'upload',
+      return { file: fileMeta(row), sourceTaskId: row.originTaskId, sourceAssistantId: assistantByTask.get(row.originTaskId!), viaTags: via.get(row.originTaskId!) ?? [], role: row.isOutput || row.source === 'assistant' ? 'output' : 'upload',
         ...(selectedById.has(row.id) && { selected: selectedById.get(row.id) }),
         ...(head !== row.id && { newerVersionId: head }), ...(olderVersionIds.length && { olderVersionIds }) }
     })

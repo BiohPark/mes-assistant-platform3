@@ -13,3 +13,11 @@ it('labels an assistant reply as assistant when it offers output saving', async 
   expect(screen.queryByText('팀 의견 · AI 미전송')).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '산출물로 저장' })).toBeInTheDocument()
 })
+
+it('shows attached file names below a team message and marks deleted files', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/f1') ? jsonResponse(200, { id: 'f1', name: 'note.txt' }) : jsonResponse(404, {})))
+  const message = { id: 'm2', threadId: 'h', seq: 2, role: 'user', kind: 'discussion', content: '검토', status: 'done', createdAt: '2026-01-01T00:00:00.000Z', attachmentIds: ['f1', 'gone'] } as Message
+  renderWithProviders(<TooltipProvider><MessageBubble message={message} /></TooltipProvider>)
+  expect(await screen.findByText('note.txt')).toBeInTheDocument()
+  expect(await screen.findByText(/삭제된 파일/)).toBeInTheDocument()
+})

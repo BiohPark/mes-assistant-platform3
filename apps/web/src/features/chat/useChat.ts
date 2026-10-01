@@ -15,6 +15,12 @@ const load = (threadId: string): Attempt | null => {
 const save = (attempt: Attempt) => sessionStorage.setItem(storageKey(attempt.threadId), JSON.stringify(attempt))
 const clear = (attempt: Attempt) => sessionStorage.removeItem(storageKey(attempt.threadId))
 
+export function queueFirstRequest(threadId: string, body: { content: string; attachmentIds: string[]; oneShotFileIds: string[] }) {
+  const attempt = load(threadId) ?? { key: crypto.randomUUID(), threadId, text: body.content, attachmentIds: body.attachmentIds,
+    path: `/threads/${encodeURIComponent(threadId)}/requests`, body }
+  save(attempt)
+}
+
 export function useChat(threadId?: string) {
   const query = useQueryClient()
   const [run, setRun] = useState<ChatRun | null>(null)

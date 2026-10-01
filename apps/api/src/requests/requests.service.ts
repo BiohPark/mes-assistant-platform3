@@ -371,7 +371,7 @@ export class RequestsService implements OnModuleDestroy {
     const inputs = await this.db.select().from(chatRequestInput).where(eq(chatRequestInput.requestId, id)).orderBy(chatRequestInput.seq)
     return { id: row.id, threadId: row.threadId, status: row.status, phase: row.phase, code: errorCode(row.status, row.error, row.bytes), provider: row.provider, transport: row.transport,
       model: row.model, bytes: row.status === 'pending' && row.bytes === 0 ? null : row.bytes, limitBytes: row.limitBytes, error: row.error, retryOf: row.retryOf, createdAt: row.createdAt.toISOString(),
-      finishedAt: row.finishedAt?.toISOString(), inputs: inputs.map((item) => ({ kind: item.kind, weight: item.weight, fileId: item.fileId,
+      finishedAt: row.finishedAt?.toISOString(), hasSnapshot: row.snapshot !== null, inputs: inputs.map((item) => ({ kind: item.kind, weight: item.weight, fileId: item.fileId,
         fileVersion: item.fileVersion, sourceLabel: item.sourceLabel, oneShot: item.oneShot, delivery: item.delivery, sourceTaskId: item.sourceTaskId,
         snapshotId: item.snapshotId, mode: item.mode, messageCount: item.messageCount, bytes: item.bytes, error: item.error })) }
   }
@@ -380,7 +380,8 @@ export class RequestsService implements OnModuleDestroy {
     if (actor) await assertThreadAccess(this.db, actor, row.threadId)
     const value = row.snapshot as Record<string, unknown> | null
     if (typeof value?.storageKey === 'string') return JSON.parse(Buffer.from(await this.storage.read(value.storageKey)).toString('utf8')) as unknown
-    return value ?? {}
+    if (!value) throw new NotFoundException('원본 요청이 없습니다')
+    return value
   }
 
   private async saveBuilt(id: string, info: RequestInfo): Promise<boolean> {
@@ -505,7 +506,8 @@ export class RequestsService implements OnModuleDestroy {
       if (built.failed.length) { failure = `파일 ${built.failed.length}개(${built.failed.map((item) => item.name).join(', ')})를 OpenWebUI에 전달하지 못해 요청을 보내지 않았습니다.`; return }
       if (info.bytes > info.limitBytes) { failure = `요청 크기 한도 초과 (${Math.ceil(info.bytes / 1024)} KB / ${Math.ceil(info.limitBytes / 1024)} KB)`; return }
       snapshot = { sentAt: new Date().toISOString(), provider: this.provider.kind, model: built.model, meta: built.meta,
-        messages: built.messages }
+        messages: built.messages, ...(built.files?.length && { files: built.info.inputs.flatMap((input) => input.kind === 'file' && input.delivery === 'attached'
+          ? [{ type: 'file', fileId: input.fileId }] : []) }) }
       const serialized = Buffer.from(JSON.stringify(snapshot))
       if (serialized.byteLength > 1024 * 1024) {
         const now = new Date(), key = `requests/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${id}.json`

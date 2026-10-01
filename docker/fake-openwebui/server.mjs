@@ -8,6 +8,8 @@ const MODELS = [
   { id: 'fake-writer', name: '가짜 문서 작성 에이전트' },
 ]
 const uploads = new Map()
+const requests = []
+const captureRequests = process.env.FAKE_OWUI_E2E === '1'
 
 function json(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
@@ -29,6 +31,7 @@ function lastUserText(messages = []) {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost')
   if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: true })
+  if (captureRequests && req.method === 'GET' && url.pathname === '/__e2e/requests') return json(res, 200, requests)
   if (req.method === 'GET' && url.pathname === '/api/models') {
     return json(res, 200, { data: MODELS.map((m) => ({ ...m, object: 'model', owned_by: 'fake' })) })
   }
@@ -49,6 +52,10 @@ const server = createServer(async (req, res) => {
   }
   if (req.method === 'POST' && url.pathname === '/api/chat/completions') {
     const payload = JSON.parse((await readBody(req)).toString('utf8') || '{}')
+    if (captureRequests) {
+      requests.push(payload)
+      if (requests.length > 200) requests.shift()
+    }
     const text = `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${lastUserText(payload.messages)} [files: ${payload.files?.length ?? 0}]`
     const id = `chatcmpl-${randomUUID()}`
     if (!payload.stream) {

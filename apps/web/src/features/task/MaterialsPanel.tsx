@@ -3,8 +3,9 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowUpCircle, Upload } from 'lucide-react'
 import type { Task } from '@mes/domain'
 import { toast } from 'sonner'
-import { getCandidates, filesForTask, fileVersions, setInput, setOutputTag, switchInputVersion, uploadFile, type FileMeta } from '@/api/files'
+import { getCandidates, filesForTask, fileVersions, setInput, setOutputTag, switchInputVersion, uploadFile, type FileCandidate, type FileMeta } from '@/api/files'
 import { useActor } from '@/app/hooks'
+import { listAssistants } from '@/lib/catalog'
 import { FileList } from './FileList'
 import { FilePreviewDialog } from './FilePreviewDialog'
 import { InputToggle } from './InputToggle'
@@ -19,10 +20,15 @@ export function MaterialsPanel({ task }: { task: Task }) {
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const candidates = useQuery({ queryKey: ['candidates', task.id], queryFn: () => getCandidates(task.id) })
+  const assistants = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
   const own = useQuery({ queryKey: ['files', task.id], queryFn: () => filesForTask(task.id) })
   const byId = new Map([...(candidates.data?.files ?? []).map((item) => [item.file.id, item.file] as const), ...(own.data ?? []).map((file) => [file.id, file] as const)])
   const selection = [...task.inputs].sort((a, b) => a.weight === b.weight ? 0 : a.weight === 'main' ? -1 : 1)
   const shared = (candidates.data?.files ?? []).filter((item) => item.sourceTaskId !== task.id && item.viaTags.length && !item.newerVersionId && item.file.name.toLowerCase().includes(search.toLowerCase()))
+  const assistantById = new Map(assistants.data?.map((item) => [item.id, item]) ?? [])
+  const groups = new Map<string, FileCandidate[]>()
+  for (const item of shared) groups.set(item.sourceAssistantId ?? '', [...(groups.get(item.sourceAssistantId ?? '') ?? []), item])
+  const sortedGroups = [...groups].sort(([a], [b]) => (assistantById.get(a)?.order ?? Number.MAX_SAFE_INTEGER) - (assistantById.get(b)?.order ?? Number.MAX_SAFE_INTEGER) || a.localeCompare(b))
   const disabled = task.status === 'done'
   async function change(fileId: string, weight: 'main' | 'reference' | null) {
     try { await setInput(actor, task.id, fileId, weight) }
@@ -60,13 +66,13 @@ export function MaterialsPanel({ task }: { task: Task }) {
     {tab === 'shared' && <div data-testid="materials-shared" className="space-y-2">
       <input aria-label="공유 자료함 검색" placeholder="파일 이름으로 찾기" value={search} onChange={(event) => setSearch(event.target.value)} className="w-full rounded border px-2 py-1" />
       {!shared.length && <div className="rounded border border-dashed p-3 text-center text-muted-foreground">같은 태그 대화의 파일이 없습니다.</div>}
-      {shared.map((item) => <div key={item.file.id} className="rounded border p-2" data-testid={`candidate-file-${item.file.id}`}>
+      {sortedGroups.flatMap(([assistantId, items]) => [<div key={`group-${assistantId}`} className="pt-1 font-medium" data-testid={`shared-group-${assistantId}`}>{assistantById.get(assistantId)?.name ?? assistantId}</div>, ...items.sort((a, b) => a.file.name.localeCompare(b.file.name) || a.file.version - b.file.version).map((item) => <div key={item.file.id} className="rounded border p-2" data-testid={`candidate-file-${item.file.id}`}>
         <div className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(item.file)}>{item.file.name} v{item.file.version}</button><InputToggle weight={task.inputs.find((input) => input.fileId === item.file.id)?.weight} label={item.file.name} disabled={disabled} onChange={(weight) => void change(item.file.id, weight)} /></div>
         <div className="mt-1 text-[10px] text-muted-foreground">{item.role === 'output' ? '산출물' : '업로드'} · <a href={`/c/${item.sourceTaskId}`} className="underline">{item.sourceTaskId}</a> · {item.viaTags.join(', ')}
           {!!item.olderVersionIds?.length && <button type="button" className="ml-2 underline" onClick={() => setExpanded(expanded === item.file.id ? null : item.file.id)}>이전 버전 {item.olderVersionIds.length}</button>}
         </div>
         {expanded === item.file.id && <OlderVersions file={item.file} task={task} disabled={disabled} onPreview={setPreview} onChange={change} />}
-      </div>)}
+      </div>)])}
     </div>}
     {tab === 'own' && <div data-testid="materials-own" className="space-y-2">
       <FileList files={own.data ?? []} taskId={task.id} onPreview={setPreview} onToggleOutput={disabled ? undefined : (fileId, isOutput) => void setOutputTag(actor, task.id, fileId, isOutput).catch((error: unknown) => toast.error(String(error)))} canDelete={!disabled} renderActions={(file) => <InputToggle weight={task.inputs.find((input) => input.fileId === file.id)?.weight} label={file.name} disabled={disabled} onChange={(weight) => void change(file.id, weight)} />} />

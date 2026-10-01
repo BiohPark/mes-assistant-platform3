@@ -11,10 +11,10 @@ export function RequestInfoDialog({ requestId, onClose }: { requestId: string; o
       {record.data.retryOf && <p>재시도한 요청: {record.data.retryOf}</p>}
       {record.data.error && <p role="alert" className="text-destructive">{record.data.error}</p>}
       <ul className="space-y-1">{record.data.inputs.map((input, index) => <li key={index} className="rounded border p-2">
-        {input.weight === 'main' ? '★' : '☑'} {input.sourceLabel ?? input.fileId ?? '참조 대화'} {input.fileVersion ? `v${input.fileVersion}` : ''} · {deliveryLabel[input.delivery ?? ''] ?? input.delivery ?? '참조'} · {input.bytes} bytes
+        {input.weight === 'main' ? '★' : '☑'} {input.sourceLabel ?? input.fileId ?? '참조 대화'} {input.fileVersion ? `v${input.fileVersion}` : ''} · {input.kind === 'conversation' ? `${input.mode === 'summary' ? '요약' : input.mode === 'messages' ? '메시지 선택' : '전체'} · 메시지 ${input.messageCount ?? 0}개` : deliveryLabel[input.delivery ?? ''] ?? input.delivery ?? '참조'} · {input.bytes} bytes
         {input.error && <span className="block text-destructive">{input.error}</span>}
       </li>)}</ul>
-      <a className="underline" href={snapshotUrl(requestId)} download>원본 JSON 다운로드</a>
+      {record.data.hasSnapshot && <a className="underline" href={snapshotUrl(requestId)} download>원본 JSON 다운로드</a>}
     </div> : record.isError ? <p role="alert">요청 기록을 불러오지 못했습니다.</p> : <p>불러오는 중…</p>}
   </DialogContent></Dialog>
 }
