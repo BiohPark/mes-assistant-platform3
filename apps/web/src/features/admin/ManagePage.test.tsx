@@ -1,4 +1,6 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Assistant } from '@mes/contracts'
 import { MeContext } from '@/app/auth'
@@ -9,8 +11,24 @@ import { ManagePage } from './ManagePage'
 const assistant = { id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'assistant_level1:SDLC', level2CodeId: 'assistant_level2:분석',
   summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'owner', status: 'open', usageExample: '', color: '#2563eb',
   checklistTemplate: [], createdBy: 'owner', createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z', revision: 0, imageId: 'image' } as Assistant
-vi.mock('@/app/hooks', () => ({ useAssistants: () => [assistant], useUsers: () => [] }))
-afterEach(() => vi.unstubAllGlobals())
+let assistantRows: Assistant[] = [assistant]
+vi.mock('@/app/hooks', () => ({ useAssistants: () => assistantRows, useUsers: () => [] }))
+afterEach(() => { vi.unstubAllGlobals(); assistantRows = [assistant] })
+
+it('enables order editing after assistants load and shows every card', () => {
+  assistantRows = []
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const page = () => <QueryClientProvider client={client}><MemoryRouter><MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'] }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext></MemoryRouter></QueryClientProvider>
+  const { container, rerender } = render(page())
+  expect(screen.getByRole('button', { name: '순서 편집' })).toBeDisabled()
+
+  assistantRows = [assistant, { ...assistant, id: 'b', name: '두 번째 도우미', order: 2 }]
+  rerender(page())
+  const editOrder = screen.getByRole('button', { name: '순서 편집' })
+  expect(editOrder).toBeEnabled()
+  fireEvent.click(editOrder)
+  expect(container.querySelectorAll('[draggable="true"]')).toHaveLength(assistantRows.length)
+})
 
 it('removes an image without submitting unsaved assistant edits', async () => {
   const calls: Array<[string, RequestInit | undefined]> = []
