@@ -5,6 +5,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
+import { useQuery } from '@tanstack/react-query'
+import { getSettings } from '@/api/admin'
 
 /** 보낼 첨부 1건. once=true면 이번 메시지에만 쓰고 대화 입력으로 고정하지 않는다 */
 export interface PendingAttachment {
@@ -39,6 +41,7 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
   const [text, setTextState] = useState('')
   const [pending, setPending] = useState<PendingAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState('')
+  const attachmentLimit = useQuery({ queryKey: ['settings'], queryFn: getSettings }).data?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST
   const inputRef = useRef<HTMLInputElement>(null)
   const blocked = !discussion && !!blockedReason
   const canSend = !disabled && !blocked && (discussion || !streaming) && (text.trim().length > 0 || pending.length > 0)
@@ -116,7 +119,7 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
           className="hidden"
           onChange={(e) => {
             const picked = Array.from(e.target.files ?? []).map((file) => ({ file, once: false }))
-            if (pending.length + picked.length > FILE_MAX_PER_REQUEST) setAttachmentError(`첨부 파일은 최대 ${FILE_MAX_PER_REQUEST}개까지 선택할 수 있습니다.`)
+            if (pending.length + picked.length > attachmentLimit) setAttachmentError(`첨부 파일은 최대 ${attachmentLimit}개까지 선택할 수 있습니다.`)
             else { setPending((p) => [...p, ...picked]); setAttachmentError('') }
             e.target.value = ''
           }}

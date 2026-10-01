@@ -8,5 +8,5 @@ async function get(path: string): Promise<unknown> {
 
 export async function listAssistants() { return AssistantSchema.array().parse(await get('/api/assistants')) }
 export async function listAssistantStats() { return AssistantStatsSchema.array().parse(await get('/api/assistants/stats')) }
-export async function listUsers() { return CatalogUserSchema.array().parse(await get('/api/users')) }
+export async function listUsers() { return CatalogUserSchema.array().parse(await get('/api/catalog/users')) }
 export async function listCodes(group?: string) { return CodeSchema.array().parse(await get(`/api/codes${group ? `?group=${encodeURIComponent(group)}` : ''}`)) }

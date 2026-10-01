@@ -1,21 +1,31 @@
 import { NavLink, Outlet } from 'react-router'
-import { LayoutGrid, Boxes } from 'lucide-react'
+import { LayoutGrid, Boxes, Settings, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AuthGate } from './AuthGate'
 import { useEvents } from './useEvents'
+import { useMe } from './auth'
+import { PasswordPage } from '@/features/admin/PasswordPage'
 
 function LiveEvents() { useEvents(); return null }
 
-// 화면은 스프린트마다 늘린다 (데모 NAV: SR 접수·리포트·설정은 S2 이후)
 const NAV = [{ to: '/', label: '에이전트 허브', icon: LayoutGrid, end: true }]
 
 export function AppShell() {
   return (
     <AuthGate>
+      <TooltipProvider><AppContent /></TooltipProvider>
+    </AuthGate>
+  )
+}
+
+function AppContent() {
+  const me = useMe()
+  if (me.mustChangePassword) return <PasswordPage />
+  return (
+    <>
       <LiveEvents />
-      <TooltipProvider>
         <div className="flex h-full bg-muted/30">
           <aside className="flex w-14 shrink-0 flex-col items-center border-r bg-sidebar py-3 lg:w-52 lg:items-stretch lg:px-3">
             <div className="mb-4 flex items-center gap-2 px-1 lg:px-1">
@@ -45,6 +55,10 @@ export function AppShell() {
                   <span className="hidden lg:inline">{label}</span>
                 </NavLink>
               ))}
+              {me.roles.includes('system_owner') && <>
+                <NavLink to="/assistants/manage" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Bot className="size-4" /><span className="hidden lg:inline">에이전트 관리</span></NavLink>
+                <NavLink to="/settings" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Settings className="size-4" /><span className="hidden lg:inline">설정</span></NavLink>
+              </>}
             </nav>
           </aside>
           <main className="flex min-w-0 flex-1 flex-col">
@@ -52,7 +66,6 @@ export function AppShell() {
           </main>
         </div>
         <Toaster position="bottom-right" richColors closeButton />
-      </TooltipProvider>
-    </AuthGate>
+    </>
   )
 }

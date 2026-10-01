@@ -14,7 +14,7 @@ it('creates a task only on the first discussion send and shows the conversation 
   const posts: string[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/assistants') return new Response(JSON.stringify([{ id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-28T00:00:00.000Z', updatedAt: '2026-09-28T00:00:00.000Z', revision: 0 }]), { status: 200 })
-    if (url === '/api/users' || url.startsWith('/api/tags/suggest')) return new Response('[]', { status: 200 })
+    if (url === '/api/catalog/users' || url.startsWith('/api/tags/suggest')) return new Response('[]', { status: 200 })
     if (url === '/api/tasks' && init?.method === 'POST') {
       posts.push(String(init.body))
       return new Response(JSON.stringify({ id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '도우미 대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: ['abc'], checklist: [], inputs: [], outputFileIds: [], threadId: 'h', createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z' }), { status: 201 })

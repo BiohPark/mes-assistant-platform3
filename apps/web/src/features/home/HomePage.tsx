@@ -9,6 +9,8 @@ import { AssistantCard } from './AssistantCard'
 import { CardMapFilterBar } from './CardMapFilterBar'
 import { ConversationKanban } from './ConversationKanban'
 import { useAssistantRows, type AssistantRow } from './useAssistantStats'
+import { useQuery } from '@tanstack/react-query'
+import { getSettings } from '@/api/admin'
 
 function matches(row: AssistantRow, q: string, level1CodeId: string | null, level2CodeId: string | null, showRetired: boolean): boolean {
   const assistant = row.assistant
@@ -20,6 +22,7 @@ function matches(row: AssistantRow, q: string, level1CodeId: string | null, leve
 }
 
 export function HomePage() {
+  const link1Rule = useQuery({ queryKey: ['settings'], queryFn: getSettings }).data?.link1Rule
   const [params, setParams] = useSearchParams()
   const view = params.get('view') === 'kanban' ? 'kanban' : 'cards'
   const { rows, isPending, isError, isFetching, refetch } = useAssistantRows()
@@ -53,7 +56,7 @@ export function HomePage() {
         description={all.length === 0 ? 'System Owner가 에이전트를 등록하면 여기에 카드로 보입니다.' : '검색어나 필터를 바꿔 보세요.'}
       />}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {filtered.map((row) => <AssistantCard key={row.assistant.id} row={row} owner={users.get(row.assistant.ownerId)} baseUrl="" />)}
+        {filtered.map((row) => <AssistantCard key={row.assistant.id} row={row} owner={users.get(row.assistant.ownerId)} baseUrl="" link1Rule={link1Rule} />)}
       </div>
       </>}
     </div>
