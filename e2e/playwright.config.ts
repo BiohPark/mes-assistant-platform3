@@ -24,9 +24,9 @@ export default defineConfig({
     ...(llmMode === 'live' ? [{
       command: 'node docker/fake-openwebui/server.mjs',
       cwd: resolve(import.meta.dirname, '..'),
-      env: { PORT: fakePort },
+      env: { PORT: fakePort, FAKE_OWUI_E2E: '1' },
       url: `http://localhost:${fakePort}/health`,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 30_000,
     }] : []),
     {

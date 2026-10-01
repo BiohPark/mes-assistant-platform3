@@ -16,9 +16,7 @@ async function setup(page: import('@playwright/test').Page) {
 
 test('S6 크기 초과 실패가 기록되고 입력창을 다시 사용할 수 있다', async ({ page }) => {
   const task = await setup(page)
-  await page.getByRole('button', { name: '팀 의견 (AI 미전송)' }).click()
-  await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('x'.repeat(270_000))
-  // 트레이는 초과 전송을 막으므로 서버의 기록형 실패 계약은 API 경로에서 확인한다.
+  // 트레이는 초과 전송을 막으므로 서버의 기록형 실패 계약은 API 경로에서 확인한다(입력창에 270k자를 채우면 추정 요청이 반복돼 화면 갱신이 늦어진다 — 채우지 않는다).
   const response = await page.request.post(`/api/threads/${task.threadId}/requests`, {
     headers: { 'Idempotency-Key': `over-${Date.now()}` }, data: { content: 'x'.repeat(270_000) },
   })
@@ -43,7 +41,6 @@ test('S7 두 탭의 동시 전송 중 하나만 시작한다', async ({ page, co
 test('S8 Mock 답변에 사용한 자료와 요청 기록을 표시한다', async ({ page }) => {
   test.skip((process.env.E2E_LLM_MODE ?? process.env.LLM_MODE) === 'live', 'Mock 전용 시나리오 — live 모드에서는 건너뜀')
   await setup(page)
-  await page.getByRole('button', { name: '팀 의견 (AI 미전송)' }).click()
   await page.locator('input[type="file"]').setInputFiles({ name: 'e2e-input.txt', mimeType: 'text/plain', buffer: Buffer.from('참고 입력') })
   await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('자료를 사용해 답변해 줘')
   await page.getByRole('button', { name: '전송', exact: true }).click()
@@ -51,6 +48,14 @@ test('S8 Mock 답변에 사용한 자료와 요청 기록을 표시한다', asyn
   // 답변 본문이 보여도 요청 기록은 종료 전이 뒤에 확정된다 — 중지 버튼이 사라질 때(응답 종료)까지 기다린 뒤 기록을 연다
   await expect(page.getByRole('button', { name: '중지' })).toBeHidden()
   await page.getByRole('button', { name: '사용한 자료' }).click()
+  await expect(page.getByRole('dialog')).toContainText('e2e-input.txt')
+  await expect(page.getByRole('link', { name: '원본 JSON 다운로드' })).toHaveAttribute('href', /\/snapshot$/)
+  await page.keyboard.press('Escape')
+  await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('두 번째 턴에도 자료를 사용해 줘')
+  await page.getByRole('button', { name: '전송', exact: true }).click()
+  await expect(page.getByRole('button', { name: '사용한 자료' })).toHaveCount(2)
+  await expect(page.getByRole('button', { name: '중지' })).toBeHidden()
+  await page.getByRole('button', { name: '사용한 자료' }).last().click()
   await expect(page.getByRole('dialog')).toContainText('e2e-input.txt')
   await expect(page.getByRole('link', { name: '원본 JSON 다운로드' })).toHaveAttribute('href', /\/snapshot$/)
 })
