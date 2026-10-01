@@ -64,6 +64,6 @@ test('리포트 8개 섹션과 기간·단위 토글', async ({ page }) => {
   await expect(page.getByText('리포트검증')).toBeVisible({ timeout: 15_000 })
   await page.getByRole('button', { name: '7일' }).click()
   await page.getByRole('button', { name: '일', exact: true }).click()
-  await expect.poll(async () => (await (await page.request.get('/api/reports?days=7&granularity=day')).json() as { buckets: unknown[] }).buckets.length).toBe(7)
+  await expect(page.getByRole('img', { name: '완료 업무' }).locator(':scope > div')).toHaveCount(7)
   await expect(page.getByRole('button', { name: '7일' })).toHaveAttribute('data-variant', 'default')
 })

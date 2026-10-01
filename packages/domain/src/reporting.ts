@@ -125,8 +125,8 @@ export interface FlowEdge {
 }
 
 /** 자료 흐름: 입력으로 선택된 파일의 출처 대화 어시스턴트 → 선택한 대화의 어시스턴트 쌍별 건수 */
-export function inputFlow(tasks: Task[], files: Pick<FileAsset, 'id' | 'originTaskId'>[]): FlowEdge[] {
-  const taskById = new Map(tasks.map((t) => [t.id, t]))
+export function inputFlow(tasks: Task[], files: Pick<FileAsset, 'id' | 'originTaskId'>[], sourceTasks: Task[] = tasks): FlowEdge[] {
+  const taskById = new Map(sourceTasks.map((t) => [t.id, t]))
   const fileById = new Map(files.map((f) => [f.id, f]))
   const counts = new Map<string, FlowEdge>()
   for (const to of tasks) {

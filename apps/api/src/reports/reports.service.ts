@@ -1,6 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common'
+import { ForbiddenException, Inject, Injectable } from '@nestjs/common'
 import { assistantStats, completionBuckets, feedbackDigest, inefficiencySignals, inputFlow, srLeadDays, srStatusDistribution, tagUsage, userActivityStats, type ActivityLog, type Assistant, type Granularity, type ServiceRequest, type User } from '@mes/domain'
-import { asc, isNull } from 'drizzle-orm'
+import { asc, eq, isNull } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appUser, assistant, fileObject, serviceRequest } from '../db/schema.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
@@ -9,7 +9,9 @@ import { DbTasksService } from '../tasks/tasks.service.js'
 export class ReportsService {
   constructor(@Inject(DB) private readonly db: Db, @Inject(DbTasksService) private readonly tasks: DbTasksService) {}
 
-  async get(days: number, granularity: Granularity, userId?: string) {
+  async get(days: number, granularity: Granularity, actor: string, userId?: string) {
+    const [viewer] = await this.db.select({ isBusinessOwner: appUser.isBusinessOwner, isSystemOwner: appUser.isSystemOwner }).from(appUser).where(eq(appUser.id, actor))
+    if (!viewer || (viewer.isBusinessOwner && !viewer.isSystemOwner)) throw new ForbiddenException('리포트 권한이 없습니다')
     const [allTasks, activities, files, srs, assistants, users] = await Promise.all([
       this.tasks.list(),
       this.db.select().from(activityLog).orderBy(asc(activityLog.at)),
@@ -51,7 +53,7 @@ export class ReportsService {
       buckets: completionBuckets(reportTasks, days, granularity),
       assistantStats: assistantStats(reportTasks, assistantRows),
       userStats: userActivityStats(activity, userRows, days),
-      flow: inputFlow(allTasks, fileRows).slice(0, 10),
+      flow: inputFlow(tasks, fileRows, allTasks).slice(0, 10),
       tags: tagUsage(reportTasks).slice(0, 12),
       srDist: srStatusDistribution(srRows),
       signals: inefficiencySignals(reportTasks, activity, fileRows),

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type Task, type TaskStatus, type Thread } from '@mes/domain'
 import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
 import { unionAll } from 'drizzle-orm/mysql-core'
@@ -192,7 +192,11 @@ export class DbTasksService {
     })
     const created = await this.get(createdId)
     if (createdId === taskId) {
-      await this.notifications?.send([created.ownerId, ...created.assigneeIds], actor, '새 대화 업무가 배정되었습니다', `${created.code} ${created.title}`, `/c/${taskId}`)
+      try {
+        await this.notifications?.send([created.ownerId, ...created.assigneeIds], actor, '새 대화 업무가 배정되었습니다', `${created.code} ${created.title}`, `/c/${taskId}`)
+      } catch (error) {
+        Logger.warn(`업무 ${taskId} 알림 저장 실패: ${String(error)}`, DbTasksService.name)
+      }
       this.events?.publish('task.created', { taskId, assistantId: selected.id })
       if (input.firstMessage?.trim()) {
         const [first] = await this.db.select({ id: message.id }).from(message).where(eq(message.threadId, threadId)).orderBy(message.seq).limit(1)

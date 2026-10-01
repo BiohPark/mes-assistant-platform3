@@ -6,10 +6,12 @@ import type { Db } from '../db/db.module.js'
 import type { Pool } from 'mysql2/promise'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
-import { appUser, assistant, notification } from '../db/schema.js'
+import { appUser, assistant, notification, task } from '../db/schema.js'
 import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
 import { NotificationsService } from './notifications.service.js'
+import { Logger } from '@nestjs/common'
+import { vi } from 'vitest'
 
 describe('notifications DB (demo notifications 30/44)', () => {
   let temp: Awaited<ReturnType<typeof createTempDb>>
@@ -50,5 +52,21 @@ describe('notifications DB (demo notifications 30/44)', () => {
     await notifications.markAllRead('other')
     expect(await notifications.unreadCount('other')).toBe(0)
     expect((await notifications.list('other')).every((row) => row.read)).toBe(true)
+  })
+
+  it('커밋 후 알림 저장이 실패해도 생성 응답과 멱등 재조회는 성공한다', async () => {
+    const warn = vi.spyOn(Logger, 'warn').mockImplementation(() => undefined)
+    const [selected] = await db.select().from(assistant)
+    const events: string[] = []
+    const service = new DbTasksService(db, { publish: (type: string) => events.push(type) } as never, undefined,
+      { send: async () => { throw new Error('notification insert failed') } } as never)
+    try {
+      const first = await service.create('assignee', { assistantId: selected!.id, ownerId: 'other' }, 'notification-failure')
+      expect((await db.select().from(task).where(eq(task.id, first.task.id)))).toHaveLength(1)
+      expect(events).toContain('task.created')
+      const retried = await service.create('assignee', { assistantId: selected!.id, ownerId: 'other' }, 'notification-failure')
+      expect(retried.task.id).toBe(first.task.id)
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('알림 저장 실패'), 'DbTasksService')
+    } finally { warn.mockRestore() }
   })
 })

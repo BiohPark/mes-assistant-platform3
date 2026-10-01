@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MeContext } from '@/app/auth'
@@ -14,7 +14,8 @@ it('8개 섹션을 보여주고 기간·단위 변경 시 서버에 다시 요�
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url.startsWith('/api/reports?')) {
       calls.push(url)
-      return jsonResponse(200, { kpi: { done: 0, reopens: 0 }, buckets: [], assistantStats: [], userStats: [], flow: [], tags: [],
+      const bucketCount = url.includes('days=7&granularity=day') ? 7 : 5
+      return jsonResponse(200, { kpi: { done: 0, reopens: 0 }, buckets: Array.from({ length: bucketCount }, (_, index) => ({ key: String(index), label: String(index), done: 0 })), assistantStats: [], userStats: [], flow: [], tags: [],
         srDist: [], signals: [], digest: [], assistants: [], users: [] })
     }
     return jsonResponse(404)
@@ -26,4 +27,5 @@ it('8개 섹션을 보여주고 기간·단위 변경 시 서버에 다시 요�
   await userEvent.click(screen.getByRole('button', { name: '7일' }))
   await userEvent.click(screen.getByRole('button', { name: /^일$/ }))
   expect(calls).toContain('/api/reports?days=7&granularity=day')
+  await waitFor(() => expect(screen.getByRole('img', { name: '완료 업무' }).children).toHaveLength(7))
 })
