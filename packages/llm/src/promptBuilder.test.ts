@@ -82,11 +82,17 @@ describe('buildChatRequest — files', () => {
     const file = await uploadFile(dev, { taskId: me.task.id }, text('budget.md', 'A'))
     await setInput(dev, me.task.id, file.id, 'main')
     const { scope, thread } = await scopeOf(me.task.id)
-    const dry = await buildChatRequest(scope, thread, [], { dryRun: true })
+    const initial = await buildChatRequest(scope, thread, [], { dryRun: true })
+    const remoteId = `owui-${'x'.repeat(120)}`
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/api/v1/files/')
-      ? new Response(JSON.stringify({ id: 'a-much-longer-remote-identifier' }), { status: 200 })
+      ? new Response(JSON.stringify({ id: remoteId }), { status: 200 })
       : new Response(JSON.stringify({ status: 'completed' }), { status: 200 })))
+    await db.settings.update('app', { requestBudgetBytes: initial.info.bytes })
+    const dry = await buildChatRequest(scope, thread, [], { dryRun: true })
     const actual = await buildChatRequest(scope, thread, [])
+    expect(actual.files?.[0]?.id).toBe(remoteId)
+    expect(actual.info.bytes).toBe(new TextEncoder().encode(JSON.stringify({ model: actual.model, messages: actual.messages, files: [{ type: 'file', id: file.id }], stream: true })).length)
+    expect(actual.info.bytes).toBe(actual.info.limitBytes)
     const comparable = (value: typeof dry.info) => ({ provider: value.provider, transport: value.transport, model: value.model,
       bytes: value.bytes, limitBytes: value.limitBytes, srCodes: value.srCodes,
       inputs: value.inputs.map((item) => item.kind === 'file' ? { kind: item.kind, fileId: item.fileId, version: item.version,

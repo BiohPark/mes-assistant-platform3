@@ -147,7 +147,7 @@ async function deliver(settings: Settings, entries: FileEntry[], opts: BuildOpti
   }
   // files[]는 입력 순서(주 입력 → 참고 → 이번 메시지)를 따른다
   const attached = viaFilesApi
-    ? info.filter((i) => i.delivery === 'attached').map((i): AttachedFile => ({ type: 'file', id: i.remoteId ?? `pending:${i.fileId}` }))
+    ? info.filter((i) => i.delivery === 'attached').map((i): AttachedFile => ({ type: 'file', id: i.remoteId ?? i.fileId }))
     : undefined
   return { prompt, info, attached: attached?.length ? attached : undefined, lines }
 }
@@ -259,7 +259,7 @@ export async function buildChatRequest(scope: ChatScope, thread: Thread, history
       model,
       messages,
       meta: { assistantId: scope.intake.id, assistantLevel2: scope.intake.level2, assistantName: scope.intake.name, srIntake: true, inputFileNames: sr.files.map((f) => f.name), usedInputs: sr.lines },
-      info: { at: new Date().toISOString(), provider: settings.llm.mode, transport, model, bytes: requestBytes({ model, messages }), limitBytes, inputs: sr.info, srCodes: scope.sr.code ? [scope.sr.code] : [] },
+      info: { at: new Date().toISOString(), provider: settings.llm.mode, transport, model, bytes: requestBytes({ model, messages, stream: true }), limitBytes, inputs: sr.info, srCodes: scope.sr.code ? [scope.sr.code] : [] },
       failed: [],
     }
   }
@@ -268,6 +268,7 @@ export async function buildChatRequest(scope: ChatScope, thread: Thread, history
   const model = resolveModel({ thread, task: built.task, assistant: scope.assistant, settings: settings.llm }).modelId
   const messages = toChatMessages(built.systemPrompt, history, users)
   const files = built.files.attached
+  const budgetFiles = built.files.info.filter((input) => input.delivery === 'attached').map((input) => ({ type: 'file' as const, id: input.fileId }))
   return {
     settings,
     model,
@@ -286,7 +287,7 @@ export async function buildChatRequest(scope: ChatScope, thread: Thread, history
       provider: settings.llm.mode,
       transport,
       model,
-      bytes: requestBytes({ model, messages }),
+      bytes: requestBytes({ model, messages, ...(budgetFiles.length && { files: budgetFiles }), stream: true }),
       limitBytes,
       inputs: built.inputs,
       srCodes: built.srCodes,

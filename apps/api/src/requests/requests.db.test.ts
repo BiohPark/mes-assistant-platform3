@@ -6,7 +6,7 @@ import { drizzle } from 'drizzle-orm/mysql2'
 import type { Db } from '../db/db.module.js'
 import type { Pool } from 'mysql2/promise'
 import { createPool } from '../db/connection.js'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { OpenAICompatibleProvider, type ChatProvider } from '@mes/llm'
 import { loadConfig } from '../config/config.js'
@@ -57,6 +57,34 @@ describe('RequestService DB', () => {
     expect((await tasks.messages(thread.id)).map((item) => [item.role, item.status])).toEqual([['user', 'done'], ['assistant', 'done']])
     expect(JSON.stringify(await service.snapshot(started.id))).not.toMatch(/apiKey|remoteId/)
     expect((await db.select().from(chatRequest).where(eq(chatRequest.id, started.id)))[0]?.replyMessageId).toBe(started.replyMessageId)
+  })
+
+  it('preserves a manual title while an AI title suggestion is in flight', async () => {
+    let beginTitle!: () => void
+    let finishTitle!: () => void
+    const titleStarted = new Promise<void>((resolve) => { beginTitle = resolve })
+    const titleReleased = new Promise<void>((resolve) => { finishTitle = resolve })
+    const titleProvider: ChatProvider = { kind: 'live', ping: provider.ping, listModels: provider.listModels,
+      async *stream(req) {
+        if (req.messages[0]?.content.includes('제목을 한국어')) {
+          beginTitle()
+          await titleReleased
+          yield { type: 'delta', text: 'AI 제목' }
+        } else yield { type: 'delta', text: '응답' }
+        yield { type: 'done' }
+      } }
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), titleProvider)
+    try {
+      const { task: owner, thread } = await tasks.create('member', { assistantId })
+      const started = await runner.start('member', thread.id, { content: '경쟁 제목' }, 'title-race')
+      await started.done
+      await titleStarted
+      await tasks.update('member', owner.id, { title: '사람이 정한 제목' })
+      finishTitle()
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      await expect.poll(async () => (await tasks.get(owner.id)).title).toBe('사람이 정한 제목')
+      expect(await tasks.get(owner.id)).toMatchObject({ title: '사람이 정한 제목', titleSource: 'manual' })
+    } finally { finishTitle(); runner.onModuleDestroy() }
   })
 
   it('estimates the same request info before sending and permits completed conversations', async () => {
@@ -198,6 +226,8 @@ describe('RequestService DB', () => {
     expect(result.filter((item) => item.status === 'fulfilled')).toHaveLength(0)
     expect(result.every((item) => item.status === 'rejected' && item.reason.status === 409)).toBe(true)
     await a.done
+    expect(await db.select().from(chatRequest).where(eq(chatRequest.threadId, thread.id))).toHaveLength(1)
+    expect(await tasks.messages(thread.id)).toHaveLength(2)
   })
 
   it('allows exactly one of two simultaneous starts', async () => {
@@ -337,7 +367,7 @@ describe('RequestService DB', () => {
     const { thread } = await tasks.create('member', { assistantId })
     const run = await service.start('member', thread.id, { content: '정리' }, 'sweep-key')
     await run.done
-    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: new Date(Date.now() - 1000) }).where(eq(chatRequest.id, run.id))
+    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: sql`timestampadd(second, -1, current_timestamp(6))` }).where(eq(chatRequest.id, run.id))
     await db.update(message).set({ status: 'streaming' }).where(eq(message.id, run.replyMessageId))
     expect(await service.sweep()).toBe(1)
     expect(await service.get(run.id)).toMatchObject({ status: 'interrupted', code: 'INTERRUPTED' })
@@ -357,11 +387,11 @@ describe('RequestService DB', () => {
     const { thread } = await tasks.create('member', { assistantId })
     const run = await service.start('member', thread.id, { content: '경쟁' }, 'renewed-lease')
     await run.done
-    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: new Date(Date.now() - 1000) }).where(eq(chatRequest.id, run.id))
+    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: sql`timestampadd(second, -1, current_timestamp(6))` }).where(eq(chatRequest.id, run.id))
     await db.update(message).set({ status: 'streaming' }).where(eq(message.id, run.replyMessageId))
     const original = (service as never as { transition: (...args: unknown[]) => Promise<boolean> }).transition.bind(service)
     const spy = vi.spyOn(service as never as { transition: (...args: unknown[]) => Promise<boolean> }, 'transition').mockImplementation(async (...args) => {
-      await db.update(chatRequest).set({ leaseUntil: new Date(Date.now() + 30_000) }).where(eq(chatRequest.id, run.id))
+      await db.update(chatRequest).set({ leaseUntil: sql`timestampadd(second, 30, current_timestamp(6))` }).where(eq(chatRequest.id, run.id))
       return original(...args)
     })
     try { expect(await service.sweep()).toBe(0); expect((await service.get(run.id)).status).toBe('streaming') }
@@ -521,7 +551,7 @@ describe('RequestService DB', () => {
     const { thread } = await tasks.create('member', { assistantId })
     const run = await service.start('member', thread.id, { content: '재시작' }, 'restart-key')
     await run.done
-    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: new Date(Date.now() + 30_000) }).where(eq(chatRequest.id, run.id))
+    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: sql`timestampadd(second, 30, current_timestamp(6))` }).where(eq(chatRequest.id, run.id))
     await db.update(message).set({ status: 'streaming' }).where(eq(message.id, run.replyMessageId))
     const restarted = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), provider)
     expect(await restarted.recoverOnStartup()).toBe(1)
@@ -640,6 +670,7 @@ describe('RequestService DB', () => {
   it('stops on OpenWebUI delivery failure and retries a text file inline', async () => {
     let chatCalls = 0
     const fileCounts: number[] = []
+    const requestBytes: number[] = []
     const fake = createServer(async (req, res) => {
       if (req.url === '/api/v1/files/') {
         const chunks: Buffer[] = []
@@ -652,8 +683,10 @@ describe('RequestService DB', () => {
         chatCalls++
         const chunks: Buffer[] = []
         for await (const chunk of req) chunks.push(Buffer.from(chunk))
-        const payload = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { files?: unknown[] }
+        const body = Buffer.concat(chunks)
+        const payload = JSON.parse(body.toString('utf8')) as { files?: unknown[] }
         fileCounts.push(payload.files?.length ?? 0)
+        requestBytes.push(body.byteLength)
         res.writeHead(200, { 'content-type': 'text/event-stream' })
         res.end('data: {"choices":[{"delta":{"content":"본문 복구"}}]}\n\ndata: [DONE]\n\n')
       } else res.writeHead(404).end()
@@ -675,6 +708,8 @@ describe('RequestService DB', () => {
       const first = await runner.start('member', thread.id, { content: '파일 사용' }, 'delivery-key')
       await first.done
       expect(await runner.get(first.id)).toMatchObject({ status: 'failed', code: 'DELIVERY_FAILED', inputs: [{ fileId, delivery: 'failed' }] })
+      expect(await runner.get(first.id)).toMatchObject({ hasSnapshot: false })
+      await expect(runner.snapshot(first.id)).rejects.toMatchObject({ status: 404 })
       expect(chatCalls).toBe(0)
       const recovered = await runner.retry('member', first.id, { forceInlineFileIds: [fileId] }, 'delivery-retry')
       await recovered.done
@@ -687,14 +722,22 @@ describe('RequestService DB', () => {
       await db.insert(fileObject).values({ id: goodId, kind: 'task_file', originTaskId: second.task.id, originalName: 'good-input.txt', mime: 'text/plain', sizeBytes: 10,
         sha256: 'b'.repeat(64), storageKey: goodKey, source: 'upload', version: 1, uploadedBy: 'member' })
       await db.insert(taskInput).values({ taskId: second.task.id, fileId: goodId, weight: 'main', sortOrder: 0, selectedBy: 'member' })
+      const estimate = await runner.estimate('member', second.thread.id, { draft: '첨부' })
+      await db.insert(appSetting).values({ key: 'requestBudgetBytes', value: estimate.bytes }).onDuplicateKeyUpdate({ set: { value: estimate.bytes } })
       const attached = await runner.start('member', second.thread.id, { content: '첨부' }, 'attached-key')
       await attached.done
       const events: unknown[] = []
       runner.subscribe(attached.id, (event) => events.push(event))()
       expect((await runner.get(attached.id)).inputs[0]).toMatchObject({ delivery: 'attached' })
+      expect(await runner.get(attached.id)).toMatchObject({ hasSnapshot: true, bytes: estimate.bytes, limitBytes: estimate.bytes })
+      expect(requestBytes.at(-1)).not.toBe(estimate.bytes)
       expect(JSON.stringify(events)).not.toContain('remote-good')
       expect(JSON.stringify(await runner.snapshot(attached.id))).not.toContain('remote-good')
+      expect(await runner.snapshot(attached.id)).toMatchObject({ files: [{ type: 'file', fileId: goodId }] })
       expect(fileCounts).toContain(1)
-    } finally { await new Promise<void>((resolve) => fake.close(() => resolve())) }
+    } finally {
+      await db.delete(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
+      await new Promise<void>((resolve) => fake.close(() => resolve()))
+    }
   })
 })
