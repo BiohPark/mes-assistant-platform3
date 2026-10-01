@@ -18,7 +18,7 @@
 | `/tasks/:taskId` | 옛 주소 → `/c/:taskId` 리다이렉트 | — | S2 | 그대로 | ✅ S2 ② |
 | `/assistants/manage` | 에이전트 관리 | FR-60 | S4 | 변경(SO 전용 서버 강제) | ✅ |
 | `/sr` · `/sr/manage` | SR 접수 · 관리 | FR-50·51 | S4 | 변경(요청자 범위 서버 강제) | ✅ |
-| `/reports` | 리포트(지연 로딩) | FR-62 | S4 | 변경(서버 집계) | ⬜ |
+| `/reports` | 리포트(지연 로딩) | FR-62 | S4 | 변경(서버 집계) | ✅ |
 | `/settings` | 설정 | FR-61 | S4 | 변경(전역=SO·서버, 키 입력 삭제) | ✅ |
 | `*` → `/` | 없는 경로 | — | S0 | 그대로 | ✅ |
 | (신규) `/login` · `/signup` · `/logged-out` | 앱 자체 로그인·회원가입·로그아웃(D34, `AUTH_MODE=oidc`면 SSO) | 화면 §3 | S0 → S1 | 신규 | ✅ |
@@ -31,7 +31,7 @@
 | `TopBar.tsx` | 제목·LLM 모드 배지·시스템 assistant 버튼·알림 종·사용자 전환 | — | S0 → S4 | 변경(사용자 전환 → 로그인 사용자·로그아웃. 배지는 S1에서 SO 전용으로(`/api/llm/status`). 버튼은 U1·S4) | ✅ 일부(셸·배지) |
 | `chatRunner.ts` (+test) | 요청 실행기: 활성 1건·생존 신호·시간 제한·재시도·중지·끊긴 응답 정리 | FR-33 | S3 | 변경(서버 RequestService, `lease_until`·주기 작업) — 테스트 먼저 이식 | ✅ |
 | `hooks.ts` | 현재 사용자·설정·사용자 목록 훅 | — | S2 | 변경(TanStack Query) | ✅ 일부(S2 ①: 사용자 목록·카탈로그. 설정 훅은 S4 설정 API 뒤) |
-| `NotificationBell.tsx` | 알림 종(읽음 처리 후 이동) | FR-41 | S4 | 변경(API·SSE) | ⬜ |
+| `NotificationBell.tsx` | 알림 종(읽음 처리 후 이동) | FR-41 | S4 | 변경(API·SSE) | ✅ |
 | `presence.ts` | 같은 브라우저 탭 간 "입력 중" 표시(BroadcastChannel) | — | S3 | 변경(U5(a): SSE 이벤트로 다른 PC까지, 휘발성·DB 저장 없음) | ✅ |
 | `router.tsx` | 라우트·리포트 지연 로딩 | — | S0 → 화면별 | 그대로 | ✅ 일부 |
 | `tabUser.ts` | 탭별 사용자 전환(시연용) | — | — | **제외** — 로그인 사용자로 대체(architecture §3) | — |
@@ -104,8 +104,8 @@
 | `assistants/AssistantTable.tsx` | 목록·모델 ID 인라인 매핑 | FR-60·35 | S4 | 변경(API) · 목록은 U6 | ✅ |
 | `assistants/AssistantEditorSheet.tsx` | 전 항목 편집·체크리스트 기본값·삭제 보호 | FR-60·40 | S4 | 변경(API) | ✅ |
 | `assistants/ImageDropzone.tsx` | 에이전트 이미지 | FR-60 | S4 | 변경(파일 API) | ✅ |
-| `reports/ReportsPage.tsx` | 완료 추이·에이전트별 리드타임·사용자별 활동·SR 상태·자료 흐름·태그별 대화·에이전트별 현황·피드백 다이제스트 | FR-62 | S4 | 변경(서버 집계, 완료 이벤트 시각 기준) | ⬜ |
-| `reports/charts.tsx` | 차트 팔레트 | FR-62 | S4 | 그대로 | ⬜ |
+| `reports/ReportsPage.tsx` | 완료 추이·에이전트별 리드타임·사용자별 활동·SR 상태·자료 흐름·태그별 대화·에이전트별 현황·피드백 다이제스트 | FR-62 | S4 | 변경(서버 집계, 완료 이벤트 시각 기준) | ✅ |
+| `reports/charts.tsx` | 차트 팔레트 | FR-62 | S4 | 그대로 | ✅ |
 | `settings/SettingsPage.tsx` | 아래 "설정 항목" 표 | FR-61 | S4 | 변경 | ✅ |
 | `system-assistant/SystemAssistantDrawer.tsx` | 플랫폼 조작용 시스템 assistant(제안 카드 → 확인 후 적용) | — | S4 | 변경(U1(a): 서버 대리 호출, 제안 카드 → 사용자 확인 → 기존 API·권한 그대로) | ⬜ |
 | `system-assistant/actions.ts` | 도구 호출 → 제안 변환 | — | S4 | U1(a) | ⬜ |
@@ -140,7 +140,7 @@
 | `assistants.ts` (+test) | `newChecklistTemplateItem` `defaultChecklistTemplate` `createAssistant` `updateAssistant` `setAssistantStatus` `setAssistantImage` `deleteAssistant` `reorderAssistants` | FR-60·40 | S2(읽기)·S4(편집) | 변경(SO 전용, `revision` 충돌 검사) — 테스트 먼저 | ✅ |
 | `sr.ts` | `startSrConversation` `submitSr` `setSrTitle` `conversationsForSr` `startTaskFromSr` `updateSrContent` `setSrStatus` `deleteDraftSr` `shareSrResult` | FR-50·51 | S4 | 변경(서버, 요청자 범위 강제) | ✅ |
 | `notes.ts` | `addNote` `deleteNote` | FR-41 | S4 | 변경(서버) | ✅ |
-| `notifications.ts` (+test) | `notify` `unreadCount` `markRead` `markAllRead` | FR-41 | S4 | 변경(서버·SSE) — 테스트 먼저 | ⬜ |
+| `notifications.ts` (+test) | `notify` `unreadCount` `markRead` `markAllRead` | FR-41 | S4 | 변경(서버·SSE) — 테스트 먼저 | ✅ |
 | `activity.ts` | `logActivity` | FR-41 | S2 | 변경(서버, 추가만) | ✅ S2 ② |
 | `settings.ts` | `getSettings` `setLlmSettings` `setRequestBudget` `setSrIntakeAssistant` | FR-61 | S4 | 변경(`app_setting`, SO 전용, 키 제외) | ✅ |
 | `settings.ts` | `DEFAULT_USER_ID` `setCurrentUser` | — | — | **제외** — 로그인 사용자 | — |
