@@ -1,7 +1,7 @@
 import 'reflect-metadata'
 import { Module, type INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import request from 'supertest'
@@ -36,16 +36,19 @@ describe('web 정적 제공', () => {
   }
 
   it('루트와 SPA 경로는 index, 자산은 장기 캐시, API 미등록 경로는 JSON 404', async () => {
-    writeFileSync(join(dist, 'assets', 'x.js'), 'window.x = 1')
+    writeFileSync(join(dist, 'assets', 'x-12345678.js'), 'window.x = 1')
+    writeFileSync(join(dist, 'assets', 'plain.js'), 'window.plain = 1')
     const client = await start(dist)
     for (const path of ['/', '/c/abc']) {
       const response = await client.get(path).expect(200)
       expect(response.text).toBe('<h1>web</h1>')
       expect(response.headers['cache-control']).toBe('no-cache')
     }
-    const asset = await client.get('/assets/x.js').expect(200)
+    const asset = await client.get('/assets/x-12345678.js').expect(200)
     expect(asset.headers['cache-control']).toMatch(/max-age=31536000/)
     expect(asset.text).toBe('window.x = 1')
+    const plain = await client.get('/assets/plain.js').expect(200)
+    expect(plain.headers['cache-control']).toBe('no-cache')
     const missingApi = await client.get('/api/missing').expect(404)
     expect(missingApi.headers['content-type']).toMatch(/json/)
   })
@@ -54,6 +57,18 @@ describe('web 정적 제공', () => {
     const client = await start(dist)
     await client.get('/..%2f..%2fetc').expect(400)
     await client.get('/%2e%2e/index.html').expect(400)
+  })
+
+  it('web 폴더 밖을 가리키는 링크를 제공하지 않는다', async (context) => {
+    const secret = join(root, 'secret.txt')
+    writeFileSync(secret, 'secret')
+    try { symlinkSync(secret, join(dist, 'assets', 'linked.txt')) }
+    catch (error) {
+      if (process.platform === 'win32' && (error as NodeJS.ErrnoException).code === 'EPERM') { context.skip(); return }
+      throw error
+    }
+    const client = await start(dist)
+    await client.get('/assets/linked.txt').expect(403)
   })
 
   it('web 폴더가 없으면 정적 제공을 끈다', async () => {

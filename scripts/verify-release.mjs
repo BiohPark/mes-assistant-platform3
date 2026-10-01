@@ -1,16 +1,34 @@
 import { spawn } from 'node:child_process'
-import { cpSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 const bundle = resolve(import.meta.dirname, '..', 'release', 'mes-hub')
 if (!existsSync(join(bundle, 'api', 'dist', 'main.js'))) throw new Error('먼저 pnpm release를 실행하세요')
+function checkBundle(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name)
+    if (entry.isSymbolicLink()) throw new Error(`배포 묶음 심볼릭 링크: ${path}`)
+    if (entry.isDirectory()) checkBundle(path)
+  }
+}
+checkBundle(bundle)
+for (const name of ['contracts', 'domain', 'llm']) {
+  const workspacePackage = join(bundle, 'api', 'node_modules', '@mes', name)
+  for (const entry of readdirSync(workspacePackage)) {
+    if (entry !== 'dist' && entry !== 'package.json') throw new Error(`배포 묶음에 개발 파일 포함: ${name}/${entry}`)
+  }
+}
+for (const entry of ['seed.js', 'seedData.js']) {
+  if (existsSync(join(bundle, 'api', 'dist', 'db', entry))) throw new Error(`배포 묶음에 seed 포함: ${entry}`)
+}
 const isolated = mkdtempSync(join(tmpdir(), 'mes-release-'))
 cpSync(bundle, isolated, { recursive: true })
+checkBundle(isolated)
 
 const port = 40000 + Math.floor(Math.random() * 20000)
 const base = `http://127.0.0.1:${port}`
-const server = spawn(process.execPath, ['--env-file=.env.example', 'api/dist/main.js'], {
+const server = spawn(process.execPath, ['--env-file=.env.example', join('api', 'dist', 'main.js')], {
   cwd: isolated,
   env: { ...process.env, API_PORT: String(port), APP_ORIGIN: base },
   stdio: ['ignore', 'pipe', 'pipe'],

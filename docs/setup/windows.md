@@ -261,10 +261,10 @@ pnpm test:db
 1. 서버에 Node 22와 MariaDB를 설치하고, 4장의 문자셋·정렬 및 앱 DB 사용자를 준비한다. 빌드 PC에서 `pnpm release`를 실행해 `release\mes-hub` 전체를 서버에 복사한다.
 2. 묶음 루트에서 `.env.example`을 `.env`로 복사해 `DATABASE_URL`, `SESSION_SECRET`, `APP_ORIGIN`(예: `http://서버주소:3000` 또는 TLS 프록시의 `https://…`), `FILE_STORAGE_ROOT` 등 운영 값으로 바꾼다. 파일 저장소는 배포 묶음 **밖의 절대 경로**로 두고, 로그 폴더(`logs`)와 함께 서비스 계정에 쓰기 권한을 준다. `.env`는 서비스 계정과 관리자만 읽도록 ACL을 제한한다. 비밀값을 XML에 넣지 않는다.
 3. 묶음 루트에서 `node --env-file=.env api\dist\db\migrate.js`로 DB를 마이그레이션한다. 첫 배포라면 관리자가 `INITIAL_SYSTEM_OWNERS`의 ID로 가장 먼저 가입한다.
-4. [WinSW 공식 릴리스](https://github.com/winsw/winsw/releases)에서 Windows x64용 **v3** 실행 파일을 받아 `deploy\windows\mes-hub.exe`로 저장한다(v3는 현재 사전 릴리스). 저장소와 배포 묶음에는 exe가 없다. 관리자 PowerShell에서 `deploy\windows\mes-hub.exe install` 후 `deploy\windows\mes-hub.exe start`를 실행한다. XML은 묶음 루트를 작업 폴더로 하여 `node.exe --env-file=<묶음 루트>\.env api\dist\main.js`를 실행하고, 실패 시 재시작하며 `logs`에 10 MB 단위로 로그를 회전한다. 서비스 계정의 PATH에서 `node.exe`를 찾을 수 있어야 한다.
+4. [WinSW v2.12.0 공식 릴리스](https://github.com/winsw/winsw/releases/tag/v2.12.0)에서 Windows x64용 안정판 실행 파일을 받아 `deploy\windows\mes-hub.exe`로 저장한다. 저장소와 배포 묶음에는 exe가 없다. 관리자 PowerShell에서 `deploy\windows\mes-hub.exe install` 후 `deploy\windows\mes-hub.exe start`를 실행한다. 동봉된 `mes-hub.xml`은 WinSW v2 형식을 유지한다. XML은 묶음 루트를 작업 폴더로 하여 `node.exe --env-file=<묶음 루트>\.env api\dist\main.js`를 실행하고, 실패 시 재시작하며 `logs`에 10 MB 단위로 로그를 회전한다. 서비스 계정의 PATH에서 `node.exe`를 찾을 수 있어야 한다.
 5. 브라우저에서 `APP_ORIGIN`을 열고 로그인 및 `/api/health` 응답을 확인한다. 실제 서비스 계정과 ACL·네트워크 접근은 서버에서 확인한다.
 
-업데이트 전에는 **DB를 백업**하고 기존 묶음 폴더를 별도로 보관한다. `deploy\windows\mes-hub.exe stop` → 새 묶음으로 폴더 교체(기존 `.env`, `deploy\windows\mes-hub.exe`, `logs`를 새 묶음의 같은 위치에 복원) → 위 마이그레이션 → `deploy\windows\mes-hub.exe start` → 브라우저 확인 순서다. 파일 저장소는 묶음 밖에 유지한다. 문제가 생기면 서비스를 중지하고 이전 묶음을 복원해 다시 시작한다. DB 스키마가 바뀐 릴리스는 파일만 되돌려 호환되는지 확인할 수 없으므로 백업 DB 복원 여부를 먼저 판단한다.
+업데이트할 때는 먼저 외부 쓰기를 멈추고 `deploy\windows\mes-hub.exe stop`으로 서비스를 중지한다. 그 상태에서 **DB를 백업**하고 기존 묶음 폴더를 별도로 보관한 뒤, 새 묶음으로 폴더를 교체한다(기존 `.env`, `deploy\windows\mes-hub.exe`, `logs`를 새 묶음의 같은 위치에 복원). 위 마이그레이션 → `deploy\windows\mes-hub.exe start` → 브라우저 확인 순서다. 파일 저장소는 묶음 밖에 유지한다. 문제가 생기면 서비스를 중지하고 이전 묶음을 복원해 다시 시작한다. DB 스키마가 바뀐 릴리스는 이전 묶음과 중지 직후 백업한 DB를 함께 복원한 다음 서비스를 시작한다.
 
 IIS를 TLS 앞단으로 둘 때만 ARR 리버스 프록시가 전체 요청을 이 서비스로 넘기게 한다. `/api/events`의 SSE 응답 버퍼링을 끄고 프록시 유휴 시간을 스트림 유지 시간보다 길게 설정한다. 이벤트 브로드캐스트는 **단일 api 인스턴스** 전제다. IIS 없이도 api 포트로 직접 접속할 수 있다.
 
