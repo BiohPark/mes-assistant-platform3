@@ -37,11 +37,11 @@ export class TasksController {
   list(@Req() req: AuthedRequest, @Query() query: Record<string, unknown>) {
     return this.tasks.list({ assistantId: typeof query.assistantId === 'string' ? query.assistantId : undefined,
       status: values(query['status[]'] ?? query.status), tags: values(query['tag[]'] ?? query.tag),
-      mine: query.mine === 'true' ? req.user!.id : undefined })
+      mine: query.mine === 'true' ? req.user!.id : undefined }, req.user!.id)
   }
 
   @Get(':id')
-  get(@Param('id') id: string) { return this.tasks.get(id) }
+  get(@Req() req: AuthedRequest, @Param('id') id: string) { return this.tasks.get(id, req.user!.id) }
 
   @Patch(':id')
   update(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
@@ -56,7 +56,7 @@ export class TasksController {
 
   @Delete(':id')
   @HttpCode(204)
-  delete(@Param('id') id: string) { return this.tasks.delete(id) }
+  delete(@Req() req: AuthedRequest, @Param('id') id: string) { return this.tasks.delete(id, req.user!.id) }
 
   @Put(':id/tags/:tag')
   @HttpCode(204)
@@ -71,7 +71,7 @@ export class TasksController {
   }
 
   @Get(':id/activity')
-  activity(@Param('id') id: string) { return this.tasks.activity(id) }
+  activity(@Req() req: AuthedRequest, @Param('id') id: string) { return this.tasks.activity(id, req.user!.id) }
 }
 
 @Controller('tags')
@@ -89,8 +89,8 @@ export class ThreadsController {
   constructor(@Inject(DbTasksService) private readonly tasks: DbTasksService, @Inject(CONFIG) private readonly config: AppConfig) {}
 
   @Get(':id/messages')
-  async messages(@Param('id') id: string, @Query() query: Record<string, unknown>) {
-    const rows = await this.tasks.messages(id)
+  async messages(@Req() req: AuthedRequest, @Param('id') id: string, @Query() query: Record<string, unknown>) {
+    const rows = await this.tasks.messages(id, req.user!.id)
     const ids = values(query.ids)
     if (!ids.length) return rows
     const selected = new Set(ids.flatMap((value) => value.split(',')).filter(Boolean))

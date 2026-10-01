@@ -6,7 +6,7 @@ import { drizzle } from 'drizzle-orm/mysql2'
 import type { Db } from '../db/db.module.js'
 import type { Pool } from 'mysql2/promise'
 import { createPool } from '../db/connection.js'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { OpenAICompatibleProvider, type ChatProvider } from '@mes/llm'
 import { loadConfig } from '../config/config.js'
@@ -337,7 +337,7 @@ describe('RequestService DB', () => {
     const { thread } = await tasks.create('member', { assistantId })
     const run = await service.start('member', thread.id, { content: '정리' }, 'sweep-key')
     await run.done
-    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: new Date(Date.now() - 1000) }).where(eq(chatRequest.id, run.id))
+    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: sql`timestampadd(second, -1, current_timestamp(6))` }).where(eq(chatRequest.id, run.id))
     await db.update(message).set({ status: 'streaming' }).where(eq(message.id, run.replyMessageId))
     expect(await service.sweep()).toBe(1)
     expect(await service.get(run.id)).toMatchObject({ status: 'interrupted', code: 'INTERRUPTED' })
@@ -357,11 +357,11 @@ describe('RequestService DB', () => {
     const { thread } = await tasks.create('member', { assistantId })
     const run = await service.start('member', thread.id, { content: '경쟁' }, 'renewed-lease')
     await run.done
-    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: new Date(Date.now() - 1000) }).where(eq(chatRequest.id, run.id))
+    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: sql`timestampadd(second, -1, current_timestamp(6))` }).where(eq(chatRequest.id, run.id))
     await db.update(message).set({ status: 'streaming' }).where(eq(message.id, run.replyMessageId))
     const original = (service as never as { transition: (...args: unknown[]) => Promise<boolean> }).transition.bind(service)
     const spy = vi.spyOn(service as never as { transition: (...args: unknown[]) => Promise<boolean> }, 'transition').mockImplementation(async (...args) => {
-      await db.update(chatRequest).set({ leaseUntil: new Date(Date.now() + 30_000) }).where(eq(chatRequest.id, run.id))
+      await db.update(chatRequest).set({ leaseUntil: sql`timestampadd(second, 30, current_timestamp(6))` }).where(eq(chatRequest.id, run.id))
       return original(...args)
     })
     try { expect(await service.sweep()).toBe(0); expect((await service.get(run.id)).status).toBe('streaming') }
@@ -521,7 +521,7 @@ describe('RequestService DB', () => {
     const { thread } = await tasks.create('member', { assistantId })
     const run = await service.start('member', thread.id, { content: '재시작' }, 'restart-key')
     await run.done
-    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: new Date(Date.now() + 30_000) }).where(eq(chatRequest.id, run.id))
+    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: sql`timestampadd(second, 30, current_timestamp(6))` }).where(eq(chatRequest.id, run.id))
     await db.update(message).set({ status: 'streaming' }).where(eq(message.id, run.replyMessageId))
     const restarted = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), provider)
     expect(await restarted.recoverOnStartup()).toBe(1)

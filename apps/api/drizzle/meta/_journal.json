@@ -15,6 +15,13 @@
       "when": 1790811006442,
       "tag": "0001_mysterious_elektra",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1790832339069,
+      "tag": "0002_perfect_sunfire",
+      "breakpoints": true
     }
   ]
 }

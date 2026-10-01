@@ -48,18 +48,18 @@ export class RequestsController {
   constructor(@Inject(RequestsService) private readonly requests: RequestsService) {}
 
   @Get(':id')
-  get(@Param('id') id: string) { return this.requests.get(id) }
+  get(@Req() req: AuthedRequest, @Param('id') id: string) { return this.requests.get(id, req.user!.id) }
 
   @Get(':id/snapshot')
-  async snapshot(@Param('id') id: string, @Res() res: Response) {
-    const data = await this.requests.snapshot(id)
+  async snapshot(@Req() req: AuthedRequest, @Param('id') id: string, @Res() res: Response) {
+    const data = await this.requests.snapshot(id, req.user!.id)
     res.set({ 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="request-${id.replace(/[^a-zA-Z0-9-]/g, '')}.json"` })
     res.send(JSON.stringify(data, null, 2))
   }
 
   @Post(':id/cancel')
   @HttpCode(204)
-  cancel(@Param('id') id: string) { return this.requests.cancel(id) }
+  cancel(@Req() req: AuthedRequest, @Param('id') id: string) { return this.requests.cancel(id, req.user!.id) }
 
   @Post(':id/retry')
   async retry(@Req() req: AuthedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined,

@@ -11,6 +11,7 @@ import { RequestsModule } from './requests/requests.module.js'
 import { ConversationInputsModule } from './context/conversation-inputs.module.js'
 import { EventsModule } from './events/events.module.js'
 import { AdminModule } from './admin/admin.module.js'
+import { SrModule } from './sr/sr.module.js'
 
-@Module({ imports: [ConfigModule, DbModule, HealthModule, AuthModule, EventsModule, LlmModule, CatalogModule, AdminModule, TasksModule, FilesModule, RequestsModule, ConversationInputsModule] })
+@Module({ imports: [ConfigModule, DbModule, HealthModule, AuthModule, EventsModule, LlmModule, CatalogModule, AdminModule, TasksModule, FilesModule, RequestsModule, ConversationInputsModule, SrModule] })
 export class AppModule {}

@@ -41,13 +41,13 @@ export class FilesController {
   }
 
   @Get(':id')
-  get(@Param('id') id: string) { return this.files.get(id) }
+  get(@Req() req: AuthedRequest, @Param('id') id: string) { return this.files.get(id, req.user!.id) }
 
   @Get(':id/content')
-  async content(@Param('id') id: string, @Res() res: Response) {
-    const meta = await this.files.get(id)
+  async content(@Req() req: AuthedRequest, @Param('id') id: string, @Res() res: Response) {
+    const meta = await this.files.get(id, req.user!.id)
     let stream
-    try { stream = await this.files.contentStream(id) }
+    try { stream = await this.files.contentStream(id, req.user!.id) }
     catch (error) {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') throw new NotFoundException('파일을 찾을 수 없습니다')
       throw error
@@ -66,7 +66,7 @@ export class FilesController {
   }
 
   @Get(':id/versions')
-  versions(@Param('id') id: string) { return this.files.versions(id) }
+  versions(@Req() req: AuthedRequest, @Param('id') id: string) { return this.files.versions(id, req.user!.id) }
 
   @Patch(':id')
   @HttpCode(204)
@@ -76,7 +76,19 @@ export class FilesController {
 
   @Delete(':id')
   @HttpCode(204)
-  remove(@Param('id') id: string) { return this.files.remove(id) }
+  remove(@Req() req: AuthedRequest, @Param('id') id: string) { return this.files.remove(id, req.user!.id) }
+}
+
+@Controller('service-requests')
+export class SrFilesController {
+  constructor(@Inject(DbFilesService) private readonly files: DbFilesService) {}
+
+  @Post(':id/files')
+  @UseInterceptors(FileInterceptor('file'))
+  upload(@Req() req: AuthedRequest, @Param('id') id: string, @UploadedFile() file: Upload | undefined) {
+    if (!file) throw new BadRequestException('파일이 필요합니다')
+    return this.files.uploadSr(req.user!.id, id, file.originalname, file.mimetype, file.buffer)
+  }
 }
 
 @Controller('tasks')
@@ -84,7 +96,7 @@ export class TaskFilesController {
   constructor(@Inject(DbFilesService) private readonly files: DbFilesService) {}
 
   @Get(':id/files')
-  own(@Param('id') id: string) { return this.files.filesForTask(id) }
+  own(@Req() req: AuthedRequest, @Param('id') id: string) { return this.files.filesForTask(id, req.user!.id) }
 
   @Post(':id/outputs')
   saveOutput(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
@@ -93,7 +105,7 @@ export class TaskFilesController {
   }
 
   @Get(':id/candidates')
-  candidates(@Param('id') id: string) { return this.files.candidates(id) }
+  candidates(@Req() req: AuthedRequest, @Param('id') id: string) { return this.files.candidates(id, req.user!.id) }
 
   @Put(':id/inputs/:fileId')
   @HttpCode(204)

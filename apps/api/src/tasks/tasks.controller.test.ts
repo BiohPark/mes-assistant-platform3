@@ -43,7 +43,7 @@ describe('tasks HTTP API', () => {
     await request(app.getHttpServer()).post('/api/tasks').set(auth()).send({ assistantId: 'a', firstMessage: '첫 의견' }).expect(201)
     expect(service.create).toHaveBeenCalledWith('u', { assistantId: 'a', firstMessage: '첫 의견' })
     await request(app.getHttpServer()).get('/api/tasks?assistantId=a&status[]=done&tag[]=x&mine=true').set(auth()).expect(200)
-    expect(service.list).toHaveBeenCalledWith({ assistantId: 'a', status: ['done'], tags: ['x'], mine: 'u' })
+    expect(service.list).toHaveBeenCalledWith({ assistantId: 'a', status: ['done'], tags: ['x'], mine: 'u' }, 'u')
     await request(app.getHttpServer()).post('/api/threads/h/messages').set(auth()).send({ content: 'AI', kind: 'prompt' }).expect(400)
     await request(app.getHttpServer()).post('/api/threads/h/messages').set(auth()).send({ content: '팀 의견', kind: 'discussion' }).expect(201)
     expect(service.appendMessage).toHaveBeenCalledWith('u', 'h', { content: '팀 의견', kind: 'discussion' })

@@ -49,6 +49,11 @@ describe('SR 접수 에이전트 보호 (데모 테스트 4건)', () => {
   it('refuses to set a retired assistant as intake', async () => {
     await expect(admin.settings({ srIntakeAssistantId: 'urs-analyst' })).rejects.toMatchObject({ status: 409 })
   })
+  it('clears intake assistant by deleting the setting', async () => {
+    expect(await admin.settings({ srIntakeAssistantId: null })).not.toHaveProperty('srIntakeAssistantId')
+    expect(await admin.getSettings()).not.toHaveProperty('srIntakeAssistantId')
+    expect(await admin.settings({ srIntakeAssistantId: 'urs-analyst-basic' })).toMatchObject({ srIntakeAssistantId: 'urs-analyst-basic' })
+  })
   it('전역 모델·전달 방식·요청 한도를 LLM 포트에 반영한다', async () => {
     await admin.settings({ defaultModel: 'admin-model', fileDelivery: 'inline', requestBudgetBytes: 8192, fileMaxPerRequest: 3, link1Rule: 'https://example.test/?model={modelId}' })
     const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
