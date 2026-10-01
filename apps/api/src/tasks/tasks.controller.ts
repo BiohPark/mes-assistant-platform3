@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Patch, Post, Put, Query, Req } from '@nestjs/common'
 import type { AuthedRequest } from '../auth/guards.js'
 import { DbTasksService } from './tasks.service.js'
+import { TaskExtrasService } from './task-extras.service.js'
 import { z } from 'zod'
 import { CONFIG, type AppConfig } from '../config/config.js'
 
@@ -14,6 +15,10 @@ const patchSchema = z.object({
   modelId: z.string().nullable().optional(),
 }).strict()
 const statusSchema = z.object({ status: z.enum(['todo', 'in_progress', 'on_hold', 'done']), reason: z.string().optional() }).strict()
+const checklistSchema = z.object({ label: z.string().trim().min(1), required: z.boolean().optional() }).strict()
+const noteSchema = z.object({ content: z.string(), attachmentIds: z.array(z.string().min(1)).optional() }).strict()
+const feedbackSchema = z.object({ rating: z.number().int().min(1).max(5), comment: z.string().default('') }).strict()
+const completeSchema = z.object({ feedback: feedbackSchema.optional() }).strict()
 const messageSchema = z.object({ content: z.string().trim(), kind: z.literal('discussion'), attachmentIds: z.array(z.string().min(1)).optional() }).strict().refine((value) => !!value.content || !!value.attachmentIds?.length)
 function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body)
@@ -24,7 +29,7 @@ const values = (value: unknown): string[] => value === undefined ? [] : Array.is
 
 @Controller('tasks')
 export class TasksController {
-  constructor(@Inject(DbTasksService) private readonly tasks: DbTasksService) {}
+  constructor(@Inject(DbTasksService) private readonly tasks: DbTasksService, @Inject(TaskExtrasService) private readonly extras: TaskExtrasService) {}
 
   @Post()
   async create(@Req() req: AuthedRequest, @Body() body: unknown, @Headers('idempotency-key') key?: string) {
@@ -52,6 +57,55 @@ export class TasksController {
   setStatus(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
     const { status, reason } = parse(statusSchema, body)
     return this.tasks.setStatus(req.user!.id, id, status, reason)
+  }
+
+  @Get(':id/checklist')
+  checklist(@Req() req: AuthedRequest, @Param('id') id: string) { return this.extras.checklist(req.user!.id, id) }
+
+  @Post(':id/checklist')
+  addChecklist(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
+    const input = parse(checklistSchema, body)
+    return this.extras.addChecklist(req.user!.id, id, input.label, input.required)
+  }
+
+  @Patch(':id/checklist/:itemId')
+  toggleChecklist(@Req() req: AuthedRequest, @Param('id') id: string, @Param('itemId') itemId: string) {
+    return this.extras.toggleChecklist(req.user!.id, id, itemId)
+  }
+
+  @Delete(':id/checklist/:itemId')
+  @HttpCode(204)
+  removeChecklist(@Req() req: AuthedRequest, @Param('id') id: string, @Param('itemId') itemId: string) {
+    return this.extras.removeChecklist(req.user!.id, id, itemId)
+  }
+
+  @Post(':id/checklist/review')
+  reviewChecklist(@Req() req: AuthedRequest, @Param('id') id: string) { return this.extras.review(req.user!.id, id) }
+
+  @Post(':id/checklist/review/apply')
+  applyChecklistReview(@Req() req: AuthedRequest, @Param('id') id: string) { return this.extras.applyReview(req.user!.id, id) }
+
+  @Get(':id/notes')
+  notes(@Req() req: AuthedRequest, @Param('id') id: string) { return this.extras.notes(req.user!.id, id) }
+
+  @Post(':id/notes')
+  addNote(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
+    const input = parse(noteSchema, body)
+    return this.extras.addNote(req.user!.id, id, input.content, input.attachmentIds)
+  }
+
+  @Delete(':id/notes/:noteId')
+  @HttpCode(204)
+  deleteNote(@Req() req: AuthedRequest, @Param('id') id: string, @Param('noteId') noteId: string) { return this.extras.deleteNote(req.user!.id, id, noteId) }
+
+  @Post(':id/complete/preview')
+  preview(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
+    return this.extras.preview(req.user!.id, id, parse(completeSchema, body).feedback)
+  }
+
+  @Post(':id/complete')
+  complete(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
+    return this.extras.complete(req.user!.id, id, parse(completeSchema, body).feedback)
   }
 
   @Delete(':id')

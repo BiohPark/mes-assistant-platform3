@@ -255,6 +255,72 @@ paths:
       responses:
         '204': { description: 삭제 }
         '409': { $ref: '#/components/responses/Problem' }
+  /tasks/{taskId}/checklist:
+    get:
+      tags: [tasks]
+      summary: 체크리스트 (대화 생성 시 에이전트 템플릿 복사. 강제 아님 — 완료를 막지 않는다). S4 ③
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses: { '200': { description: OK } }
+    post:
+      tags: [tasks]
+      summary: 항목 추가 (완료된 대화는 409)
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [label], properties: { label: { type: string }, required: { type: boolean } } } } } }
+      responses: { '201': { description: 추가 }, '409': { $ref: '#/components/responses/Problem' } }
+  /tasks/{taskId}/checklist/{itemId}:
+    patch:
+      tags: [tasks]
+      summary: 체크 토글
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { name: itemId, in: path, required: true, schema: { type: string } }]
+      responses: { '204': { description: 변경 } }
+    delete:
+      tags: [tasks]
+      summary: 항목 삭제 (저장된 AI 판단 결과는 무효화)
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { name: itemId, in: path, required: true, schema: { type: string } }]
+      responses: { '204': { description: 삭제 } }
+  /tasks/{taskId}/checklist/review:
+    post:
+      tags: [tasks]
+      summary: AI 달성도 m/n (보조 호출 — 요청 기록 없음, D3-2). 체크는 건드리지 않고 판단만 저장
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses: { '200': { description: 'met · total · items[{ itemId, met, note }]' } }
+  /tasks/{taskId}/checklist/review/apply:
+    post:
+      tags: [tasks]
+      summary: '"판단대로 체크" — AI가 충족이라 본 항목만 체크'
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses: { '200': { description: 체크한 수 } }
+  /tasks/{taskId}/notes:
+    get:
+      tags: [tasks]
+      summary: 노트 목록 (첨부는 자료함 파일 참조, 삭제된 대화는 404). S4 ③
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses: { '200': { description: OK } }
+    post:
+      tags: [tasks]
+      summary: 노트 추가 (본문 + 자료함 파일 ID)
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [content], properties: { content: { type: string }, attachmentIds: { type: array, items: { type: string } } } } } } }
+      responses: { '201': { description: 추가 } }
+  /tasks/{taskId}/notes/{noteId}:
+    delete:
+      tags: [tasks]
+      summary: 노트 삭제 (작성자·SO)
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { name: noteId, in: path, required: true, schema: { type: string } }]
+      responses: { '204': { description: 삭제 } }
+  /tasks/{taskId}/complete/preview:
+    post:
+      tags: [tasks]
+      summary: 완료 리포트 미리보기 (데모 buildTaskReport 형식 — 입력 출처·참조 대화·산출물·피드백)
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses: { '200': { description: 'markdown' } }
+  /tasks/{taskId}/complete:
+    post:
+      tags: [tasks]
+      summary: 완료 — 피드백 저장 · 리포트를 산출물 파일(`완료리포트_<코드>.md`, 버전 체인)로 저장 · 상태 done, 한 트랜잭션. status API의 done도 같은 경로. S4 ③
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { rating: { type: integer, minimum: 1, maximum: 5 }, comment: { type: string } } } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }, '409': { $ref: '#/components/responses/Problem' } }
   /tasks/{taskId}/status:
     post:
       tags: [tasks]

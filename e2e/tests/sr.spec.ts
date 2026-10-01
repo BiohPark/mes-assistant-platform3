@@ -33,6 +33,7 @@ test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유',
     let rows: Array<{ id: string; threadId: string }> = []
     await expect.poll(async () => { rows = await (await page.request.get('/api/service-requests')).json() as typeof rows; return rows.length }).toBeGreaterThan(0) // 생성이 끝날 때까지 — 클릭 직후 조회하면 비어 있다
     srId = rows[0]!.id
+    await expect.poll(() => new URL(page.url()).searchParams.get('id')).toBe(srId)
     const attachment = await page.request.post(`/api/service-requests/${srId}/files`, { multipart: { file: { name: 'sr-e2e.txt', mimeType: 'text/plain', buffer: Buffer.from('현장 알람') } } })
     expect(attachment.ok()).toBe(true)
     const fileId = ((await attachment.json()) as { id: string }).id

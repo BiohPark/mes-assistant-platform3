@@ -2,13 +2,14 @@ import { drizzle } from 'drizzle-orm/mysql2'
 import type { Db } from '../db/db.module.js'
 import type { Pool } from 'mysql2/promise'
 import { createPool } from '../db/connection.js'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { appUser, assistant, fileObject, message, messageAttachment, task, taskInput, thread } from '../db/schema.js'
+import { appUser, assistant, assistantChecklistTemplate, checklistItem, checklistReview, fileObject, message, messageAttachment, noteAttachment, task, taskInput, thread } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from './tasks.service.js'
+import { TaskExtrasService } from './task-extras.service.js'
 import { DbFilesService } from '../files/files.service.js'
 import { DbCatalogReader } from '../catalog/catalog.service.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
@@ -21,6 +22,8 @@ describe('tasks DB', () => {
   let client: Pool
   let db: Db
   let service: DbTasksService
+  let extras: TaskExtrasService
+  let reportRoot: string
   let assistantId: string
   beforeAll(async () => {
     temp = await createTempDb('tasks')
@@ -30,9 +33,12 @@ describe('tasks DB', () => {
     await seedCatalog(db)
     await db.insert(appUser).values({ id: 'member', name: 'Member', initials: 'M', color: '#123456' })
     assistantId = (await db.select().from(assistant))[0]!.id
-    service = new DbTasksService(db)
+    reportRoot = await mkdtemp(join(tmpdir(), 'mes-task-status-'))
+    extras = new TaskExtrasService(db, { kind: 'mock' } as never, { runAuxiliary: async () => undefined } as never,
+      new FileStorageService(reportRoot), { publish: () => undefined } as never)
+    service = new DbTasksService(db, undefined, extras)
   })
-  afterAll(async () => { await client?.end(); await temp?.drop() })
+  afterAll(async () => { await client?.end(); await temp?.drop(); if (reportRoot) await rm(reportRoot, { recursive: true, force: true }) })
 
   it('creates one thread, normalized tags and unique year codes under concurrency', async () => {
     const created = await Promise.all(Array.from({ length: 10 }, () => service.create('member', { assistantId, tags: ['#sr-2026-0002', 'SR-2026-0002', ' cca item '] })))
@@ -43,6 +49,81 @@ describe('tasks DB', () => {
     expect(await service.get(created[0]!.task.id)).toMatchObject({ thread: { id: created[0]!.thread.id, taskId: created[0]!.task.id } })
     expect((await service.activity(created[0]!.task.id)).filter((item) => item.type === 'tag.added').map((item) => item.payload)).toEqual(expect.arrayContaining([{ tag: 'SR-2026-0002' }, { tag: 'cca-item' }]))
     expect((await db.select().from(thread).where(eq(thread.taskId, created[0]!.task.id)))).toHaveLength(1)
+  })
+
+  it('copies the assistant checklist template when a conversation starts', async () => {
+    const templateId = 'template-copy-test'
+    await db.insert(assistantChecklistTemplate).values({ id: templateId, assistantId, sortOrder: 900, label: '검토 완료', required: true })
+    try {
+      const created = await service.create('member', { assistantId })
+      expect(created.task.checklist).toEqual(expect.arrayContaining([expect.objectContaining({ label: '검토 완료', required: true, checked: false })]))
+      expect(await db.select().from(checklistItem).where(eq(checklistItem.taskId, created.task.id))).toEqual(expect.arrayContaining([expect.objectContaining({ templateItemId: templateId })]))
+    } finally {
+      await db.update(checklistItem).set({ templateItemId: null }).where(eq(checklistItem.templateItemId, templateId))
+      await db.delete(assistantChecklistTemplate).where(eq(assistantChecklistTemplate.id, templateId))
+    }
+  })
+
+  it('keeps AI review separate from checks and applies only met items', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mes-checklist-'))
+    try {
+      const extras = new TaskExtrasService(db, { kind: 'mock' } as never,
+        { runAuxiliary: async (_actor: string, _kind: string, operation: (signal: AbortSignal) => Promise<unknown>) => operation(new AbortController().signal) } as never,
+        new FileStorageService(root), { publish: () => undefined } as never)
+      const created = (await service.create('member', { assistantId })).task
+      await extras.addChecklist('member', created.id, '첫 항목')
+      await extras.addChecklist('member', created.id, '둘째 항목')
+      const [first, second] = (await extras.checklist('member', created.id)).filter((item) => item.label === '첫 항목' || item.label === '둘째 항목')
+      await extras.toggleChecklist('member', created.id, first!.id)
+      const review = await extras.review('member', created.id)
+      expect(review).toMatchObject({ met: 1, total: created.checklist.length + 2, source: 'rule' })
+      expect((await extras.checklist('member', created.id)).filter((item) => item.id === first!.id || item.id === second!.id).map((item) => item.checked)).toEqual([true, false])
+      expect(await extras.applyReview('member', created.id)).toEqual({ applied: 0 })
+      await extras.toggleChecklist('member', created.id, first!.id)
+      expect(await extras.applyReview('member', created.id)).toEqual({ applied: 1 })
+      expect((await extras.checklist('member', created.id)).filter((item) => item.id === first!.id || item.id === second!.id).map((item) => item.checked)).toEqual([true, false])
+      expect((await service.activity(created.id)).map((item) => item.type)).toEqual(expect.arrayContaining(['checklist.reviewed', 'checklist.checked', 'checklist.unchecked']))
+      await extras.removeChecklist('member', created.id, second!.id)
+      expect(await extras.checklist('member', created.id)).toHaveLength(created.checklist.length + 1)
+      expect((await service.get(created.id)).checklistReview).toBeUndefined()
+      expect(await db.select().from(checklistReview).where(eq(checklistReview.taskId, created.id))).toHaveLength(0)
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
+  it('stores note file references and completes with a report, feedback and locked edits', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mes-complete-'))
+    try {
+      const storage = new FileStorageService(root)
+      const extras = new TaskExtrasService(db, { kind: 'mock' } as never, { runAuxiliary: async () => undefined } as never,
+        storage, { publish: () => undefined } as never)
+      const created = (await service.create('member', { assistantId })).task
+      const files = new DbFilesService(db, storage, { fileMaxBytes: 1024, fileMaxPerRequest: 2 } as never)
+      const input = await files.upload('member', created.id, '근거.txt', 'text/plain', Buffer.from('근거'))
+      await files.setInput('member', created.id, input.id, 'main')
+      const added = await extras.addNote('member', created.id, '검토 메모', [input.id])
+      expect((await extras.notes('member', created.id))[0]).toMatchObject({ content: '검토 메모', attachmentIds: [input.id] })
+      expect(await db.select().from(noteAttachment).where(eq(noteAttachment.noteId, added.id))).toHaveLength(1)
+      const preview = await extras.preview('member', created.id, { rating: 4, comment: '좋음' })
+      expect(preview.content).toContain('근거.txt v1')
+      expect(preview.content).toContain('근거.txt v1 ← 이 대화')
+      await extras.complete('member', created.id, { rating: 4, comment: '좋음' })
+      const done = await service.get(created.id)
+      expect(done).toMatchObject({ status: 'done', feedback: { rating: 4, comment: '좋음' } })
+      const [report] = await db.select().from(fileObject).where(and(eq(fileObject.originTaskId, created.id), eq(fileObject.isOutput, true)))
+      expect(report).toMatchObject({ kind: 'task_file', originalName: `완료리포트_${created.code}.md`, version: 1 })
+      const content = Buffer.from(await storage.read(report!.storageKey)).toString('utf8')
+      expect(content).toContain('근거.txt v1')
+      expect(content).toContain('★ 4 — 좋음')
+      expect(content).toContain(`_생성: `)
+      await expect(extras.addNote('member', created.id, '늦은 메모')).rejects.toMatchObject({ status: 409 })
+      await service.setStatus('member', created.id, 'in_progress', '추가 작업')
+      await extras.deleteNote('member', created.id, added.id)
+      expect(await extras.notes('member', created.id)).toEqual([])
+      await extras.complete('member', created.id)
+      const reports = await db.select().from(fileObject).where(and(eq(fileObject.originTaskId, created.id), eq(fileObject.originalName, `완료리포트_${created.code}.md`)))
+      expect(reports).toEqual(expect.arrayContaining([expect.objectContaining({ version: 2, previousId: report!.id, isOutput: true })]))
+      expect(reports.find((file) => file.id === report!.id)?.isOutput).toBe(false)
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
 
   it('uses an optional idempotency key to return one draft under retries', async () => {
@@ -67,6 +148,9 @@ describe('tasks DB', () => {
     await service.update('member', created.id, { title: '내 제목' })
     expect(await service.get(created.id)).toMatchObject({ title: '내 제목', titleSource: 'manual' })
     await service.setStatus('member', created.id, 'done')
+    const [report] = await db.select().from(fileObject).where(and(eq(fileObject.originTaskId, created.id), eq(fileObject.isOutput, true)))
+    expect(report).toMatchObject({ originalName: `완료리포트_${created.code}.md`, version: 1 })
+    expect(Buffer.from(await new FileStorageService(reportRoot).read(report!.storageKey)).toString('utf8')).toContain(created.code)
     await expect(service.update('member', created.id, { summary: '잠긴 수정' })).rejects.toMatchObject({ status: 409 })
     await expect(service.setStatus('member', created.id, 'in_progress')).rejects.toMatchObject({ status: 400 })
     await service.setStatus('member', created.id, 'in_progress', '다시 진행')
@@ -87,6 +171,7 @@ describe('tasks DB', () => {
     expect((await service.messages(createdThread.id)).map((item) => [item.seq, item.content, item.kind])).toEqual([[1, '첫 의견', 'discussion'], [2, '둘째 의견', 'discussion']])
     expect((await service.activity(created.id)).some((item) => item.type === 'message.sent')).toBe(true)
     await service.delete(created.id)
+    await expect(extras.notes('member', created.id)).rejects.toMatchObject({ status: 404 })
     expect((await db.select().from(task).where(eq(task.id, created.id)))[0]?.deletedAt).toBeTruthy()
     expect(await db.select().from(thread).where(eq(thread.id, createdThread.id))).toHaveLength(1)
     expect(await db.select().from(message).where(eq(message.threadId, createdThread.id))).toHaveLength(2)

@@ -29,6 +29,7 @@ test('대화 생성, 태그와 칸반, 완료와 재개, 다른 사용자 조회
   await expect(page.getByRole('link', { name: /WK-\d{4}-\d{4}.*열기/ })).toBeVisible()
   await page.goto(taskUrl)
   await page.getByRole('button', { name: '업무 완료' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '완료 처리' }).click()
   await expect(page.getByRole('button', { name: '다시 열기' })).toBeVisible()
   await page.getByRole('button', { name: '다시 열기' }).click()
   await page.getByPlaceholder('사유를 입력하세요').fill('추가 확인')

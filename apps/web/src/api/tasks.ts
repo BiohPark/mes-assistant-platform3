@@ -1,4 +1,4 @@
-import type { ActivityLog, Message, Task, TaskStatus, Thread } from '@mes/domain'
+import type { ActivityLog, ChecklistItem, ChecklistReview, Message, Note, Task, TaskStatus, Thread } from '@mes/domain'
 import type { TagSuggestion } from '@mes/domain'
 import { queryClient } from './queryClient'
 
@@ -18,6 +18,7 @@ function refresh(taskId?: string) {
   void queryClient.invalidateQueries({ queryKey: ['tag-suggest'] })
   void queryClient.invalidateQueries({ queryKey: ['activity'] })
   void queryClient.invalidateQueries({ queryKey: ['estimate'] })
+  void queryClient.invalidateQueries({ queryKey: ['notes'] })
   if (taskId) {
     void queryClient.invalidateQueries({ queryKey: ['task', taskId] })
     void queryClient.invalidateQueries({ queryKey: ['activity', taskId] })
@@ -41,6 +42,49 @@ export async function listTasks(filter: TaskFilter = {}): Promise<Task[]> {
 export const getTask = (taskId: string) => request<Task>(`/tasks/${encodeURIComponent(taskId)}`)
 export const getMessages = (threadId: string) => request<Message[]>(`/threads/${encodeURIComponent(threadId)}/messages`)
 export const getActivity = (taskId: string) => request<ActivityLog[]>(`/tasks/${encodeURIComponent(taskId)}/activity`)
+export const getChecklist = (taskId: string) => request<ChecklistItem[]>(`/tasks/${encodeURIComponent(taskId)}/checklist`)
+export async function addChecklistItem(taskId: string, label: string): Promise<ChecklistItem[]> {
+  const result = await request<ChecklistItem[]>(`/tasks/${encodeURIComponent(taskId)}/checklist`, 'POST', { label })
+  refresh(taskId)
+  return result
+}
+export async function toggleChecklist(taskId: string, itemId: string): Promise<ChecklistItem[]> {
+  const result = await request<ChecklistItem[]>(`/tasks/${encodeURIComponent(taskId)}/checklist/${encodeURIComponent(itemId)}`, 'PATCH')
+  refresh(taskId)
+  return result
+}
+export async function removeChecklistItem(taskId: string, itemId: string): Promise<void> {
+  await request(`/tasks/${encodeURIComponent(taskId)}/checklist/${encodeURIComponent(itemId)}`, 'DELETE')
+  refresh(taskId)
+}
+export async function reviewChecklist(taskId: string): Promise<ChecklistReview> {
+  const result = await request<ChecklistReview>(`/tasks/${encodeURIComponent(taskId)}/checklist/review`, 'POST')
+  refresh(taskId)
+  return result
+}
+export async function applyChecklistReview(taskId: string): Promise<{ applied: number }> {
+  const result = await request<{ applied: number }>(`/tasks/${encodeURIComponent(taskId)}/checklist/review/apply`, 'POST')
+  refresh(taskId)
+  return result
+}
+export const getNotes = (taskId: string) => request<Note[]>(`/tasks/${encodeURIComponent(taskId)}/notes`)
+export async function addNote(taskId: string, content: string, attachmentIds: string[] = []): Promise<Note> {
+  const result = await request<Note>(`/tasks/${encodeURIComponent(taskId)}/notes`, 'POST', { content, attachmentIds })
+  refresh(taskId)
+  return result
+}
+export async function deleteNote(taskId: string, noteId: string): Promise<void> {
+  await request(`/tasks/${encodeURIComponent(taskId)}/notes/${encodeURIComponent(noteId)}`, 'DELETE')
+  refresh(taskId)
+}
+export interface CompletionFeedback { rating: number; comment: string }
+export const previewTaskReport = (taskId: string, feedback?: CompletionFeedback) => request<{ content: string }>(`/tasks/${encodeURIComponent(taskId)}/complete/preview`, 'POST', { ...(feedback && { feedback }) })
+export async function completeTask(taskId: string, feedback?: CompletionFeedback): Promise<Task> {
+  const result = await request<Task>(`/tasks/${encodeURIComponent(taskId)}/complete`, 'POST', { ...(feedback && { feedback }) })
+  refresh(taskId)
+  void queryClient.invalidateQueries({ queryKey: ['files', taskId] })
+  return result
+}
 export const suggestTags = (prefix = '', exclude: string[] = []) => {
   const query = new URLSearchParams({ prefix })
   for (const tag of exclude) query.append('exclude[]', tag)
