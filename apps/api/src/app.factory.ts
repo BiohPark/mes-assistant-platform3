@@ -1,4 +1,7 @@
 import type { INestApplication } from '@nestjs/common'
+import { existsSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
+import { relative, resolve, sep } from 'node:path'
 import cookieParser from 'cookie-parser'
 import type { Request, Response, NextFunction } from 'express'
 import { eq } from 'drizzle-orm'
@@ -11,6 +14,29 @@ import { appSetting } from './db/schema.js'
 export function configureApp<T extends INestApplication>(app: T, config: AppConfig): T {
   app.setGlobalPrefix('api')
   app.use(cookieParser(config.sessionSecret))
+  if (existsSync(config.webDistDir)) {
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      const rawPath = req.originalUrl.split('?')[0]
+      if (/^\/api(?:\/|$)/i.test(rawPath) || req.method !== 'GET') return next()
+      let pathname: string
+      try { pathname = decodeURIComponent(rawPath) }
+      catch { return res.status(400).end() }
+      if (/^\/api(?:\/|$)/i.test(pathname)) return next()
+      if (pathname.includes('\\') || pathname.includes('\0') || pathname.includes('%') || pathname.split('/').some((part) => part === '..' || part === '.')) {
+        return res.status(400).end()
+      }
+      const target = resolve(config.webDistDir, `.${pathname}`)
+      const inside = relative(config.webDistDir, target)
+      if (inside.startsWith(`..${sep}`) || inside === '..' || resolve(target) === resolve(config.webDistDir) && pathname !== '/') return res.status(400).end()
+      void stat(target).then((info) => {
+        const file = info.isFile() ? target : resolve(config.webDistDir, 'index.html')
+        res.sendFile(file, { headers: { 'Cache-Control': file === target && pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache' } }, (error) => { if (error) next(error) })
+      }).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') return next(error)
+        res.sendFile(resolve(config.webDistDir, 'index.html'), { headers: { 'Cache-Control': 'no-cache' } }, (sendError) => { if (sendError) next(sendError) })
+      })
+    })
+  }
   const sessions = app.get<SessionStore>(SESSION_STORE)
   const jsonBody = (configuredLimit: number | (() => Promise<number>)) => async (req: Request, res: Response, next: NextFunction) => {
     if (!req.is('application/json')) return next()
