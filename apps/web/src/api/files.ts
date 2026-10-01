@@ -19,6 +19,7 @@ export interface FileMeta {
 export interface FileCandidate {
   file: FileMeta
   sourceTaskId: string
+  sourceAssistantId?: string
   viaTags: string[]
   role: 'output' | 'upload'
   selected?: TaskInput['weight']

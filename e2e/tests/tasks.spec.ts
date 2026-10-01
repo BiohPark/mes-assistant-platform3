@@ -15,6 +15,7 @@ test('대화 생성, 태그와 칸반, 완료와 재개, 다른 사용자 조회
   await signUp(page, `e2e-task-${Date.now()}-a`)
   await page.getByRole('link', { name: /새 대화/ }).first().click()
   await expect(page).toHaveURL(/\/new\//)
+  await page.getByRole('button', { name: '팀 의견 (AI 미전송)' }).click()
   await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('첫 팀 의견')
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page).toHaveURL(/\/c\/[^/]+$/)
@@ -41,4 +42,14 @@ test('대화 생성, 태그와 칸반, 완료와 재개, 다른 사용자 조회
     await second.goto(taskUrl)
     await expect(second.getByText('첫 팀 의견')).toBeVisible()
   } finally { await other.close() }
+})
+
+test('새 대화의 첫 입력을 AI에 한 번 보내고 답변을 표시한다', async ({ page }) => {
+  await signUp(page, `e2e-first-${Date.now()}`)
+  await page.getByRole('link', { name: /새 대화/ }).first().click()
+  await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('첫 AI 질문 E2E')
+  await page.getByRole('button', { name: '전송', exact: true }).click()
+  await expect(page).toHaveURL(/\/c\/[^/]+$/)
+  await expect(page.getByRole('paragraph').filter({ hasText: /^첫 AI 질문 E2E$/ })).toHaveCount(1) // 사용자 말풍선 1개 — 제목·답변 인용은 제외
+  await expect(page.getByRole('button', { name: '사용한 자료' })).toHaveCount(1) // AI 답변 1개
 })

@@ -5,10 +5,69 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { MeContext } from '@/app/auth'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { DraftConversationPage } from './DraftConversationPage'
+import { useChat } from '@/features/chat/useChat'
 
 const toastError = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: toastError } }))
-afterEach(() => { vi.unstubAllGlobals(); toastError.mockClear() })
+afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear() })
+
+const assistant = { id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-28T00:00:00.000Z', updatedAt: '2026-09-28T00:00:00.000Z', revision: 0 }
+function mountDraft(path = '/new/a', conversation = <div>대화로 이동</div>) {
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><TooltipProvider><MemoryRouter initialEntries={[path]}><Routes><Route path="/new/:assistantId" element={<DraftConversationPage />} /><Route path="/c/:taskId" element={conversation} /></Routes></MemoryRouter></TooltipProvider></MeContext></QueryClientProvider>)
+}
+
+function ReconnectingConversation() {
+  useChat('h')
+  return <div>대화로 이동</div>
+}
+
+it('reconnects the first AI request with the same body and key after losing the response', async () => {
+  const calls: Array<{ url: string; body: string; key: string | null }> = []
+  let creations = 0
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants') return Response.json([assistant])
+    if (url === '/api/tasks' && init?.method === 'POST') { creations++; return Response.json({ id: 't', threadId: 'h' }, { status: 201 }) }
+    if (url === '/api/threads/h/requests' && init?.method === 'POST') {
+      calls.push({ url, body: String(init.body), key: new Headers(init.headers).get('Idempotency-Key') })
+      return new Response(calls.length === 1 ? 'event: started\ndata: {"requestId":"r","replyMessageId":"m"}\n\n' : 'event: started\ndata: {"requestId":"r","replyMessageId":"m"}\n\nevent: completed\ndata: {}\n\n', { status: 201 })
+    }
+    return Response.json([])
+  }))
+  mountDraft('/new/a', <ReconnectingConversation />)
+  await screen.findByText('도우미')
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '첫 질문' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(calls).toHaveLength(2))
+  expect(calls[1]).toEqual(calls[0])
+  expect(creations).toBe(1)
+  expect(JSON.parse(calls[0]!.body)).toEqual({ content: '첫 질문', attachmentIds: [], oneShotFileIds: [] })
+  await waitFor(() => expect(sessionStorage.length).toBe(0))
+})
+
+it('reuses the task creation key and reference after a lost creation response', async () => {
+  const keys: Array<string | null> = []
+  const bodies: unknown[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants') return Response.json([assistant])
+    if (url === '/api/tasks' && init?.method === 'POST') {
+      keys.push(new Headers(init.headers).get('Idempotency-Key'))
+      bodies.push(JSON.parse(String(init.body)))
+      if (keys.length === 1) throw new Error('연결 끊김')
+      return Response.json({ id: 't', threadId: 'h' }, { status: 201 })
+    }
+    if (url === '/api/threads/h/requests') return new Response('event: completed\ndata: {}\n\n', { status: 201 })
+    return Response.json([])
+  }))
+  mountDraft('/new/a?ref=source')
+  await screen.findByText('도우미')
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '첫 질문' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(toastError).toHaveBeenCalled())
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await screen.findByText('대화로 이동')
+  expect(keys).toEqual([expect.any(String), keys[0]])
+  expect(bodies).toEqual([{ assistantId: 'a', tags: [], referenceTaskId: 'source' }, { assistantId: 'a', tags: [], referenceTaskId: 'source' }])
+})
 
 it('creates a task only on the first discussion send and shows the conversation code', async () => {
   const posts: string[] = []
@@ -27,12 +86,35 @@ it('creates a task only on the first discussion send and shows the conversation 
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><TooltipProvider><MemoryRouter initialEntries={['/new/a?tag=abc']}><Routes><Route path="/new/:assistantId" element={<DraftConversationPage />} /><Route path="/c/:taskId" element={<div>대화로 이동</div>} /></Routes></MemoryRouter></TooltipProvider></MeContext></QueryClientProvider>)
   await screen.findByText('도우미')
   expect(posts).toHaveLength(0)
+  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '팀 의견' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(posts).toHaveLength(1))
   expect(JSON.parse(posts[0]!)).toEqual({ assistantId: 'a', tags: ['abc'], firstMessage: '팀 의견' })
   await screen.findByText('대화로 이동')
   expect(posts).toHaveLength(1)
+})
+
+it('starts the first AI request once with the first message', async () => {
+  const calls: Array<{ url: string; body?: unknown; key?: string }> = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants') return new Response(JSON.stringify([{ id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-28T00:00:00.000Z', updatedAt: '2026-09-28T00:00:00.000Z', revision: 0 }]), { status: 200 })
+    if (url === '/api/tasks' && init?.method === 'POST') { calls.push({ url, body: JSON.parse(String(init.body)) }); return new Response(JSON.stringify({ id: 't', threadId: 'h' }), { status: 201 }) }
+    if (url === '/api/files' && init?.method === 'POST') { calls.push({ url }); return new Response(JSON.stringify({ id: 'f', name: 'one.txt' }), { status: 201 }) }
+    if (url === '/api/tasks/t/inputs/f') { calls.push({ url }); return new Response(null, { status: 204 }) }
+    if (url === '/api/threads/h/requests' && init?.method === 'POST') { calls.push({ url, body: JSON.parse(String(init.body)), key: new Headers(init.headers).get('Idempotency-Key') ?? undefined }); return new Response('event: completed\ndata: {}\n\n', { status: 201 }) }
+    return new Response('[]', { status: 200 })
+  }))
+  const { container } = mountDraft('/new/a', <ReconnectingConversation />)
+  await screen.findByText('도우미')
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['one'], 'one.txt')] } })
+  fireEvent.click(screen.getByText('입력으로 고정'))
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '첫 AI 질문' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(calls.some((call) => call.url === '/api/threads/h/requests')).toBe(true))
+  expect(calls.filter((call) => call.url === '/api/tasks')).toEqual([{ url: '/api/tasks', body: { assistantId: 'a', tags: [] } }])
+  expect(calls.filter((call) => call.url === '/api/threads/h/requests')).toMatchObject([{ body: { content: '첫 AI 질문', attachmentIds: ['f'], oneShotFileIds: ['f'] }, key: expect.any(String) }])
+  expect(calls.some((call) => call.url === '/api/tasks/t/inputs/f')).toBe(false)
 })
 
 it('keeps the draft and shows an error if creation fails', async () => {
@@ -66,22 +148,53 @@ it('disables sending while the create request is pending', async () => {
   expect(posts).toBe(1)
 })
 
-it('deletes a created draft after an attachment upload fails and keeps the input', async () => {
+it('keeps the created conversation and retries only the failed attachment upload', async () => {
   const calls: string[] = []
+  let uploads = 0
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/assistants') return new Response(JSON.stringify([{ id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-28T00:00:00.000Z', updatedAt: '2026-09-28T00:00:00.000Z', revision: 0 }]), { status: 200 })
     if (url === '/api/tasks' && init?.method === 'POST') return new Response(JSON.stringify({ id: 't', code: 'WK-2026-0001', assistantId: 'a', threadId: 'h' }), { status: 201 })
-    if (url === '/api/files' && init?.method === 'POST') return new Response(JSON.stringify({ message: '업로드 실패' }), { status: 500 })
+    if (url === '/api/files' && init?.method === 'POST') { uploads++; return uploads === 1 ? new Response(JSON.stringify({ message: '업로드 실패' }), { status: 500 }) : new Response(JSON.stringify({ id: 'f' }), { status: 201 }) }
+    if (url === '/api/threads/h/requests' && init?.method === 'POST') { calls.push('REQUEST'); return new Response('event: completed\ndata: {}\n\n', { status: 201 }) }
     if (url === '/api/tasks/t' && init?.method === 'DELETE') { calls.push('DELETE'); return new Response(null, { status: 204 }) }
     return new Response('[]', { status: 200 })
   }))
-  const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><TooltipProvider><MemoryRouter initialEntries={['/new/a']}><Routes><Route path="/new/:assistantId" element={<DraftConversationPage />} /><Route path="/c/:taskId" element={<div>대화로 이동</div>} /></Routes></MemoryRouter></TooltipProvider></MeContext></QueryClientProvider>)
+  const { container } = mountDraft('/new/a', <ReconnectingConversation />)
   await screen.findByText('도우미')
   fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '남길 의견' } })
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['x'], 'test.txt')] } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
-  await waitFor(() => expect(calls).toEqual(['DELETE']))
+  await waitFor(() => expect(toastError).toHaveBeenCalled())
+  expect(calls).toEqual([])
   expect(screen.getByRole('textbox', { name: '팀 의견 입력' })).toHaveValue('남길 의견')
   expect(screen.getByText('test.txt')).toBeInTheDocument()
-  expect(toastError).toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await screen.findByText('대화로 이동')
+  expect(uploads).toBe(2)
+  expect(calls).toEqual(['REQUEST'])
+})
+
+it('retries failed input pinning without uploading the file again', async () => {
+  let creations = 0
+  let uploads = 0
+  let pins = 0
+  let requests = 0
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants') return Response.json([assistant])
+    if (url === '/api/tasks' && init?.method === 'POST') { creations++; return Response.json({ id: 't', code: 'WK-2026-0001', threadId: 'h' }, { status: 201 }) }
+    if (url === '/api/files' && init?.method === 'POST') { uploads++; return Response.json({ id: 'f' }, { status: 201 }) }
+    if (url === '/api/tasks/t/inputs/f') { pins++; return pins === 1 ? Response.json({ message: '고정 실패' }, { status: 500 }) : new Response(null, { status: 204 }) }
+    if (url === '/api/threads/h/requests') { requests++; return new Response('event: completed\ndata: {}\n\n', { status: 201 }) }
+    if (url === '/api/tasks/t' && init?.method === 'DELETE') throw new Error('대화를 삭제하면 안 됩니다')
+    return Response.json([])
+  }))
+  const { container } = mountDraft('/new/a', <ReconnectingConversation />)
+  await screen.findByText('도우미')
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['x'], 'test.txt')] } })
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '질문' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(toastError).toHaveBeenCalled())
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(requests).toBe(1))
+  expect({ creations, uploads, pins }).toEqual({ creations: 1, uploads: 1, pins: 2 })
 })

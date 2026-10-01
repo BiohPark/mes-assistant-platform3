@@ -6,8 +6,9 @@ import { normalizeTag, tagKey } from '@mes/domain'
 import { TopBar } from '@/app/TopBar'
 import { useActor, useUserMap } from '@/app/hooks'
 import { useTagSuggest } from '@/app/useTagSuggest'
-import { deleteTask, startConversation } from '@/api/tasks'
+import { startConversation, type StartConversationInput } from '@/api/tasks'
 import { appendMessage } from '@/api/tasks'
+import { queueFirstRequest } from '@/features/chat/useChat'
 import { setInput, uploadFile } from '@/api/files'
 import { listAssistants } from '@/lib/catalog'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
@@ -19,7 +20,7 @@ import { Composer, type PendingAttachment } from '@/features/chat/Composer'
 import { suggestionsFrom } from '@/features/chat/suggestions'
 import { toast } from 'sonner'
 
-/** 카드 클릭은 초안만 연다. 첫 팀 의견을 보낼 때 대화와 스레드가 생성된다. */
+/** 카드 클릭은 초안만 연다. 첫 전송 때 대화와 스레드가 생성된다. */
 export function DraftConversationPage() {
   const { assistantId } = useParams()
   const [params] = useSearchParams()
@@ -33,6 +34,7 @@ export function DraftConversationPage() {
   const [showUsage, setShowUsage] = useState(false)
   const [busy, setBusy] = useState(false)
   const sending = useRef(false)
+  const created = useRef<{ id: string; code: string; threadId: string } | null>(null)
   const refId = params.get('ref')
 
   if (isPending) return <><TopBar title="새 대화" /><div className="p-6 text-sm text-muted-foreground">불러오는 중…</div></>
@@ -40,30 +42,44 @@ export function DraftConversationPage() {
   const retired = assistant.status === 'retired'
   const owner = users.get(assistant.ownerId)
 
-  async function send(text: string, attachments: PendingAttachment[]) {
+  async function send(text: string, attachments: PendingAttachment[], discussion: boolean) {
     if (!assistant || (!text.trim() && !attachments.length) || sending.current) return
     sending.current = true
     setBusy(true)
     try {
-      const { task, warnings } = await startConversation(actor, { assistantId: assistant.id, tags, ...(refId && { referenceTaskId: refId }), ...(!attachments.length && text.trim() && { firstMessage: text.trim() }) })
-      for (const warning of warnings) toast.warning(warning)
-      try {
-        if (attachments.length) {
-          const uploaded: string[] = []
-          for (const attachment of attachments) {
+      const creationKey = `mes-draft-create:${assistant.id}:${refId ?? ''}`
+      const stored = sessionStorage.getItem(creationKey)
+      const attempt = stored ? JSON.parse(stored) as { key: string; body: StartConversationInput } : {
+        key: crypto.randomUUID(), body: { assistantId: assistant.id, tags, ...(refId && { referenceTaskId: refId }), ...(discussion && !attachments.length && text.trim() && { firstMessage: text.trim() }) },
+      }
+      if (!created.current) {
+        sessionStorage.setItem(creationKey, JSON.stringify(attempt))
+        const { task, warnings } = await startConversation(actor, attempt.body, attempt.key)
+        created.current = { id: task.id, code: task.code, threadId: task.threadId! }
+        sessionStorage.removeItem(creationKey)
+        for (const warning of warnings) toast.warning(warning)
+      }
+      const task = created.current
+      const uploaded: string[] = []
+      if (attachments.length) {
+        for (const attachment of attachments) {
+          if (attachment.uploadedTaskId !== task.id || !attachment.uploadedId) {
             const file = await uploadFile(actor, { taskId: task.id }, attachment.file)
-            uploaded.push(file.id)
-            if (!attachment.once) await setInput(actor, task.id, file.id, 'reference')
+            attachment.uploadedId = file.id
+            attachment.uploadedTaskId = task.id
           }
-          await appendMessage(actor, task.threadId!, 'user', text.trim(), uploaded, 'done', 'discussion')
+          uploaded.push(attachment.uploadedId)
+          if (!attachment.once) await setInput(actor, task.id, attachment.uploadedId, 'reference')
         }
-      } catch (error) {
-        const removed = await deleteTask(task.id)
-        if (!removed.ok) throw new Error(`${error instanceof Error ? error.message : String(error)} · 대화 ${task.code}가 남았습니다`)
-        throw error
+        if (discussion) await appendMessage(actor, task.threadId, 'user', text.trim(), uploaded, 'done', 'discussion')
+      }
+      if (!discussion) {
+        queueFirstRequest(task.threadId, { content: text.trim(), attachmentIds: uploaded,
+          oneShotFileIds: uploaded.filter((_id, index) => attachments[index]?.once) })
       }
       navigate(`/c/${task.id}`, { replace: true })
     } catch (error) {
+      if (created.current) toast.error(`대화 ${created.current.code}가 남았습니다. 첨부를 다시 전송할 수 있습니다.`)
       sending.current = false
       setBusy(false)
       throw error
@@ -97,7 +113,7 @@ export function DraftConversationPage() {
           {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">폐기된 에이전트입니다. <Link to="/" className="underline">다른 에이전트 고르기</Link></div>}
         </div>
       </div>
-      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer disabled={busy} streaming={false} allowAttachments allowPin onSend={async (text, attachments) => send(text, attachments)} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
+      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer disabled={busy} streaming={false} allowAttachments allowPin allowDiscussion onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
     </div>
   </>
 }

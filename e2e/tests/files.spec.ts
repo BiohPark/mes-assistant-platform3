@@ -32,6 +32,12 @@ test('S1 첨부를 입력에 고정하고 새 버전은 직접 전환한다', as
   await expect(page.getByTestId('materials-inputs')).toContainText('e2e-note.txt v1')
   await page.getByRole('button', { name: '새 버전 있음 · 바꾸기' }).click()
   await expect(page.getByTestId('materials-inputs')).toContainText('e2e-note.txt v2')
+  await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('새 버전으로 다시 답변해 줘')
+  await page.getByRole('button', { name: '전송', exact: true }).click()
+  await expect(page.getByRole('button', { name: '사용한 자료' })).toHaveCount(2, { timeout: 15_000 }) // 두 번째 답변의 기록 버튼이 생길 때까지(live는 가짜 서버 응답이 느리다) — last()만 보면 첫 기록을 연다
+  await page.getByRole('button', { name: '사용한 자료' }).last().click()
+  await expect(page.getByRole('dialog')).toContainText('e2e-note.txt')
+  await expect(page.getByRole('dialog')).toContainText('v2')
 })
 
 test('S4 직접 공유 파일의 주 입력과 참고 입력이 순서대로 표시된다', async ({ page }) => {
@@ -60,13 +66,13 @@ test('S3 같은 산출물 이름으로 두 번 저장하면 v2가 된다', async
   await signUp(page)
   const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
   const task = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id } })).json() as { id: string; threadId: string; code: string }
-  await page.route(`**/api/threads/${task.threadId}/messages`, async (route) => {
-    await route.fulfill({ json: [{ id: 'e2e-assistant-message', threadId: task.threadId, seq: 1, role: 'assistant', kind: 'discussion', content: '# answer', status: 'done', createdAt: new Date().toISOString(), attachmentIds: [] }] })
-  })
   await page.goto(`/c/${task.id}`)
   let defaultName = ''
   for (let version = 1; version <= 2; version++) {
-    await page.getByRole('button', { name: '산출물로 저장' }).click()
+    await page.getByRole('textbox', { name: '팀 의견 입력' }).fill(`산출물 답변 ${version}`)
+    await page.getByRole('button', { name: '전송', exact: true }).click()
+    await expect(page.getByRole('button', { name: '산출물로 저장' }).last()).toBeVisible()
+    await page.getByRole('button', { name: '산출물로 저장' }).last().click()
     const dialog = page.getByRole('dialog')
     const name = await dialog.getByLabel('파일 이름').inputValue()
     if (version === 1) { expect(name).toMatch(new RegExp(`_${task.code}\\.md$`)); defaultName = name }

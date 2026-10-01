@@ -37,7 +37,7 @@ interface ComposerProps {
 }
 
 export function Composer({ disabled, streaming, placeholder, onSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange }: ComposerProps) {
-  const [discussion, setDiscussion] = useState(true)
+  const [discussion, setDiscussion] = useState(false)
   const [text, setTextState] = useState('')
   const [pending, setPending] = useState<PendingAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState('')

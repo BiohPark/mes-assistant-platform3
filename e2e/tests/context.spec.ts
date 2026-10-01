@@ -1,6 +1,18 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const password = 'e2e-password-1234'
+const live = (process.env.E2E_LLM_MODE ?? process.env.LLM_MODE) === 'live'
+async function modelRequest(page: Page, marker: string): Promise<string> {
+  let body = ''
+  await expect.poll(async () => {
+    const requests = await (await page.request.get(`http://127.0.0.1:${process.env.E2E_FAKE_OWUI_PORT ?? '3102'}/__e2e/requests`)).json() as Array<{ messages: unknown[] }>
+    // 제목 보조 호출(시스템 프롬프트가 '다음 대화의 제목…')도 같은 표식을 담으므로 제외하고, 본 요청만 고른다
+    const isTitleCall = (entry: { messages: unknown[] }) => JSON.stringify(entry.messages[0] ?? '').includes('다음 대화의 제목')
+    body = JSON.stringify(requests.findLast((entry) => !isTitleCall(entry) && JSON.stringify(entry.messages).includes(marker))?.messages ?? [])
+    return body.includes(marker)
+  }).toBe(true)
+  return body
+}
 async function setup(page: Page, suffix: string) {
   await page.goto('/signup')
   await page.getByLabel('ID').fill(`e2e-ctx-${suffix}-${Date.now()}`) // 로그인 ID는 32자 이하
@@ -45,6 +57,12 @@ test('E3a 직접 공유 후보와 전체 원문은 팀 의견을 제외한다', 
   await expect.poll(async () => (await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json() as unknown[]).length).toBe(1)
   const selected = await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json() as Array<{ snapshot: { messageIds: string[] } }>
   expect(selected[0]!.snapshot.messageIds).toHaveLength(2)
+  if (live) {
+    await request(page, consumer.threadId, '소비 질문 E3a')
+    const body = await modelRequest(page, '소비 질문 E3a')
+    expect(body).toContain('원본 질문 E3a')
+    expect(body).not.toContain('팀 내부 의견 E3a')
+  }
 })
 
 test('E3b 메시지 선택은 고른 범위만 스냅샷에 고정한다', async ({ page }) => {
@@ -58,6 +76,12 @@ test('E3b 메시지 선택은 고른 범위만 스냅샷에 고정한다', async
   await page.getByRole('button', { name: '적용' }).click()
   const selected = await selectedInputs<{ snapshot: { messageIds: string[] }; messageCount: number }>(page, consumer.id)
   expect(selected[0]).toMatchObject({ messageCount: 1, snapshot: { messageIds: [expect.any(String)] } })
+  if (live) {
+    await request(page, consumer.threadId, '소비 질문 E3b')
+    const body = await modelRequest(page, '소비 질문 E3b')
+    expect(body).toContain('원본 질문 E3b')
+    expect(body).not.toContain('받은 메시지: 원본 질문 E3b')
+  }
 })
 
 test('E3c 요약 초안을 명시적으로 만들고 수정본을 적용한다', async ({ page }) => {
@@ -73,6 +97,11 @@ test('E3c 요약 초안을 명시적으로 만들고 수정본을 적용한다',
   await page.getByRole('button', { name: '적용' }).click()
   const selected = await selectedInputs<{ snapshot: { summaryText: string; mode: string } }>(page, consumer.id)
   expect(selected[0]!.snapshot).toMatchObject({ mode: 'summary', summaryText: '사람이 수정한 요약 E3c' })
+  if (live) {
+    await request(page, consumer.threadId, '소비 질문 E3c')
+    const body = await modelRequest(page, '소비 질문 E3c')
+    expect(body).toContain('사람이 수정한 요약 E3c')
+  }
 })
 
 test('E3d 선택 시점은 고정되고 새 메시지는 갱신 뒤 포함된다', async ({ page }) => {
@@ -88,9 +117,20 @@ test('E3d 선택 시점은 고정되고 새 메시지는 갱신 뒤 포함된다
   await expect(page.getByTestId(`conversation-${source.id}`).getByText(/새 메시지 2 · 갱신/)).toBeVisible()
   const still = await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json() as Array<{ snapshot: { id: string; messageIds: string[] } }>
   expect(still[0]!.snapshot.id).toBe(first[0]!.snapshot.id)
+  if (live) {
+    await request(page, consumer.threadId, '갱신 전 소비 E3d')
+    const before = await modelRequest(page, '갱신 전 소비 E3d')
+    expect(before).toContain('원본 질문 E3d 첫째')
+    expect(before).not.toContain('원본 질문 E3d 둘째')
+  }
   await page.getByTestId(`conversation-${source.id}`).getByText(/새 메시지 2 · 갱신/).click()
   await expect.poll(async () => {
     const rows = await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json() as Array<{ snapshot: { messageIds: string[] } }>
     return rows[0]?.snapshot.messageIds.length
   }).toBe(4)
+  if (live) {
+    await request(page, consumer.threadId, '갱신 후 소비 E3d')
+    const after = await modelRequest(page, '갱신 후 소비 E3d')
+    expect(after).toContain('원본 질문 E3d 둘째')
+  }
 })

@@ -16,6 +16,7 @@ it('keeps a discussion draft and shows an error when the message API fails', asy
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   const input = screen.getByRole('textbox', { name: '팀 의견 입력' })
+  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(input, { target: { value: '남길 의견' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(toastError).toHaveBeenCalled())
@@ -33,6 +34,7 @@ it('uploads a pinned attachment and stores it on the discussion message', async 
   }))
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
   const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(calls.some((call) => call.url === '/api/threads/h/messages' && call.method === 'POST')).toBe(true))
@@ -50,7 +52,6 @@ it('sends an AI request through SSE and leaves pinning to the server', async () 
   }))
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
   const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
-  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
   fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '질문' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
@@ -79,7 +80,6 @@ it.each(['over-limit', 'estimate failure'] as const)('reuses the uploaded draft 
   }))
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
   const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
-  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
   fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '질문' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
@@ -110,7 +110,6 @@ it('disables AI send when the estimate exceeds the request budget', async () => 
   }))
   const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
-  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '길어진 초안' } })
   await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeDisabled())
   expect(screen.getByRole('alert')).toHaveTextContent('요청 크기 한도')
