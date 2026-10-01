@@ -1,4 +1,5 @@
 import { normalizeTag } from '@mes/domain'
+import { SystemAssistantToolArgs } from '@mes/contracts'
 import { createAssistant } from '@/api/admin'
 import { addTag, listTasks, startConversation, updateTask, type Actor } from '@/api/tasks'
 import { queryClient } from '@/api/queryClient'
@@ -9,6 +10,7 @@ export interface ProposedAction {
   name: string
   args: Record<string, unknown>
   summary: string
+  invalidReason?: string
   applied?: { ok: boolean; message: string; link?: string }
 }
 
@@ -18,21 +20,26 @@ const str = (value: unknown, fallback = ''): string => typeof value === 'string'
 const strList = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 
 export function toProposal(call: ToolCall): ProposedAction {
-  let args: Record<string, unknown> = {}
+  let parsed: unknown
   try {
-    const parsed: unknown = JSON.parse(call.arguments || '{}')
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) args = parsed as Record<string, unknown>
-  } catch { /* 잘못된 도구 인자는 빈 값으로 표시 */ }
+    parsed = JSON.parse(call.arguments || '{}') as unknown
+  } catch { return { id: call.id, name: call.name, args: {}, summary: '유효하지 않은 도구 인자', invalidReason: 'JSON 형식이 올바르지 않습니다.' } }
+  const schema = SystemAssistantToolArgs[call.name as keyof typeof SystemAssistantToolArgs]
+  if (!schema) return { id: call.id, name: call.name, args: {}, summary: '유효하지 않은 도구', invalidReason: `알 수 없는 도구: ${call.name}` }
+  const result = schema.safeParse(parsed)
+  if (!result.success) return { id: call.id, name: call.name, args: parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}, summary: '유효하지 않은 도구 인자', invalidReason: result.error.issues.map((issue) => `${issue.path.join('.') || '인자'}: ${issue.message}`).join('; ') }
+  const args: Record<string, unknown> = result.data
   const tags = strList(args.tags)
   const summaries: Record<string, () => string> = {
-    start_conversation: () => `대화 시작: ${str(args.assistantName, '?')}${args.title ? ` — "${str(args.title)}"` : ''}${tags.length ? ` · 태그 ${tags.join(', ')}` : ''}`,
-    create_assistant: () => `에이전트 등록: ${str(args.name)} (${str(args.id)}) — ${str(args.level1)} › ${str(args.level2)}`,
+    start_conversation: () => `대화 시작: ${str(args.assistantName)}${args.title ? ` — "${str(args.title)}"` : ''}${tags.length ? ` · 태그 ${tags.join(', ')}` : ''}${args.priority ? ` · 우선순위 ${str(args.priority)}` : ''}`,
+    create_assistant: () => `에이전트 등록: ${str(args.name)} (${str(args.id)}) — ${str(args.level1)} › ${str(args.level2)}${args.summary ? ` · 설명 ${str(args.summary)}` : ''}${args.ownerName ? ` · 담당자 ${str(args.ownerName)}` : ''}${args.modelId ? ` · 모델 ${str(args.modelId)}` : ''}`,
     add_tag: () => `태그 추가: ${str(args.taskCode)} ← ${normalizeTag(str(args.tag))}`,
   }
   return { id: call.id, name: call.name, args, summary: summaries[call.name]?.() ?? call.name }
 }
 
 export async function applyProposal(actor: Actor, proposal: ProposedAction): Promise<NonNullable<ProposedAction['applied']>> {
+  if (proposal.invalidReason) return { ok: false, message: proposal.invalidReason }
   const args = proposal.args
   try {
     switch (proposal.name) {
@@ -42,7 +49,7 @@ export async function applyProposal(actor: Actor, proposal: ProposedAction): Pro
         const want = name.toLowerCase()
         const assistant = name && (all.find((row) => row.name.toLowerCase() === want) ?? all.find((row) => row.name.toLowerCase().includes(want) || want.includes(row.name.toLowerCase())))
         if (!assistant) return { ok: false, message: `"${name}" 에이전트를 찾을 수 없습니다.` }
-        const { task } = await startConversation(actor, { assistantId: assistant.id, title: str(args.title) || undefined, tags: strList(args.tags) })
+        const { task } = await startConversation(actor, { assistantId: assistant.id, title: str(args.title) || undefined, tags: strList(args.tags) }, `system-assistant:${proposal.id}`)
         const priority = args.priority
         if (priority === 'low' || priority === 'high' || priority === 'urgent') {
           try { await updateTask(task.id, { priority }) }

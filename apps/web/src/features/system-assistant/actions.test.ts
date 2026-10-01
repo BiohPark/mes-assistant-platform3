@@ -18,6 +18,45 @@ describe('system assistant proposals', () => {
     expect(toProposal({ id: '4', name: 'add_tag', arguments: '{bad' }).args).toEqual({})
   })
 
+  it('적용할 선택 인자를 모두 요약하고 잘못된 인자는 제안에서 제외한다', () => {
+    expect(toProposal({ id: 'p', name: 'start_conversation', arguments: '{"assistantName":"FDS","priority":"urgent"}' }).summary).toContain('우선순위 urgent')
+    const assistantProposal = toProposal({ id: 'a', name: 'create_assistant', arguments: '{"id":"label","name":"라벨","level1":"Record","level2":"라벨","summary":"설명","ownerName":"담당자","modelId":"model-x"}' })
+    expect(assistantProposal.summary).toContain('설명')
+    expect(assistantProposal.summary).toContain('담당자')
+    expect(assistantProposal.summary).toContain('model-x')
+    const invalid = toProposal({ id: 'bad', name: 'start_conversation', arguments: '{"assistantName":"FDS","priority":"critical"}' })
+    expect(invalid.invalidReason).toBeTruthy()
+    expect(invalid.summary).toContain('유효하지')
+    expect(toProposal({ id: 'missing', name: 'add_tag', arguments: '{"taskCode":"WK-2026-0006"}' }).invalidReason).toBeTruthy()
+    expect(toProposal({ id: 'unknown', name: 'other', arguments: '{}' }).invalidReason).toBeTruthy()
+  })
+
+  it('검증 실패한 제안은 API를 호출하지 않고 사유를 반환한다', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    const proposal = toProposal({ id: 'bad', name: 'create_assistant', arguments: '{"id":"x","name":"X","level1":"Record","level2":"라벨","modelId":42}' })
+    const result = await applyProposal({ userId: 'u' }, proposal)
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('modelId')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('응답 유실 후 같은 제안을 재시도할 때 동일한 멱등 키를 보낸다', async () => {
+    const keys: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/assistants') return jsonResponse(200, [assistant])
+      if (url === '/api/tasks') {
+        keys.push(new Headers(init?.headers).get('Idempotency-Key') ?? '')
+        return keys.length === 1 ? jsonResponse(503, { message: '응답 유실' }) : jsonResponse(201, { id: 'task-1', code: 'WK-2026-0001', threadId: 'thread-1' })
+      }
+      return jsonResponse(404)
+    }))
+    const proposal = toProposal({ id: 'call_1', name: 'start_conversation', arguments: '{"assistantName":"FDS"}' })
+    expect((await applyProposal({ userId: 'u' }, proposal)).ok).toBe(false)
+    expect((await applyProposal({ userId: 'u' }, proposal)).ok).toBe(true)
+    expect(keys).toEqual(['system-assistant:call_1', 'system-assistant:call_1'])
+  })
+
   it('이름 부분 일치 에이전트로 기존 대화 API를 호출한다', async () => {
     const calls: Array<[string, RequestInit | undefined]> = []
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {

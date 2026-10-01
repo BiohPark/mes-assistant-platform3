@@ -34,9 +34,10 @@ interface ComposerProps {
   blockedReason?: string
   /** 작성 중인 글 (요청 크기 미리 계산용) */
   onDraftChange?: (text: string) => void
+  clearOnSubmit?: boolean
 }
 
-export function Composer({ disabled, streaming, placeholder, onSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange }: ComposerProps) {
+export function Composer({ disabled, streaming, placeholder, onSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange, clearOnSubmit = false }: ComposerProps) {
   const [discussion, setDiscussion] = useState(false)
   const [text, setTextState] = useState('')
   const [pending, setPending] = useState<PendingAttachment[]>([])
@@ -55,11 +56,12 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
     if (!canSend) return
     const t = text
     const f = pending
+    if (clearOnSubmit) { setText(''); setPending([]) }
     try {
       await onSend(t, f, discussion)
-      setText('')
-      setPending([])
+      if (!clearOnSubmit) { setText(''); setPending([]) }
     } catch (e) {
+      if (clearOnSubmit) { setTextState((current) => current || t); setPending((current) => current.length ? current : f) }
       toast.error('전송하지 못했습니다.', { description: e instanceof Error ? e.message : String(e) })
     }
   }
