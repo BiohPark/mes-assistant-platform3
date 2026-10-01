@@ -4,6 +4,10 @@ MES Agent Hub의 주요 변경. 스프린트(architecture §9) 단위로 기록�
 
 ## [Unreleased]
 
+### S5 (진행 중)
+
+- ① 배포(2026-10-02): api가 web 정적 파일을 같은 포트로 제공(SPA 폴백·realpath 범위 검사·해시 자산만 장기 캐시), `pnpm release` 배포 묶음(심볼릭 링크 없음, 대상 PC는 Node 22만), WinSW v2.12 서비스 설정, Windows 운영 배포 절차(중지 → 백업 → 교체 → 마이그레이션 → 시작, IIS 앞단 SSE 설정). CI가 Windows에서 묶음 복사본 기동까지 검증
+
 ### S4 — 관리·SR·업무 보조·알림·리포트·시스템 assistant (2026-10-02, `s4-done`)
 
 - ⑤ 시스템 assistant(2026-10-02): 서버 대리 호출 `POST /api/system-assistant/messages`(시스템 프롬프트·도구 정의 서버 주입, mock 규칙/live 도구 호출, 한도·중단·시간 제한, 기록 없음) → 서랍 제안 카드(적용되는 인자 전부 표시, 도구별 스키마 검증) → 사용자 "적용" 뒤에만 기존 API(대화 시작은 멱등 키, 에이전트 등록은 SO만 — 403 그대로 표시, 태그 추가). 도구 호출을 못 내는 모델이면 답변만
