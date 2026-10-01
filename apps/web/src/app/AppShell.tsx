@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router'
-import { LayoutGrid, Boxes, Settings, Bot, ClipboardList } from 'lucide-react'
+import { LayoutGrid, Boxes, Settings, Bot, ClipboardList, BarChart3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -56,6 +56,7 @@ function AppContent() {
                 </NavLink>
               ))}
               {(me.roles.includes('requester') || me.roles.includes('system_owner')) && <NavLink to="/sr" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><ClipboardList className="size-4" /><span className="hidden lg:inline">SR 접수</span></NavLink>}
+              {(!me.roles.includes('requester') || me.roles.includes('system_owner')) && <NavLink to="/reports" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><BarChart3 className="size-4" /><span className="hidden lg:inline">리포트</span></NavLink>}
               {(!me.roles.includes('requester') || me.roles.includes('system_owner')) && <NavLink to="/sr/manage" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><ClipboardList className="size-4" /><span className="hidden lg:inline">SR 관리</span></NavLink>}
               {me.roles.includes('system_owner') && <>
                 <NavLink to="/assistants/manage" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Bot className="size-4" /><span className="hidden lg:inline">에이전트 관리</span></NavLink>

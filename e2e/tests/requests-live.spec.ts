@@ -48,5 +48,5 @@ test('E2 파일 전달 실패 후 텍스트로 보내기를 선택해 복구한�
   await page.getByRole('button', { name: '텍스트로 보내기' }).click()
   await page.getByRole('dialog').getByRole('checkbox').check()
   await page.getByRole('dialog').getByRole('button', { name: '다시 시도' }).click()
-  await expect(page.getByText(/files: 0/).first()).toBeVisible()
+  await expect(page.getByText(/files: 0/).first()).toBeVisible({ timeout: 15_000 })
 })

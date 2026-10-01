@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type Task, type TaskStatus, type Thread } from '@mes/domain'
 import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
 import { unionAll } from 'drizzle-orm/mysql-core'
@@ -8,9 +8,12 @@ import { activityLog, appUser, assistant, assistantChecklistTemplate, chatReques
 import { EventsService } from '../events/events.service.js'
 import { assertTaskAccess, assertThreadAccess } from '../sr/access.js'
 import type { TaskExtrasService } from './task-extras.service.js'
+import { NotificationsService } from '../notifications/notifications.service.js'
 
 export interface CreateTaskInput {
   assistantId: string
+  ownerId?: string
+  assigneeIds?: string[]
   tags?: string[]
   title?: string
   referenceTaskId?: string
@@ -36,7 +39,8 @@ const checkTagLength = (label: string) => { if ([...tagKey(label)].length > 191)
 @Injectable()
 export class DbTasksService {
   constructor(@Inject(DB) private readonly db: Db, @Inject(EventsService) private readonly events?: EventsService,
-    @Inject('TASK_EXTRAS') private readonly extras?: TaskExtrasService) {}
+    @Inject('TASK_EXTRAS') private readonly extras?: TaskExtrasService,
+    @Inject(NotificationsService) private readonly notifications?: NotificationsService) {}
 
   private async row(taskId: string) {
     const [row] = await this.db.select().from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt)))
@@ -121,6 +125,9 @@ export class DbTasksService {
     const [selected] = await this.db.select().from(assistant).where(eq(assistant.id, input.assistantId))
     if (!selected) throw new NotFoundException('에이전트를 찾을 수 없습니다')
     if (selected.status === 'retired') throw new ConflictException('폐기된 에이전트로는 시작할 수 없습니다')
+    const recipients = [...new Set([input.ownerId ?? actor, ...(input.assigneeIds ?? [input.ownerId ?? actor])])]
+    const foundUsers = await this.db.select({ id: appUser.id }).from(appUser).where(inArray(appUser.id, recipients))
+    if (foundUsers.length !== recipients.length) throw new BadRequestException('존재하지 않는 담당자가 있습니다')
     const tags = uniqueTags(input.tags ?? [])
     tags.forEach(checkTagLength)
     const taskId = id()
@@ -138,11 +145,13 @@ export class DbTasksService {
       }
       const [max] = await tx.select({ value: sql<number>`coalesce(max(cast(substring(${task.code}, 9) as unsigned)), 0)` }).from(task).where(sql`${task.code} like ${`WK-${year}-%`}`)
       const code = `WK-${year}-${String(Number(max?.value ?? 0) + 1).padStart(4, '0')}`
+      const ownerId = input.ownerId ?? actor
+      const assigneeIds = [...new Set(input.assigneeIds ?? [ownerId])]
       await tx.insert(task).values({ id: taskId, code, assistantId: selected.id, srId,
         title: input.title?.trim() || `${selected.name} 대화 ${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
         titleSource: input.title?.trim() ? 'manual' : 'default', status: 'in_progress',
-        ownerId: actor, priority: 'normal', createdBy: actor, startedAt: now, lastActivityAt: now, idempotencyKey })
-      await tx.insert(taskAssignee).values({ taskId, userId: actor })
+        ownerId, priority: 'normal', createdBy: actor, startedAt: now, lastActivityAt: now, idempotencyKey })
+      if (assigneeIds.length) await tx.insert(taskAssignee).values(assigneeIds.map((userId) => ({ taskId, userId })))
       await tx.insert(thread).values({ id: threadId, taskId, title: '대화', createdBy: actor })
       const template = await tx.select().from(assistantChecklistTemplate).where(eq(assistantChecklistTemplate.assistantId, selected.id)).orderBy(assistantChecklistTemplate.sortOrder)
       if (template.length) await tx.insert(checklistItem).values(template.map((item) => ({ id: id(), taskId, templateItemId: item.id,
@@ -183,6 +192,11 @@ export class DbTasksService {
     })
     const created = await this.get(createdId)
     if (createdId === taskId) {
+      try {
+        await this.notifications?.send([created.ownerId, ...created.assigneeIds], actor, '새 대화 업무가 배정되었습니다', `${created.code} ${created.title}`, `/c/${taskId}`)
+      } catch (error) {
+        Logger.warn(`업무 ${taskId} 알림 저장 실패: ${String(error)}`, DbTasksService.name)
+      }
       this.events?.publish('task.created', { taskId, assistantId: selected.id })
       if (input.firstMessage?.trim()) {
         const [first] = await this.db.select({ id: message.id }).from(message).where(eq(message.threadId, threadId)).orderBy(message.seq).limit(1)

@@ -31,6 +31,7 @@ export function DraftConversationPage() {
   const { data: assistants, isPending } = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
   const assistant = assistants?.find((item) => item.id === assistantId)
   const [tags, setTags] = useState(() => params.getAll('tag').map(normalizeTag).filter(Boolean))
+  const [assigneeId, setAssigneeId] = useState('')
   const [showUsage, setShowUsage] = useState(false)
   const [busy, setBusy] = useState(false)
   const sending = useRef(false)
@@ -50,7 +51,7 @@ export function DraftConversationPage() {
       const creationKey = `mes-draft-create:${assistant.id}:${refId ?? ''}`
       const stored = sessionStorage.getItem(creationKey)
       const attempt = stored ? JSON.parse(stored) as { key: string; body: StartConversationInput } : {
-        key: crypto.randomUUID(), body: { assistantId: assistant.id, tags, ...(refId && { referenceTaskId: refId }), ...(discussion && !attachments.length && text.trim() && { firstMessage: text.trim() }) },
+        key: crypto.randomUUID(), body: { assistantId: assistant.id, tags, ...(assigneeId && { assigneeIds: [assigneeId] }), ...(refId && { referenceTaskId: refId }), ...(discussion && !attachments.length && text.trim() && { firstMessage: text.trim() }) },
       }
       if (!created.current) {
         sessionStorage.setItem(creationKey, JSON.stringify(attempt))
@@ -108,6 +109,12 @@ export function DraftConversationPage() {
           <div className="space-y-1.5"><div className="text-xs font-medium">태그</div>
             <TagInput tags={tags} suggest={suggest} onAdd={(value) => setTags((current) => current.some((item) => tagKey(item) === tagKey(value)) ? current : [...current, value])} onRemove={(value) => setTags((current) => current.filter((item) => item !== value))} placeholder="SR 번호·키워드" />
           </div>
+          {users.size > 0 && <label className="flex items-center gap-2 text-xs font-medium">담당자
+            <select className="h-8 rounded-lg border bg-background px-2" value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}>
+              <option value="">나에게 배정</option>
+              {[...users.values()].map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
+            </select>
+          </label>}
           {refId && <div className="rounded-xl border border-amber-300 bg-amber-50/40 p-3 text-xs">참조 대화 {refId} · 같은 태그가 있으면 주 입력으로 선택합니다.</div>}
           {assistant.usageExample && <div className="rounded-xl border"><button type="button" className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-medium" onClick={() => setShowUsage(!showUsage)}><Info className="size-3.5" />사용법 {showUsage ? '접기' : '보기'}</button>{showUsage && <Markdown content={assistant.usageExample} className="border-t px-3 py-2 text-sm" />}</div>}
           {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">폐기된 에이전트입니다. <Link to="/" className="underline">다른 에이전트 고르기</Link></div>}

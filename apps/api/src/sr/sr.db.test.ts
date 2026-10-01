@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createPool } from '../db/connection.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
-import { appSetting, appUser, assistant, fileObject, notification, serviceRequest, sharedResult, task } from '../db/schema.js'
+import { activityLog, appSetting, appUser, assistant, fileObject, notification, serviceRequest, sharedResult, task } from '../db/schema.js'
 import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
 import { EventsService } from '../events/events.service.js'
@@ -54,6 +54,8 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     const draft = await sr.create('requester')
     const submitted = await sr.submit('requester', draft.id, { title: 'AI 제목', titleSource: 'ai', body: '본문', attachmentIds: [] })
     expect(submitted.code).toMatch(/^SR-\d{4}-\d{4}$/)
+    expect(await db.select({ type: activityLog.type, payload: activityLog.payload }).from(activityLog).where(eq(activityLog.srId, draft.id)))
+      .toContainEqual({ type: 'sr.status_changed', payload: { from: 'draft', to: 'submitted' } })
     expect((await db.select().from(notification).where(eq(notification.userId, 'staff'))).length).toBeGreaterThan(0)
     await expect(sr.title('staff', draft.id, '침범')).rejects.toMatchObject({ status: 403 })
     expect(await sr.title('owner', draft.id, '사람 제목')).toMatchObject({ title: '사람 제목', titleSource: 'manual' })
@@ -133,6 +135,8 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     const result = await sr.share('staff', draft.id, { text: '완료', fileIds: [] })
     expect((await db.select().from(sharedResult).where(eq(sharedResult.id, result.id)))).toHaveLength(1)
     expect((await db.select().from(serviceRequest).where(eq(serviceRequest.id, draft.id)))[0]?.status).toBe('responded')
+    expect(await db.select({ type: activityLog.type, payload: activityLog.payload }).from(activityLog).where(eq(activityLog.srId, draft.id)))
+      .toContainEqual({ type: 'sr.status_changed', payload: { from: 'in_progress', to: 'responded' } })
     expect((await db.select().from(notification).where(eq(notification.userId, 'requester')))).toHaveLength(before + 1)
   })
 

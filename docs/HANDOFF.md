@@ -145,7 +145,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | S4 | 코드 관리 화면·API(SO), SO·BO 지정 화면 — DDL은 S2 ①에서(D36·D37) | PRD FR-63 |
 | **남은 위험** | ① ~~실제 Windows 실기 미확인~~ → 사내 Windows PC에서 MariaDB 11.8 설치·앱 동작 확인(사용자, 2026-10-01) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
 | ~~DB 전환~~ 병합 완료 | D40. `feat/db-mariadb` → `main` 병합(`1eb0335`), 태그 `db-mariadb-done`. 되돌림 기준점 태그 `pre-mariadb`(PostgreSQL 마지막 상태). 검증: 단위 232 · DB 85(11.8 3회 연속·10.4) · E2E mock 10·live 11, 구조 대조 일치, codex-critic 스키마 리뷰 4건·코드 리뷰 3건 반영, CI 7잡 녹색(Windows 설치 가이드 잡이 MariaDB 11.8 MSI로 설치·마이그레이션·DB 테스트까지 실행). **사내 PC 실기 확인 완료(2026-10-01, MariaDB 11.8 설치·동작 — 사용자)**. 남은 확인: macOS Homebrew 경로 | tasks/db-mariadb · [db-mariadb-plan.md](next-project/db-mariadb-plan.md) |
-| **진행(S3)** | [S3-design.md](next-project/S3-design.md) 확정(D39). ① `s3-request` 완료·병합(839ed7c). **진행(S4)** — 승인 2026-10-01(5개 태스크 일괄). ① `s4-admin` 완료·병합(7738b41, 대응표 10행 ✅, 마이그레이션 0001). ② `s4-sr` 완료·병합(79fb221, 대응표 11행 ✅, 마이그레이션 0002 `task.sr_id`). ③ `s4-task-extras` 완료(단위 277 · DB 133(11.8·10.4) · E2E mock 23·live 23, 대응표 6행 ✅ — 체크리스트·AI 달성도·노트·완료 절차 한 트랜잭션·완료 경로 일원화) → ④ notify-reports → ⑤ system-assistant | tasks/s4-admin · [S4-kickoff.md](next-project/S4-kickoff.md) |
+| **진행(S3)** | [S3-design.md](next-project/S3-design.md) 확정(D39). ① `s3-request` 완료·병합(839ed7c). **진행(S4)** — 승인 2026-10-01(5개 태스크 일괄). ① `s4-admin` 완료·병합(7738b41, 대응표 10행 ✅, 마이그레이션 0001). ② `s4-sr` 완료·병합(79fb221, 대응표 11행 ✅, 마이그레이션 0002 `task.sr_id`). ③ `s4-task-extras` 완료·병합(e053218, 대응표 6행 ✅). ④ `s4-notify-reports` 완료(단위 282 · DB 140(11.8·10.4) · E2E mock 25·live 25, 대응표 5행 ✅ — 알림 4종·본인 조회·읽음·SSE 벨, `/reports` 서버 집계(요청자 403, SR 리드타임은 `sr.status_changed` 활동 기준), 리뷰 6건 중 5건 반영·1건 KI-9 이월) → ⑤ system-assistant(명세·brief 준비됨) → S4 마감 | tasks/s4-admin · [S4-kickoff.md](next-project/S4-kickoff.md) |
 | ~~대조 검증 후속~~ 완료 | 최초 계획·데모 대조 감사(2026-10-01, codex-critic — 결함 10건, FR 판정표, 대응표 ✅ 93행 전수, 데모 테스트 161건 대응) → 즉시 수정 6건 `fix/s3-audit` 병합: 새 대화 첫 입력을 AI 요청으로(컴포저 기본 AI, 멱등 키 보존·재접속, 첨부 실패 시 대화 유지), 요청 크기 = 실제 전송 본문(로컬 파일 ID 기준, 추정=기록=한도), 말풍선 첨부 표시, 요청 기록 JSON 첨부 정보, 자료함 정렬, 기록에 참조 대화 모드, E2E 깊이 복원(가짜 OpenWebUI 수신 본문 검사). D-05는 S4 ①에서 해결 | tasks/plan-demo-audit · tasks/s3-audit-fixes |
 | ~~S1 ②~~ 병합 완료 | 서버 대리 호출 기반 `feat/s1-llm-proxy` — `LLM_MODE`·`LLM_PRESET`(openwebui/openai-compatible)·`GET /api/llm/models`·`/status`, `LlmPorts` DB 어댑터 1차, `FileStorageService`(realpath 루트·내부 링크 거부), 웹 모델 목록·SO 배지. codex-critic 4건+누락 1건 반영. 검증 단위 165·DB 15·E2E 2, CI 5/5(Windows 8.3 경로·CI 환경 의존 2건 수정 후). **OpenAI 실키 수동 확인은 사용자 키 필요** | tasks/s1-llm-proxy |
 | ~~S1 ①~~ 병합 완료 | 앱 자체 로그인·회원가입(D34) `feat/s1-auth-local` — codex-main 구현 + codex-critic 리뷰 4건 반영. 검증 단위 142·DB 9·E2E 2. CI 녹색 확인 후 `main` 병합(사용자 승인) | tasks/s1-auth-local · [요구사항 검토](status/requirements-review-2026-09-28.md) |
@@ -185,6 +185,8 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 - 요청은 서버 RequestService만 보낸다(S3). 트레이 추정은 `buildChatRequest({ dryRun: true })` — 실제 전송과 같은 함수
 - 대화 생성은 `POST /api/tasks` 한 번(`firstMessage`로 첫 팀 의견까지 같은 트랜잭션). 클라이언트 인계(autoSend) 경로는 없다 — 생성 요청 자체의 네트워크 재전송 중복(idempotency key)은 S3 RequestService와 함께
 - 완료된 대화의 수정·태그·팀 의견은 서버가 트랜잭션 안에서 행을 잠그고 재검사해 409 — 클라이언트 검사만 믿지 않는다
+- **리포트 권한·집계 기준(S4 ④)**: `/api/reports`는 요청자(BO)에게 403 — PRD §2 "내부 대화·자료는 볼 수 없음". SR 완료 리드타임은 `sr.status_changed` 활동 기록(접수·상태 변경·결과 공유와 같은 트랜잭션)에서 계산하므로 상태를 바꾸는 새 경로를 추가하면 활동 기록도 함께 써야 한다. 알림은 업무 커밋 **뒤** 전송하고 실패해도 요청은 성공(경고 로그) — 멱등 재시도가 누락 알림을 복구하지는 않는다.
+
 
 ## 8. 다음 세션 시작 체크리스트
 

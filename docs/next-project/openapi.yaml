@@ -643,6 +643,37 @@ paths:
       parameters: [{ $ref: '#/components/parameters/srId' }]
       responses: { '200': { description: OK } }
 
+  /notifications:
+    get:
+      tags: [misc]
+      summary: 본인 알림 최신순(읽음 여부 포함). 대화 배정(소유자·담당자, 행위자 제외)·SR 접수·상태 변경·결과 공유 4종을 서버가 기록하고 notification.created 이벤트는 수신자에게만 간다. S4 ④
+      responses: { '200': { description: OK } }
+  /notifications/unread-count:
+    get:
+      tags: [misc]
+      summary: 본인 미읽음 수. S4 ④
+      responses: { '200': { description: '{ count }' } }
+  /notifications/{id}/read:
+    patch:
+      tags: [misc]
+      summary: 본인 알림 읽음 처리(타인 알림은 404). S4 ④
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Problem' } }
+  /notifications/read-all:
+    post:
+      tags: [misc]
+      summary: 본인 알림 모두 읽음. S4 ④
+      responses: { '200': { description: OK } }
+  /reports:
+    get:
+      tags: [misc]
+      summary: 리포트 집계 단일 응답 — kpi·완료 추이(buckets)·에이전트별·사용자별·자료 흐름(10)·태그(12)·SR 분포·비효율 신호·피드백 다이제스트. 도메인 reporting 함수 재사용, 완료 시각은 task.completed 활동 기준, SR 리드타임은 sr.status_changed 활동 기준, 소프트 삭제 제외. 요청자(BO)는 403. S4 ④
+      parameters:
+        - { name: days, in: query, schema: { type: integer, default: 30 } }
+        - { name: granularity, in: query, schema: { type: string, enum: [day, week], default: week } }
+        - { name: userId, in: query, required: false, schema: { type: string }, description: 소유자 또는 담당자 필터 }
+      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } }
+
   /events:
     get:
       tags: [misc]

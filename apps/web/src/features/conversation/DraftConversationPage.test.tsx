@@ -21,6 +21,22 @@ function ReconnectingConversation() {
   return <div>대화로 이동</div>
 }
 
+it('선택한 담당자를 대화 생성 요청에 포함한다', async () => {
+  let body: Record<string, unknown> | undefined
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants') return Response.json([assistant])
+    if (url === '/api/catalog/users') return Response.json([{ id: 'u', name: '사용자', initials: '사', color: '#000', isSystemOwner: false, isBusinessOwner: false }, { id: 'other', name: '담당자', initials: '담', color: '#000', isSystemOwner: false, isBusinessOwner: false }])
+    if (url === '/api/tasks' && init?.method === 'POST') { body = JSON.parse(String(init.body)) as Record<string, unknown>; return Response.json({ id: 't', threadId: 'h' }, { status: 201 }) }
+    return Response.json([])
+  }))
+  mountDraft()
+  fireEvent.change(await screen.findByLabelText('담당자'), { target: { value: 'other' } })
+  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '배정할 업무' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(body).toMatchObject({ assistantId: 'a', assigneeIds: ['other'] }))
+})
+
 it('reconnects the first AI request with the same body and key after losing the response', async () => {
   const calls: Array<{ url: string; body: string; key: string | null }> = []
   let creations = 0
