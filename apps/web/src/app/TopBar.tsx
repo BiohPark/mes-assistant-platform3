@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { UserAvatar } from '@/components/UserAvatar'
 import { logout, useMe } from './auth'
+import { NotificationBell } from './NotificationBell'
 
 interface TopBarProps {
   title?: React.ReactNode
@@ -41,6 +42,7 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
     <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-background px-4">
       <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h1>
       {actions}
+      <NotificationBell />
       {isOwner && llmStatus.data && <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{llmStatus.data.mode === 'mock' ? 'Mock' : 'Live'}</span>}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

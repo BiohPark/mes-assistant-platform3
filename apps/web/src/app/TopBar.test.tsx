@@ -6,6 +6,8 @@ import { jsonResponse, renderWithProviders } from '@/test/render'
 import { MeContext } from './auth'
 import { TopBar } from './TopBar'
 
+vi.mock('./NotificationBell', () => ({ NotificationBell: () => null }))
+
 const me = { id: 'u1', name: '김운영', role: '', roles: ['member', 'system_owner'] as const }
 
 describe('TopBar', () => {
