@@ -3,6 +3,7 @@
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
+  "files": ["dist", "drizzle"],
   "devDependencies": {
     "@nestjs/testing": "^12.1.0",
     "@types/cookie-parser": "^1.4.10",
