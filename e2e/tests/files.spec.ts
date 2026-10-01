@@ -71,7 +71,7 @@ test('S3 같은 산출물 이름으로 두 번 저장하면 v2가 된다', async
   for (let version = 1; version <= 2; version++) {
     await page.getByRole('textbox', { name: '팀 의견 입력' }).fill(`산출물 답변 ${version}`)
     await page.getByRole('button', { name: '전송', exact: true }).click()
-    await expect(page.getByRole('button', { name: '산출물로 저장' }).last()).toBeVisible()
+    await expect(page.getByRole('button', { name: '산출물로 저장' }).last()).toBeVisible({ timeout: 15_000 }) // 답변 완료까지 — 병렬 부하에서 5초를 넘긴다
     await page.getByRole('button', { name: '산출물로 저장' }).last().click()
     const dialog = page.getByRole('dialog')
     const name = await dialog.getByLabel('파일 이름').inputValue()
