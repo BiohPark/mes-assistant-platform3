@@ -264,6 +264,10 @@ pnpm test:db
 4. [WinSW v2.12.0 공식 릴리스](https://github.com/winsw/winsw/releases/tag/v2.12.0)에서 Windows x64용 안정판 실행 파일을 받아 `deploy\windows\mes-hub.exe`로 저장한다. 저장소와 배포 묶음에는 exe가 없다. 관리자 PowerShell에서 `deploy\windows\mes-hub.exe install` 후 `deploy\windows\mes-hub.exe start`를 실행한다. 동봉된 `mes-hub.xml`은 WinSW v2 형식을 유지한다. XML은 묶음 루트를 작업 폴더로 하여 `node.exe --env-file=<묶음 루트>\.env api\dist\main.js`를 실행하고, 실패 시 재시작하며 `logs`에 10 MB 단위로 로그를 회전한다. 서비스 계정의 PATH에서 `node.exe`를 찾을 수 있어야 한다.
 5. 브라우저에서 `APP_ORIGIN`을 열고 로그인 및 `/api/health` 응답을 확인한다. 실제 서비스 계정과 ACL·네트워크 접근은 서버에서 확인한다.
 
+### 데모 bundle 이관
+
+서비스를 멈추고 DB와 `FILE_STORAGE_ROOT`를 백업한 뒤, 묶음 루트에서 `node --env-file=.env api\dist\db\import.js C:\path\bundle.json --dry-run --default-owner <loginId>`로 테이블별 건수를 확인한다. 소유자가 빈 행이 있으면 `--default-owner`에 기존 또는 함께 가져올 사용자의 로그인 ID를 지정한다. 이어서 `--dry-run` 없이 실행한다. bundle 크기 제한은 기본 64 MiB이며 `IMPORT_BUNDLE_MAX_BYTES`로 조정한다. macOS/Node 22에서 60 MiB bundle의 최대 RSS는 382 MiB였다. Windows에서는 별도 측정 전까지 이관 프로세스에 최소 512 MiB의 여유 메모리를 둔다. 다중 SR 업무는 기본적으로 목록을 보여 주고 중단한다. 가장 이른 SR만 연결하고 나머지 연결의 권한·조회 손실을 수용할 때만 `--allow-multi-sr`를 지정한다. 새 계정의 로그인 ID와 임시 비밀번호는 실행 종료 시 표준 출력에 한 번만 표시되므로 각 사용자에게 안전한 경로로 전달한다. 같은 ID의 에이전트·코드는 서버 값을 유지하고 차이를 보고한다. 기존 콘텐츠와 그 하위 행의 내용·관계가 다르거나 누락되면 전체 이관을 중단한다.
+
 업데이트할 때는 먼저 외부 쓰기를 멈추고 `deploy\windows\mes-hub.exe stop`으로 서비스를 중지한다. 그 상태에서 **DB를 백업**하고 기존 묶음 폴더를 별도로 보관한 뒤, 새 묶음으로 폴더를 교체한다(기존 `.env`, `deploy\windows\mes-hub.exe`, `logs`를 새 묶음의 같은 위치에 복원). 위 마이그레이션 → `deploy\windows\mes-hub.exe start` → 브라우저 확인 순서다. 파일 저장소는 묶음 밖에 유지한다. 문제가 생기면 서비스를 중지하고 이전 묶음을 복원해 다시 시작한다. DB 스키마가 바뀐 릴리스는 이전 묶음과 중지 직후 백업한 DB를 함께 복원한 다음 서비스를 시작한다.
 
 IIS를 TLS 앞단으로 둘 때만 ARR 리버스 프록시가 전체 요청을 이 서비스로 넘기게 한다. `/api/events`의 SSE 응답 버퍼링을 끄고 프록시 유휴 시간을 스트림 유지 시간보다 길게 설정한다. 이벤트 브로드캐스트는 **단일 api 인스턴스** 전제다. IIS 없이도 api 포트로 직접 접속할 수 있다.
