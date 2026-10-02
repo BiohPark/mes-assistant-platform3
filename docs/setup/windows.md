@@ -266,7 +266,7 @@ pnpm test:db
 
 ### 데모 bundle 이관
 
-서비스를 멈추고 DB와 `FILE_STORAGE_ROOT`를 백업한 뒤, 묶음 루트에서 `node --env-file=.env api\dist\db\import.js C:\path\bundle.json --dry-run`으로 테이블별 건수를 확인한다. 이어서 `--dry-run` 없이 실행한다. 새 계정의 로그인 ID와 임시 비밀번호는 실행 종료 시 표준 출력에 한 번만 표시되므로 각 사용자에게 안전한 경로로 전달한다. 재실행은 이미 존재하는 행을 건너뛴다.
+서비스를 멈추고 DB와 `FILE_STORAGE_ROOT`를 백업한 뒤, 묶음 루트에서 `node --env-file=.env api\dist\db\import.js C:\path\bundle.json --dry-run`으로 테이블별 건수를 확인한다. 이어서 `--dry-run` 없이 실행한다. bundle 크기 제한은 기본 1 GB이며 `IMPORT_BUNDLE_MAX_BYTES`로 조정한다. 새 계정의 로그인 ID와 임시 비밀번호는 실행 종료 시 표준 출력에 한 번만 표시되므로 각 사용자에게 안전한 경로로 전달한다. 재실행은 핵심 필드가 같은 기존 행과 하위 행을 건너뛰며, 다른 값의 ID 충돌은 전체 이관을 중단한다.
 
 업데이트할 때는 먼저 외부 쓰기를 멈추고 `deploy\windows\mes-hub.exe stop`으로 서비스를 중지한다. 그 상태에서 **DB를 백업**하고 기존 묶음 폴더를 별도로 보관한 뒤, 새 묶음으로 폴더를 교체한다(기존 `.env`, `deploy\windows\mes-hub.exe`, `logs`를 새 묶음의 같은 위치에 복원). 위 마이그레이션 → `deploy\windows\mes-hub.exe start` → 브라우저 확인 순서다. 파일 저장소는 묶음 밖에 유지한다. 문제가 생기면 서비스를 중지하고 이전 묶음을 복원해 다시 시작한다. DB 스키마가 바뀐 릴리스는 이전 묶음과 중지 직후 백업한 DB를 함께 복원한 다음 서비스를 시작한다.
 
