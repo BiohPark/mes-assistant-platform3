@@ -9,7 +9,7 @@ import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
 import { AdminService } from './admin.service.js'
 import { AccountsService } from './accounts.service.js'
-import { appSession, assistant, assistantChecklistTemplate, assistantExpectedIo, code, fileObject, task } from '../db/schema.js'
+import { activityLog, appSession, assistant, assistantChecklistTemplate, assistantExpectedIo, code, fileObject, task } from '../db/schema.js'
 import { eq } from 'drizzle-orm'
 import { hashPassword, verifyPassword } from '../auth/password.js'
 import { DbSessionStore } from '../auth/session.service.js'
@@ -40,6 +40,15 @@ describe('SR 접수 에이전트 보호 (데모 테스트 4건)', () => {
   })
   it('refuses to delete the current intake assistant', async () => {
     await expect(admin.deleteAssistant('urs-analyst')).rejects.toMatchObject({ status: 409 })
+  })
+  it('활동 이력의 에이전트 참조를 지우는 삭제를 거부한다', async () => {
+    await admin.createAssistant('owner', { id: 'audit-only', name: '감사 대상', level1CodeId: 'assistant_level1:SDLC', level2CodeId: 'assistant_level2:분석',
+      summary: '', ownerId: 'owner', status: 'open', usageExample: '', expectedInputs: [], expectedOutputs: [], checklistTemplate: [] })
+    await db.insert(activityLog).values({ id: 'audit-only-event', type: 'assistant.created', userId: 'owner', assistantId: 'audit-only', payload: {} })
+    await expect(admin.deleteAssistant('audit-only')).rejects.toMatchObject({ status: 409 })
+    expect((await db.select({ assistantId: activityLog.assistantId }).from(activityLog).where(eq(activityLog.id, 'audit-only-event')))[0]?.assistantId).toBe('audit-only')
+    await db.delete(activityLog).where(eq(activityLog.id, 'audit-only-event'))
+    await admin.deleteAssistant('audit-only')
   })
   it('allows retire after reassigning intake', async () => {
     await admin.settings({ srIntakeAssistantId: 'urs-analyst-basic' })
