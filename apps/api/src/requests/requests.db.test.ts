@@ -584,6 +584,33 @@ describe('RequestService DB', () => {
     expect(await new FileStorageService(root).exists(key)).toBe(false)
   })
 
+  it('큰 snapshot 파일 쓰기 중 취소되어 종료 전이가 실패하면 파일을 삭제한다', async () => {
+    let writing!: () => void
+    let release!: () => void
+    const started = new Promise<void>((resolve) => { writing = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const original = FileStorageService.prototype.write
+    const write = vi.spyOn(FileStorageService.prototype, 'write').mockImplementation(async function (this: FileStorageService, key, bytes) {
+      await original.call(this, key, bytes)
+      if (key.startsWith('requests/')) { writing(); await held }
+    })
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
+      REQUEST_BUDGET_BYTES: String(2 * 1024 * 1024) }), provider)
+    try {
+      const { thread } = await tasks.create('member', { assistantId })
+      const run = await runner.start('member', thread.id, { content: 'x'.repeat(1_100_000) }, 'cancel-writing-snapshot')
+      await started
+      await runner.cancel(run.id)
+      release()
+      await run.done
+      const [row] = await db.select({ snapshot: chatRequest.snapshot }).from(chatRequest).where(eq(chatRequest.id, run.id))
+      expect(row?.snapshot).toBeNull()
+      const now = new Date()
+      const key = `requests/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${run.id}.json`
+      expect(await new FileStorageService(root).exists(key)).toBe(false)
+    } finally { release(); write.mockRestore(); runner.onModuleDestroy() }
+  })
+
   it('interrupts unfinished requests on process restart even before lease expiry', async () => {
     const { thread } = await tasks.create('member', { assistantId })
     const run = await service.start('member', thread.id, { content: '재시작' }, 'restart-key')

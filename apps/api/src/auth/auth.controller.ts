@@ -12,16 +12,18 @@ import { USER_DIRECTORY, type UserDirectory } from './users.service.js'
 
 const PENDING_COOKIE = 'mes_oidc'
 const dummyHash = hashPassword('dummy')
+const MAX_ATTEMPT_ENTRIES = 10_000
 
 @Controller()
 export class AuthController {
   private readonly attempts = new Map<string, { count: number; until: number }>()
+  private nextAttemptSweep: number
   constructor(
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(OIDC) private readonly oidc: OidcPort,
     @Inject(SESSION_STORE) private readonly sessions: SessionStore,
     @Inject(USER_DIRECTORY) private readonly users: UserDirectory,
-  ) {}
+  ) { this.nextAttemptSweep = Date.now() + config.authAttempts.windowMs }
 
   private cookie(extra: CookieOptions = {}): CookieOptions {
     return { httpOnly: true, sameSite: 'lax', secure: this.config.cookieSecure, path: '/', ...extra }
@@ -39,12 +41,24 @@ export class AuthController {
 
   private attempt(req: Request, loginId: string) {
     const now = Date.now()
-    for (const [key, value] of this.attempts) if (value.until <= now) this.attempts.delete(key)
-    const key = `${req.ip ?? req.socket.remoteAddress ?? ''}:${loginId}`
-    const prior = this.attempts.get(key)
-    if (prior && prior.count >= this.config.authAttempts.max) throw new HttpException('시도가 너무 많습니다. 잠시 후 다시 시도하세요.', 429)
-    this.attempts.set(key, { count: (prior?.count ?? 0) + 1, until: prior?.until ?? now + this.config.authAttempts.windowMs })
-    return () => this.attempts.delete(key)
+    if (now >= this.nextAttemptSweep) {
+      for (const [key, value] of this.attempts) if (value.until <= now) this.attempts.delete(key)
+      this.nextAttemptSweep = now + this.config.authAttempts.windowMs
+    }
+    const ip = req.ip ?? req.socket.remoteAddress ?? ''
+    const keys = [`ip:${ip}`, `id:${ip}:${loginId}`]
+    const prior = keys.map((key) => {
+      const value = this.attempts.get(key)
+      if (value && value.until <= now) { this.attempts.delete(key); return undefined }
+      return value
+    })
+    if (prior.some((value) => value && value.count >= this.config.authAttempts.max) ||
+      this.attempts.size + prior.filter((value) => !value).length > MAX_ATTEMPT_ENTRIES) {
+      throw new HttpException('시도가 너무 많습니다. 잠시 후 다시 시도하세요.', 429)
+    }
+    keys.forEach((key, index) => this.attempts.set(key, { count: (prior[index]?.count ?? 0) + 1,
+      until: prior[index]?.until ?? now + this.config.authAttempts.windowMs }))
+    return () => { for (const key of keys) this.attempts.delete(key) }
   }
 
   private async respondWithSession(user: { id: string; name: string; role: string; isSystemOwner: boolean; isBusinessOwner?: boolean; mustChangePassword?: boolean }, res: Response): Promise<Me> {

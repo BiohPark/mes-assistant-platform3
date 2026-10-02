@@ -170,8 +170,10 @@ export function srStatusDistribution(srs: ServiceRequest[]): Array<{ status: SrS
   return SR_STATUSES.filter((s) => s !== 'draft').map((status) => ({ status, count: srs.filter((s) => s.status === status).length }))
 }
 
+type ReportActivity = Pick<ActivityLog, 'type' | 'taskId' | 'srId' | 'payload' | 'at'>
+
 /** 접수 → 완료 평균 일수 (완료 상태 변경 로그 기준) */
-export function srLeadDays(srs: ServiceRequest[], activity: ActivityLog[]): number | undefined {
+export function srLeadDays(srs: ServiceRequest[], activity: ReportActivity[]): number | undefined {
   const doneAt = new Map<string, string>()
   for (const a of activity) {
     if (a.type === 'sr.status_changed' && a.srId && a.payload.to === 'done') doneAt.set(a.srId, a.at)
@@ -200,7 +202,7 @@ export const SIGNAL_LABEL: Record<SignalKind, string> = {
 }
 
 /** 비효율 신호: 재오픈, 중요 체크 미완료로 완료, 장기 업무(≥10일), 방치(≥5일 활동 없음), 새 버전이 나왔는데 이전 버전을 입력으로 쓰는 진행 중 대화 */
-export function inefficiencySignals(tasks: Task[], activity: ActivityLog[], files: Pick<FileAsset, 'id' | 'name' | 'version' | 'previousId'>[], now = new Date()): InefficiencySignal[] {
+export function inefficiencySignals(tasks: Task[], activity: ReportActivity[], files: Pick<FileAsset, 'id' | 'name' | 'version' | 'previousId'>[], now = new Date(), lastActivityByTask?: ReadonlyMap<string, string>): InefficiencySignal[] {
   const out: InefficiencySignal[] = []
   const taskById = new Map(tasks.map((t) => [t.id, t]))
   const push = (kind: SignalKind, t: Task, detail: string, at: string) => out.push({ kind, taskId: t.id, taskCode: t.code, taskTitle: t.title, detail, at })
@@ -212,7 +214,7 @@ export function inefficiencySignals(tasks: Task[], activity: ActivityLog[], file
     if (a.type === 'task.completed' && Number(a.payload.missingRequired ?? 0) > 0) push('missing_required', t, `중요 ${String(a.payload.missingRequired)}건 미체크 상태로 완료${a.payload.reason ? ` — ${String(a.payload.reason)}` : ''}`, a.at)
   }
 
-  const lastActivity = new Map<string, string>()
+  const lastActivity = new Map(lastActivityByTask)
   for (const a of activity) {
     if (!a.taskId) continue
     const prev = lastActivity.get(a.taskId)

@@ -554,14 +554,20 @@ export class RequestsService implements OnModuleDestroy {
       if (controller.signal.reason === 'timeout') failure = '응답 시간 초과 — 제한 시간 안에 응답이 오지 않았습니다.'
       try {
         if (controller.signal.reason !== 'lost' && controller.signal.reason !== 'cancelled') {
+          let writtenKey: string | undefined
           if (snapshotBytes && snapshot && typeof snapshot === 'object' && 'storageKey' in snapshot && typeof snapshot.storageKey === 'string') {
-            try { await this.storage.write(snapshot.storageKey, snapshotBytes) }
+            try { await this.storage.write(snapshot.storageKey, snapshotBytes); writtenKey = snapshot.storageKey }
             catch { snapshot = JSON.parse(snapshotBytes.toString('utf8')) as unknown }
           }
-          const ok = await this.transition(id, failure ? 'failed' : 'succeeded', failure, acc, info, snapshot)
-          if (ok) {
-            this.emit(id, failure ? { event: 'failed', data: { error: failure, code: errorCode('failed', failure, info?.bytes ?? 0), requestInfo: publicInfo(info) } } : { event: 'completed', data: { requestInfo: publicInfo(info) } })
-            if (!failure) void this.maybeTitle(id).catch(() => undefined)
+          let transitioned = false
+          try {
+            transitioned = await this.transition(id, failure ? 'failed' : 'succeeded', failure, acc, info, snapshot)
+            if (transitioned) {
+              this.emit(id, failure ? { event: 'failed', data: { error: failure, code: errorCode('failed', failure, info?.bytes ?? 0), requestInfo: publicInfo(info) } } : { event: 'completed', data: { requestInfo: publicInfo(info) } })
+              if (!failure) void this.maybeTitle(id).catch(() => undefined)
+            }
+          } finally {
+            if (writtenKey && !transitioned) await this.storage.remove(writtenKey)
           }
         }
       } finally { this.runs.delete(id) }

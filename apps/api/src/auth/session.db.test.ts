@@ -1,12 +1,12 @@
 import 'reflect-metadata'
 import { Test } from '@nestjs/testing'
 import request from 'supertest'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/mysql2'
 import type { Db } from '../db/db.module.js'
 import type { Pool } from 'mysql2/promise'
 import { createPool } from '../db/connection.js'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { loadConfig } from '../config/config.js'
 import { CONFIG } from '../config/config.js'
 import { AppModule } from '../app.module.js'
@@ -153,6 +153,21 @@ describe('세션·사용자 저장소 (MariaDB)', () => {
     expect(extended!.expiresAt.getTime() - Date.now()).toBeLessThan(31 * 60_000)
     await db.update(appSession).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(appSession.id, initial!.id))
     expect(await store.resolve(token)).toBeNull()
+  })
+
+  it('앱 시계가 DB보다 앞서도 DB 시각으로 세션을 만들고 만료를 판정한다', async () => {
+    const u = await new DbUserDirectory(db, config).upsertFromClaims({ sub: 'clock-skew-user' })
+    const store = new DbSessionStore(db, { ...config, sessionTtlHours: 2, sessionIdleHours: 1 })
+    const realNow = Date.now()
+    const skew = vi.spyOn(Date, 'now').mockReturnValue(realNow + 48 * 3_600_000)
+    try {
+      const { token, expiresAt } = await store.create(u.id)
+      const [row] = await db.select().from(appSession).where(eq(appSession.userId, u.id))
+      const [clock] = await db.select({ now: sql<Date>`current_timestamp(6)`.mapWith(appSession.createdAt) }).from(appUser).where(eq(appUser.id, u.id))
+      expect(Math.abs(row!.createdAt.getTime() - clock!.now.getTime())).toBeLessThan(10_000)
+      expect(expiresAt.getTime() - row!.createdAt.getTime()).toBe(2 * 3_600_000)
+      expect(await store.resolve(token)).toMatchObject({ id: u.id })
+    } finally { skew.mockRestore() }
   })
 
   it('DB SO 부트스트랩은 한 번만 되고 dev-owner 중복 가입은 409', async () => {
