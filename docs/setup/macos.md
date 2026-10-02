@@ -46,7 +46,7 @@ Windows와 같다. `pnpm dev` → http://localhost:5173 → 회원가입(예: `d
 
 운영 대상은 Windows다([windows.md §8](windows.md)). macOS는 개발용으로만 쓴다.
 배포 묶음 생성은 저장소 루트에서 `pnpm release`로 한다.
-데모 bundle은 `mise exec -- pnpm db:import /path/to/bundle.json --dry-run`으로 먼저 확인한다. 기본 크기 제한은 256 MB이며 읽기·문자열 변환·파싱에 bundle 크기의 약 3배 메모리가 필요하다.
+데모 bundle은 `mise exec -- pnpm db:import /path/to/bundle.json --dry-run --default-owner <loginId>`로 먼저 확인한다. 소유자가 빈 행이 있으면 `--default-owner`에 기존 또는 함께 가져올 사용자의 로그인 ID를 지정한다. 기본 크기 제한은 64 MiB다. macOS/Node 22에서 60 MiB bundle의 최대 RSS는 382 MiB였으므로 이관 프로세스에 최소 512 MiB의 여유 메모리를 둔다. 다중 SR 업무는 기본적으로 중단하며, 연결 손실을 수용할 때만 `--allow-multi-sr`를 추가한다.
 
 ## 9. 문제 해결 (macOS 차이)
 

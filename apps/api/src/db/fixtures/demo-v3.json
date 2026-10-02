@@ -1,0 +1,2851 @@
+{
+  "format": "mes-assistant-hub",
+  "version": 3,
+  "exportedAt": "2026-09-30T00:00:00.000Z",
+  "tables": {
+    "tasks": [
+      {
+        "id": "task_seed_0001",
+        "code": "WK-2026-0001",
+        "assistantId": "urs-analyst",
+        "title": "알람 목록 장비별 필터 URS 정리",
+        "titleSource": "ai",
+        "summary": "현업 요청(알람 과다)을 URS 항목으로 구조화",
+        "status": "done",
+        "ownerId": "u_dev4",
+        "assigneeIds": [
+          "u_dev4"
+        ],
+        "priority": "high",
+        "tags": [
+          "SR-2026-0002"
+        ],
+        "checklist": [
+          {
+            "id": "task_seed_0001_chk0",
+            "label": "요구사항 ID 부여",
+            "required": true,
+            "checked": true,
+            "checkedBy": "u_dev4",
+            "checkedAt": "2026-09-18T00:00:00.000Z"
+          },
+          {
+            "id": "task_seed_0001_chk1",
+            "label": "GxP 영향 표시",
+            "required": true,
+            "checked": true,
+            "checkedBy": "u_dev4",
+            "checkedAt": "2026-09-18T00:00:00.000Z"
+          }
+        ],
+        "inputs": [],
+        "outputFileIds": [
+          "file_seed_0036"
+        ],
+        "createdAt": "2026-09-18T00:00:00.000Z",
+        "lastActivityAt": "2026-09-27T00:00:00.000Z",
+        "createdBy": "u_dev4",
+        "startedAt": "2026-09-18T00:00:00.000Z",
+        "completedAt": "2026-09-21T00:00:00.000Z",
+        "completedBy": "u_dev4",
+        "feedback": {
+          "rating": 5,
+          "comment": "GxP 표시까지 한 번에 정리됨",
+          "by": "u_dev4",
+          "at": "2026-09-21T00:00:00.000Z"
+        },
+        "threadId": "thr_seed_0008"
+      },
+      {
+        "id": "task_seed_0002",
+        "code": "WK-2026-0002",
+        "assistantId": "fds-writer",
+        "title": "알람 필터 FDS 작성",
+        "titleSource": "ai",
+        "summary": "URS-01~03 기반 기능 설계",
+        "status": "in_progress",
+        "ownerId": "u_dev1",
+        "assigneeIds": [
+          "u_dev1"
+        ],
+        "priority": "high",
+        "dueDate": "2026-10-03T00:00:00.000Z",
+        "tags": [
+          "SR-2026-0002"
+        ],
+        "checklist": [
+          {
+            "id": "task_seed_0002_chk0",
+            "label": "URS 추적성 표 작성",
+            "required": true,
+            "checked": true,
+            "checkedBy": "u_dev1",
+            "checkedAt": "2026-09-21T00:00:00.000Z"
+          },
+          {
+            "id": "task_seed_0002_chk1",
+            "label": "화면 설계 첨부",
+            "required": false,
+            "checked": false
+          }
+        ],
+        "inputs": [
+          {
+            "fileId": "file_seed_0019",
+            "weight": "main",
+            "selectedAt": "2026-09-21T00:00:00.000Z",
+            "selectedBy": "u_dev1"
+          }
+        ],
+        "outputFileIds": [
+          "file_seed_0034"
+        ],
+        "createdAt": "2026-09-21T00:00:00.000Z",
+        "lastActivityAt": "2026-09-24T00:00:00.000Z",
+        "createdBy": "u_dev1",
+        "startedAt": "2026-09-21T00:00:00.000Z",
+        "threadId": "thr_seed_0026"
+      },
+      {
+        "id": "task_seed_0003",
+        "code": "WK-2026-0003",
+        "assistantId": "fds-reviewer",
+        "title": "알람 필터 FDS 리뷰",
+        "titleSource": "ai",
+        "summary": "FDS와 URS 추적성·GxP 항목 검토",
+        "status": "in_progress",
+        "ownerId": "u_dev1",
+        "assigneeIds": [
+          "u_dev1",
+          "u_so"
+        ],
+        "priority": "normal",
+        "tags": [
+          "SR-2026-0002",
+          "fds-review"
+        ],
+        "checklist": [],
+        "inputs": [
+          {
+            "fileId": "file_seed_0034",
+            "weight": "main",
+            "selectedAt": "2026-09-25T00:00:00.000Z",
+            "selectedBy": "u_dev1"
+          },
+          {
+            "fileId": "file_seed_0019",
+            "weight": "reference",
+            "selectedAt": "2026-09-25T00:00:00.000Z",
+            "selectedBy": "u_dev1"
+          }
+        ],
+        "outputFileIds": [],
+        "createdAt": "2026-09-25T00:00:00.000Z",
+        "lastActivityAt": "2026-09-26T02:00:00.000Z",
+        "createdBy": "u_dev1",
+        "startedAt": "2026-09-25T00:00:00.000Z",
+        "threadId": "thr_seed_0044"
+      },
+      {
+        "id": "task_seed_0004",
+        "code": "WK-2026-0004",
+        "assistantId": "test-scenario-writer",
+        "title": "알람 필터 테스트 시나리오",
+        "titleSource": "ai",
+        "summary": "FDS 확정 후 시나리오 작성 예정",
+        "status": "todo",
+        "ownerId": "u_dev3",
+        "assigneeIds": [
+          "u_dev3"
+        ],
+        "priority": "normal",
+        "dueDate": "2026-10-10T00:00:00.000Z",
+        "tags": [
+          "SR-2026-0002"
+        ],
+        "checklist": [],
+        "inputs": [],
+        "outputFileIds": [],
+        "createdAt": "2026-09-28T00:00:00.000Z",
+        "lastActivityAt": "2026-09-28T00:00:00.000Z",
+        "createdBy": "u_dev3",
+        "threadId": "thr_seed_0051"
+      },
+      {
+        "id": "task_seed_0005",
+        "code": "WK-2026-0005",
+        "assistantId": "deviation-drafter",
+        "title": "포장 2라인 라벨 불일치 일탈 초안",
+        "titleSource": "ai",
+        "summary": "로트 번호 불일치 일탈 보고서 초안",
+        "status": "done",
+        "ownerId": "u_dev2",
+        "assigneeIds": [
+          "u_dev2"
+        ],
+        "priority": "urgent",
+        "tags": [
+          "라벨-불일치"
+        ],
+        "checklist": [],
+        "inputs": [],
+        "outputFileIds": [
+          "file_seed_0065"
+        ],
+        "createdAt": "2026-09-05T00:00:00.000Z",
+        "lastActivityAt": "2026-09-08T00:00:00.000Z",
+        "createdBy": "u_dev2",
+        "startedAt": "2026-09-05T00:00:00.000Z",
+        "completedAt": "2026-09-08T00:00:00.000Z",
+        "completedBy": "u_dev2",
+        "threadId": "thr_seed_0057"
+      },
+      {
+        "id": "task_seed_0006",
+        "code": "WK-2026-0006",
+        "assistantId": "cc-writer",
+        "title": "EBR 서명 단계 추가 CC 작성",
+        "titleSource": "ai",
+        "summary": "일탈 CAPA 후속 변경 관리",
+        "status": "done",
+        "ownerId": "u_dev1",
+        "assigneeIds": [
+          "u_dev1"
+        ],
+        "priority": "high",
+        "tags": [
+          "라벨-불일치",
+          "CC-2099-001"
+        ],
+        "checklist": [],
+        "inputs": [
+          {
+            "fileId": "file_seed_0065",
+            "weight": "main",
+            "selectedAt": "2026-09-10T00:00:00.000Z",
+            "selectedBy": "u_dev1"
+          }
+        ],
+        "outputFileIds": [
+          "file_seed_0081"
+        ],
+        "createdAt": "2026-09-10T00:00:00.000Z",
+        "lastActivityAt": "2026-09-14T00:00:00.000Z",
+        "createdBy": "u_dev1",
+        "startedAt": "2026-09-10T00:00:00.000Z",
+        "completedAt": "2026-09-14T00:00:00.000Z",
+        "completedBy": "u_dev1",
+        "threadId": "thr_seed_0073"
+      },
+      {
+        "id": "task_seed_0007",
+        "code": "WK-2026-0007",
+        "assistantId": "cc-item-builder",
+        "title": "CC-2099-001 Item 분해",
+        "titleSource": "ai",
+        "summary": "CC를 부서별 실행 항목으로 분해",
+        "status": "in_progress",
+        "ownerId": "u_dev1",
+        "assigneeIds": [
+          "u_dev1",
+          "u_so"
+        ],
+        "priority": "normal",
+        "dueDate": "2026-10-05T00:00:00.000Z",
+        "tags": [
+          "CC-2099-001"
+        ],
+        "checklist": [],
+        "inputs": [
+          {
+            "fileId": "file_seed_0081",
+            "weight": "main",
+            "selectedAt": "2026-09-15T00:00:00.000Z",
+            "selectedBy": "u_dev1"
+          }
+        ],
+        "outputFileIds": [
+          "file_seed_0092"
+        ],
+        "createdAt": "2026-09-15T00:00:00.000Z",
+        "lastActivityAt": "2026-09-18T00:00:00.000Z",
+        "createdBy": "u_dev1",
+        "startedAt": "2026-09-15T00:00:00.000Z",
+        "threadId": "thr_seed_0087"
+      },
+      {
+        "id": "task_seed_0008",
+        "code": "WK-2026-0008",
+        "assistantId": "release-cca-writer",
+        "title": "10월 릴리스 CCA 항목 준비",
+        "titleSource": "ai",
+        "summary": "CC Item 1번을 10월 릴리스 CCA로 작성",
+        "status": "on_hold",
+        "ownerId": "u_dev3",
+        "assigneeIds": [
+          "u_dev3"
+        ],
+        "priority": "normal",
+        "tags": [
+          "CC-2099-001",
+          "release-2026-10"
+        ],
+        "checklist": [],
+        "inputs": [
+          {
+            "fileId": "file_seed_0092",
+            "weight": "main",
+            "selectedAt": "2026-09-22T00:00:00.000Z",
+            "selectedBy": "u_dev3"
+          }
+        ],
+        "outputFileIds": [
+          "file_seed_0104"
+        ],
+        "createdAt": "2026-09-22T00:00:00.000Z",
+        "lastActivityAt": "2026-09-23T00:00:00.000Z",
+        "createdBy": "u_dev3",
+        "startedAt": "2026-09-22T00:00:00.000Z",
+        "threadId": "thr_seed_0099"
+      },
+      {
+        "id": "task_seed_0009",
+        "code": "WK-2026-0009",
+        "assistantId": "cca-writer",
+        "title": "10월 릴리스 배포 CCA",
+        "titleSource": "ai",
+        "summary": "릴리스 대상 변경 묶음의 CCA 작성",
+        "status": "in_progress",
+        "ownerId": "u_dev3",
+        "assigneeIds": [
+          "u_dev3"
+        ],
+        "priority": "high",
+        "dueDate": "2026-10-07T00:00:00.000Z",
+        "tags": [
+          "release-2026-10"
+        ],
+        "checklist": [],
+        "inputs": [],
+        "outputFileIds": [],
+        "createdAt": "2026-09-26T00:00:00.000Z",
+        "lastActivityAt": "2026-09-26T06:00:00.000Z",
+        "createdBy": "u_dev3",
+        "startedAt": "2026-09-26T00:00:00.000Z",
+        "threadId": "thr_seed_0111"
+      },
+      {
+        "id": "task_seed_0010",
+        "code": "WK-2026-0010",
+        "assistantId": "urs-analyst-basic",
+        "title": "3라인 신규 장비 마스터 URS",
+        "titleSource": "ai",
+        "summary": "신규 장비 12대 마스터 등록 요구사항",
+        "status": "in_progress",
+        "ownerId": "u_dev1",
+        "assigneeIds": [
+          "u_dev1",
+          "u_dev2"
+        ],
+        "priority": "urgent",
+        "dueDate": "2026-10-07T00:00:00.000Z",
+        "tags": [
+          "SR-2026-0003"
+        ],
+        "checklist": [],
+        "inputs": [],
+        "outputFileIds": [],
+        "createdAt": "2026-09-25T00:00:00.000Z",
+        "lastActivityAt": "2026-09-25T06:00:00.000Z",
+        "createdBy": "u_dev1",
+        "startedAt": "2026-09-25T00:00:00.000Z",
+        "threadId": "thr_seed_0122"
+      },
+      {
+        "id": "task_seed_0011",
+        "code": "WK-2026-0011",
+        "assistantId": "deploy-verifier",
+        "title": "9월 배포분 FDS–DB 정합성 비교",
+        "titleSource": "ai",
+        "summary": "배포 전 FDS 정의와 DB 스키마 차이 확인",
+        "status": "done",
+        "ownerId": "u_dev3",
+        "assigneeIds": [
+          "u_dev3"
+        ],
+        "priority": "normal",
+        "tags": [],
+        "checklist": [],
+        "inputs": [],
+        "outputFileIds": [],
+        "createdAt": "2026-09-12T00:00:00.000Z",
+        "lastActivityAt": "2026-09-15T00:00:00.000Z",
+        "createdBy": "u_dev3",
+        "startedAt": "2026-09-12T00:00:00.000Z",
+        "completedAt": "2026-09-15T00:00:00.000Z",
+        "completedBy": "u_dev3",
+        "threadId": "thr_seed_0133"
+      }
+    ],
+    "threads": [
+      {
+        "id": "thr_seed_0008",
+        "taskId": "task_seed_0001",
+        "title": "대화",
+        "createdAt": "2026-09-18T00:00:00.000Z",
+        "createdBy": "u_dev4",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0026",
+        "taskId": "task_seed_0002",
+        "title": "대화",
+        "createdAt": "2026-09-22T00:00:00.000Z",
+        "createdBy": "u_dev1",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0044",
+        "taskId": "task_seed_0003",
+        "title": "대화",
+        "createdAt": "2026-09-26T00:00:00.000Z",
+        "createdBy": "u_dev1",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0051",
+        "taskId": "task_seed_0004",
+        "title": "대화",
+        "createdAt": "2026-09-28T00:00:00.000Z",
+        "createdBy": "u_dev3",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0057",
+        "taskId": "task_seed_0005",
+        "title": "대화",
+        "createdAt": "2026-09-05T00:00:00.000Z",
+        "createdBy": "u_dev2",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0073",
+        "taskId": "task_seed_0006",
+        "title": "대화",
+        "createdAt": "2026-09-11T00:00:00.000Z",
+        "createdBy": "u_dev1",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0087",
+        "taskId": "task_seed_0007",
+        "title": "대화",
+        "createdAt": "2026-09-16T00:00:00.000Z",
+        "createdBy": "u_dev1",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0099",
+        "taskId": "task_seed_0008",
+        "title": "대화",
+        "createdAt": "2026-09-22T00:00:00.000Z",
+        "createdBy": "u_dev3",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0111",
+        "taskId": "task_seed_0009",
+        "title": "대화",
+        "createdAt": "2026-09-26T00:00:00.000Z",
+        "createdBy": "u_dev3",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0122",
+        "taskId": "task_seed_0010",
+        "title": "대화",
+        "createdAt": "2026-09-25T00:00:00.000Z",
+        "createdBy": "u_dev1",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0133",
+        "taskId": "task_seed_0011",
+        "title": "대화",
+        "createdAt": "2026-09-12T00:00:00.000Z",
+        "createdBy": "u_dev3",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0138",
+        "srId": "sr_seed_draft",
+        "title": "접수 대화",
+        "createdAt": "2026-09-30T00:00:00.000Z",
+        "createdBy": "u_req",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0144",
+        "srId": "sr_seed_0001",
+        "title": "접수 대화",
+        "createdAt": "2026-09-28T00:00:00.000Z",
+        "createdBy": "u_req",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0151",
+        "srId": "sr_seed_0002",
+        "title": "접수 대화",
+        "createdAt": "2026-09-17T00:00:00.000Z",
+        "createdBy": "u_req",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0163",
+        "srId": "sr_seed_0003",
+        "title": "접수 대화",
+        "createdAt": "2026-09-24T00:00:00.000Z",
+        "createdBy": "u_dev2",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0171",
+        "srId": "sr_seed_0004",
+        "title": "접수 대화",
+        "createdAt": "2026-09-10T00:00:00.000Z",
+        "createdBy": "u_req",
+        "archived": false
+      },
+      {
+        "id": "thr_seed_0178",
+        "srId": "sr_seed_0005",
+        "title": "접수 대화",
+        "createdAt": "2026-09-18T00:00:00.000Z",
+        "createdBy": "u_dev1",
+        "archived": false
+      }
+    ],
+    "messages": [
+      {
+        "id": "msg_seed_0009",
+        "threadId": "thr_seed_0008",
+        "role": "user",
+        "content": "시작",
+        "authorId": "u_dev4",
+        "createdAt": "2026-09-18T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0010",
+        "threadId": "thr_seed_0008",
+        "role": "assistant",
+        "content": "선택된 입력이 없어 대화 내용만으로 진행합니다. 자료 패널에서 파일이나 같은 태그의 대화를 체크(참고) 또는 ★(주 입력)로 고르면 반영됩니다.\n\n\"알람 목록 장비별 필터 URS 정리\" 요구사항 정리를 시작하겠습니다. URS 작성 전에 확인이 필요한 항목입니다.\n\n1. **트리거/대상 범위** — 어떤 장비(클래스)와 어떤 이벤트가 대상인가요?\n2. **GxP 영향** — 배치 기록(EBR)이나 장비 상태에 영향이 있나요?\n3. **예외 처리** — 자동 처리가 실패했을 때 운전자가 개입하는 절차가 있나요?\n\n답변해 주시면 요구사항 ID를 부여해 초안을 작성하겠습니다.",
+        "createdAt": "2026-09-18T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0011",
+        "threadId": "thr_seed_0008",
+        "role": "user",
+        "content": "알람 목록에 장비별 필터가 필요하다는 현업 요청이야. 알람이 하루 수백 건이라 찾기 힘들대",
+        "authorId": "u_dev4",
+        "createdAt": "2026-09-18T04:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0012",
+        "threadId": "thr_seed_0008",
+        "role": "assistant",
+        "content": "답변 감사합니다. 반영해서 URS 초안을 작성했습니다.\n\n# URS — 알람 목록 장비별 필터 URS 정리\n\n## 1. 배경\n알람 목록에 장비별 필터가 필요하다는 현업 요청이야. 알람이 하루 수백 건이라 찾기 힘들대\n\n## 2. 요구사항\n| ID | 요구사항 | 우선순위 | GxP |\n|---|---|---|---|\n| URS-01 | 대상 이벤트 발생 시 시스템이 자동으로 처리를 수행한다 | High | Yes |\n| URS-02 | 처리 결과는 Equipment Log에 actor=SYSTEM 으로 기록한다 | High | Yes |\n| URS-03 | 실패 시 운전자에게 알람을 표시하고 수동 처리 경로를 제공한다 | Medium | Yes |\n| URS-04 | 수동 처리 시 사유 입력을 필수로 한다 | Medium | Yes |\n\n## 3. 제외 범위\n- 타 시스템 인터페이스 변경 (별도 CR)\n\n답변 아래 **산출물로 저장**을 누르면 같은 태그를 가진 대화(예: FDS)의 공유 자료함에 나타납니다.",
+        "createdAt": "2026-09-18T06:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0013",
+        "threadId": "thr_seed_0008",
+        "role": "user",
+        "content": "Critical 알람은 필터와 무관하게 항상 보여야 해",
+        "authorId": "u_dev4",
+        "createdAt": "2026-09-18T08:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0014",
+        "threadId": "thr_seed_0008",
+        "role": "assistant",
+        "content": "요청하신 내용을 반영해 URS를 갱신했습니다. 변경 사항:\n\n- Critical 알람은 필터와 무관하게 항상 보여야 해 → 요구사항 반영 (URS-05 신규)\n- 우선순위 재정렬\n\n체크리스트의 \"요구사항 ID 부여 및 우선순위 정리\" 항목을 완료 처리하셔도 됩니다. 비즈니스 오너 리뷰가 끝나면 단계를 완료해 주세요.",
+        "createdAt": "2026-09-18T10:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0027",
+        "threadId": "thr_seed_0026",
+        "role": "user",
+        "content": "시작",
+        "authorId": "u_dev1",
+        "createdAt": "2026-09-22T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0028",
+        "threadId": "thr_seed_0026",
+        "role": "assistant",
+        "content": "선택된 입력이 없어 대화 내용만으로 진행합니다. 자료 패널에서 파일이나 같은 태그의 대화를 체크(참고) 또는 ★(주 입력)로 고르면 반영됩니다.\n\nURS 항목을 기능 명세로 매핑했습니다.\n\n# FDS 초안 — 알람 필터 FDS 작성\n\n## 기능 목록\n| FDS ID | URS | 기능 설명 | 구성요소 |\n|---|---|---|---|\n| FDS-01 | URS-01 | 이벤트 구독 및 상태 전환 서비스 호출 | EquipmentStatusService |\n| FDS-02 | URS-02 | 전환 이력 기록 (actor=SYSTEM, source 컬럼) | EQUIPMENT_STATUS_LOG |\n| FDS-03 | URS-03 | 실패 알람 발생 및 수동 처리 화면 진입 | AlarmService, ET UI |\n\n## 데이터 모델 변경\n- `EQUIPMENT_STATUS_LOG.TRANSITION_SOURCE VARCHAR2(20)` 추가\n\n## 추적성\nURS-01~04 → FDS-01~03 (URS-04는 기존 기능 재사용)\n\n인터페이스(EBR/LIMS) 영향 검토가 필요하면 말씀해 주세요.",
+        "createdAt": "2026-09-22T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0029",
+        "threadId": "thr_seed_0026",
+        "role": "user",
+        "content": "주 입력 URS 기준으로 FDS 초안 만들어줘",
+        "authorId": "u_dev1",
+        "createdAt": "2026-09-22T04:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0030",
+        "threadId": "thr_seed_0026",
+        "role": "assistant",
+        "content": "\"주 입력 URS 기준으로 FDS 초안 만들어줘\" 관련 검토 결과입니다.\n\n- 기존 인터페이스 스펙 변경 없음 (상태값 집합 유지)\n- 리포트 뷰가 `SELECT *`를 사용하는 경우 컬럼 추가 영향 가능 → 뷰 정의 확인 권장\n- 성능: 이벤트 구독은 기존 큐를 재사용하므로 추가 부하 미미\n\nFDS 문서에 \"인터페이스 영향 검토\" 절을 추가했습니다. 산출물로 저장하시겠어요?",
+        "createdAt": "2026-09-22T06:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0045",
+        "threadId": "thr_seed_0044",
+        "role": "user",
+        "content": "FDS 리뷰해줘. 주 입력은 FDS, URS는 참고",
+        "authorId": "u_dev1",
+        "createdAt": "2026-09-26T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0046",
+        "threadId": "thr_seed_0044",
+        "role": "assistant",
+        "content": "선택된 입력이 없어 대화 내용만으로 진행합니다. 자료 패널에서 파일이나 같은 태그의 대화를 체크(참고) 또는 ★(주 입력)로 고르면 반영됩니다.\n\nURS 항목을 기능 명세로 매핑했습니다.\n\n# FDS 초안 — 알람 필터 FDS 리뷰\n\n## 기능 목록\n| FDS ID | URS | 기능 설명 | 구성요소 |\n|---|---|---|---|\n| FDS-01 | URS-01 | 이벤트 구독 및 상태 전환 서비스 호출 | EquipmentStatusService |\n| FDS-02 | URS-02 | 전환 이력 기록 (actor=SYSTEM, source 컬럼) | EQUIPMENT_STATUS_LOG |\n| FDS-03 | URS-03 | 실패 알람 발생 및 수동 처리 화면 진입 | AlarmService, ET UI |\n\n## 데이터 모델 변경\n- `EQUIPMENT_STATUS_LOG.TRANSITION_SOURCE VARCHAR2(20)` 추가\n\n## 추적성\nURS-01~04 → FDS-01~03 (URS-04는 기존 기능 재사용)\n\n인터페이스(EBR/LIMS) 영향 검토가 필요하면 말씀해 주세요.",
+        "createdAt": "2026-09-26T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0058",
+        "threadId": "thr_seed_0057",
+        "role": "user",
+        "content": "시작",
+        "authorId": "u_dev2",
+        "createdAt": "2026-09-05T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0059",
+        "threadId": "thr_seed_0057",
+        "role": "assistant",
+        "content": "선택된 입력이 없어 대화 내용만으로 진행합니다. 자료 패널에서 파일이나 같은 태그의 대화를 체크(참고) 또는 ★(주 입력)로 고르면 반영됩니다.\n\n\"시작\" 건으로 Deviation 초안을 잡겠습니다.\n\n# Deviation 초안\n- **발생 개요**: 시작\n- **즉시 조치**: (확인 필요) 해당 로트 격리 여부\n- **영향 평가**: 제품 품질 / 데이터 무결성 / 다른 로트 영향\n- **근본 원인(추정)**: 조사 중\n\n즉시 조치 내용과 발생 일시를 알려주시면 영향 평가를 채우겠습니다.",
+        "createdAt": "2026-09-05T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0060",
+        "threadId": "thr_seed_0057",
+        "role": "user",
+        "content": "포장 2라인 로트 24B117 라벨 번호 불일치 건이야",
+        "authorId": "u_dev2",
+        "createdAt": "2026-09-05T04:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0061",
+        "threadId": "thr_seed_0057",
+        "role": "assistant",
+        "content": "반영했습니다.\n\n- 즉시 조치: 포장 2라인 로트 24B117 라벨 번호 불일치 건이야\n- **CAPA 제안**: 수기 입력 단계 제거(시스템 자동 전달) + 확인 서명 단계 추가\n\nCAPA가 시스템 변경으로 이어지면 이 대화에 CC 태그를 붙여 Change Control 대화와 자료를 공유하세요.",
+        "createdAt": "2026-09-05T06:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0074",
+        "threadId": "thr_seed_0073",
+        "role": "user",
+        "content": "시작",
+        "authorId": "u_dev1",
+        "createdAt": "2026-09-11T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0075",
+        "threadId": "thr_seed_0073",
+        "role": "assistant",
+        "content": "선택된 입력이 없어 대화 내용만으로 진행합니다. 자료 패널에서 파일이나 같은 태그의 대화를 체크(참고) 또는 ★(주 입력)로 고르면 반영됩니다.\n\n# Change Control 초안 — EBR 서명 단계 추가 CC 작성\n- **변경 사유**: 시작\n- **영향 시스템**: MES (확인 필요: EBR, 인터페이스)\n- **GxP 영향**: 판단 필요 → 밸리데이션 범위 결정\n- **실행 항목**: CC Item 분해 도우미로 분해 예정\n\n변경 범위와 관련 일탈/SR 번호가 있으면 알려주세요. 태그로 붙이면 관련 자료가 자료함에 보입니다.",
+        "createdAt": "2026-09-11T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0076",
+        "threadId": "thr_seed_0073",
+        "role": "user",
+        "content": "일탈 CAPA로 EBR 서명 단계를 추가하는 CC 초안",
+        "authorId": "u_dev1",
+        "createdAt": "2026-09-11T04:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0077",
+        "threadId": "thr_seed_0073",
+        "role": "assistant",
+        "content": "선택된 입력이 없어 대화 내용만으로 진행합니다. 자료 패널에서 파일이나 같은 태그의 대화를 체크(참고) 또는 ★(주 입력)로 고르면 반영됩니다.\n\n# Change Control 초안 — EBR 서명 단계 추가 CC 작성\n- **변경 사유**: 일탈 CAPA로 EBR 서명 단계를 추가하는 CC 초안\n- **영향 시스템**: MES (확인 필요: EBR, 인터페이스)\n- **GxP 영향**: 판단 필요 → 밸리데이션 범위 결정\n- **실행 항목**: CC Item 분해 도우미로 분해 예정\n\n변경 범위와 관련 일탈/SR 번호가 있으면 알려주세요. 태그로 붙이면 관련 자료가 자료함에 보입니다.",
+        "createdAt": "2026-09-11T06:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0088",
+        "threadId": "thr_seed_0087",
+        "role": "user",
+        "content": "CC 초안을 부서별 Item으로 나눠줘",
+        "authorId": "u_dev1",
+        "createdAt": "2026-09-16T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0089",
+        "threadId": "thr_seed_0087",
+        "role": "assistant",
+        "content": "선택된 입력이 없어 대화 내용만으로 진행합니다. 자료 패널에서 파일이나 같은 태그의 대화를 체크(참고) 또는 ★(주 입력)로 고르면 반영됩니다.\n\nCC를 부서별 실행 Item으로 나눴습니다.\n\n| # | 항목 | 담당 | 산출물 |\n|---|---|---|---|\n| 1 | 시스템 변경 (MES) | MES | FDS 갱신 |\n| 2 | 테스트/검증 | QA | 테스트 결과서 |\n| 3 | SOP 개정·교육 | 현업 | 교육 기록 |\n\n각 Item을 릴리스 CCA로 넘길 때는 같은 CC 태그를 유지하세요.",
+        "createdAt": "2026-09-16T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0100",
+        "threadId": "thr_seed_0099",
+        "role": "user",
+        "content": "Item 1번으로 릴리스 CCA 작성",
+        "authorId": "u_dev3",
+        "createdAt": "2026-09-22T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0101",
+        "threadId": "thr_seed_0099",
+        "role": "assistant",
+        "content": "선택된 입력이 없어 대화 내용만으로 진행합니다. 자료 패널에서 파일이나 같은 태그의 대화를 체크(참고) 또는 ★(주 입력)로 고르면 반영됩니다.\n\n# Release CCA — 10월 릴리스 CCA 항목 준비\n- **배포 대상**: Item 1번으로 릴리스 CCA 작성\n- **배포 창**: (확인 필요)\n- **선행 조건**: 테스트 결과 승인, SOP 개정 완료\n- **롤백 계획**: 이전 버전 재배포 + 설정값 원복\n\n배포 일정과 대상 환경(VAL/PRD)을 알려주세요.",
+        "createdAt": "2026-09-22T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0112",
+        "threadId": "thr_seed_0111",
+        "role": "user",
+        "content": "시작",
+        "authorId": "u_dev3",
+        "createdAt": "2026-09-26T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0113",
+        "threadId": "thr_seed_0111",
+        "role": "assistant",
+        "content": "선택된 입력이 없어 대화 내용만으로 진행합니다. 자료 패널에서 파일이나 같은 태그의 대화를 체크(참고) 또는 ★(주 입력)로 고르면 반영됩니다.\n\n# Release CCA — 10월 릴리스 배포 CCA\n- **배포 대상**: 시작\n- **배포 창**: (확인 필요)\n- **선행 조건**: 테스트 결과 승인, SOP 개정 완료\n- **롤백 계획**: 이전 버전 재배포 + 설정값 원복\n\n배포 일정과 대상 환경(VAL/PRD)을 알려주세요.",
+        "createdAt": "2026-09-26T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0114",
+        "threadId": "thr_seed_0111",
+        "role": "user",
+        "content": "10월 릴리스 CCA 작성하자",
+        "authorId": "u_dev3",
+        "createdAt": "2026-09-26T04:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0115",
+        "threadId": "thr_seed_0111",
+        "role": "assistant",
+        "content": "선택된 입력이 없어 대화 내용만으로 진행합니다. 자료 패널에서 파일이나 같은 태그의 대화를 체크(참고) 또는 ★(주 입력)로 고르면 반영됩니다.\n\n# Release CCA — 10월 릴리스 배포 CCA\n- **배포 대상**: 10월 릴리스 CCA 작성하자\n- **배포 창**: (확인 필요)\n- **선행 조건**: 테스트 결과 승인, SOP 개정 완료\n- **롤백 계획**: 이전 버전 재배포 + 설정값 원복\n\n배포 일정과 대상 환경(VAL/PRD)을 알려주세요.",
+        "createdAt": "2026-09-26T06:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0123",
+        "threadId": "thr_seed_0122",
+        "role": "user",
+        "content": "시작",
+        "authorId": "u_dev1",
+        "createdAt": "2026-09-25T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0124",
+        "threadId": "thr_seed_0122",
+        "role": "assistant",
+        "content": "선택된 입력이 없어 대화 내용만으로 진행합니다. 자료 패널에서 파일이나 같은 태그의 대화를 체크(참고) 또는 ★(주 입력)로 고르면 반영됩니다.\n\n\"3라인 신규 장비 마스터 URS\" 요구사항 정리를 시작하겠습니다. URS 작성 전에 확인이 필요한 항목입니다.\n\n1. **트리거/대상 범위** — 어떤 장비(클래스)와 어떤 이벤트가 대상인가요?\n2. **GxP 영향** — 배치 기록(EBR)이나 장비 상태에 영향이 있나요?\n3. **예외 처리** — 자동 처리가 실패했을 때 운전자가 개입하는 절차가 있나요?\n\n답변해 주시면 요구사항 ID를 부여해 초안을 작성하겠습니다.",
+        "createdAt": "2026-09-25T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0125",
+        "threadId": "thr_seed_0122",
+        "role": "user",
+        "content": "3라인 신규 장비 12대 마스터 등록 요구사항 정리",
+        "authorId": "u_dev1",
+        "createdAt": "2026-09-25T04:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0126",
+        "threadId": "thr_seed_0122",
+        "role": "assistant",
+        "content": "답변 감사합니다. 반영해서 URS 초안을 작성했습니다.\n\n# URS — 3라인 신규 장비 마스터 URS\n\n## 1. 배경\n3라인 신규 장비 12대 마스터 등록 요구사항 정리\n\n## 2. 요구사항\n| ID | 요구사항 | 우선순위 | GxP |\n|---|---|---|---|\n| URS-01 | 대상 이벤트 발생 시 시스템이 자동으로 처리를 수행한다 | High | Yes |\n| URS-02 | 처리 결과는 Equipment Log에 actor=SYSTEM 으로 기록한다 | High | Yes |\n| URS-03 | 실패 시 운전자에게 알람을 표시하고 수동 처리 경로를 제공한다 | Medium | Yes |\n| URS-04 | 수동 처리 시 사유 입력을 필수로 한다 | Medium | Yes |\n\n## 3. 제외 범위\n- 타 시스템 인터페이스 변경 (별도 CR)\n\n답변 아래 **산출물로 저장**을 누르면 같은 태그를 가진 대화(예: FDS)의 공유 자료함에 나타납니다.",
+        "createdAt": "2026-09-25T06:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0134",
+        "threadId": "thr_seed_0133",
+        "role": "user",
+        "content": "9월 배포분 FDS와 DB 비교해줘",
+        "authorId": "u_dev3",
+        "createdAt": "2026-09-12T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0135",
+        "threadId": "thr_seed_0133",
+        "role": "assistant",
+        "content": "선택된 입력이 없어 대화 내용만으로 진행합니다. 자료 패널에서 파일이나 같은 태그의 대화를 체크(참고) 또는 ★(주 입력)로 고르면 반영됩니다.\n\n배포 대상 기준 검증 항목과 조회 SQL을 준비했습니다. 배포 자체는 수동으로 진행하고, 완료 후 아래 결과를 알려주세요.\n\n```sql\n-- 1. 변경 오브젝트 반영 확인\nSELECT OBJECT_NAME, STATUS, LAST_DDL_TIME\nFROM USER_OBJECTS\nWHERE OBJECT_NAME IN ('EQUIPMENT_STATUS_SVC', 'V_EQUIP_STATUS_HIST');\n\n-- 2. 컬럼 추가 확인\nSELECT COLUMN_NAME, DATA_TYPE FROM USER_TAB_COLUMNS\nWHERE TABLE_NAME = 'EQUIPMENT_STATUS_LOG' AND COLUMN_NAME = 'TRANSITION_SOURCE';\n```\n\n체크 항목: 오브젝트 VALID 2건, 컬럼 1건, 설정값 1건",
+        "createdAt": "2026-09-12T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0139",
+        "threadId": "thr_seed_0138",
+        "role": "user",
+        "content": "포장 라인 화면에서 작업 지시서 번호를 바코드로 바로 찍고 싶어요",
+        "authorId": "u_req",
+        "createdAt": "2026-09-30T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0140",
+        "threadId": "thr_seed_0138",
+        "role": "assistant",
+        "content": "요청 잘 들었습니다. 먼저 **배경**을 알려주세요. 현재 어떤 화면/절차에서 불편하거나 문제가 생기나요?",
+        "createdAt": "2026-09-30T01:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0141",
+        "threadId": "thr_seed_0138",
+        "role": "user",
+        "content": "지금은 번호를 수기로 입력해서 오타가 잦아요",
+        "authorId": "u_req",
+        "createdAt": "2026-09-30T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0142",
+        "threadId": "thr_seed_0138",
+        "role": "assistant",
+        "content": "감사합니다. 다음으로 **원하는 결과**를 한 문장으로 말씀해 주세요.",
+        "createdAt": "2026-09-30T03:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0145",
+        "threadId": "thr_seed_0144",
+        "role": "user",
+        "content": "포장 라인 화면 글자가 너무 작아요",
+        "authorId": "u_req",
+        "createdAt": "2026-09-28T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0146",
+        "threadId": "thr_seed_0144",
+        "role": "assistant",
+        "content": "요청 잘 들었습니다. 먼저 **배경**을 알려주세요.",
+        "createdAt": "2026-09-28T01:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0147",
+        "threadId": "thr_seed_0144",
+        "role": "user",
+        "content": "장갑 끼고 누르면 오조작이 나요",
+        "authorId": "u_req",
+        "createdAt": "2026-09-28T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0148",
+        "threadId": "thr_seed_0144",
+        "role": "assistant",
+        "content": "감사합니다. **원하는 결과**를 한 문장으로 말씀해 주세요.",
+        "createdAt": "2026-09-28T03:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0152",
+        "threadId": "thr_seed_0151",
+        "role": "user",
+        "content": "알람 목록에 장비별 필터가 필요해요",
+        "authorId": "u_req",
+        "createdAt": "2026-09-17T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0153",
+        "threadId": "thr_seed_0151",
+        "role": "assistant",
+        "content": "요청 잘 들었습니다. **배경**을 알려주세요.",
+        "createdAt": "2026-09-17T01:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0154",
+        "threadId": "thr_seed_0151",
+        "role": "user",
+        "content": "알람이 하루 수백 건이라 찾기 힘들어요",
+        "authorId": "u_req",
+        "createdAt": "2026-09-17T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0155",
+        "threadId": "thr_seed_0151",
+        "role": "assistant",
+        "content": "감사합니다. **원하는 결과**를 말씀해 주세요.",
+        "createdAt": "2026-09-17T03:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0164",
+        "threadId": "thr_seed_0163",
+        "role": "user",
+        "content": "3라인 신규 장비 12대 마스터 등록 요청드립니다",
+        "authorId": "u_dev2",
+        "createdAt": "2026-09-24T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0165",
+        "threadId": "thr_seed_0163",
+        "role": "assistant",
+        "content": "요청 잘 들었습니다. **희망 기한**이 있나요?",
+        "createdAt": "2026-09-24T01:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0166",
+        "threadId": "thr_seed_0163",
+        "role": "user",
+        "content": "9월 30일 라인 가동 전에요",
+        "authorId": "u_dev2",
+        "createdAt": "2026-09-24T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0172",
+        "threadId": "thr_seed_0171",
+        "role": "user",
+        "content": "로그인 세션이 너무 빨리 끊겨요",
+        "authorId": "u_req",
+        "createdAt": "2026-09-10T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0173",
+        "threadId": "thr_seed_0171",
+        "role": "assistant",
+        "content": "요청 잘 들었습니다. **원하는 결과**를 말씀해 주세요.",
+        "createdAt": "2026-09-10T01:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0174",
+        "threadId": "thr_seed_0171",
+        "role": "user",
+        "content": "30분으로 늘려주세요",
+        "authorId": "u_req",
+        "createdAt": "2026-09-10T02:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0179",
+        "threadId": "thr_seed_0178",
+        "role": "user",
+        "content": "제 업무만 보이는 대시보드가 있으면 좋겠어요",
+        "authorId": "u_dev1",
+        "createdAt": "2026-09-18T00:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      },
+      {
+        "id": "msg_seed_0180",
+        "threadId": "thr_seed_0178",
+        "role": "assistant",
+        "content": "요청 잘 들었습니다. **배경**을 알려주세요.",
+        "createdAt": "2026-09-18T01:00:00.000Z",
+        "attachmentIds": [],
+        "status": "done"
+      }
+    ],
+    "files": [
+      {
+        "id": "file_seed_0019",
+        "originTaskId": "task_seed_0001",
+        "name": "URS_알람필터.md",
+        "mime": "text/markdown",
+        "size": 434,
+        "uploadedBy": "u_dev4",
+        "uploadedAt": "2026-09-20T00:00:00.000Z",
+        "source": "assistant",
+        "tags": [
+          "산출물"
+        ],
+        "version": 1,
+        "blobBase64": "IyBVUlMg4oCUIOyVjOuejCDrqqnroZ0g7J6l67mE67OEIO2VhO2EsAoKfCBJRCB8IOyalOq1rOyCrO2VrSB8IOyasOyEoOyInOychCB8IEd4UCB8CnwtLS18LS0tfC0tLXwtLS18CnwgVVJTLTAxIHwg7JWM656MIOuqqeuhneyXkOyEnCDsnqXruYQgSUTCt+yepeu5hCDtgbTrnpjsiqTroZwg7ZWE7YSw66eB7ZWgIOyImCDsnojslrTslbwg7ZWc64ukIHwgSGlnaCB8IE5vIHwKfCBVUlMtMDIgfCDtlYTthLAg7KGw6rG07J2AIOyCrOyaqeyekOuzhOuhnCDsoIDsnqXrkJjslrQg64uk7J2MIOuhnOq3uOyduOyXkOuPhCDsnKDsp4DrkJzri6QgfCBNZWRpdW0gfCBObyB8CnwgVVJTLTAzIHwg7ZWE7YSwIOyggeyaqSDsl6zrtoDsmYAg66y06rSA7ZWY6rKMIENyaXRpY2FsIOyVjOuejOydgCDsg4Hri6jsl5Ag6rOg7KCVIO2RnOyLnO2VnOuLpCB8IEhpZ2ggfCBZZXMgfAo="
+      },
+      {
+        "id": "file_seed_0034",
+        "originTaskId": "task_seed_0002",
+        "name": "FDS_알람필터.md",
+        "mime": "text/markdown",
+        "size": 332,
+        "uploadedBy": "u_dev1",
+        "uploadedAt": "2026-09-24T00:00:00.000Z",
+        "source": "assistant",
+        "tags": [
+          "산출물"
+        ],
+        "version": 1,
+        "blobBase64": "IyBGRFMg4oCUIOyVjOuejCDrqqnroZ0g7J6l67mE67OEIO2VhO2EsAoKfCBGRFMgfCDquLDriqUgfCBVUlMgfAp8LS0tfC0tLXwtLS18CnwgRkRTLTAxIHwgQWxhcm1MaXN0IO2ZlOuptCDsg4Hri6jsl5Ag7J6l67mEIElEL+2BtOuemOyKpCDrqYDti7Ag7ISg7YOdIO2VhO2EsCDstpTqsIAgfCBVUlMtMDEgfAp8IEZEUy0wMiB8IFVzZXJQcmVmZXJlbmNlIO2FjOydtOu4lOyXkCBBTEFSTV9GSUxURVIg7YKk66GcIOyggOyepSB8IFVSUy0wMiB8CnwgRkRTLTAzIHwgU2V2ZXJpdHk9Q3JpdGljYWwg7J2AIOygleugrCDsmrDshKDsiJzsnIQgMOycvOuhnCDqs6DsoJUgfCBVUlMtMDMgfAo="
+      },
+      {
+        "id": "file_seed_0036",
+        "originTaskId": "task_seed_0001",
+        "name": "URS_알람필터.md",
+        "mime": "text/markdown",
+        "size": 513,
+        "uploadedBy": "u_dev4",
+        "uploadedAt": "2026-09-27T00:00:00.000Z",
+        "source": "assistant",
+        "tags": [
+          "산출물"
+        ],
+        "version": 2,
+        "previousId": "file_seed_0019",
+        "blobBase64": "IyBVUlMg4oCUIOyVjOuejCDrqqnroZ0g7J6l67mE67OEIO2VhO2EsAoKfCBJRCB8IOyalOq1rOyCrO2VrSB8IOyasOyEoOyInOychCB8IEd4UCB8CnwtLS18LS0tfC0tLXwtLS18CnwgVVJTLTAxIHwg7JWM656MIOuqqeuhneyXkOyEnCDsnqXruYQgSUTCt+yepeu5hCDtgbTrnpjsiqTroZwg7ZWE7YSw66eB7ZWgIOyImCDsnojslrTslbwg7ZWc64ukIHwgSGlnaCB8IE5vIHwKfCBVUlMtMDIgfCDtlYTthLAg7KGw6rG07J2AIOyCrOyaqeyekOuzhOuhnCDsoIDsnqXrkJjslrQg64uk7J2MIOuhnOq3uOyduOyXkOuPhCDsnKDsp4DrkJzri6QgfCBNZWRpdW0gfCBObyB8CnwgVVJTLTAzIHwg7ZWE7YSwIOyggeyaqSDsl6zrtoDsmYAg66y06rSA7ZWY6rKMIENyaXRpY2FsIOyVjOuejOydgCDsg4Hri6jsl5Ag6rOg7KCVIO2RnOyLnO2VnOuLpCB8IEhpZ2ggfCBZZXMgfAp8IFVSUy0wNCB8IO2VhO2EsCDqsrDqs7zrpbwgQ1NW66GcIOuCtOuztOuCvCDsiJgg7J6I7Ja07JW8IO2VnOuLpCB8IExvdyB8IE5vIHwK"
+      },
+      {
+        "id": "file_seed_0065",
+        "originTaskId": "task_seed_0005",
+        "name": "Deviation_라벨불일치.md",
+        "mime": "text/markdown",
+        "size": 354,
+        "uploadedBy": "u_dev2",
+        "uploadedAt": "2026-09-07T00:00:00.000Z",
+        "source": "assistant",
+        "tags": [
+          "산출물"
+        ],
+        "version": 1,
+        "blobBase64": "IyBEZXZpYXRpb24g7LSI7JWIIOKAlCDrnbzrsqgg67aI7J287LmYCgotICoq67Cc7IOd7J28Kio6IO2PrOyepSAy65287J24LCDroZztirggMjRCMTE3Ci0gKirtmITsg4EqKjog652867KoIOyduOyHhCDroZztirgg67KI7Zi47JmAIEVCUiDroZztirgg67KI7Zi4IOu2iOydvOy5mAotICoq7KaJ7IucIOyhsOy5mCoqOiDtlbTri7kg66Gc7Yq4IOqyqeumrCwg652867KoIOyerOy2nOugpQotICoq6re867O4IOybkOyduCjstpTsoJUpKio6IOyImOq4sCDsnoXroKUg64uo6rOEIOyhtOyerAotICoqQ0FQQSoqOiBFQlLsl5DshJwg652867KoIOuNsOydtO2EsCDsnpDrj5kg7KCE64usICsg7ISc66qFIOuLqOqzhCDstpTqsIAK"
+      },
+      {
+        "id": "file_seed_0081",
+        "originTaskId": "task_seed_0006",
+        "name": "CC-2099-001_초안.md",
+        "mime": "text/markdown",
+        "size": 281,
+        "uploadedBy": "u_dev1",
+        "uploadedAt": "2026-09-13T00:00:00.000Z",
+        "source": "assistant",
+        "tags": [
+          "산출물"
+        ],
+        "version": 1,
+        "blobBase64": "IyBDaGFuZ2UgQ29udHJvbCDstIjslYgg4oCUIENDLTIwMjYtMDE0CgotICoq67OA6rK9IOygnOuqqSoqOiBFQlIg7ISc66qFIOuLqOqzhCDstpTqsIAgKO2PrOyepSDqs7XsoJUpCi0gKirrs4Dqsr0g7IKs7JygKio6IOydvO2DiCBERVYtMjAyNi0wMzEgQ0FQQSDtm4Tsho0KLSAqKuyYge2WpSDsi5zsiqTthZwqKjogTUVTIEVCUiwg652867KoIO2UhOumsO2EsCDsnbjthLDtjpjsnbTsiqQKLSAqKkd4UCDsmIHtlqUqKjogWWVzIOKAlCDrsLjrpqzrjbDsnbTshZgg7J6s7IiY7ZaJIO2VhOyalAo="
+      },
+      {
+        "id": "file_seed_0092",
+        "originTaskId": "task_seed_0007",
+        "name": "CC-2099-001_Items.md",
+        "mime": "text/markdown",
+        "size": 283,
+        "uploadedBy": "u_dev1",
+        "uploadedAt": "2026-09-18T00:00:00.000Z",
+        "source": "assistant",
+        "tags": [
+          "산출물"
+        ],
+        "version": 1,
+        "blobBase64": "IyBDQyBJdGVtIOuqqeuhnSDigJQgQ0MtMjAyNi0wMTQKCnwgIyB8IO2VreuqqSB8IOuLtOuLuSB8IOu5hOqzoCB8CnwtLS18LS0tfC0tLXwtLS18CnwgMSB8IEVCUiDthZztlIzrpr8g7ISc66qFIOuLqOqzhCDstpTqsIAgfCBNRVMgfCBGRFMg6rCx7IugIO2VhOyalCB8CnwgMiB8IOudvOuyqCDsnbjthLDtjpjsnbTsiqQg6rKA7KadIHwgUUEgfCDthYzsiqTtirgg7Iqk7YGs66a97Yq4IOyerOyCrOyaqSB8CnwgMyB8IFNPUCDqsJzsoJUgfCDsg53sgrAgfCDqtZDsnKEg6riw66GdIOyyqOu2gCB8Cg=="
+      },
+      {
+        "id": "file_seed_0104",
+        "originTaskId": "task_seed_0008",
+        "name": "CCA_Release-2026-10_Item1.md",
+        "mime": "text/markdown",
+        "size": 138,
+        "uploadedBy": "u_dev3",
+        "uploadedAt": "2026-09-23T00:00:00.000Z",
+        "source": "assistant",
+        "tags": [
+          "산출물"
+        ],
+        "version": 1,
+        "blobBase64": "IyBSZWxlYXNlIENDQSDigJQgSXRlbSAxCgotIOuMgOyDgTogRUJSIO2FnO2UjOumvyDshJzrqoUg64uo6rOEIOy2lOqwgAotIOuwsO2PrCDssL06IDIwMjYtMTAg7KCV6riwIOumtOumrOyKpAotIOyEoO2WiTogU09QIOqwnOyglSDsmYTro4wK"
+      }
+    ],
+    "notes": [
+      {
+        "id": "note_seed_0106",
+        "taskId": "task_seed_0008",
+        "authorId": "u_dev3",
+        "content": "SOP 개정 일정 확정 전까지 보류",
+        "createdAt": "2026-09-24T00:00:00.000Z",
+        "attachmentIds": []
+      }
+    ],
+    "serviceRequests": [
+      {
+        "id": "sr_seed_draft",
+        "code": "",
+        "requesterId": "u_req",
+        "title": "",
+        "titleSource": "default",
+        "body": "",
+        "status": "draft",
+        "attachmentIds": [],
+        "threadId": "thr_seed_0138",
+        "results": [],
+        "createdAt": "2026-09-30T00:00:00.000Z",
+        "updatedAt": "2026-09-30T00:00:00.000Z"
+      },
+      {
+        "id": "sr_seed_0001",
+        "code": "SR-2026-0001",
+        "requesterId": "u_req",
+        "title": "포장 라인 화면 폰트 확대",
+        "titleSource": "ai",
+        "body": "## 요청 내용\n- 포장 라인 터치 화면 글자가 작아 장갑 낀 상태에서 오조작 발생\n\n## 원하는 결과\n- 주요 버튼/로트 번호 폰트 1.5배\n\n## 희망 기한\n- 10월 초",
+        "status": "submitted",
+        "attachmentIds": [],
+        "threadId": "thr_seed_0144",
+        "results": [],
+        "submittedAt": "2026-09-28T02:00:00.000Z",
+        "createdAt": "2026-09-28T00:00:00.000Z",
+        "updatedAt": "2026-09-28T00:00:00.000Z"
+      },
+      {
+        "id": "sr_seed_0002",
+        "code": "SR-2026-0002",
+        "requesterId": "u_req",
+        "title": "알람 목록 장비별 필터 추가",
+        "titleSource": "ai",
+        "body": "## 요청 내용\n- 알람 목록이 너무 많아 특정 장비 알람을 찾기 어려움\n\n## 원하는 결과\n- 장비/클래스별 필터\n\n## 희망 기한\n- 없음",
+        "status": "in_progress",
+        "attachmentIds": [],
+        "threadId": "thr_seed_0151",
+        "results": [],
+        "submittedAt": "2026-09-17T02:00:00.000Z",
+        "createdAt": "2026-09-17T00:00:00.000Z",
+        "updatedAt": "2026-09-17T00:00:00.000Z"
+      },
+      {
+        "id": "sr_seed_0003",
+        "code": "SR-2026-0003",
+        "requesterId": "u_dev2",
+        "title": "3라인 신규 장비 마스터 등록",
+        "titleSource": "ai",
+        "body": "## 요청 내용\n- 3라인 신규 장비 12대 마스터 등록\n\n## 희망 기한\n- 9/30 (라인 가동 전)",
+        "status": "in_progress",
+        "attachmentIds": [],
+        "threadId": "thr_seed_0163",
+        "results": [],
+        "submittedAt": "2026-09-24T02:00:00.000Z",
+        "createdAt": "2026-09-24T00:00:00.000Z",
+        "updatedAt": "2026-09-24T00:00:00.000Z"
+      },
+      {
+        "id": "sr_seed_0004",
+        "code": "SR-2026-0004",
+        "requesterId": "u_req",
+        "title": "로그인 세션 시간 연장",
+        "titleSource": "ai",
+        "body": "## 요청 내용\n- 세션 15분 만료가 너무 짧음\n\n## 원하는 결과\n- 30분으로 연장",
+        "status": "done",
+        "attachmentIds": [],
+        "threadId": "thr_seed_0171",
+        "results": [
+          {
+            "id": "shr_seed_0001",
+            "text": "세션 만료를 30분으로 늘렸습니다. 9/10 배포분에 반영되었으니 확인 부탁드립니다.",
+            "fileIds": [],
+            "by": "u_so",
+            "at": "2026-09-18T00:00:00.000Z"
+          }
+        ],
+        "submittedAt": "2026-09-10T02:00:00.000Z",
+        "createdAt": "2026-09-10T00:00:00.000Z",
+        "updatedAt": "2026-09-10T00:00:00.000Z"
+      },
+      {
+        "id": "sr_seed_0005",
+        "code": "SR-2026-0005",
+        "requesterId": "u_dev1",
+        "title": "개인 대시보드 요청",
+        "titleSource": "ai",
+        "body": "## 요청 내용\n- 내 업무만 모아 보는 대시보드",
+        "status": "rejected",
+        "attachmentIds": [],
+        "threadId": "thr_seed_0178",
+        "results": [],
+        "submittedAt": "2026-09-18T02:00:00.000Z",
+        "createdAt": "2026-09-18T00:00:00.000Z",
+        "updatedAt": "2026-09-18T00:00:00.000Z"
+      }
+    ],
+    "activity": [
+      {
+        "id": "act_seed_0001",
+        "taskId": "task_seed_0001",
+        "assistantId": "urs-analyst",
+        "userId": "u_dev4",
+        "type": "task.created",
+        "payload": {},
+        "at": "2026-09-18T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0002",
+        "taskId": "task_seed_0001",
+        "userId": "u_dev4",
+        "type": "tag.added",
+        "payload": {
+          "tag": "SR-2026-0002"
+        },
+        "at": "2026-09-18T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0003",
+        "taskId": "task_seed_0001",
+        "assistantId": "urs-analyst",
+        "userId": "u_dev4",
+        "type": "task.started",
+        "payload": {},
+        "at": "2026-09-18T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0004",
+        "taskId": "task_seed_0001",
+        "userId": "u_dev4",
+        "type": "checklist.checked",
+        "payload": {
+          "label": "요구사항 ID 부여"
+        },
+        "at": "2026-09-18T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0005",
+        "taskId": "task_seed_0001",
+        "userId": "u_dev4",
+        "type": "checklist.checked",
+        "payload": {
+          "label": "GxP 영향 표시"
+        },
+        "at": "2026-09-18T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0006",
+        "taskId": "task_seed_0001",
+        "assistantId": "urs-analyst",
+        "userId": "u_dev4",
+        "type": "task.completed",
+        "payload": {},
+        "at": "2026-09-21T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0007",
+        "taskId": "task_seed_0001",
+        "assistantId": "urs-analyst",
+        "userId": "u_dev4",
+        "type": "feedback.given",
+        "payload": {
+          "rating": 5
+        },
+        "at": "2026-09-21T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0015",
+        "taskId": "task_seed_0001",
+        "userId": "u_dev4",
+        "type": "thread.created",
+        "payload": {},
+        "at": "2026-09-18T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0016",
+        "taskId": "task_seed_0001",
+        "userId": "u_dev4",
+        "type": "message.sent",
+        "payload": {
+          "preview": "시작"
+        },
+        "at": "2026-09-18T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0017",
+        "taskId": "task_seed_0001",
+        "userId": "u_dev4",
+        "type": "message.sent",
+        "payload": {
+          "preview": "알람 목록에 장비별 필터가 필요하다는 현업 요청이야. 알람이 하루 수백 건이라 찾기 힘들대"
+        },
+        "at": "2026-09-18T04:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0018",
+        "taskId": "task_seed_0001",
+        "userId": "u_dev4",
+        "type": "message.sent",
+        "payload": {
+          "preview": "Critical 알람은 필터와 무관하게 항상 보여야 해"
+        },
+        "at": "2026-09-18T08:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0020",
+        "taskId": "task_seed_0001",
+        "userId": "u_dev4",
+        "type": "file.tagged_output",
+        "payload": {
+          "name": "URS_알람필터.md"
+        },
+        "at": "2026-09-20T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0021",
+        "taskId": "task_seed_0002",
+        "assistantId": "fds-writer",
+        "userId": "u_dev1",
+        "type": "task.created",
+        "payload": {},
+        "at": "2026-09-21T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0022",
+        "taskId": "task_seed_0002",
+        "userId": "u_dev1",
+        "type": "tag.added",
+        "payload": {
+          "tag": "SR-2026-0002"
+        },
+        "at": "2026-09-21T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0023",
+        "taskId": "task_seed_0002",
+        "assistantId": "fds-writer",
+        "userId": "u_dev1",
+        "type": "task.started",
+        "payload": {},
+        "at": "2026-09-21T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0024",
+        "taskId": "task_seed_0002",
+        "userId": "u_dev1",
+        "type": "checklist.checked",
+        "payload": {
+          "label": "URS 추적성 표 작성"
+        },
+        "at": "2026-09-21T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0025",
+        "taskId": "task_seed_0002",
+        "userId": "u_dev1",
+        "type": "input.selected",
+        "payload": {
+          "name": "URS_알람필터.md",
+          "version": 1,
+          "weight": "main"
+        },
+        "at": "2026-09-21T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0031",
+        "taskId": "task_seed_0002",
+        "userId": "u_dev1",
+        "type": "thread.created",
+        "payload": {},
+        "at": "2026-09-22T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0032",
+        "taskId": "task_seed_0002",
+        "userId": "u_dev1",
+        "type": "message.sent",
+        "payload": {
+          "preview": "시작"
+        },
+        "at": "2026-09-22T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0033",
+        "taskId": "task_seed_0002",
+        "userId": "u_dev1",
+        "type": "message.sent",
+        "payload": {
+          "preview": "주 입력 URS 기준으로 FDS 초안 만들어줘"
+        },
+        "at": "2026-09-22T04:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0035",
+        "taskId": "task_seed_0002",
+        "userId": "u_dev1",
+        "type": "file.tagged_output",
+        "payload": {
+          "name": "FDS_알람필터.md"
+        },
+        "at": "2026-09-24T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0037",
+        "taskId": "task_seed_0001",
+        "userId": "u_dev4",
+        "type": "file.tagged_output",
+        "payload": {
+          "name": "URS_알람필터.md"
+        },
+        "at": "2026-09-27T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0038",
+        "taskId": "task_seed_0003",
+        "assistantId": "fds-reviewer",
+        "userId": "u_dev1",
+        "type": "task.created",
+        "payload": {},
+        "at": "2026-09-25T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0039",
+        "taskId": "task_seed_0003",
+        "userId": "u_dev1",
+        "type": "tag.added",
+        "payload": {
+          "tag": "SR-2026-0002"
+        },
+        "at": "2026-09-25T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0040",
+        "taskId": "task_seed_0003",
+        "userId": "u_dev1",
+        "type": "tag.added",
+        "payload": {
+          "tag": "fds-review"
+        },
+        "at": "2026-09-25T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0041",
+        "taskId": "task_seed_0003",
+        "assistantId": "fds-reviewer",
+        "userId": "u_dev1",
+        "type": "task.started",
+        "payload": {},
+        "at": "2026-09-25T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0042",
+        "taskId": "task_seed_0003",
+        "userId": "u_dev1",
+        "type": "input.selected",
+        "payload": {
+          "name": "FDS_알람필터.md",
+          "version": 1,
+          "weight": "main"
+        },
+        "at": "2026-09-25T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0043",
+        "taskId": "task_seed_0003",
+        "userId": "u_dev1",
+        "type": "input.selected",
+        "payload": {
+          "name": "URS_알람필터.md",
+          "version": 1,
+          "weight": "reference"
+        },
+        "at": "2026-09-25T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0047",
+        "taskId": "task_seed_0003",
+        "userId": "u_dev1",
+        "type": "thread.created",
+        "payload": {},
+        "at": "2026-09-26T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0048",
+        "taskId": "task_seed_0003",
+        "userId": "u_dev1",
+        "type": "message.sent",
+        "payload": {
+          "preview": "FDS 리뷰해줘. 주 입력은 FDS, URS는 참고"
+        },
+        "at": "2026-09-26T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0049",
+        "taskId": "task_seed_0004",
+        "assistantId": "test-scenario-writer",
+        "userId": "u_dev3",
+        "type": "task.created",
+        "payload": {},
+        "at": "2026-09-28T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0050",
+        "taskId": "task_seed_0004",
+        "userId": "u_dev3",
+        "type": "tag.added",
+        "payload": {
+          "tag": "SR-2026-0002"
+        },
+        "at": "2026-09-28T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0052",
+        "taskId": "task_seed_0004",
+        "userId": "u_dev3",
+        "type": "thread.created",
+        "payload": {},
+        "at": "2026-09-28T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0053",
+        "taskId": "task_seed_0005",
+        "assistantId": "deviation-drafter",
+        "userId": "u_dev2",
+        "type": "task.created",
+        "payload": {},
+        "at": "2026-09-05T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0054",
+        "taskId": "task_seed_0005",
+        "userId": "u_dev2",
+        "type": "tag.added",
+        "payload": {
+          "tag": "라벨-불일치"
+        },
+        "at": "2026-09-05T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0055",
+        "taskId": "task_seed_0005",
+        "assistantId": "deviation-drafter",
+        "userId": "u_dev2",
+        "type": "task.started",
+        "payload": {},
+        "at": "2026-09-05T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0056",
+        "taskId": "task_seed_0005",
+        "assistantId": "deviation-drafter",
+        "userId": "u_dev2",
+        "type": "task.completed",
+        "payload": {},
+        "at": "2026-09-08T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0062",
+        "taskId": "task_seed_0005",
+        "userId": "u_dev2",
+        "type": "thread.created",
+        "payload": {},
+        "at": "2026-09-05T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0063",
+        "taskId": "task_seed_0005",
+        "userId": "u_dev2",
+        "type": "message.sent",
+        "payload": {
+          "preview": "시작"
+        },
+        "at": "2026-09-05T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0064",
+        "taskId": "task_seed_0005",
+        "userId": "u_dev2",
+        "type": "message.sent",
+        "payload": {
+          "preview": "포장 2라인 로트 24B117 라벨 번호 불일치 건이야"
+        },
+        "at": "2026-09-05T04:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0066",
+        "taskId": "task_seed_0005",
+        "userId": "u_dev2",
+        "type": "file.tagged_output",
+        "payload": {
+          "name": "Deviation_라벨불일치.md"
+        },
+        "at": "2026-09-07T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0067",
+        "taskId": "task_seed_0006",
+        "assistantId": "cc-writer",
+        "userId": "u_dev1",
+        "type": "task.created",
+        "payload": {},
+        "at": "2026-09-10T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0068",
+        "taskId": "task_seed_0006",
+        "userId": "u_dev1",
+        "type": "tag.added",
+        "payload": {
+          "tag": "라벨-불일치"
+        },
+        "at": "2026-09-10T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0069",
+        "taskId": "task_seed_0006",
+        "userId": "u_dev1",
+        "type": "tag.added",
+        "payload": {
+          "tag": "CC-2099-001"
+        },
+        "at": "2026-09-10T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0070",
+        "taskId": "task_seed_0006",
+        "assistantId": "cc-writer",
+        "userId": "u_dev1",
+        "type": "task.started",
+        "payload": {},
+        "at": "2026-09-10T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0071",
+        "taskId": "task_seed_0006",
+        "assistantId": "cc-writer",
+        "userId": "u_dev1",
+        "type": "task.completed",
+        "payload": {},
+        "at": "2026-09-14T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0072",
+        "taskId": "task_seed_0006",
+        "userId": "u_dev1",
+        "type": "input.selected",
+        "payload": {
+          "name": "Deviation_라벨불일치.md",
+          "version": 1,
+          "weight": "main"
+        },
+        "at": "2026-09-10T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0078",
+        "taskId": "task_seed_0006",
+        "userId": "u_dev1",
+        "type": "thread.created",
+        "payload": {},
+        "at": "2026-09-11T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0079",
+        "taskId": "task_seed_0006",
+        "userId": "u_dev1",
+        "type": "message.sent",
+        "payload": {
+          "preview": "시작"
+        },
+        "at": "2026-09-11T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0080",
+        "taskId": "task_seed_0006",
+        "userId": "u_dev1",
+        "type": "message.sent",
+        "payload": {
+          "preview": "일탈 CAPA로 EBR 서명 단계를 추가하는 CC 초안"
+        },
+        "at": "2026-09-11T04:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0082",
+        "taskId": "task_seed_0006",
+        "userId": "u_dev1",
+        "type": "file.tagged_output",
+        "payload": {
+          "name": "CC-2099-001_초안.md"
+        },
+        "at": "2026-09-13T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0083",
+        "taskId": "task_seed_0007",
+        "assistantId": "cc-item-builder",
+        "userId": "u_dev1",
+        "type": "task.created",
+        "payload": {},
+        "at": "2026-09-15T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0084",
+        "taskId": "task_seed_0007",
+        "userId": "u_dev1",
+        "type": "tag.added",
+        "payload": {
+          "tag": "CC-2099-001"
+        },
+        "at": "2026-09-15T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0085",
+        "taskId": "task_seed_0007",
+        "assistantId": "cc-item-builder",
+        "userId": "u_dev1",
+        "type": "task.started",
+        "payload": {},
+        "at": "2026-09-15T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0086",
+        "taskId": "task_seed_0007",
+        "userId": "u_dev1",
+        "type": "input.selected",
+        "payload": {
+          "name": "CC-2099-001_초안.md",
+          "version": 1,
+          "weight": "main"
+        },
+        "at": "2026-09-15T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0090",
+        "taskId": "task_seed_0007",
+        "userId": "u_dev1",
+        "type": "thread.created",
+        "payload": {},
+        "at": "2026-09-16T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0091",
+        "taskId": "task_seed_0007",
+        "userId": "u_dev1",
+        "type": "message.sent",
+        "payload": {
+          "preview": "CC 초안을 부서별 Item으로 나눠줘"
+        },
+        "at": "2026-09-16T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0093",
+        "taskId": "task_seed_0007",
+        "userId": "u_dev1",
+        "type": "file.tagged_output",
+        "payload": {
+          "name": "CC-2099-001_Items.md"
+        },
+        "at": "2026-09-18T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0094",
+        "taskId": "task_seed_0008",
+        "assistantId": "release-cca-writer",
+        "userId": "u_dev3",
+        "type": "task.created",
+        "payload": {},
+        "at": "2026-09-22T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0095",
+        "taskId": "task_seed_0008",
+        "userId": "u_dev3",
+        "type": "tag.added",
+        "payload": {
+          "tag": "CC-2099-001"
+        },
+        "at": "2026-09-22T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0096",
+        "taskId": "task_seed_0008",
+        "userId": "u_dev3",
+        "type": "tag.added",
+        "payload": {
+          "tag": "release-2026-10"
+        },
+        "at": "2026-09-22T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0097",
+        "taskId": "task_seed_0008",
+        "assistantId": "release-cca-writer",
+        "userId": "u_dev3",
+        "type": "task.started",
+        "payload": {},
+        "at": "2026-09-22T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0098",
+        "taskId": "task_seed_0008",
+        "userId": "u_dev3",
+        "type": "input.selected",
+        "payload": {
+          "name": "CC-2099-001_Items.md",
+          "version": 1,
+          "weight": "main"
+        },
+        "at": "2026-09-22T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0102",
+        "taskId": "task_seed_0008",
+        "userId": "u_dev3",
+        "type": "thread.created",
+        "payload": {},
+        "at": "2026-09-22T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0103",
+        "taskId": "task_seed_0008",
+        "userId": "u_dev3",
+        "type": "message.sent",
+        "payload": {
+          "preview": "Item 1번으로 릴리스 CCA 작성"
+        },
+        "at": "2026-09-22T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0105",
+        "taskId": "task_seed_0008",
+        "userId": "u_dev3",
+        "type": "file.tagged_output",
+        "payload": {
+          "name": "CCA_Release-2026-10_Item1.md"
+        },
+        "at": "2026-09-23T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0107",
+        "taskId": "task_seed_0008",
+        "userId": "u_dev3",
+        "type": "note.added",
+        "payload": {
+          "preview": "SOP 개정 일정 확정 전까지 보류"
+        },
+        "at": "2026-09-24T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0108",
+        "taskId": "task_seed_0009",
+        "assistantId": "cca-writer",
+        "userId": "u_dev3",
+        "type": "task.created",
+        "payload": {},
+        "at": "2026-09-26T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0109",
+        "taskId": "task_seed_0009",
+        "userId": "u_dev3",
+        "type": "tag.added",
+        "payload": {
+          "tag": "release-2026-10"
+        },
+        "at": "2026-09-26T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0110",
+        "taskId": "task_seed_0009",
+        "assistantId": "cca-writer",
+        "userId": "u_dev3",
+        "type": "task.started",
+        "payload": {},
+        "at": "2026-09-26T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0116",
+        "taskId": "task_seed_0009",
+        "userId": "u_dev3",
+        "type": "thread.created",
+        "payload": {},
+        "at": "2026-09-26T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0117",
+        "taskId": "task_seed_0009",
+        "userId": "u_dev3",
+        "type": "message.sent",
+        "payload": {
+          "preview": "시작"
+        },
+        "at": "2026-09-26T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0118",
+        "taskId": "task_seed_0009",
+        "userId": "u_dev3",
+        "type": "message.sent",
+        "payload": {
+          "preview": "10월 릴리스 CCA 작성하자"
+        },
+        "at": "2026-09-26T04:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0119",
+        "taskId": "task_seed_0010",
+        "assistantId": "urs-analyst-basic",
+        "userId": "u_dev1",
+        "type": "task.created",
+        "payload": {},
+        "at": "2026-09-25T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0120",
+        "taskId": "task_seed_0010",
+        "userId": "u_dev1",
+        "type": "tag.added",
+        "payload": {
+          "tag": "SR-2026-0003"
+        },
+        "at": "2026-09-25T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0121",
+        "taskId": "task_seed_0010",
+        "assistantId": "urs-analyst-basic",
+        "userId": "u_dev1",
+        "type": "task.started",
+        "payload": {},
+        "at": "2026-09-25T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0127",
+        "taskId": "task_seed_0010",
+        "userId": "u_dev1",
+        "type": "thread.created",
+        "payload": {},
+        "at": "2026-09-25T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0128",
+        "taskId": "task_seed_0010",
+        "userId": "u_dev1",
+        "type": "message.sent",
+        "payload": {
+          "preview": "시작"
+        },
+        "at": "2026-09-25T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0129",
+        "taskId": "task_seed_0010",
+        "userId": "u_dev1",
+        "type": "message.sent",
+        "payload": {
+          "preview": "3라인 신규 장비 12대 마스터 등록 요구사항 정리"
+        },
+        "at": "2026-09-25T04:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0130",
+        "taskId": "task_seed_0011",
+        "assistantId": "deploy-verifier",
+        "userId": "u_dev3",
+        "type": "task.created",
+        "payload": {},
+        "at": "2026-09-12T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0131",
+        "taskId": "task_seed_0011",
+        "assistantId": "deploy-verifier",
+        "userId": "u_dev3",
+        "type": "task.started",
+        "payload": {},
+        "at": "2026-09-12T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0132",
+        "taskId": "task_seed_0011",
+        "assistantId": "deploy-verifier",
+        "userId": "u_dev3",
+        "type": "task.completed",
+        "payload": {},
+        "at": "2026-09-15T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0136",
+        "taskId": "task_seed_0011",
+        "userId": "u_dev3",
+        "type": "thread.created",
+        "payload": {},
+        "at": "2026-09-12T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0137",
+        "taskId": "task_seed_0011",
+        "userId": "u_dev3",
+        "type": "message.sent",
+        "payload": {
+          "preview": "9월 배포분 FDS와 DB 비교해줘"
+        },
+        "at": "2026-09-12T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0143",
+        "srId": "sr_seed_draft",
+        "userId": "u_req",
+        "type": "sr.created",
+        "payload": {},
+        "at": "2026-09-30T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0149",
+        "srId": "sr_seed_0001",
+        "userId": "u_req",
+        "type": "sr.created",
+        "payload": {},
+        "at": "2026-09-28T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0150",
+        "srId": "sr_seed_0001",
+        "userId": "u_req",
+        "type": "sr.submitted",
+        "payload": {
+          "code": "SR-2026-0001"
+        },
+        "at": "2026-09-28T02:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0156",
+        "srId": "sr_seed_0002",
+        "userId": "u_req",
+        "type": "sr.created",
+        "payload": {},
+        "at": "2026-09-17T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0157",
+        "srId": "sr_seed_0002",
+        "userId": "u_req",
+        "type": "sr.submitted",
+        "payload": {
+          "code": "SR-2026-0002"
+        },
+        "at": "2026-09-17T02:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0158",
+        "srId": "sr_seed_0002",
+        "userId": "u_so",
+        "type": "sr.status_changed",
+        "payload": {
+          "from": "submitted",
+          "to": "in_progress"
+        },
+        "at": "2026-09-20T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0159",
+        "srId": "sr_seed_0002",
+        "taskId": "task_seed_0001",
+        "assistantId": "urs-analyst",
+        "userId": "u_dev4",
+        "type": "sr.task_started",
+        "payload": {
+          "code": "SR-2026-0002",
+          "taskCode": "WK-2026-0001"
+        },
+        "at": "2026-09-18T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0160",
+        "srId": "sr_seed_0002",
+        "taskId": "task_seed_0002",
+        "assistantId": "fds-writer",
+        "userId": "u_dev1",
+        "type": "sr.task_started",
+        "payload": {
+          "code": "SR-2026-0002",
+          "taskCode": "WK-2026-0002"
+        },
+        "at": "2026-09-21T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0161",
+        "srId": "sr_seed_0002",
+        "taskId": "task_seed_0003",
+        "assistantId": "fds-reviewer",
+        "userId": "u_dev1",
+        "type": "sr.task_started",
+        "payload": {
+          "code": "SR-2026-0002",
+          "taskCode": "WK-2026-0003"
+        },
+        "at": "2026-09-25T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0162",
+        "srId": "sr_seed_0002",
+        "taskId": "task_seed_0004",
+        "assistantId": "test-scenario-writer",
+        "userId": "u_dev3",
+        "type": "sr.task_started",
+        "payload": {
+          "code": "SR-2026-0002",
+          "taskCode": "WK-2026-0004"
+        },
+        "at": "2026-09-28T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0167",
+        "srId": "sr_seed_0003",
+        "userId": "u_dev2",
+        "type": "sr.created",
+        "payload": {},
+        "at": "2026-09-24T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0168",
+        "srId": "sr_seed_0003",
+        "userId": "u_dev2",
+        "type": "sr.submitted",
+        "payload": {
+          "code": "SR-2026-0003"
+        },
+        "at": "2026-09-24T02:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0169",
+        "srId": "sr_seed_0003",
+        "userId": "u_so",
+        "type": "sr.status_changed",
+        "payload": {
+          "from": "submitted",
+          "to": "in_progress"
+        },
+        "at": "2026-09-27T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0170",
+        "srId": "sr_seed_0003",
+        "taskId": "task_seed_0010",
+        "assistantId": "urs-analyst-basic",
+        "userId": "u_dev1",
+        "type": "sr.task_started",
+        "payload": {
+          "code": "SR-2026-0003",
+          "taskCode": "WK-2026-0010"
+        },
+        "at": "2026-09-25T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0175",
+        "srId": "sr_seed_0004",
+        "userId": "u_req",
+        "type": "sr.created",
+        "payload": {},
+        "at": "2026-09-10T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0176",
+        "srId": "sr_seed_0004",
+        "userId": "u_req",
+        "type": "sr.submitted",
+        "payload": {
+          "code": "SR-2026-0004"
+        },
+        "at": "2026-09-10T02:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0177",
+        "srId": "sr_seed_0004",
+        "userId": "u_so",
+        "type": "sr.status_changed",
+        "payload": {
+          "from": "submitted",
+          "to": "done"
+        },
+        "at": "2026-09-13T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0181",
+        "srId": "sr_seed_0005",
+        "userId": "u_dev1",
+        "type": "sr.created",
+        "payload": {},
+        "at": "2026-09-18T00:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0182",
+        "srId": "sr_seed_0005",
+        "userId": "u_dev1",
+        "type": "sr.submitted",
+        "payload": {
+          "code": "SR-2026-0005"
+        },
+        "at": "2026-09-18T02:00:00.000Z"
+      },
+      {
+        "id": "act_seed_0183",
+        "srId": "sr_seed_0005",
+        "userId": "u_so",
+        "type": "sr.status_changed",
+        "payload": {
+          "from": "submitted",
+          "to": "rejected"
+        },
+        "at": "2026-09-21T00:00:00.000Z"
+      }
+    ],
+    "notifications": [
+      {
+        "id": "ntf_seed_0184",
+        "userId": "u_so",
+        "title": "대화에 참여자로 추가되었습니다",
+        "body": "WK-2026-0003 알람 필터 FDS 리뷰",
+        "link": "/c/task_seed_0003",
+        "at": "2026-09-25T00:00:00.000Z",
+        "read": true
+      },
+      {
+        "id": "ntf_seed_0185",
+        "userId": "u_so",
+        "title": "SR이 접수되었습니다",
+        "body": "SR-2026-0001 포장 라인 화면 폰트 확대",
+        "link": "/sr/manage",
+        "at": "2026-09-28T00:00:00.000Z",
+        "read": false
+      },
+      {
+        "id": "ntf_seed_0186",
+        "userId": "u_so",
+        "title": "대화에 참여자로 추가되었습니다",
+        "body": "WK-2026-0007 CC-2099-001 Item 분해",
+        "link": "/c/task_seed_0007",
+        "at": "2026-09-26T00:00:00.000Z",
+        "read": false
+      },
+      {
+        "id": "ntf_seed_0187",
+        "userId": "u_req",
+        "title": "SR 상태가 '진행 중'(으)로 바뀌었습니다",
+        "body": "SR-2026-0002 알람 목록 장비별 필터 추가",
+        "link": "/sr",
+        "at": "2026-09-28T00:00:00.000Z",
+        "read": false
+      }
+    ],
+    "users": [
+      {
+        "id": "u_so",
+        "name": "가상 관리자",
+        "role": "MES System Owner",
+        "initials": "관",
+        "color": "#2563eb",
+        "isSystemOwner": true
+      },
+      {
+        "id": "u_dev1",
+        "name": "가상 담당자1",
+        "role": "MES 개발 · System Owner",
+        "initials": "1",
+        "color": "#7c3aed",
+        "isSystemOwner": true
+      },
+      {
+        "id": "u_dev2",
+        "name": "가상 담당자2",
+        "role": "MES 개발 · System Owner",
+        "initials": "2",
+        "color": "#d97706",
+        "isSystemOwner": true
+      },
+      {
+        "id": "u_dev3",
+        "name": "가상 담당자3",
+        "role": "MES 개발 · System Owner",
+        "initials": "3",
+        "color": "#059669",
+        "isSystemOwner": true
+      },
+      {
+        "id": "u_dev4",
+        "name": "가상 담당자4",
+        "role": "MES 개발",
+        "initials": "4",
+        "color": "#0891b2"
+      },
+      {
+        "id": "u_req",
+        "name": "가상 요청자",
+        "role": "현업 요청자 · System Owner",
+        "initials": "요",
+        "color": "#dc2626",
+        "isSystemOwner": true
+      }
+    ],
+    "assistants": [
+      {
+        "id": "deviation-drafter",
+        "name": "Deviation 초안 도우미",
+        "level1": "Record",
+        "level2": "Deviation",
+        "summary": "일탈 보고서 섹션별 초안 작성과 작성본 검토를 돕습니다.",
+        "order": 1,
+        "expectedInputs": [],
+        "expectedOutputs": [
+          "Deviation 섹션별 초안"
+        ],
+        "ownerId": "u_dev2",
+        "status": "open",
+        "usageExample": "### 사용법\n- \"시작\"을 보내면 필요한 정보를 하나씩 질문합니다.\n- 작성 또는 검토 중 하나를 고릅니다.\n- 작성: 섹션을 고르면 들어가야 할 내용과 예시를 보여 주고 필요한 정보를 묻습니다.\n- 검토: 작성한 내용을 붙여 넣으면 누락·모호한 표현을 짚어 줍니다.",
+        "checklistTemplate": [
+          {
+            "id": "ct_deviation-drafter_1",
+            "label": "발생 개요·일시 기재",
+            "required": true
+          },
+          {
+            "id": "ct_deviation-drafter_2",
+            "label": "즉시 조치 기재",
+            "required": true
+          },
+          {
+            "id": "ct_deviation-drafter_3",
+            "label": "영향 평가 작성",
+            "required": false
+          },
+          {
+            "id": "ct_deviation-drafter_4",
+            "label": "근본 원인·CAPA 초안",
+            "required": false
+          }
+        ],
+        "color": "#7c3aed",
+        "createdBy": "u_so",
+        "createdAt": "2026-09-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z"
+      },
+      {
+        "id": "cc-writer",
+        "name": "Change Control 작성 도우미",
+        "level1": "Record",
+        "level2": "Change Control(CC)",
+        "summary": "CC Item 목록을 바탕으로 변경 관리 문서의 주요 섹션을 작성합니다.",
+        "order": 2,
+        "expectedInputs": [
+          "CC Item 목록",
+          "대상 설비/시스템 식별자",
+          "관련 위험 평가 목록"
+        ],
+        "expectedOutputs": [
+          "CC 문서 초안 (배경 · 변경 내용 · 위험 평가 · 실행 계획)"
+        ],
+        "ownerId": "u_dev1",
+        "status": "open",
+        "usageExample": "### 사용법\n- \"시작\"을 보내면 필요한 정보를 하나씩 질문합니다.\n- CC Item 분해 도우미의 산출물을 입력으로 선택하면 섹션 작성에 반영됩니다.\n- 질문에 답하면 배경·변경 내용·위험 평가·실행 계획 순으로 초안을 만듭니다.",
+        "checklistTemplate": [
+          {
+            "id": "ct_cc-writer_1",
+            "label": "CC Item 목록을 입력으로 선택",
+            "required": true
+          },
+          {
+            "id": "ct_cc-writer_2",
+            "label": "변경 사유·범위 기재",
+            "required": true
+          },
+          {
+            "id": "ct_cc-writer_3",
+            "label": "위험 평가 작성",
+            "required": false
+          },
+          {
+            "id": "ct_cc-writer_4",
+            "label": "실행 계획 작성",
+            "required": false
+          }
+        ],
+        "color": "#7c3aed",
+        "createdBy": "u_so",
+        "createdAt": "2026-09-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z"
+      },
+      {
+        "id": "cc-item-builder",
+        "name": "CC Item 분해 도우미",
+        "level1": "Record",
+        "level2": "Change Control(CC) Item",
+        "summary": "변경 요청을 부서·시스템별 실행 Item 표로 나눕니다.",
+        "order": 3,
+        "expectedInputs": [],
+        "expectedOutputs": [
+          "CC Item 표"
+        ],
+        "ownerId": "u_dev1",
+        "status": "open",
+        "usageExample": "### 사용법\n- \"시작\"을 보내면 필요한 정보를 하나씩 질문합니다.\n- 질문에 답하면 Item 표가 만들어집니다.\n- 표를 산출물로 저장해 CC 작성 대화의 입력으로 쓰세요.",
+        "checklistTemplate": [
+          {
+            "id": "ct_cc-item-builder_1",
+            "label": "부서·시스템별 Item 분해",
+            "required": true
+          },
+          {
+            "id": "ct_cc-item-builder_2",
+            "label": "Item별 담당 지정",
+            "required": false
+          },
+          {
+            "id": "ct_cc-item-builder_3",
+            "label": "Item 표 산출물 저장",
+            "required": true
+          }
+        ],
+        "color": "#2563eb",
+        "createdBy": "u_so",
+        "createdAt": "2026-09-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z"
+      },
+      {
+        "id": "release-cca-writer",
+        "name": "Release CCA 작성 도우미",
+        "level1": "Record",
+        "level2": "Change Control Action(CCA) Item",
+        "summary": "운영 환경 배포용 Release CCA 문안을 만듭니다.",
+        "order": 4,
+        "expectedInputs": [],
+        "expectedOutputs": [
+          "Release CCA 문안"
+        ],
+        "ownerId": "u_dev3",
+        "status": "open",
+        "usageExample": "### 사용법\n- \"시작\"을 보내면 필요한 정보를 하나씩 질문합니다.\n- 배포 대상·환경·일정·롤백 계획 등을 차례로 묻습니다.\n- 부족한 정보는 추가로 질문합니다.\n- 결과를 확인한 뒤 QA 검토를 요청하세요.",
+        "checklistTemplate": [
+          {
+            "id": "ct_release-cca-writer_1",
+            "label": "배포 대상·환경 확인",
+            "required": true
+          },
+          {
+            "id": "ct_release-cca-writer_2",
+            "label": "롤백 계획 기재",
+            "required": true
+          },
+          {
+            "id": "ct_release-cca-writer_3",
+            "label": "QA 검토 요청",
+            "required": false
+          }
+        ],
+        "color": "#059669",
+        "createdBy": "u_so",
+        "createdAt": "2026-09-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z"
+      },
+      {
+        "id": "urs-analyst-basic",
+        "name": "URS 분석 도우미 (기본)",
+        "level1": "SDLC",
+        "level2": "분석",
+        "summary": "요청 사항을 기본 URS 표 형식으로 정리합니다.",
+        "order": 5,
+        "expectedInputs": [
+          "대상 설비/화면 식별자",
+          "추가·변경하려는 항목"
+        ],
+        "expectedOutputs": [
+          "URS 표 (ID · 대상 · 요구사항 · 우선순위)"
+        ],
+        "ownerId": "u_dev1",
+        "status": "developing",
+        "usageExample": "",
+        "checklistTemplate": [
+          {
+            "id": "ct_urs-analyst-basic_1",
+            "label": "대상 식별자 확인",
+            "required": true
+          },
+          {
+            "id": "ct_urs-analyst-basic_2",
+            "label": "URS 표 작성",
+            "required": true
+          },
+          {
+            "id": "ct_urs-analyst-basic_3",
+            "label": "요청자 확인",
+            "required": false
+          }
+        ],
+        "color": "#059669",
+        "createdBy": "u_so",
+        "createdAt": "2026-09-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z"
+      },
+      {
+        "id": "urs-analyst",
+        "name": "URS 분석 도우미",
+        "level1": "SDLC",
+        "level2": "분석",
+        "summary": "현업 요청을 대화로 구체화해 URS 항목과 변경 범위를 도출합니다. SR 접수에도 쓰입니다.",
+        "order": 6,
+        "expectedInputs": [
+          "대상 설비/화면 식별자",
+          "추가·변경하려는 항목"
+        ],
+        "expectedOutputs": [
+          "URS 표 (ID · 대상 · 요구사항 · 우선순위 · GxP)"
+        ],
+        "ownerId": "u_dev4",
+        "status": "testing",
+        "usageExample": "",
+        "checklistTemplate": [
+          {
+            "id": "ct_urs-analyst_1",
+            "label": "변경 범위 확정",
+            "required": true
+          },
+          {
+            "id": "ct_urs-analyst_2",
+            "label": "URS 표 작성",
+            "required": true
+          },
+          {
+            "id": "ct_urs-analyst_3",
+            "label": "GxP 영향 표시",
+            "required": false
+          },
+          {
+            "id": "ct_urs-analyst_4",
+            "label": "요청자 확인",
+            "required": false
+          }
+        ],
+        "color": "#2563eb",
+        "createdBy": "u_so",
+        "createdAt": "2026-09-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z"
+      },
+      {
+        "id": "fds-writer",
+        "name": "FDS 작성 도우미",
+        "level1": "SDLC",
+        "level2": "설계",
+        "summary": "확정된 URS를 기준으로 수정이 필요한 FDS 섹션과 내용을 정리합니다.",
+        "order": 7,
+        "expectedInputs": [
+          "URS",
+          "개정 전 FDS"
+        ],
+        "expectedOutputs": [
+          "FDS 변경 항목 표"
+        ],
+        "ownerId": "",
+        "status": "developing",
+        "usageExample": "",
+        "checklistTemplate": [
+          {
+            "id": "ct_fds-writer_1",
+            "label": "URS를 주 입력으로 선택",
+            "required": true
+          },
+          {
+            "id": "ct_fds-writer_2",
+            "label": "변경 대상 섹션 도출",
+            "required": true
+          },
+          {
+            "id": "ct_fds-writer_3",
+            "label": "URS 추적성 표 작성",
+            "required": false
+          },
+          {
+            "id": "ct_fds-writer_4",
+            "label": "FDS 산출물 저장",
+            "required": false
+          }
+        ],
+        "color": "#d97706",
+        "createdBy": "u_so",
+        "createdAt": "2026-09-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z"
+      },
+      {
+        "id": "fds-reviewer",
+        "name": "FDS 리뷰 도우미",
+        "level1": "SDLC",
+        "level2": "설계",
+        "summary": "변경 전후 FDS와 변경 요청을 비교해 누락·과잉 반영을 점검합니다.",
+        "order": 8,
+        "expectedInputs": [
+          "FDS 변경 항목",
+          "개정 전 FDS",
+          "개정 후 FDS"
+        ],
+        "expectedOutputs": [
+          "반영 누락·불필요 반영 점검표"
+        ],
+        "ownerId": "u_dev1",
+        "status": "developing",
+        "usageExample": "",
+        "checklistTemplate": [
+          {
+            "id": "ct_fds-reviewer_1",
+            "label": "개정 전·후 FDS 선택",
+            "required": true
+          },
+          {
+            "id": "ct_fds-reviewer_2",
+            "label": "누락 반영 점검",
+            "required": true
+          },
+          {
+            "id": "ct_fds-reviewer_3",
+            "label": "불필요 반영 점검",
+            "required": false
+          }
+        ],
+        "color": "#0891b2",
+        "createdBy": "u_so",
+        "createdAt": "2026-09-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z"
+      },
+      {
+        "id": "test-scenario-writer",
+        "name": "테스트 시나리오 도우미",
+        "level1": "SDLC",
+        "level2": "테스트",
+        "summary": "설계 변경 내용을 바탕으로 단위·통합·회귀 테스트 시나리오를 제안합니다.",
+        "order": 9,
+        "expectedInputs": [
+          "개정 전 FDS",
+          "개정 후 FDS"
+        ],
+        "expectedOutputs": [
+          "테스트 시나리오 (No · FDS 섹션 · 목표 · 방법 · 사전 조건)"
+        ],
+        "ownerId": "u_dev3",
+        "status": "developing",
+        "usageExample": "",
+        "checklistTemplate": [
+          {
+            "id": "ct_test-scenario-writer_1",
+            "label": "기준 FDS 선택",
+            "required": true
+          },
+          {
+            "id": "ct_test-scenario-writer_2",
+            "label": "단위·통합 시나리오",
+            "required": true
+          },
+          {
+            "id": "ct_test-scenario-writer_3",
+            "label": "회귀 시나리오",
+            "required": false
+          },
+          {
+            "id": "ct_test-scenario-writer_4",
+            "label": "사전 조건 기재",
+            "required": false
+          }
+        ],
+        "color": "#db2777",
+        "createdBy": "u_so",
+        "createdAt": "2026-09-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z"
+      },
+      {
+        "id": "deploy-verifier",
+        "name": "배포 검증 도우미",
+        "level1": "SDLC",
+        "level2": "배포",
+        "summary": "배포 후 설계 문서와 실제 DB/설정을 비교해 반영 상태를 확인합니다.",
+        "order": 10,
+        "expectedInputs": [
+          "배포 대상 목록",
+          "FDS"
+        ],
+        "expectedOutputs": [
+          "반영 누락·불필요 반영 확인표"
+        ],
+        "ownerId": "u_dev3",
+        "status": "developing",
+        "usageExample": "",
+        "checklistTemplate": [
+          {
+            "id": "ct_deploy-verifier_1",
+            "label": "배포 대상 목록 확인",
+            "required": true
+          },
+          {
+            "id": "ct_deploy-verifier_2",
+            "label": "FDS 대비 DB·설정 비교",
+            "required": true
+          },
+          {
+            "id": "ct_deploy-verifier_3",
+            "label": "확인표 산출물 저장",
+            "required": false
+          }
+        ],
+        "color": "#dc2626",
+        "createdBy": "u_so",
+        "createdAt": "2026-09-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z"
+      },
+      {
+        "id": "cca-writer",
+        "name": "CCA 문구 도우미",
+        "level1": "SDLC",
+        "level2": "배포",
+        "summary": "배포 Item별 CCA에 들어갈 문장을 만듭니다.",
+        "order": 11,
+        "expectedInputs": [],
+        "expectedOutputs": [
+          "CCA 문장"
+        ],
+        "ownerId": "u_dev3",
+        "status": "testing",
+        "usageExample": "### 사용법\n- \"시작\"을 보내면 필요한 정보를 하나씩 질문합니다.\n- 생성된 문장을 검토한 뒤 CCA 문서에 옮겨 쓰세요.",
+        "checklistTemplate": [
+          {
+            "id": "ct_cca-writer_1",
+            "label": "배포 Item 확인",
+            "required": true
+          },
+          {
+            "id": "ct_cca-writer_2",
+            "label": "CCA 문장 검토",
+            "required": false
+          }
+        ],
+        "color": "#4f46e5",
+        "createdBy": "u_so",
+        "createdAt": "2026-09-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z"
+      },
+      {
+        "id": "protocol-reviewer",
+        "name": "프로토콜 리뷰 도우미",
+        "level1": "SDLC",
+        "level2": "밸리데이션",
+        "summary": "밸리데이션 프로토콜과 설계 문서를 비교해 적합성을 점검합니다.",
+        "order": 12,
+        "expectedInputs": [
+          "개정 전 FDS",
+          "개정 후 FDS",
+          "밸리데이션 프로토콜"
+        ],
+        "expectedOutputs": [
+          "프로토콜 수정 필요 항목"
+        ],
+        "ownerId": "",
+        "status": "developing",
+        "usageExample": "",
+        "checklistTemplate": [
+          {
+            "id": "ct_protocol-reviewer_1",
+            "label": "프로토콜·설계 문서 선택",
+            "required": true
+          },
+          {
+            "id": "ct_protocol-reviewer_2",
+            "label": "적합성 점검",
+            "required": true
+          },
+          {
+            "id": "ct_protocol-reviewer_3",
+            "label": "수정 필요 항목 정리",
+            "required": false
+          }
+        ],
+        "color": "#65a30d",
+        "createdBy": "u_so",
+        "createdAt": "2026-09-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z"
+      }
+    ],
+    "settings": [
+      {
+        "id": "app",
+        "srIntakeAssistantId": "urs-analyst"
+      }
+    ]
+  }
+}

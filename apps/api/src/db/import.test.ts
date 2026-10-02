@@ -5,8 +5,8 @@ const at = '2026-09-01T00:00:00.000Z'
 const empty = { format: 'mes-assistant-hub', version: 3, exportedAt: at, tables: {} }
 
 describe('demo bundle import rules', () => {
-  it('defaults to a 256 MB bundle limit', () => {
-    expect(DEFAULT_IMPORT_BUNDLE_MAX_BYTES).toBe(256 * 1024 ** 2)
+  it('defaults to a 64 MiB bundle limit', () => {
+    expect(DEFAULT_IMPORT_BUNDLE_MAX_BYTES).toBe(64 * 1024 ** 2)
   })
   it('accepts only demo format and versions 1–3 with array tables', () => {
     expect(validateBundle(empty)).toBe(true)
