@@ -56,9 +56,22 @@ export class AuthController {
       this.attempts.size + prior.filter((value) => !value).length > MAX_ATTEMPT_ENTRIES) {
       throw new HttpException('시도가 너무 많습니다. 잠시 후 다시 시도하세요.', 429)
     }
-    keys.forEach((key, index) => this.attempts.set(key, { count: (prior[index]?.count ?? 0) + 1,
-      until: prior[index]?.until ?? now + this.config.authAttempts.windowMs }))
-    return () => { for (const key of keys) this.attempts.delete(key) }
+    return {
+      failed: () => {
+        const failedAt = Date.now()
+        const current = keys.map((key) => {
+          const value = this.attempts.get(key)
+          if (value && value.until <= failedAt) { this.attempts.delete(key); return undefined }
+          return value
+        })
+        if (this.attempts.size + current.filter((value) => !value).length > MAX_ATTEMPT_ENTRIES) {
+          throw new HttpException('시도가 너무 많습니다. 잠시 후 다시 시도하세요.', 429)
+        }
+        keys.forEach((key, index) => this.attempts.set(key, { count: (current[index]?.count ?? 0) + 1,
+          until: current[index]?.until ?? failedAt + this.config.authAttempts.windowMs }))
+      },
+      succeeded: () => { this.attempts.delete(keys[1]!) },
+    }
   }
 
   private async respondWithSession(user: { id: string; name: string; role: string; isSystemOwner: boolean; isBusinessOwner?: boolean; mustChangePassword?: boolean }, res: Response): Promise<Me> {
@@ -79,11 +92,11 @@ export class AuthController {
     const parsed = CredentialsSchema.safeParse(body)
     if (!parsed.success) throw new BadRequestException('ID 또는 비밀번호 형식이 올바르지 않습니다')
     const { loginId, password } = parsed.data
-    const clearAttempt = this.attempt(req, loginId)
-    if (await this.users.findByLoginId(loginId)) throw new ConflictException('이미 사용 중인 ID입니다')
+    const attempt = this.attempt(req, loginId)
+    if (await this.users.findByLoginId(loginId)) { attempt.failed(); throw new ConflictException('이미 사용 중인 ID입니다') }
     const user = await this.users.createLocal(loginId, await hashPassword(password))
-    if (!user) throw new ConflictException('이미 사용 중인 ID입니다')
-    clearAttempt()
+    if (!user) { attempt.failed(); throw new ConflictException('이미 사용 중인 ID입니다') }
+    attempt.succeeded()
     return this.respondWithSession(user, res)
   }
 
@@ -96,14 +109,15 @@ export class AuthController {
     const parsed = CredentialsSchema.safeParse(body)
     if (!parsed.success) throw new BadRequestException('ID 또는 비밀번호 형식이 올바르지 않습니다')
     const { loginId, password } = parsed.data
-    const clearAttempt = this.attempt(req, loginId)
+    const attempt = this.attempt(req, loginId)
     const found = await this.users.findByLoginId(loginId)
     if (!found || !found.active) {
       await verifyPassword(password, await dummyHash)
+      attempt.failed()
       throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다')
     }
-    if (!await verifyPassword(password, found.hash)) throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다')
-    clearAttempt()
+    if (!await verifyPassword(password, found.hash)) { attempt.failed(); throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다') }
+    attempt.succeeded()
     return this.respondWithSession(found.user, res)
   }
 

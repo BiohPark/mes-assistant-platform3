@@ -21,8 +21,15 @@ describe('loadConfig', () => {
     expect(c.sessionIdleHours).toBe(12)
     expect(c.request.maxActive).toBe(20)
     expect(c.authAttempts).toEqual({ max: 10, windowMs: 600_000 })
+    expect(c.trustProxy).toBe(false)
     expect(c.fileMaxBytes).toBe(50 * 1024 * 1024)
     expect(c.fileMaxPerRequest).toBe(20)
+  })
+
+  it('TRUST_PROXY는 명시적으로 켜야 한다', () => {
+    expect(loadConfig({ ...base, TRUST_PROXY: 'true' }).trustProxy).toBe(true)
+    expect(loadConfig({ ...base, TRUST_PROXY: 'false' }).trustProxy).toBe(false)
+    expect(() => loadConfig({ ...base, TRUST_PROXY: 'yes' })).toThrow(/TRUST_PROXY/)
   })
 
   it('기본 local 모드는 OIDC 설정 없이 시작한다', () => {

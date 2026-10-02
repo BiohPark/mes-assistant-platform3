@@ -35,17 +35,22 @@ describe('local 인증 API', () => {
   let app: INestApplication
   beforeEach(async () => {
     rows.clear()
+    app = await createTestApp(config)
+  })
+  afterEach(async () => { await app.close(); vi.clearAllMocks() })
+
+  async function createTestApp(appConfig: typeof config) {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(CONFIG).useValue(config)
+      .overrideProvider(CONFIG).useValue(appConfig)
       .overrideProvider(HEALTH_PROBE).useValue(async () => true)
       .overrideProvider(SESSION_STORE).useValue(sessions)
       .overrideProvider(USER_DIRECTORY).useValue(users)
       .overrideProvider(OIDC).useValue({ start: vi.fn(), finish: vi.fn() })
       .compile()
-    app = configureApp(moduleRef.createNestApplication(), config)
-    await app.init()
-  })
-  afterEach(async () => { await app.close(); vi.clearAllMocks() })
+    const testApp = configureApp(moduleRef.createNestApplication(), appConfig)
+    await testApp.init()
+    return testApp
+  }
 
   it('모드 공개, OIDC 진입은 404', async () => {
     await request(app.getHttpServer()).get('/api/auth/mode').expect(200, { mode: 'local' })
@@ -138,15 +143,59 @@ describe('local 인증 API', () => {
     await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'another-id', password: 'password-1234' }).expect(429)
   })
 
+  it.each(['login', 'signup'])('같은 IP의 동시 %s 성공 20건은 429가 아니다', async (route) => {
+    if (route === 'login') await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'member-1', password: 'password-1234' }).expect(201)
+    await app.listen(0)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered = 0
+    const find = vi.spyOn(users, 'findByLoginId').mockImplementation(async (id) => {
+      entered++
+      if (entered === 20) release()
+      await gate
+      return rows.get(id) ?? null
+    })
+    const timer = setTimeout(release, 1_000)
+    try {
+      const results = await Promise.all(Array.from({ length: 20 }, (_, i) => request(app.getHttpServer())
+        .post(`/api/auth/${route}`)
+        .send({ loginId: route === 'login' ? 'member-1' : `member-${i}`, password: 'password-1234' })))
+      expect(entered).toBe(20)
+      expect(results.map((result) => result.status)).toEqual(Array(20).fill(route === 'login' ? 200 : 201))
+    } finally { clearTimeout(timer); release(); find.mockRestore() }
+  })
+
+  it.each(['login', 'signup'])('%s 성공은 다른 ID의 IP 실패 기록을 지우지 않는다', async (route) => {
+    if (route === 'login') await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'member-1', password: 'password-1234' }).expect(201)
+    for (let i = 0; i < 8; i++) await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: `missing-${i}`, password: 'password-1234' }).expect(401)
+    await request(app.getHttpServer()).post(`/api/auth/${route}`).send({ loginId: route === 'login' ? 'member-1' : 'new-member', password: 'password-1234' }).expect(route === 'login' ? 200 : 201)
+    for (let i = 8; i < 10; i++) await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: `missing-${i}`, password: 'password-1234' }).expect(401)
+    await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'another-id', password: 'password-1234' }).expect(429)
+  })
+
+  it('TRUST_PROXY는 전달된 사용자 IP별로 실패를 제한한다', async () => {
+    await app.close()
+    app = await createTestApp(loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', TRUST_PROXY: 'true' }))
+    const post = (ip: string) => request(app.getHttpServer()).post('/api/auth/login').set('X-Forwarded-For', `${ip}, 10.0.0.1`).send({ loginId: 'missing', password: 'password-1234' })
+    for (let i = 0; i < 10; i++) await post('192.0.2.1').expect(401)
+    await post('192.0.2.1').expect(429)
+    await post('192.0.2.2').expect(401)
+  })
+
+  it('기본 설정은 X-Forwarded-For를 신뢰하지 않는다', async () => {
+    for (let i = 0; i < 10; i++) await request(app.getHttpServer()).post('/api/auth/login').set('X-Forwarded-For', `192.0.2.${i + 1}`).send({ loginId: 'missing', password: 'password-1234' }).expect(401)
+    await request(app.getHttpServer()).post('/api/auth/login').set('X-Forwarded-For', '192.0.2.20').send({ loginId: 'missing', password: 'password-1234' }).expect(429)
+  })
+
   it('시도 기록에 상한이 있고 요청마다 전체 기록을 순회하지 않는다', () => {
     const controller = app.get(AuthController) as unknown as {
-      attempt: (req: { ip: string }, loginId: string) => () => void
+      attempt: (req: { ip: string }, loginId: string) => { failed: () => void }
       attempts: Map<string, { count: number; until: number }>
     }
     const iterator = vi.spyOn(controller.attempts, Symbol.iterator)
     let denied = 0
     for (let i = 0; i < 5_100; i++) {
-      try { controller.attempt({ ip: `192.0.${Math.floor(i / 256)}.${i % 256}` }, `user-${i}`) }
+      try { controller.attempt({ ip: `192.0.${Math.floor(i / 256)}.${i % 256}` }, `user-${i}`).failed() }
       catch (error) { expect(error).toMatchObject({ status: 429 }); denied++ }
     }
     expect(denied).toBeGreaterThan(0)

@@ -23,6 +23,7 @@ const EnvSchema = z.object({
   SESSION_IDLE_HOURS: z.coerce.number().positive().default(12),
   AUTH_ATTEMPT_MAX: z.coerce.number().int().positive().default(10),
   AUTH_ATTEMPT_WINDOW_MS: z.coerce.number().int().positive().default(600_000),
+  TRUST_PROXY: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   AUTH_MODE: AuthModeSchema.default('local'),
   OIDC_ISSUER: z.string().optional(),
   OIDC_CLIENT_ID: z.string().optional(),
@@ -79,6 +80,7 @@ export function loadConfig(env: Record<string, string | undefined>) {
     sessionTtlHours: e.SESSION_TTL_HOURS,
     sessionIdleHours: e.SESSION_IDLE_HOURS,
     authAttempts: { max: e.AUTH_ATTEMPT_MAX, windowMs: e.AUTH_ATTEMPT_WINDOW_MS },
+    trustProxy: e.TRUST_PROXY,
     authMode: e.AUTH_MODE,
     cookieSecure: appOrigin.startsWith('https://'),
     oidc: e.AUTH_MODE === 'oidc' ? {
