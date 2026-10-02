@@ -255,16 +255,24 @@ describe('RequestService DB', () => {
   })
 
   it('deduplicates the same key and rejects concurrent different keys', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const holding: ChatProvider = { ...provider, async *stream() { await held; yield { type: 'delta', text: '응답' }; yield { type: 'done' } } }
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), holding)
     const { thread } = await tasks.create('member', { assistantId })
-    const a = await service.start('member', thread.id, { content: '첫 요청' }, 'same-key')
-    const duplicate = await service.start('member', thread.id, { content: '첫 요청' }, 'same-key')
-    expect(duplicate.id).toBe(a.id)
-    const result = await Promise.allSettled([service.start('member', thread.id, { content: '둘' }, 'other-one'), service.start('member', thread.id, { content: '셋' }, 'other-two')])
-    expect(result.filter((item) => item.status === 'fulfilled')).toHaveLength(0)
-    expect(result.every((item) => item.status === 'rejected' && item.reason.status === 409)).toBe(true)
-    await a.done
-    expect(await db.select().from(chatRequest).where(eq(chatRequest.threadId, thread.id))).toHaveLength(1)
-    expect(await tasks.messages(thread.id)).toHaveLength(2)
+    let a: Awaited<ReturnType<RequestsService['start']>> | undefined
+    try {
+      a = await runner.start('member', thread.id, { content: '첫 요청' }, 'same-key')
+      const duplicate = await runner.start('member', thread.id, { content: '첫 요청' }, 'same-key')
+      expect(duplicate.id).toBe(a.id)
+      const result = await Promise.allSettled([runner.start('member', thread.id, { content: '둘' }, 'other-one'), runner.start('member', thread.id, { content: '셋' }, 'other-two')])
+      expect(result.filter((item) => item.status === 'fulfilled')).toHaveLength(0)
+      expect(result.every((item) => item.status === 'rejected' && item.reason.status === 409)).toBe(true)
+      release()
+      await a.done
+      expect(await db.select().from(chatRequest).where(eq(chatRequest.threadId, thread.id))).toHaveLength(1)
+      expect(await tasks.messages(thread.id)).toHaveLength(2)
+    } finally { release(); if (a) await a.done; runner.onModuleDestroy() }
   })
 
   it('allows exactly one of two simultaneous starts', async () => {
