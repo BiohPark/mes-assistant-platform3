@@ -253,12 +253,55 @@ describe('local 인증 API', () => {
       attempt: (req: { ip: string }, loginId: string) => Promise<{ failed: () => void }>
       attempts: Map<string, { count: number; until: number }>
     }
-    const iterator = vi.spyOn(controller.attempts, Symbol.iterator)
-    for (let i = 0; i < 5_100; i++) {
+    const iterator = vi.spyOn(controller.attempts, 'entries')
+    for (let i = 0; i < 5_000; i++) {
+      (await controller.attempt({ ip: `192.0.${Math.floor(i / 256)}.${i % 256}` }, `user-${i}`)).failed()
+    }
+    expect(iterator).not.toHaveBeenCalled()
+    for (let i = 5_000; i < 5_100; i++) {
       (await controller.attempt({ ip: `192.0.${Math.floor(i / 256)}.${i % 256}` }, `user-${i}`)).failed()
     }
     expect(controller.attempts.size).toBeLessThanOrEqual(10_000)
-    expect(iterator).not.toHaveBeenCalled()
     await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'new-client', password: 'wrong-password' }).expect(401)
+  })
+
+  it('저장 상한에서 제한 중인 IP와 진행 중 예약을 보존하고 가장 오래된 일반 항목을 축출한다', async () => {
+    const controller = app.get(AuthController) as unknown as {
+      attempt: (req: { ip: string }, loginId: string) => Promise<{ release: () => void }>
+      attempts: Map<string, { count: number; pending: number; until: number; waiters: Set<() => void> }>
+    }
+    const entry = (count = 0, pending = 0) => ({ count, pending, until: Date.now() + config.authAttempts.windowMs, waiters: new Set<() => void>() })
+    controller.attempts.set('ip:limited', entry(config.authAttempts.max))
+    const reserved = entry(0, config.authAttempts.ipPendingMax)
+    controller.attempts.set('ip:reserved', reserved)
+    controller.attempts.set('ip:ordinary-old', entry())
+    controller.attempts.set('ip:ordinary-next', entry())
+    for (let i = 0; i < 9_996; i++) controller.attempts.set(`ip:filler-${i}`, entry())
+
+    const fresh = await controller.attempt({ ip: 'fresh' }, 'member')
+    fresh.release()
+
+    expect(controller.attempts.size).toBe(10_000)
+    expect(controller.attempts.has('ip:ordinary-old')).toBe(false)
+    expect(controller.attempts.has('ip:ordinary-next')).toBe(false)
+    expect(controller.attempts.get('ip:reserved')).toBe(reserved)
+    await expect(controller.attempt({ ip: 'limited' }, 'other')).rejects.toMatchObject({ status: 429 })
+    await expect(controller.attempt({ ip: 'reserved' }, 'other')).rejects.toMatchObject({ status: 429 })
+  })
+
+  it('축출 가능한 기록이 없으면 새 키만 429로 거부하고 기존 키는 처리한다', async () => {
+    const controller = app.get(AuthController) as unknown as {
+      attempt: (req: { ip: string }, loginId: string) => Promise<{ release: () => void }>
+      attempts: Map<string, { count: number; pending: number; until: number; waiters: Set<() => void> }>
+    }
+    const entry = (count: number, pending: number) => ({ count, pending, until: Date.now() + config.authAttempts.windowMs, waiters: new Set<() => void>() })
+    controller.attempts.set('ip:existing', entry(0, 1))
+    controller.attempts.set('id:existing:member', entry(0, 1))
+    for (let i = 0; i < 9_998; i++) controller.attempts.set(`ip:limited-${i}`, entry(config.authAttempts.max, 0))
+
+    await expect(controller.attempt({ ip: 'new-client' }, 'member')).rejects.toMatchObject({ status: 429 })
+    const existing = await controller.attempt({ ip: 'existing' }, 'member')
+    existing.release()
+    expect(controller.attempts.size).toBe(10_000)
   })
 })

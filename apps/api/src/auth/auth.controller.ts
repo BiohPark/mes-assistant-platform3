@@ -62,11 +62,15 @@ export class AuthController {
     const reserve = (key: string, value: AttemptEntry | undefined) => {
       if (!value) {
         if (this.attempts.size >= MAX_ATTEMPT_ENTRIES) {
-          const oldest = this.attempts.keys().next().value!
-          const evicted = this.attempts.get(oldest)!
-          this.attempts.delete(oldest)
-          for (const wake of evicted.waiters) wake()
-          evicted.waiters.clear()
+          const checkedAt = Date.now()
+          for (const [oldest, evicted] of this.attempts.entries()) {
+            if (evicted.pending || (evicted.until > checkedAt && evicted.count >= this.config.authAttempts.max)) continue
+            this.attempts.delete(oldest)
+            for (const wake of evicted.waiters) wake()
+            evicted.waiters.clear()
+            break
+          }
+          if (this.attempts.size >= MAX_ATTEMPT_ENTRIES) throw tooMany()
         }
         value = { count: 0, pending: 0, until: Date.now() + this.config.authAttempts.windowMs, waiters: new Set() }
         this.attempts.set(key, value)
