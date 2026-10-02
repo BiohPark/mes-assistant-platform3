@@ -46,6 +46,7 @@ Windows와 같다. `pnpm dev` → http://localhost:5173 → 회원가입(예: `d
 
 운영 대상은 Windows다([windows.md §8](windows.md)). macOS는 개발용으로만 쓴다.
 배포 묶음 생성은 저장소 루트에서 `pnpm release`로 한다.
+데모 bundle은 `mise exec -- pnpm db:import /path/to/bundle.json --dry-run`으로 먼저 확인한다.
 
 ## 9. 문제 해결 (macOS 차이)
 
