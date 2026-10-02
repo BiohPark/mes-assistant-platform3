@@ -35,17 +35,22 @@ describe('local 인증 API', () => {
   let app: INestApplication
   beforeEach(async () => {
     rows.clear()
+    app = await createTestApp(config)
+  })
+  afterEach(async () => { await app.close(); vi.clearAllMocks() })
+
+  async function createTestApp(appConfig: typeof config) {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(CONFIG).useValue(config)
+      .overrideProvider(CONFIG).useValue(appConfig)
       .overrideProvider(HEALTH_PROBE).useValue(async () => true)
       .overrideProvider(SESSION_STORE).useValue(sessions)
       .overrideProvider(USER_DIRECTORY).useValue(users)
       .overrideProvider(OIDC).useValue({ start: vi.fn(), finish: vi.fn() })
       .compile()
-    app = configureApp(moduleRef.createNestApplication(), config)
-    await app.init()
-  })
-  afterEach(async () => { await app.close(); vi.clearAllMocks() })
+    const testApp = configureApp(moduleRef.createNestApplication(), appConfig)
+    await testApp.init()
+    return testApp
+  }
 
   it('모드 공개, OIDC 진입은 404', async () => {
     await request(app.getHttpServer()).get('/api/auth/mode').expect(200, { mode: 'local' })
@@ -138,19 +143,165 @@ describe('local 인증 API', () => {
     await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'another-id', password: 'password-1234' }).expect(429)
   })
 
-  it('시도 기록에 상한이 있고 요청마다 전체 기록을 순회하지 않는다', () => {
+  it.each(['login', 'signup'])('같은 IP의 동시 %s 성공 20건은 429가 아니다', async (route) => {
+    if (route === 'login') await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'member-1', password: 'password-1234' }).expect(201)
+    await app.listen(0)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered = 0
+    const find = vi.spyOn(users, 'findByLoginId').mockImplementation(async (id) => {
+      entered++
+      if (entered === 20) release()
+      await gate
+      return rows.get(id) ?? null
+    })
+    const timer = setTimeout(release, 1_000)
+    try {
+      const results = await Promise.all(Array.from({ length: 20 }, (_, i) => request(app.getHttpServer())
+        .post(`/api/auth/${route}`)
+        .send({ loginId: route === 'login' ? 'member-1' : `member-${i}`, password: 'password-1234' })))
+      expect(entered).toBe(20)
+      expect(results.map((result) => result.status)).toEqual(Array(20).fill(route === 'login' ? 200 : 201))
+    } finally { clearTimeout(timer); release(); find.mockRestore() }
+  })
+
+  it.each(['login', 'signup'])('같은 ID의 동시 %s 실패 20건은 최대 10건만 검증한다', async (route) => {
+    if (route === 'signup') await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'member-1', password: 'password-1234' }).expect(201)
+    await app.listen(0)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered = 0
+    const find = vi.spyOn(users, 'findByLoginId').mockImplementation(async (id) => {
+      entered++
+      if (entered === config.authAttempts.max) release()
+      await gate
+      return rows.get(id) ?? null
+    })
+    const timer = setTimeout(release, 1_000)
+    try {
+      const results = await Promise.all(Array.from({ length: 20 }, () => request(app.getHttpServer())
+        .post(`/api/auth/${route}`).send({ loginId: 'member-1', password: 'wrong-password' })))
+      expect(entered).toBe(config.authAttempts.max)
+      expect(results.filter((result) => result.status === (route === 'login' ? 401 : 409))).toHaveLength(config.authAttempts.max)
+      expect(results.filter((result) => result.status === 429)).toHaveLength(10)
+    } finally { clearTimeout(timer); release(); find.mockRestore() }
+  })
+
+  it('서로 다른 ID의 동시 실패 20건은 기본 IP 진행 중 상한 아래에서 통과한다', async () => {
+    await app.listen(0)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered = 0
+    const find = vi.spyOn(users, 'findByLoginId').mockImplementation(async () => {
+      entered++
+      if (entered === 20) release()
+      await gate
+      return null
+    })
+    const timer = setTimeout(release, 1_000)
+    try {
+      const results = await Promise.all(Array.from({ length: 20 }, (_, i) => request(app.getHttpServer())
+        .post('/api/auth/login').send({ loginId: `missing-${i}`, password: 'wrong-password' })))
+      expect(entered).toBe(20)
+      expect(results.filter((result) => result.status === 401)).toHaveLength(config.authAttempts.max)
+      expect(results.filter((result) => result.status === 429)).toHaveLength(10)
+    } finally { clearTimeout(timer); release(); find.mockRestore() }
+  })
+
+  it('설정한 IP 진행 중 상한은 서로 다른 ID에도 적용한다', async () => {
+    await app.close()
+    app = await createTestApp(loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_IP_PENDING_MAX: '3' }))
+    await app.listen(0)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered = 0
+    const find = vi.spyOn(users, 'findByLoginId').mockImplementation(async () => { entered++; await gate; return null })
+    const timer = setTimeout(release, 1_000)
+    try {
+      const active = Array.from({ length: 3 }, (_, i) => request(app.getHttpServer()).post('/api/auth/login')
+        .send({ loginId: `missing-${i}`, password: 'wrong-password' }).then((result) => result))
+      await vi.waitFor(() => expect(entered).toBe(3))
+      await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'missing-fourth', password: 'wrong-password' }).expect(429)
+      release()
+      expect((await Promise.all(active)).map((result) => result.status)).toEqual([401, 401, 401])
+    } finally { clearTimeout(timer); release(); find.mockRestore() }
+  })
+
+  it.each(['login', 'signup'])('%s 성공은 다른 ID의 IP 실패 기록을 지우지 않는다', async (route) => {
+    if (route === 'login') await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'member-1', password: 'password-1234' }).expect(201)
+    for (let i = 0; i < 8; i++) await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: `missing-${i}`, password: 'password-1234' }).expect(401)
+    await request(app.getHttpServer()).post(`/api/auth/${route}`).send({ loginId: route === 'login' ? 'member-1' : 'new-member', password: 'password-1234' }).expect(route === 'login' ? 200 : 201)
+    for (let i = 8; i < 10; i++) await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: `missing-${i}`, password: 'password-1234' }).expect(401)
+    await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'another-id', password: 'password-1234' }).expect(429)
+  })
+
+  it('한 프록시 홉만 신뢰하고 더 앞의 위조 X-Forwarded-For는 무시한다', async () => {
+    await app.close()
+    app = await createTestApp(loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', TRUST_PROXY: '1' }))
+    const post = (ip: string) => request(app.getHttpServer()).post('/api/auth/login').set('X-Forwarded-For', `${ip}, 10.0.0.1`).send({ loginId: 'missing', password: 'password-1234' })
+    for (let i = 0; i < 10; i++) await post('192.0.2.1').expect(401)
+    await post('192.0.2.2').expect(429)
+  })
+
+  it('기본 설정은 X-Forwarded-For를 신뢰하지 않는다', async () => {
+    for (let i = 0; i < 10; i++) await request(app.getHttpServer()).post('/api/auth/login').set('X-Forwarded-For', `192.0.2.${i + 1}`).send({ loginId: 'missing', password: 'password-1234' }).expect(401)
+    await request(app.getHttpServer()).post('/api/auth/login').set('X-Forwarded-For', '192.0.2.20').send({ loginId: 'missing', password: 'password-1234' }).expect(429)
+  })
+
+  it('시도 기록에 상한이 있고 요청마다 전체 기록을 순회하지 않는다', async () => {
     const controller = app.get(AuthController) as unknown as {
-      attempt: (req: { ip: string }, loginId: string) => () => void
+      attempt: (req: { ip: string }, loginId: string) => Promise<{ failed: () => void }>
       attempts: Map<string, { count: number; until: number }>
     }
-    const iterator = vi.spyOn(controller.attempts, Symbol.iterator)
-    let denied = 0
-    for (let i = 0; i < 5_100; i++) {
-      try { controller.attempt({ ip: `192.0.${Math.floor(i / 256)}.${i % 256}` }, `user-${i}`) }
-      catch (error) { expect(error).toMatchObject({ status: 429 }); denied++ }
+    const iterator = vi.spyOn(controller.attempts, 'entries')
+    for (let i = 0; i < 5_000; i++) {
+      (await controller.attempt({ ip: `192.0.${Math.floor(i / 256)}.${i % 256}` }, `user-${i}`)).failed()
     }
-    expect(denied).toBeGreaterThan(0)
-    expect(controller.attempts.size).toBeLessThanOrEqual(10_000)
     expect(iterator).not.toHaveBeenCalled()
+    for (let i = 5_000; i < 5_100; i++) {
+      (await controller.attempt({ ip: `192.0.${Math.floor(i / 256)}.${i % 256}` }, `user-${i}`)).failed()
+    }
+    expect(controller.attempts.size).toBeLessThanOrEqual(10_000)
+    await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'new-client', password: 'wrong-password' }).expect(401)
+  })
+
+  it('저장 상한에서 제한 중인 IP와 진행 중 예약을 보존하고 가장 오래된 일반 항목을 축출한다', async () => {
+    const controller = app.get(AuthController) as unknown as {
+      attempt: (req: { ip: string }, loginId: string) => Promise<{ release: () => void }>
+      attempts: Map<string, { count: number; pending: number; until: number; waiters: Set<() => void> }>
+    }
+    const entry = (count = 0, pending = 0) => ({ count, pending, until: Date.now() + config.authAttempts.windowMs, waiters: new Set<() => void>() })
+    controller.attempts.set('ip:limited', entry(config.authAttempts.max))
+    const reserved = entry(0, config.authAttempts.ipPendingMax)
+    controller.attempts.set('ip:reserved', reserved)
+    controller.attempts.set('ip:ordinary-old', entry())
+    controller.attempts.set('ip:ordinary-next', entry())
+    for (let i = 0; i < 9_996; i++) controller.attempts.set(`ip:filler-${i}`, entry())
+
+    const fresh = await controller.attempt({ ip: 'fresh' }, 'member')
+    fresh.release()
+
+    expect(controller.attempts.size).toBe(10_000)
+    expect(controller.attempts.has('ip:ordinary-old')).toBe(false)
+    expect(controller.attempts.has('ip:ordinary-next')).toBe(false)
+    expect(controller.attempts.get('ip:reserved')).toBe(reserved)
+    await expect(controller.attempt({ ip: 'limited' }, 'other')).rejects.toMatchObject({ status: 429 })
+    await expect(controller.attempt({ ip: 'reserved' }, 'other')).rejects.toMatchObject({ status: 429 })
+  })
+
+  it('축출 가능한 기록이 없으면 새 키만 429로 거부하고 기존 키는 처리한다', async () => {
+    const controller = app.get(AuthController) as unknown as {
+      attempt: (req: { ip: string }, loginId: string) => Promise<{ release: () => void }>
+      attempts: Map<string, { count: number; pending: number; until: number; waiters: Set<() => void> }>
+    }
+    const entry = (count: number, pending: number) => ({ count, pending, until: Date.now() + config.authAttempts.windowMs, waiters: new Set<() => void>() })
+    controller.attempts.set('ip:existing', entry(0, 1))
+    controller.attempts.set('id:existing:member', entry(0, 1))
+    for (let i = 0; i < 9_998; i++) controller.attempts.set(`ip:limited-${i}`, entry(config.authAttempts.max, 0))
+
+    await expect(controller.attempt({ ip: 'new-client' }, 'member')).rejects.toMatchObject({ status: 429 })
+    const existing = await controller.attempt({ ip: 'existing' }, 'member')
+    existing.release()
+    expect(controller.attempts.size).toBe(10_000)
   })
 })

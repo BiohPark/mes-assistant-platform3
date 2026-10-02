@@ -13,10 +13,11 @@ import { USER_DIRECTORY, type UserDirectory } from './users.service.js'
 const PENDING_COOKIE = 'mes_oidc'
 const dummyHash = hashPassword('dummy')
 const MAX_ATTEMPT_ENTRIES = 10_000
+type AttemptEntry = { count: number; pending: number; until: number; waiters: Set<() => void> }
 
 @Controller()
 export class AuthController {
-  private readonly attempts = new Map<string, { count: number; until: number }>()
+  private readonly attempts = new Map<string, AttemptEntry>()
   private nextAttemptSweep: number
   constructor(
     @Inject(CONFIG) private readonly config: AppConfig,
@@ -39,26 +40,99 @@ export class AuthController {
     }
   }
 
-  private attempt(req: Request, loginId: string) {
+  private async attempt(req: Request, loginId: string) {
     const now = Date.now()
     if (now >= this.nextAttemptSweep) {
-      for (const [key, value] of this.attempts) if (value.until <= now) this.attempts.delete(key)
+      for (const [key, value] of this.attempts) if (value.until <= now && !value.pending) this.attempts.delete(key)
       this.nextAttemptSweep = now + this.config.authAttempts.windowMs
     }
     const ip = req.ip ?? req.socket.remoteAddress ?? ''
     const keys = [`ip:${ip}`, `id:${ip}:${loginId}`]
-    const prior = keys.map((key) => {
+    const current = (key: string) => {
+      const checkedAt = Date.now()
       const value = this.attempts.get(key)
-      if (value && value.until <= now) { this.attempts.delete(key); return undefined }
+      if (value && value.until <= checkedAt) {
+        if (!value.pending) { this.attempts.delete(key); return undefined }
+        value.count = 0
+        value.until = checkedAt + this.config.authAttempts.windowMs
+      }
       return value
-    })
-    if (prior.some((value) => value && value.count >= this.config.authAttempts.max) ||
-      this.attempts.size + prior.filter((value) => !value).length > MAX_ATTEMPT_ENTRIES) {
-      throw new HttpException('시도가 너무 많습니다. 잠시 후 다시 시도하세요.', 429)
     }
-    keys.forEach((key, index) => this.attempts.set(key, { count: (prior[index]?.count ?? 0) + 1,
-      until: prior[index]?.until ?? now + this.config.authAttempts.windowMs }))
-    return () => { for (const key of keys) this.attempts.delete(key) }
+    const tooMany = () => new HttpException('시도가 너무 많습니다. 잠시 후 다시 시도하세요.', 429)
+    const reserve = (key: string, value: AttemptEntry | undefined) => {
+      if (!value) {
+        if (this.attempts.size >= MAX_ATTEMPT_ENTRIES) {
+          const checkedAt = Date.now()
+          for (const [oldest, evicted] of this.attempts.entries()) {
+            if (evicted.pending || (evicted.until > checkedAt && evicted.count >= this.config.authAttempts.max)) continue
+            this.attempts.delete(oldest)
+            for (const wake of evicted.waiters) wake()
+            evicted.waiters.clear()
+            break
+          }
+          if (this.attempts.size >= MAX_ATTEMPT_ENTRIES) throw tooMany()
+        }
+        value = { count: 0, pending: 0, until: Date.now() + this.config.authAttempts.windowMs, waiters: new Set() }
+        this.attempts.set(key, value)
+      }
+      value.pending++
+      return value
+    }
+    const ipPrior = current(keys[0]!)
+    if ((ipPrior?.count ?? 0) >= this.config.authAttempts.max || (ipPrior?.pending ?? 0) >= this.config.authAttempts.ipPendingMax) throw tooMany()
+    const ipEntry = reserve(keys[0]!, ipPrior)
+    let idEntry: AttemptEntry
+    try {
+      while (true) {
+        const prior = current(keys[1]!)
+        if ((current(keys[0]!)?.count ?? 0) >= this.config.authAttempts.max || (prior?.count ?? 0) >= this.config.authAttempts.max) throw tooMany()
+        if ((prior?.count ?? 0) + (prior?.pending ?? 0) < this.config.authAttempts.max) {
+          idEntry = reserve(keys[1]!, prior)
+          break
+        }
+        await new Promise<void>((resolve) => { prior!.waiters.add(resolve) })
+      }
+    } catch (error) { ipEntry.pending--; throw error }
+    let released = false
+    const release = () => {
+      if (released) return
+      released = true
+      ipEntry.pending--
+      idEntry.pending--
+      for (const wake of idEntry.waiters) wake()
+      idEntry.waiters.clear()
+    }
+    return {
+      failed: () => {
+        release()
+        const failedAt = Date.now()
+        const priorIp = current(keys[0]!)
+        const priorId = current(keys[1]!)
+        if ((priorIp?.count ?? 0) >= this.config.authAttempts.max || (priorId?.count ?? 0) >= this.config.authAttempts.max) throw tooMany()
+        keys.forEach((key) => {
+          let value = this.attempts.get(key)
+          if (value && value.until <= failedAt) {
+            value.count = 0
+            value.until = failedAt + this.config.authAttempts.windowMs
+          }
+          if (!value) {
+            value = reserve(key, undefined)
+            value.pending--
+            value.until = failedAt + this.config.authAttempts.windowMs
+          }
+          value.count++
+        })
+      },
+      succeeded: () => {
+        release()
+        const idAttempt = this.attempts.get(keys[1]!)
+        if (idAttempt === idEntry) {
+          idAttempt.count = 0
+          if (!idAttempt.pending) this.attempts.delete(keys[1]!)
+        }
+      },
+      release,
+    }
   }
 
   private async respondWithSession(user: { id: string; name: string; role: string; isSystemOwner: boolean; isBusinessOwner?: boolean; mustChangePassword?: boolean }, res: Response): Promise<Me> {
@@ -79,12 +153,14 @@ export class AuthController {
     const parsed = CredentialsSchema.safeParse(body)
     if (!parsed.success) throw new BadRequestException('ID 또는 비밀번호 형식이 올바르지 않습니다')
     const { loginId, password } = parsed.data
-    const clearAttempt = this.attempt(req, loginId)
-    if (await this.users.findByLoginId(loginId)) throw new ConflictException('이미 사용 중인 ID입니다')
-    const user = await this.users.createLocal(loginId, await hashPassword(password))
-    if (!user) throw new ConflictException('이미 사용 중인 ID입니다')
-    clearAttempt()
-    return this.respondWithSession(user, res)
+    const attempt = await this.attempt(req, loginId)
+    try {
+      if (await this.users.findByLoginId(loginId)) { attempt.failed(); throw new ConflictException('이미 사용 중인 ID입니다') }
+      const user = await this.users.createLocal(loginId, await hashPassword(password))
+      if (!user) { attempt.failed(); throw new ConflictException('이미 사용 중인 ID입니다') }
+      attempt.succeeded()
+      return this.respondWithSession(user, res)
+    } finally { attempt.release() }
   }
 
   @Post('auth/login')
@@ -96,15 +172,18 @@ export class AuthController {
     const parsed = CredentialsSchema.safeParse(body)
     if (!parsed.success) throw new BadRequestException('ID 또는 비밀번호 형식이 올바르지 않습니다')
     const { loginId, password } = parsed.data
-    const clearAttempt = this.attempt(req, loginId)
-    const found = await this.users.findByLoginId(loginId)
-    if (!found || !found.active) {
-      await verifyPassword(password, await dummyHash)
-      throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다')
-    }
-    if (!await verifyPassword(password, found.hash)) throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다')
-    clearAttempt()
-    return this.respondWithSession(found.user, res)
+    const attempt = await this.attempt(req, loginId)
+    try {
+      const found = await this.users.findByLoginId(loginId)
+      if (!found || !found.active) {
+        await verifyPassword(password, await dummyHash)
+        attempt.failed()
+        throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다')
+      }
+      if (!await verifyPassword(password, found.hash)) { attempt.failed(); throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다') }
+      attempt.succeeded()
+      return this.respondWithSession(found.user, res)
+    } finally { attempt.release() }
   }
 
   @Get('auth/login')

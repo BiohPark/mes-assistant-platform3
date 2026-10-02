@@ -107,6 +107,15 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 
 ## 6. 진행 현황
 
+### 완료 — S5 (2026-10-02, `main` 병합 · 태그 `s5-done`)
+
+- ① 배포(`s5-deploy`): api 단일 포트 정적 제공·`pnpm release` 묶음(링크 0)·WinSW v2.12·Windows 운영 절차(중지 → 백업 → 교체), CI가 Windows에서 묶음 복사본 기동 검증. Windows 전용 결함 2건(심볼릭 링크, 8.3 짧은 이름 realpath)
+- ② 비기능(`s5-nonfunctional`): PRD §6 값 설정화, 동시 응답 상한 20, 보안 헤더·CSP, 세션 만료, 시도 제한, 감사 기록 보호, 리포트 조회 필터·인덱스(0003), 규모 시드 측정(주요 화면 p50 ≤ 535 ms), 번들 분할
+- ③ 이관 도구(`s5-import-tool`): `pnpm db:import` — 데모 백업 v1–3, 멱등·조용한 손실 금지·번호 재발급·dry-run. 리뷰 6회
+- ④ Windows CI(`s5-windows-ci`): windows E2E 잡, 첫 메시지 표시 결함·시도 제한 동시성 결함 수정
+- 검증(④ 기준): 단위 323+ · DB 169(MariaDB 11.8·10.4) · E2E mock·live·windows · CI 8잡. 대응표 ⬜ 0
+- **남은 것(사용자)**: 사내 Windows 서버 WinSW 설치·`TRUST_PROXY` 판단, 데모 백업 이관 dry-run, 사내 OpenWebUI 연동(D31)·모델 function calling 확인, GMP 보존 기준(1년 정리)
+
 ### 완료 — S4 (2026-10-02, `main` 병합 · 태그 `s4-done`)
 
 - ① 관리·설정·권한(`s4-admin`, 7738b41): 에이전트 관리 API·화면(SO 서버 강제, revision 충돌, 삭제 보호, 이미지), 전역 설정, 코드 관리, SO·BO·활성 지정, 비밀번호 변경·임시 비밀번호(마이그레이션 0001). 리뷰 반영
@@ -156,7 +165,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 | S4 | 코드 관리 화면·API(SO), SO·BO 지정 화면 — DDL은 S2 ①에서(D36·D37) | PRD FR-63 |
 | **남은 위험** | ① ~~실제 Windows 실기 미확인~~ → 사내 Windows PC에서 MariaDB 11.8 설치·앱 동작 확인(사용자, 2026-10-01) ② 실제 사내 OpenWebUI 미확인 — 이 Mac에서 사내 OpenWebUI 접속 가능 여부가 S1 첫 관문, 막히면 S2 이후 계획이 바뀐다 | KI-4 · [real-env-verification.md](evaluation/real-env-verification.md) |
 | ~~DB 전환~~ 병합 완료 | D40. `feat/db-mariadb` → `main` 병합(`1eb0335`), 태그 `db-mariadb-done`. 되돌림 기준점 태그 `pre-mariadb`(PostgreSQL 마지막 상태). 검증: 단위 232 · DB 85(11.8 3회 연속·10.4) · E2E mock 10·live 11, 구조 대조 일치, codex-critic 스키마 리뷰 4건·코드 리뷰 3건 반영, CI 7잡 녹색(Windows 설치 가이드 잡이 MariaDB 11.8 MSI로 설치·마이그레이션·DB 테스트까지 실행). **사내 PC 실기 확인 완료(2026-10-01, MariaDB 11.8 설치·동작 — 사용자)**. 남은 확인: macOS Homebrew 경로 | tasks/db-mariadb · [db-mariadb-plan.md](next-project/db-mariadb-plan.md) |
-| ~~진행(S3·S4)~~ 완료 | S3 `s3-done`(D39). S4 `s4-done`(D41) — ①~⑤ 모두 `main` 병합(위 "완료 — S4"). **진행(S5)** — D43 확정(2026-10-02). ① `s5-deploy` 완료·병합(a51ff5e — 정적 제공·`pnpm release`·WinSW·Windows 배포 절차, CI가 Windows 묶음 기동 검증. 리뷰 7건 반영 + Windows에서만 드러난 결함 2건: 묶음 심볼릭 링크, 8.3 짧은 이름 realpath) → ② `s5-nonfunctional` 완료(동시 응답 상한·보안 헤더·세션 만료·시도 제한·감사 보호·리포트 조회 필터·번들 분할, 규모 시드 측정 — 대화 상세 화면 API 합계 p50 535 ms·첫 실행 max 1.36 s(콜드), 나머지 ≤ 335 ms) → ③ import-tool(대응표 마지막 ⬜) → ④ windows-ci | tasks/s4-* · [S4-kickoff.md](next-project/S4-kickoff.md) |
+| ~~진행(S3·S4)~~ 완료 | S3 `s3-done`(D39). S4 `s4-done`(D41) — ①~⑤ 모두 `main` 병합(위 "완료 — S4"). **진행(S5)** — D43 확정(2026-10-02). ① `s5-deploy` 완료·병합(a51ff5e — 정적 제공·`pnpm release`·WinSW·Windows 배포 절차, CI가 Windows 묶음 기동 검증. 리뷰 7건 반영 + Windows에서만 드러난 결함 2건: 묶음 심볼릭 링크, 8.3 짧은 이름 realpath) → ② `s5-nonfunctional` 완료(동시 응답 상한·보안 헤더·세션 만료·시도 제한·감사 보호·리포트 조회 필터·번들 분할, 규모 시드 측정 — 대화 상세 화면 API 합계 p50 535 ms·첫 실행 max 1.36 s(콜드), 나머지 ≤ 335 ms) → ③ `s5-import-tool` 완료·병합(333bd99 — 데모 백업 이관 CLI, 대응표 ⬜ 0. 리뷰 6회·구현 7차: 부분 ID 충돌, 서버 시드와 같은 ID, 번호 중복, 태그 키, v1 보충 등 실제 백업에서만 드러나는 결함을 실제 데모 시드 fixture(실명 가상화)로 고정) → ④ `s5-windows-ci` 완료(CI windows E2E 잡, 첫 메시지 표시 간헐 결함·시도 제한 동시성 결함 수정). **S5 완료(`s5-done`)** — 기능 개발 단계 종료, 대응표 ⬜ 0. 다음: 사용자 사내 실기(WinSW 서비스 설치·데모 백업 이관·사내 OpenWebUI 연동·function calling 확인) 결과에 따른 보정 | tasks/s4-* · [S4-kickoff.md](next-project/S4-kickoff.md) |
 | ~~대조 검증 후속~~ 완료 | 최초 계획·데모 대조 감사(2026-10-01, codex-critic — 결함 10건, FR 판정표, 대응표 ✅ 93행 전수, 데모 테스트 161건 대응) → 즉시 수정 6건 `fix/s3-audit` 병합: 새 대화 첫 입력을 AI 요청으로(컴포저 기본 AI, 멱등 키 보존·재접속, 첨부 실패 시 대화 유지), 요청 크기 = 실제 전송 본문(로컬 파일 ID 기준, 추정=기록=한도), 말풍선 첨부 표시, 요청 기록 JSON 첨부 정보, 자료함 정렬, 기록에 참조 대화 모드, E2E 깊이 복원(가짜 OpenWebUI 수신 본문 검사). D-05는 S4 ①에서 해결 | tasks/plan-demo-audit · tasks/s3-audit-fixes |
 | ~~S1 ②~~ 병합 완료 | 서버 대리 호출 기반 `feat/s1-llm-proxy` — `LLM_MODE`·`LLM_PRESET`(openwebui/openai-compatible)·`GET /api/llm/models`·`/status`, `LlmPorts` DB 어댑터 1차, `FileStorageService`(realpath 루트·내부 링크 거부), 웹 모델 목록·SO 배지. codex-critic 4건+누락 1건 반영. 검증 단위 165·DB 15·E2E 2, CI 5/5(Windows 8.3 경로·CI 환경 의존 2건 수정 후). **OpenAI 실키 수동 확인은 사용자 키 필요** | tasks/s1-llm-proxy |
 | ~~S1 ①~~ 병합 완료 | 앱 자체 로그인·회원가입(D34) `feat/s1-auth-local` — codex-main 구현 + codex-critic 리뷰 4건 반영. 검증 단위 142·DB 9·E2E 2. CI 녹색 확인 후 `main` 병합(사용자 승인) | tasks/s1-auth-local · [요구사항 검토](status/requirements-review-2026-09-28.md) |
@@ -200,6 +209,7 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 - **시스템 assistant는 제안만(S4 ⑤)**: 모델의 도구 호출은 서버가 `toolCalls`로 돌려줄 뿐 실행하지 않는다. 적용은 웹에서 사용자가 "적용"을 누른 뒤 기존 API를 같은 권한으로 호출하는 경로 하나뿐 — 서버에서 도구를 직접 실행하는 코드를 추가하지 말 것. 도구 인자는 `packages/contracts`의 도구별 스키마로 검증하고 카드에 적용 인자를 전부 보여 준다(프롬프트 주입으로 바뀐 값을 사람이 보게). 서랍 이력은 클라이언트 메모리에만 있고 요청 기록도 남기지 않는다(D3-2).
 - **E2E 병렬 부하와 로드 전 클릭**: 스펙이 늘수록 API가 느려져 "목록이 로드되기 전에 버튼을 누르는" 경합이 표면화된다(관리 화면 순서 편집 60 s 타임아웃). 화면은 로드 전 동작 버튼을 비활성화하고, 스펙은 목록 표시를 기다린 뒤 누른다. 5 s 기본 대기가 부족한 live 단계는 15 s.
 - **Windows에서만 깨지는 것(S5 ①)**: ① `pnpm deploy` 기본 결과물은 심볼릭 링크 구조라 복사하면 `ERR_MODULE_NOT_FOUND` — 배포 묶음은 hoisted 링커로 링크 0개(`verify-release`가 검사). ② `fs.realpathSync`(JS 구현)는 8.3 짧은 이름(`RUNNER~1`)을 유지하고 `fs.promises.realpath`·`realpathSync.native`는 긴 이름으로 푼다 — 경로 포함 판정은 **같은 구현**으로 구한 경로끼리. 둘 다 macOS에서는 재현되지 않아 CI windows 잡이 유일한 관문이다.
+- **이관 도구는 "실제 백업 × 시드된 서버"로 먼저 시험(S5 ③)**: 가상 최소 fixture로는 통과해도 실제 데모 백업은 서버 시드와 같은 에이전트 ID·같은 업무 번호(`WK-2026-0001`)·빈 소유자·대문자 태그를 가진다. 규칙: 카탈로그는 서버 값 유지(참조), 콘텐츠는 하위까지 대조해 다르면 중단, 번호는 재발급, 태그 키는 `tagKey`. fixture는 `apps/api/src/db/fixtures/demo-v3.json`(데모 시드에서 만들고 이름을 가상화 — 공개 저장소).
 
 
 ## 8. 다음 세션 시작 체크리스트

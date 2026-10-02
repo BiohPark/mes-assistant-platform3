@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import cookieParser from 'cookie-parser'
-import type { Request, Response, NextFunction } from 'express'
+import type { Express, Request, Response, NextFunction } from 'express'
 import { eq } from 'drizzle-orm'
 import { SESSION_COOKIE, SESSION_STORE, type SessionStore } from './auth/session.service.js'
 import type { AppConfig } from './config/config.js'
@@ -12,6 +12,7 @@ import { appSetting } from './db/schema.js'
 
 /** main.ts와 테스트가 같은 설정으로 앱을 꾸민다 */
 export function configureApp<T extends INestApplication>(app: T, config: AppConfig): T {
+  (app.getHttpAdapter().getInstance() as Express).set('trust proxy', config.trustProxy)
   app.setGlobalPrefix('api')
   app.use((_req: Request, res: Response, next: NextFunction) => {
     res.setHeader('X-Content-Type-Options', 'nosniff')

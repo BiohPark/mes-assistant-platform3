@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { addTag, appendMessage, listTasks, setTaskStatus, setTaskTitle, startConversation } from './tasks'
+import { addTag, appendMessage, getMessages, listTasks, setTaskStatus, setTaskTitle, startConversation } from './tasks'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -28,4 +28,12 @@ it('encodes shared list filters in the URL', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => { seen = url; return new Response('[]', { status: 200 }) }))
   await listTasks({ assistantId: 'a', status: ['done'], tags: ['a b'], mine: true })
   expect(seen).toBe('/api/tasks?assistantId=a&status%5B%5D=done&tag%5B%5D=a+b&mine=true')
+})
+
+it('passes the message query cancellation signal to fetch', async () => {
+  const signal = new AbortController().signal
+  const fetch = vi.fn(async () => new Response('[]', { status: 200 }))
+  vi.stubGlobal('fetch', fetch)
+  await getMessages('thread', signal)
+  expect(fetch).toHaveBeenCalledWith('/api/threads/thread/messages', expect.objectContaining({ signal }))
 })

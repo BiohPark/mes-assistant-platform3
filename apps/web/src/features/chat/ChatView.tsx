@@ -29,7 +29,7 @@ export function ChatView({ task, assistant }: { task: Task; assistant?: Assistan
   const [infoId, setInfoId] = useState<string | null>(null)
   const [retryChoice, setRetryChoice] = useState<{ record: RequestRecord; mode: 'exclude' | 'inline' } | null>(null)
   const chat = useChat(task.threadId)
-  const messages = useQuery({ queryKey: ['messages', task.threadId], queryFn: () => getMessages(task.threadId!), enabled: !!task.threadId,
+  const messages = useQuery({ queryKey: ['messages', task.threadId], queryFn: ({ signal }) => getMessages(task.threadId!, signal), enabled: !!task.threadId,
   })
   const remoteRequestId = messages.data?.find((item) => item.status === 'streaming' && item.requestId !== chat.run?.requestId)?.requestId
   const remoteRequest = useQuery({ queryKey: ['request', remoteRequestId], queryFn: () => getRequest(remoteRequestId!), enabled: !!remoteRequestId })

@@ -26,7 +26,7 @@ export function SrIntakePage() {
   const [busy, setBusy] = useState(false)
   const [convert, setConvert] = useState(false)
   const selected = useQuery({ queryKey: ['sr', selectedId], queryFn: () => getSr(selectedId), enabled: !!selectedId }).data
-  const { data: messages = [] } = useQuery({ queryKey: ['messages', selected?.threadId], queryFn: () => getMessages(selected!.threadId), enabled: !!selected?.threadId })
+  const { data: messages = [] } = useQuery({ queryKey: ['messages', selected?.threadId], queryFn: ({ signal }) => getMessages(selected!.threadId, signal), enabled: !!selected?.threadId })
   const chat = useChat(selected?.threadId)
   const refresh = () => { void client.invalidateQueries({ queryKey: ['sr'] }); void client.invalidateQueries({ queryKey: ['messages', selected?.threadId] }) }
   async function create() { try { const sr = await createSr(); setSelectedId(sr.id); refresh() } catch (error) { toast.error(String(error)) } }

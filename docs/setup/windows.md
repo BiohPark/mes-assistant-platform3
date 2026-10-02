@@ -274,7 +274,7 @@ IIS를 TLS 앞단으로 둘 때만 ARR 리버스 프록시가 전체 요청을 �
 
 ### 운영 값과 기록 보관 (S5 ②, D43)
 
-비기능 기본값은 PRD §6 제안값이며 모두 `.env`로 조정한다: 파일당 `FILE_MAX_BYTES`(50 MB)·요청당 첨부 `FILE_MAX_PER_REQUEST`(20)·동시 응답 `REQUEST_MAX_ACTIVE`(20, 넘으면 "잠시 후 다시" 429)·세션 `SESSION_TTL_HOURS`·`SESSION_IDLE_HOURS`(12)·로그인/가입 시도 제한 `AUTH_ATTEMPT_MAX`/`AUTH_ATTEMPT_WINDOW_MS`(10회/10분, 인스턴스 메모리).
+비기능 기본값은 PRD §6 제안값이며 모두 `.env`로 조정한다: 파일당 `FILE_MAX_BYTES`(50 MB)·요청당 첨부 `FILE_MAX_PER_REQUEST`(20)·동시 응답 `REQUEST_MAX_ACTIVE`(20, 넘으면 "잠시 후 다시" 429)·세션 `SESSION_TTL_HOURS`·`SESSION_IDLE_HOURS`(12)·로그인/가입 시도 제한 `AUTH_ATTEMPT_MAX`/`AUTH_ATTEMPT_WINDOW_MS`(실패 10회/10분, 인스턴스 메모리). IIS를 앞단에 두면 모든 요청이 프록시 주소로 보이므로 `TRUST_PROXY`에 **IIS 주소**(같은 서버면 `127.0.0.1`)를 지정해 사용자 IP를 쓰게 하고, IIS가 클라이언트가 보낸 `X-Forwarded-For`를 덮어쓰게 설정한다. 이때 API 포트(`API_PORT`)는 Windows 방화벽으로 외부 접근을 막는다 — 직접 접속이 열려 있으면 위조한 헤더로 시도 제한을 우회할 수 있다. 홉 수(`1`) 지정은 직접 접속이 막힌 경우에만 쓴다. `true`(모두 신뢰)는 거부되며 직접 노출 시에는 `false` 유지.
 
 활동 이력·요청 기록은 추가만 된다(앱에 수정·삭제 경로 없음). 요청 원본 JSON은 GMP 보존 기준이 확정되기 전까지 **자동 삭제하지 않는다**(D43 S5-4). 기준이 정해지면 서비스를 멈추고 DB를 백업한 뒤 수동으로 정리한다 — 대상은 종료 후 1년이 지난 요청의 `chat_request.snapshot` 값과, 그 JSON이 가리키는 `FILE_STORAGE_ROOT\requests\YYYY\MM\*.json` 파일이다. 먼저 대상을 확인한다:
 

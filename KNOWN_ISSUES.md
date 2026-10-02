@@ -6,7 +6,7 @@
 |---|---|---|---|
 | KI-1 | (OIDC 모드만) 로그아웃은 앱 세션만 끝낸다(IdP 세션 유지). `/logged-out`에서 "다시 로그인"을 누르면 비밀번호 없이 다시 들어간다. 기본 `local` 모드에는 해당 없음 | 공용 PC에서 IdP 로그아웃 필요 | SSO 연계 페이즈에 단일 로그아웃 지원 여부 확인 후(architecture §5 체크리스트 6) RP-initiated logout 추가 |
 | ✅ KI-2 | 요청자(requester) 역할 저장 → `app_user.is_business_owner`(D37, S2 ①)로 해결. 지정 화면은 S4 | — | 해결 (2026-09-28) |
-| KI-6 | CI의 E2E 잡은 Ubuntu(compose)에서만 돈다 — Windows 러너 E2E 없음. Windows 실기 확인은 사용자 몫 | Windows 전용 브라우저·경로 차이 미검출 | S5 배포 점검 때 Windows PC에서 `pnpm test:e2e` 1회 |
+| ✅ KI-6 | CI E2E가 Ubuntu에서만 돌던 문제 → `E2E (windows, mock)` 잡 추가(docker 없이 MariaDB 11.8 직접 설치). 사내 Windows 서버 실기 확인은 사용자 몫으로 남음 | — | 해결 (2026-10-02, s5-windows-ci) |
 | ✅ KI-7 | 컴포저의 첨부 개수 사전 검사가 contracts 기본값 20 고정이던 문제 → 추정 API의 `attachmentLimit`(서버 설정값)을 컴포저가 사용(S3 ③·S4 ①) | — | 해결 (2026-10-01) |
 | ✅ KI-8 | `/api/events` SSE는 단일 인스턴스 메모리 버스 — **단일 인스턴스 전제로 확정(D43 S5-7)**, IIS 앞단 시 응답 버퍼링 끄기·유휴 시간 설정을 [windows.md](docs/setup/windows.md) 운영 배포 절에 문서화. 다중 인스턴스가 필요해지면 DB/Redis 브로드캐스터(후속) | — | 문서로 해결 (2026-10-02, s5-deploy) |
 | KI-9 | `/api/reports`는 기간·사용자 조건을 조회 단계에서 적용하고 전체 기간 활동은 필요한 3종 이벤트·열만 읽는다(S5 ②). 그래도 업무·파일·SR 목록은 전량 읽어 집계한다 — 규모 시드(대화 1,000·파일 10,000)에서 p50 284 ms | 수년치 누적 후 응답 지연 | 운영 1년 뒤 재측정(`scripts/measure-queries.mjs`), 넘으면 DB 집계로 이관 |

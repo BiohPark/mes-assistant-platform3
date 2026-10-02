@@ -19,7 +19,10 @@ export function applyEvent(query: QueryClient, event: string, data: Record<strin
     if (taskId) { invalidate(['task', taskId]); invalidate(['activity', taskId]); invalidate(['notes', taskId]); invalidate(['task-report-preview', taskId]) }
   }
   if (event === 'message.appended' || event === 'request.updated') {
-    if (threadId) invalidate(['messages', threadId])
+    if (threadId) {
+      void query.cancelQueries({ queryKey: ['messages', threadId] })
+      invalidate(['messages', threadId])
+    }
     if (taskId) { invalidate(['activity', taskId]); invalidate(['task', taskId]) }
     if (requestId) invalidate(['request', requestId])
     invalidate(['tasks']); invalidate(['estimate'])

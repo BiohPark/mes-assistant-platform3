@@ -1,4 +1,4 @@
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import { expect, it, vi } from 'vitest'
 import { applyEvent } from './useEvents'
 
@@ -15,6 +15,21 @@ it('maps live events to affected queries and resyncs all queries', () => {
   invalidate.mockClear()
   applyEvent(query, 'resync', {})
   expect(invalidate).toHaveBeenCalledWith()
+})
+
+it.each(['message.appended', 'request.updated'])('refetches an initially empty message query after %s', async (event) => {
+  const query = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  let finishInitialFetch!: (messages: string[]) => void
+  const initialFetch = new Promise<string[]>((resolve) => { finishInitialFetch = resolve })
+  let fetches = 0
+  const observer = new QueryObserver(query, { queryKey: ['messages', 'h'], queryFn: () => ++fetches === 1 ? initialFetch : Promise.resolve(['첫 메시지']) })
+  const unsubscribe = observer.subscribe(() => undefined)
+  expect(fetches).toBe(1)
+  applyEvent(query, event, { threadId: 'h', taskId: 't' })
+  finishInitialFetch([])
+  await vi.waitFor(() => expect(observer.getCurrentResult().data).toEqual(['첫 메시지']))
+  expect(fetches).toBe(2)
+  unsubscribe()
 })
 
 it.each([

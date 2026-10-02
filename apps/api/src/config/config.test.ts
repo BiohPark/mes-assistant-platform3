@@ -20,9 +20,18 @@ describe('loadConfig', () => {
     expect(c.sessionTtlHours).toBe(12)
     expect(c.sessionIdleHours).toBe(12)
     expect(c.request.maxActive).toBe(20)
-    expect(c.authAttempts).toEqual({ max: 10, windowMs: 600_000 })
+    expect(c.authAttempts).toEqual({ max: 10, windowMs: 600_000, ipPendingMax: 100 })
+    expect(c.trustProxy).toBe(false)
     expect(c.fileMaxBytes).toBe(50 * 1024 * 1024)
     expect(c.fileMaxPerRequest).toBe(20)
+  })
+
+  it('TRUST_PROXY는 false, 홉 수, IP/서브넷 목록만 허용한다', () => {
+    expect(loadConfig({ ...base, TRUST_PROXY: '1' }).trustProxy).toBe(1)
+    expect(loadConfig({ ...base, TRUST_PROXY: '127.0.0.1, 10.0.0.0/8' }).trustProxy).toEqual(['127.0.0.1', '10.0.0.0/8'])
+    expect(loadConfig({ ...base, TRUST_PROXY: 'false' }).trustProxy).toBe(false)
+    expect(() => loadConfig({ ...base, TRUST_PROXY: 'true' })).toThrow(/TRUST_PROXY/)
+    expect(() => loadConfig({ ...base, TRUST_PROXY: 'yes' })).toThrow(/TRUST_PROXY/)
   })
 
   it('기본 local 모드는 OIDC 설정 없이 시작한다', () => {
@@ -46,8 +55,10 @@ describe('loadConfig', () => {
     const c = loadConfig({ ...base, SESSION_IDLE_HOURS: '2', REQUEST_MAX_ACTIVE: '3', AUTH_ATTEMPT_MAX: '4', AUTH_ATTEMPT_WINDOW_MS: '1000' })
     expect(c.sessionIdleHours).toBe(2)
     expect(c.request.maxActive).toBe(3)
-    expect(c.authAttempts).toEqual({ max: 4, windowMs: 1000 })
+    expect(c.authAttempts).toEqual({ max: 4, windowMs: 1000, ipPendingMax: 100 })
     expect(() => loadConfig({ ...base, REQUEST_MAX_ACTIVE: '0' })).toThrow(/REQUEST_MAX_ACTIVE/)
+    expect(loadConfig({ ...base, AUTH_IP_PENDING_MAX: '25' }).authAttempts.ipPendingMax).toBe(25)
+    expect(() => loadConfig({ ...base, AUTH_IP_PENDING_MAX: '0' })).toThrow(/AUTH_IP_PENDING_MAX/)
   })
 
   it('필수 값이 없거나 세션 비밀이 짧으면 어떤 키인지 알려 준다', () => {
