@@ -146,7 +146,7 @@
 | `settings.ts` | `DEFAULT_USER_ID` `setCurrentUser` | — | — | **제외** — 로그인 사용자 | — |
 | `conversations.test.ts` | 대화 생성·태그·입력 규칙 테스트 | FR-01·02·10 | S2 | 테스트 먼저 이식 | ✅ S2 ②·③(DB 테스트로 이식) |
 | (db) `schema.ts` · `migrations/*` · `seed/*` | Dexie 스키마·시드 | — | S0 | **제외** — Drizzle(✅), 시드는 개발 픽스처로만 | ✅ |
-| (db) `exportImport.ts` (+test) | JSON 내보내기·가져오기(비밀값 제외) | — | S5 | 변경(U7(a): 가져오기만 S5 "데모 데이터 이관 도구"로 · 내보내기는 **제외** — 서버 DB 백업으로 대체) | ⬜ |
+| (db) `exportImport.ts` (+test) | JSON 내보내기·가져오기(비밀값 제외) | — | S5 | 변경(U7(a): 가져오기만 S5 "데모 데이터 이관 도구"로 · 내보내기는 **제외** — 서버 DB 백업으로 대체) | ✅ |
 
 ## 6. `src/domain` (S0 이식 완료 — 61개 테스트)
 
