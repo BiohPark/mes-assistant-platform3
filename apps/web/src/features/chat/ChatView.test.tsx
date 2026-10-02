@@ -3,11 +3,42 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Task } from '@mes/domain'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MeContext } from '@/app/auth'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { ChatView } from './ChatView'
+import { queueFirstRequest } from './useChat'
 
 const toastError = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: toastError } }))
-afterEach(() => { vi.unstubAllGlobals(); toastError.mockClear() })
+afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear() })
+
+it('reloads messages after the first AI request when the initial message fetch returns empty late', async () => {
+  let finishInitialFetch!: (response: Response) => void
+  const initialFetch = new Promise<Response>((resolve) => { finishInitialFetch = resolve })
+  let messageFetches = 0
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/threads/h/messages') {
+      messageFetches++
+      if (messageFetches === 1) return initialFetch
+      return Response.json([
+        { id: 'u', threadId: 'h', seq: 1, role: 'user', content: '첫 AI 질문', status: 'done', createdAt: '2026-09-28T00:00:00.000Z', attachmentIds: [] },
+        { id: 'a', threadId: 'h', seq: 2, role: 'assistant', content: '첫 답변', status: 'done', createdAt: '2026-09-28T00:00:01.000Z', attachmentIds: [] },
+      ])
+    }
+    if (url === '/api/threads/h/requests') {
+      return new Response('event: started\ndata: {"requestId":"r","replyMessageId":"a","userMessageId":"u"}\n\nevent: completed\ndata: {}\n\n', { status: 201 })
+    }
+    return Response.json([])
+  }))
+  queueFirstRequest('h', { content: '첫 AI 질문', attachmentIds: [], oneShotFileIds: [] })
+  const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><TooltipProvider><ChatView task={task} /></TooltipProvider></MeContext></QueryClientProvider>)
+  await waitFor(() => expect(messageFetches).toBe(1))
+  await waitFor(() => expect(sessionStorage.length).toBe(0))
+  finishInitialFetch(Response.json([]))
+  expect(await screen.findByText('첫 AI 질문')).toBeVisible()
+  expect(screen.getByText('첫 답변')).toBeVisible()
+  expect(messageFetches).toBe(2)
+})
 
 it('keeps a discussion draft and shows an error when the message API fails', async () => {
   vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => init?.method === 'POST'

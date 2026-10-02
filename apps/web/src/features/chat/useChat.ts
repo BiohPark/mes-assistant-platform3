@@ -58,6 +58,7 @@ export function useChat(threadId?: string) {
       } finally {
         if (terminal) clear(attempt)
         setRun(null)
+        await query.cancelQueries({ queryKey: ['messages', attempt.threadId] })
         await query.invalidateQueries({ queryKey: ['messages', attempt.threadId] })
         await query.invalidateQueries({ queryKey: ['activity'] })
       }
