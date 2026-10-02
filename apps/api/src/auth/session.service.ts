@@ -37,17 +37,25 @@ export class DbSessionStore implements SessionStore {
   async create(userId: string) {
     const token = randomBytes(32).toString('base64url')
     const expiresAt = new Date(Date.now() + this.config.sessionTtlHours * 3600_000)
-    await this.db.insert(appSession).values({ id: hashToken(token), userId, expiresAt })
+    const idleExpiresAt = new Date(Math.min(expiresAt.getTime(), Date.now() + this.config.sessionIdleHours * 3600_000))
+    await this.db.insert(appSession).values({ id: hashToken(token), userId, expiresAt: idleExpiresAt })
     return { token, expiresAt }
   }
 
   async resolve(token: string): Promise<AuthUser | null> {
     const [row] = await this.db
-      .select({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner, mustChangePassword: appUser.mustChangePassword })
+      .select({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner, mustChangePassword: appUser.mustChangePassword, createdAt: appSession.createdAt })
       .from(appSession)
       .innerJoin(appUser, eq(appUser.id, appSession.userId))
       .where(and(eq(appSession.id, hashToken(token)), gt(appSession.expiresAt, new Date()), eq(appUser.active, true)))
-    return row ?? null
+    if (!row) return null
+    const absoluteExpiry = row.createdAt.getTime() + this.config.sessionTtlHours * 3600_000
+    if (absoluteExpiry <= Date.now()) return null
+    const expiresAt = new Date(Math.min(absoluteExpiry, Date.now() + this.config.sessionIdleHours * 3600_000))
+    const updated = await this.db.update(appSession).set({ expiresAt }).where(and(eq(appSession.id, hashToken(token)), gt(appSession.expiresAt, new Date())))
+    if (!updated[0].affectedRows) return null
+    const { createdAt: _createdAt, ...user } = row
+    return user
   }
 
   async destroy(token: string) {

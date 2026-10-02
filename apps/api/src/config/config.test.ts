@@ -18,6 +18,11 @@ describe('loadConfig', () => {
     expect(c.oidc?.redirectUri).toBe('http://localhost:5173/api/auth/callback')
     expect(c.cookieSecure).toBe(false)
     expect(c.sessionTtlHours).toBe(12)
+    expect(c.sessionIdleHours).toBe(12)
+    expect(c.request.maxActive).toBe(20)
+    expect(c.authAttempts).toEqual({ max: 10, windowMs: 600_000 })
+    expect(c.fileMaxBytes).toBe(50 * 1024 * 1024)
+    expect(c.fileMaxPerRequest).toBe(20)
   })
 
   it('기본 local 모드는 OIDC 설정 없이 시작한다', () => {
@@ -35,6 +40,14 @@ describe('loadConfig', () => {
 
   it('https 앱 주소면 Secure 쿠키', () => {
     expect(loadConfig({ ...base, APP_ORIGIN: 'https://hub.example.com/' }).cookieSecure).toBe(true)
+  })
+
+  it('비기능 설정은 유효한 양수로 조정한다', () => {
+    const c = loadConfig({ ...base, SESSION_IDLE_HOURS: '2', REQUEST_MAX_ACTIVE: '3', AUTH_ATTEMPT_MAX: '4', AUTH_ATTEMPT_WINDOW_MS: '1000' })
+    expect(c.sessionIdleHours).toBe(2)
+    expect(c.request.maxActive).toBe(3)
+    expect(c.authAttempts).toEqual({ max: 4, windowMs: 1000 })
+    expect(() => loadConfig({ ...base, REQUEST_MAX_ACTIVE: '0' })).toThrow(/REQUEST_MAX_ACTIVE/)
   })
 
   it('필수 값이 없거나 세션 비밀이 짧으면 어떤 키인지 알려 준다', () => {

@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Post, Req, Res, UnauthorizedException } from '@nestjs/common'
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, HttpException, Inject, NotFoundException, Post, Req, Res, UnauthorizedException } from '@nestjs/common'
 import { CredentialsSchema, type Me } from '@mes/contracts'
 import type { CookieOptions, Request, Response } from 'express'
 import { CONFIG, type AppConfig } from '../config/config.js'
@@ -15,6 +15,7 @@ const dummyHash = hashPassword('dummy')
 
 @Controller()
 export class AuthController {
+  private readonly attempts = new Map<string, { count: number; until: number }>()
   constructor(
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(OIDC) private readonly oidc: OidcPort,
@@ -36,6 +37,16 @@ export class AuthController {
     }
   }
 
+  private attempt(req: Request, loginId: string) {
+    const now = Date.now()
+    for (const [key, value] of this.attempts) if (value.until <= now) this.attempts.delete(key)
+    const key = `${req.ip ?? req.socket.remoteAddress ?? ''}:${loginId}`
+    const prior = this.attempts.get(key)
+    if (prior && prior.count >= this.config.authAttempts.max) throw new HttpException('시도가 너무 많습니다. 잠시 후 다시 시도하세요.', 429)
+    this.attempts.set(key, { count: (prior?.count ?? 0) + 1, until: prior?.until ?? now + this.config.authAttempts.windowMs })
+    return () => this.attempts.delete(key)
+  }
+
   private async respondWithSession(user: { id: string; name: string; role: string; isSystemOwner: boolean; isBusinessOwner?: boolean; mustChangePassword?: boolean }, res: Response): Promise<Me> {
     const { token, expiresAt } = await this.sessions.create(user.id)
     res.cookie(SESSION_COOKIE, token, this.cookie({ expires: expiresAt }))
@@ -54,9 +65,11 @@ export class AuthController {
     const parsed = CredentialsSchema.safeParse(body)
     if (!parsed.success) throw new BadRequestException('ID 또는 비밀번호 형식이 올바르지 않습니다')
     const { loginId, password } = parsed.data
+    const clearAttempt = this.attempt(req, loginId)
     if (await this.users.findByLoginId(loginId)) throw new ConflictException('이미 사용 중인 ID입니다')
     const user = await this.users.createLocal(loginId, await hashPassword(password))
     if (!user) throw new ConflictException('이미 사용 중인 ID입니다')
+    clearAttempt()
     return this.respondWithSession(user, res)
   }
 
@@ -69,12 +82,14 @@ export class AuthController {
     const parsed = CredentialsSchema.safeParse(body)
     if (!parsed.success) throw new BadRequestException('ID 또는 비밀번호 형식이 올바르지 않습니다')
     const { loginId, password } = parsed.data
+    const clearAttempt = this.attempt(req, loginId)
     const found = await this.users.findByLoginId(loginId)
     if (!found || !found.active) {
       await verifyPassword(password, await dummyHash)
       throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다')
     }
     if (!await verifyPassword(password, found.hash)) throw new UnauthorizedException('ID 또는 비밀번호가 올바르지 않습니다')
+    clearAttempt()
     return this.respondWithSession(found.user, res)
   }
 

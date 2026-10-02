@@ -121,4 +121,12 @@ describe('local 인증 API', () => {
     expect(inactiveVerify).toHaveBeenCalledTimes(1)
     inactiveVerify.mockRestore()
   })
+
+  it.each(['login', 'signup'])('%s은 IP와 ID의 열 번째 실패 다음 시도를 제한한다', async (route) => {
+    const body = { loginId: route === 'login' ? 'missing' : 'member-1', password: 'password-1234' }
+    if (route === 'signup') await request(app.getHttpServer()).post('/api/auth/signup').send(body).expect(201)
+    for (let i = 0; i < 10; i++) await request(app.getHttpServer()).post(`/api/auth/${route}`).send(body).expect(route === 'login' ? 401 : 409)
+    await request(app.getHttpServer()).post(`/api/auth/${route}`).send(body).expect(429)
+    await request(app.getHttpServer()).post(`/api/auth/${route}`).send({ ...body, loginId: 'other-id' }).expect(route === 'login' ? 401 : 201)
+  })
 })

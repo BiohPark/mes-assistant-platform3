@@ -139,6 +139,22 @@ describe('세션·사용자 저장소 (MariaDB)', () => {
     expect(await store.resolve(expired.token)).toBeNull()
   })
 
+  it('유휴 만료는 접속 시 연장하되 절대 만료를 넘지 않는다', async () => {
+    const users = new DbUserDirectory(db, config)
+    const u = await users.upsertFromClaims({ sub: 'idle-user' })
+    const store = new DbSessionStore(db, { ...config, sessionTtlHours: 2, sessionIdleHours: 1 })
+    const { token } = await store.create(u.id)
+    const [initial] = await db.select().from(appSession).where(eq(appSession.userId, u.id))
+    expect(initial!.expiresAt.getTime() - initial!.createdAt.getTime()).toBeLessThanOrEqual(3_600_100)
+    await db.update(appSession).set({ createdAt: new Date(Date.now() - 90 * 60_000), expiresAt: new Date(Date.now() + 1000) }).where(eq(appSession.id, initial!.id))
+    expect(await store.resolve(token)).toMatchObject({ id: u.id })
+    const [extended] = await db.select().from(appSession).where(eq(appSession.id, initial!.id))
+    expect(extended!.expiresAt.getTime() - Date.now()).toBeGreaterThan(29 * 60_000)
+    expect(extended!.expiresAt.getTime() - Date.now()).toBeLessThan(31 * 60_000)
+    await db.update(appSession).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(appSession.id, initial!.id))
+    expect(await store.resolve(token)).toBeNull()
+  })
+
   it('DB SO 부트스트랩은 한 번만 되고 dev-owner 중복 가입은 409', async () => {
     await db.update(appUser).set({ isSystemOwner: false })
     const local = { ...config, authMode: 'local' as const, oidc: undefined, initialSystemOwners: ['dev-owner', 'second-owner'] }
