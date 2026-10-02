@@ -20,6 +20,7 @@
     "dev": "concurrently -k -n api,web \"pnpm --filter @mes/api dev\" \"pnpm --filter @mes/web dev\"",
     "db:migrate": "pnpm --filter \"@mes/api...\" build && pnpm --filter @mes/api db:migrate",
     "db:seed": "pnpm --filter \"@mes/api...\" build && pnpm --filter @mes/api db:seed",
+    "db:import": "pnpm --filter \"@mes/api...\" build && pnpm --filter @mes/api db:import",
     "measure:queries": "node --env-file-if-exists=.env scripts/measure-queries.mjs",
     "test:db": "pnpm --filter @mes/api test:db",
     "test:e2e": "pnpm --filter @mes/e2e test:e2e"

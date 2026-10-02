@@ -1,0 +1,39 @@
+import { describe, expect, it } from 'vitest'
+import { loginIdFor, normalizeBundle, validateBundle } from './import.js'
+
+const at = '2026-09-01T00:00:00.000Z'
+const empty = { format: 'mes-assistant-hub', version: 3, exportedAt: at, tables: {} }
+
+describe('demo bundle import rules', () => {
+  it('accepts only demo format and versions 1–3 with array tables', () => {
+    expect(validateBundle(empty)).toBe(true)
+    expect(validateBundle({ ...empty, version: 4 })).toBe(false)
+    expect(validateBundle({ ...empty, format: 'other' })).toBe(false)
+    expect(validateBundle({ ...empty, tables: { users: {} } })).toBe(false)
+  })
+
+  it('imports v1 package tasks as one task per thread with SR tags and reference inputs', () => {
+    const bundle = normalizeBundle({ ...empty, version: 1, tables: {
+      tasks: [{ id: 'task-a', code: 'WK-2099-0001', title: 'Draft', tags: ['alpha'], inputFileIds: ['file-a'], srIds: ['sr-a'], activeThreadId: 'thread-a', createdAt: at, createdBy: 'user-a' }],
+      threads: [{ id: 'thread-a', taskId: 'task-a', title: 'One', createdAt: at }, { id: 'thread-b', taskId: 'task-a', title: 'Two', createdAt: '2026-09-02T00:00:00.000Z' }],
+      assistants: [{ id: 'urs-analyst', status: 'working' }, { id: 'assistant-a', status: 'working' }],
+      serviceRequests: [{ id: 'sr-a', code: 'SR-2099-0001', title: 'Request' }],
+      packages: [{ id: 'package-a' }],
+    } })
+    expect(bundle.tables.tasks).toMatchObject([
+      { id: 'task-a', threadId: 'thread-a', titleSource: 'manual', tags: ['alpha', 'SR-2099-0001'], inputs: [{ fileId: 'file-a', weight: 'reference' }] },
+      { id: 'task-a_split1', code: 'WK-2099-0001-2', threadId: 'thread-b', inputs: [], outputFileIds: [] },
+    ])
+    expect(bundle.tables.threads?.[1]).toMatchObject({ taskId: 'task-a_split1' })
+    expect(bundle.tables.serviceRequests?.[0]).toMatchObject({ titleSource: 'manual' })
+    expect(bundle.tables.assistants?.[0]).toMatchObject({ status: 'developing', order: 6, expectedInputs: [], expectedOutputs: [] })
+    expect(bundle.tables.assistants?.[1]).toMatchObject({ status: 'developing', level1: '이전 데모', order: 1000, expectedInputs: [], expectedOutputs: [] })
+    expect(bundle.tables.packages).toHaveLength(1)
+  })
+
+  it('generates valid deterministic login IDs and suffixes collisions', () => {
+    const used = new Set(['demo-user-a'])
+    expect(loginIdFor('user-a', 'User A', used)).toBe('demo-user-a-2')
+    expect(loginIdFor('한글', '가상 사용자', used)).toMatch(/^demo-[a-z0-9-]{3,}$/)
+  })
+})
