@@ -530,7 +530,7 @@ export const activityLog = mysqlTable(
     payload: jsonObject('payload').notNull().default(sql`'{}'`),
     at: tz('at').notNull().default(sql`current_timestamp(6)`),
   },
-  (t) => [index('activity_by_task').on(t.taskId, t.at)],
+  (t) => [index('activity_by_task').on(t.taskId, t.at), index('activity_at').on(t.at)],
 )
 
 export const notification = mysqlTable(
