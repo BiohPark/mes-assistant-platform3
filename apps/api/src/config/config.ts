@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { isIP } from 'node:net'
 import { z } from 'zod'
 import { AuthModeSchema, FILE_MAX_PER_REQUEST } from '@mes/contracts'
 
@@ -14,6 +15,21 @@ function isOriginUrl(value: string): boolean {
   } catch { return false }
 }
 
+function parseTrustProxy(value: string): false | number | string[] | undefined {
+  if (value === 'false') return false
+  if (/^(0|[1-9]\d*)$/.test(value)) {
+    const hops = Number(value)
+    return Number.isSafeInteger(hops) ? hops : undefined
+  }
+  const addresses = value.split(',').map((address) => address.trim())
+  if (addresses.every((address) => {
+    const [ip, prefix, extra] = address.split('/')
+    const version = isIP(ip ?? '')
+    return !extra && version !== 0 && (prefix === undefined || /^\d+$/.test(prefix) && Number(prefix) <= (version === 4 ? 32 : 128))
+  })) return addresses
+  return undefined
+}
+
 const EnvSchema = z.object({
   API_PORT: z.coerce.number().int().positive().default(3000),
   APP_ORIGIN: z.url(),
@@ -23,7 +39,8 @@ const EnvSchema = z.object({
   SESSION_IDLE_HOURS: z.coerce.number().positive().default(12),
   AUTH_ATTEMPT_MAX: z.coerce.number().int().positive().default(10),
   AUTH_ATTEMPT_WINDOW_MS: z.coerce.number().int().positive().default(600_000),
-  TRUST_PROXY: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  AUTH_IP_PENDING_MAX: z.coerce.number().int().positive().default(100),
+  TRUST_PROXY: z.string().default('false').transform(parseTrustProxy).refine((value) => value !== undefined, 'TRUST_PROXY는 false, 홉 수 또는 IP/서브넷 목록이어야 합니다'),
   AUTH_MODE: AuthModeSchema.default('local'),
   OIDC_ISSUER: z.string().optional(),
   OIDC_CLIENT_ID: z.string().optional(),
@@ -79,8 +96,8 @@ export function loadConfig(env: Record<string, string | undefined>) {
     sessionSecret: e.SESSION_SECRET,
     sessionTtlHours: e.SESSION_TTL_HOURS,
     sessionIdleHours: e.SESSION_IDLE_HOURS,
-    authAttempts: { max: e.AUTH_ATTEMPT_MAX, windowMs: e.AUTH_ATTEMPT_WINDOW_MS },
-    trustProxy: e.TRUST_PROXY,
+    authAttempts: { max: e.AUTH_ATTEMPT_MAX, windowMs: e.AUTH_ATTEMPT_WINDOW_MS, ipPendingMax: e.AUTH_IP_PENDING_MAX },
+    trustProxy: e.TRUST_PROXY!,
     authMode: e.AUTH_MODE,
     cookieSecure: appOrigin.startsWith('https://'),
     oidc: e.AUTH_MODE === 'oidc' ? {

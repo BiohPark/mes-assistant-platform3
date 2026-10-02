@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 export function ConversationPickerDialog({ taskId, candidate, current, initialMode, onClose }: { taskId: string; candidate: ConversationCandidate;
   current?: LoadedConversationInput; initialMode?: 'full' | 'messages' | 'summary'; onClose: () => void }) {
   const source = useQuery({ queryKey: ['task', candidate.taskId], queryFn: () => getTask(candidate.taskId) })
-  const history = useQuery({ queryKey: ['messages', source.data?.threadId], queryFn: () => getMessages(source.data!.threadId!), enabled: !!source.data?.threadId })
+  const history = useQuery({ queryKey: ['messages', source.data?.threadId], queryFn: ({ signal }) => getMessages(source.data!.threadId!, signal), enabled: !!source.data?.threadId })
   const messages = eligibleMessages(history.data ?? [])
   const [mode, setMode] = useState<'full' | 'messages' | 'summary'>(initialMode ?? current?.snapshot.mode ?? 'full')
   const [picked, setPicked] = useState<string[] | null>(current?.snapshot.mode === 'messages' ? current.snapshot.messageIds : null)

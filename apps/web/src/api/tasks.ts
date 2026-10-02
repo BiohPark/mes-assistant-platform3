@@ -6,8 +6,8 @@ export interface Actor { userId: string }
 export interface StartConversationInput { assistantId: string; ownerId?: string; assigneeIds?: string[]; tags?: string[]; title?: string; referenceTaskId?: string; inputFileIds?: string[]; firstMessage?: string }
 export interface TaskFilter { assistantId?: string; status?: TaskStatus[]; tags?: string[]; mine?: boolean }
 
-async function request<T>(path: string, method = 'GET', body?: unknown, idempotencyKey?: string): Promise<T> {
-  const response = await fetch(`/api${path}`, { method, credentials: 'same-origin', ...(body !== undefined && { headers: { 'content-type': 'application/json', ...(idempotencyKey && { 'Idempotency-Key': idempotencyKey }) }, body: JSON.stringify(body) }) })
+async function request<T>(path: string, method = 'GET', body?: unknown, idempotencyKey?: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`/api${path}`, { method, credentials: 'same-origin', signal, ...(body !== undefined && { headers: { 'content-type': 'application/json', ...(idempotencyKey && { 'Idempotency-Key': idempotencyKey }) }, body: JSON.stringify(body) }) })
   if (!response.ok) throw new Error((await response.json().catch(() => null))?.message ?? `HTTP ${response.status}`)
   return response.status === 204 ? undefined as T : response.json() as Promise<T>
 }
@@ -40,7 +40,7 @@ export async function listTasks(filter: TaskFilter = {}): Promise<Task[]> {
   return request(`/tasks${query.size ? `?${query}` : ''}`)
 }
 export const getTask = (taskId: string) => request<Task>(`/tasks/${encodeURIComponent(taskId)}`)
-export const getMessages = (threadId: string) => request<Message[]>(`/threads/${encodeURIComponent(threadId)}/messages`)
+export const getMessages = (threadId: string, signal?: AbortSignal) => request<Message[]>(`/threads/${encodeURIComponent(threadId)}/messages`, 'GET', undefined, undefined, signal)
 export const getActivity = (taskId: string) => request<ActivityLog[]>(`/tasks/${encodeURIComponent(taskId)}/activity`)
 export const getChecklist = (taskId: string) => request<ChecklistItem[]>(`/tasks/${encodeURIComponent(taskId)}/checklist`)
 export async function addChecklistItem(taskId: string, label: string): Promise<ChecklistItem[]> {

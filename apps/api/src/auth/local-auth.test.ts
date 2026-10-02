@@ -165,6 +165,68 @@ describe('local 인증 API', () => {
     } finally { clearTimeout(timer); release(); find.mockRestore() }
   })
 
+  it.each(['login', 'signup'])('같은 ID의 동시 %s 실패 20건은 최대 10건만 검증한다', async (route) => {
+    if (route === 'signup') await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'member-1', password: 'password-1234' }).expect(201)
+    await app.listen(0)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered = 0
+    const find = vi.spyOn(users, 'findByLoginId').mockImplementation(async (id) => {
+      entered++
+      if (entered === config.authAttempts.max) release()
+      await gate
+      return rows.get(id) ?? null
+    })
+    const timer = setTimeout(release, 1_000)
+    try {
+      const results = await Promise.all(Array.from({ length: 20 }, () => request(app.getHttpServer())
+        .post(`/api/auth/${route}`).send({ loginId: 'member-1', password: 'wrong-password' })))
+      expect(entered).toBe(config.authAttempts.max)
+      expect(results.filter((result) => result.status === (route === 'login' ? 401 : 409))).toHaveLength(config.authAttempts.max)
+      expect(results.filter((result) => result.status === 429)).toHaveLength(10)
+    } finally { clearTimeout(timer); release(); find.mockRestore() }
+  })
+
+  it('서로 다른 ID의 동시 실패 20건은 기본 IP 진행 중 상한 아래에서 통과한다', async () => {
+    await app.listen(0)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered = 0
+    const find = vi.spyOn(users, 'findByLoginId').mockImplementation(async () => {
+      entered++
+      if (entered === 20) release()
+      await gate
+      return null
+    })
+    const timer = setTimeout(release, 1_000)
+    try {
+      const results = await Promise.all(Array.from({ length: 20 }, (_, i) => request(app.getHttpServer())
+        .post('/api/auth/login').send({ loginId: `missing-${i}`, password: 'wrong-password' })))
+      expect(entered).toBe(20)
+      expect(results.filter((result) => result.status === 401)).toHaveLength(config.authAttempts.max)
+      expect(results.filter((result) => result.status === 429)).toHaveLength(10)
+    } finally { clearTimeout(timer); release(); find.mockRestore() }
+  })
+
+  it('설정한 IP 진행 중 상한은 서로 다른 ID에도 적용한다', async () => {
+    await app.close()
+    app = await createTestApp(loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_IP_PENDING_MAX: '3' }))
+    await app.listen(0)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered = 0
+    const find = vi.spyOn(users, 'findByLoginId').mockImplementation(async () => { entered++; await gate; return null })
+    const timer = setTimeout(release, 1_000)
+    try {
+      const active = Array.from({ length: 3 }, (_, i) => request(app.getHttpServer()).post('/api/auth/login')
+        .send({ loginId: `missing-${i}`, password: 'wrong-password' }).then((result) => result))
+      await vi.waitFor(() => expect(entered).toBe(3))
+      await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'missing-fourth', password: 'wrong-password' }).expect(429)
+      release()
+      expect((await Promise.all(active)).map((result) => result.status)).toEqual([401, 401, 401])
+    } finally { clearTimeout(timer); release(); find.mockRestore() }
+  })
+
   it.each(['login', 'signup'])('%s 성공은 다른 ID의 IP 실패 기록을 지우지 않는다', async (route) => {
     if (route === 'login') await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'member-1', password: 'password-1234' }).expect(201)
     for (let i = 0; i < 8; i++) await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: `missing-${i}`, password: 'password-1234' }).expect(401)
@@ -173,13 +235,12 @@ describe('local 인증 API', () => {
     await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'another-id', password: 'password-1234' }).expect(429)
   })
 
-  it('TRUST_PROXY는 전달된 사용자 IP별로 실패를 제한한다', async () => {
+  it('한 프록시 홉만 신뢰하고 더 앞의 위조 X-Forwarded-For는 무시한다', async () => {
     await app.close()
-    app = await createTestApp(loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', TRUST_PROXY: 'true' }))
+    app = await createTestApp(loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', TRUST_PROXY: '1' }))
     const post = (ip: string) => request(app.getHttpServer()).post('/api/auth/login').set('X-Forwarded-For', `${ip}, 10.0.0.1`).send({ loginId: 'missing', password: 'password-1234' })
     for (let i = 0; i < 10; i++) await post('192.0.2.1').expect(401)
-    await post('192.0.2.1').expect(429)
-    await post('192.0.2.2').expect(401)
+    await post('192.0.2.2').expect(429)
   })
 
   it('기본 설정은 X-Forwarded-For를 신뢰하지 않는다', async () => {
@@ -187,19 +248,17 @@ describe('local 인증 API', () => {
     await request(app.getHttpServer()).post('/api/auth/login').set('X-Forwarded-For', '192.0.2.20').send({ loginId: 'missing', password: 'password-1234' }).expect(429)
   })
 
-  it('시도 기록에 상한이 있고 요청마다 전체 기록을 순회하지 않는다', () => {
+  it('시도 기록에 상한이 있고 요청마다 전체 기록을 순회하지 않는다', async () => {
     const controller = app.get(AuthController) as unknown as {
-      attempt: (req: { ip: string }, loginId: string) => { failed: () => void }
+      attempt: (req: { ip: string }, loginId: string) => Promise<{ failed: () => void }>
       attempts: Map<string, { count: number; until: number }>
     }
     const iterator = vi.spyOn(controller.attempts, Symbol.iterator)
-    let denied = 0
     for (let i = 0; i < 5_100; i++) {
-      try { controller.attempt({ ip: `192.0.${Math.floor(i / 256)}.${i % 256}` }, `user-${i}`).failed() }
-      catch (error) { expect(error).toMatchObject({ status: 429 }); denied++ }
+      (await controller.attempt({ ip: `192.0.${Math.floor(i / 256)}.${i % 256}` }, `user-${i}`)).failed()
     }
-    expect(denied).toBeGreaterThan(0)
     expect(controller.attempts.size).toBeLessThanOrEqual(10_000)
     expect(iterator).not.toHaveBeenCalled()
+    await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'new-client', password: 'wrong-password' }).expect(401)
   })
 })
