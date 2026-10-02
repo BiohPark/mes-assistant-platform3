@@ -151,6 +151,8 @@ describe('demo bundle DB import', () => {
       fixture.tables.serviceRequests[0].attachmentIds = ['fixture-sr-file']
       fixture.tables.serviceRequests.push({ id: 'fixture-draft-a', code: '', requesterId: 'fixture-user', title: '', status: 'draft', createdAt: at, updatedAt: at },
         { id: 'fixture-draft-b', code: '', requesterId: 'fixture-user', title: '', status: 'draft', createdAt: at, updatedAt: at })
+      fixture.tables.messages.push({ id: 'sr-assistant-message', threadId: 'fixture-sr-thread', role: 'assistant', content: 'Acknowledged',
+        createdAt: '2026-09-01T00:00:01.000Z' })
       fixture.tables.files.push({ id: 'fixture-sr-file', originSrId: 'fixture-sr', name: 'selected.txt', uploadedBy: 'fixture-user', uploadedAt: at, blobBase64: data.toString('base64') })
       await importBundle(fixture, db, new FileStorageService(root))
       expect((await db.select().from(s.serviceRequest).where(eq(s.serviceRequest.id, 'fixture-draft-a')))[0]?.code).toBeNull()
@@ -158,6 +160,32 @@ describe('demo bundle DB import', () => {
       const attached = await db.select().from(s.messageAttachment).where(eq(s.messageAttachment.fileId, 'fixture-sr-file'))
       expect(attached).toHaveLength(1)
       expect((await db.select().from(s.message).where(eq(s.message.id, attached[0]!.messageId)))[0]?.threadId).toBe('fixture-sr-thread')
+      expect((await db.select().from(s.message).where(eq(s.message.id, attached[0]!.messageId)))[0]).toMatchObject({
+        content: '', seq: 2, authorId: 'fixture-user', createdAt: new Date('2026-09-01T00:00:01.000Z'),
+      })
+      await importBundle(fixture, db, new FileStorageService(root))
+      expect(await db.select().from(s.messageAttachment).where(eq(s.messageAttachment.fileId, 'fixture-sr-file'))).toHaveLength(1)
+    } finally { await pool.end(); await isolated.drop() }
+  })
+
+  it('attaches SR files to the first intake user message without adding a duplicate message', async () => {
+    const isolated = await createTempDb('import_sr_message')
+    const pool = createPool(isolated.url)
+    try {
+      await runMigrations(isolated.url)
+      const db = drizzle(pool)
+      const fixture = structuredClone(base) as any
+      fixture.tables.serviceRequests[0].body = 'Request body'
+      fixture.tables.serviceRequests[0].attachmentIds = ['fixture-sr-file']
+      fixture.tables.messages.push({ id: 'intake-message', threadId: 'fixture-sr-thread', role: 'user', content: 'Request body',
+        authorId: 'fixture-user', createdAt: at })
+      fixture.tables.files.push({ id: 'fixture-sr-file', originSrId: 'fixture-sr', name: 'selected.txt', uploadedBy: 'fixture-user', uploadedAt: at,
+        blobBase64: data.toString('base64') })
+      await importBundle(fixture, db, new FileStorageService(root))
+      expect((await db.select().from(s.message).where(eq(s.message.threadId, 'fixture-sr-thread'))).map((m) => m.id)).toEqual(['intake-message'])
+      expect((await db.select().from(s.messageAttachment).where(eq(s.messageAttachment.fileId, 'fixture-sr-file')))[0]?.messageId).toBe('intake-message')
+      await importBundle(fixture, db, new FileStorageService(root))
+      expect((await db.select().from(s.message).where(eq(s.message.threadId, 'fixture-sr-thread'))).map((m) => m.id)).toEqual(['intake-message'])
     } finally { await pool.end(); await isolated.drop() }
   })
 
@@ -209,7 +237,7 @@ describe('demo bundle DB import', () => {
     } finally { await pool.end(); await isolated.drop() }
   })
 
-  it('rejects different IDs before adding descendants, and skips equal existing parents with all descendants', async () => {
+  it('rejects different IDs and incomplete existing parents, and skips complete reruns', async () => {
     const isolated = await createTempDb('import_collision')
     const pool = createPool(isolated.url)
     try {
@@ -233,13 +261,12 @@ describe('demo bundle DB import', () => {
       same.tables.tasks.push({ id: 'foreign-task', code: 'WK-2099-0999', assistantId: 'foreign-assistant', title: 'Foreign', ownerId: 'fixture-user', createdBy: 'fixture-user', createdAt: at, tags: ['SR-2099-0001'] })
       same.tables.conversationInputs.push({ id: 'foreign-conversation-input', taskId: 'foreign-task', sourceTaskId: 'fixture-source-task',
         weight: 'reference', mode: 'messages', snapshotId: 'fixture-snapshot', selectedBy: 'fixture-user', selectedAt: at })
-      const result = await importBundle(same, db, storage)
-      expect(result.report['messages → message']?.skipped).toBe(4)
-      expect(result.report['tasks → task']).toMatchObject({ imported: 1, skipped: 2 })
-      expect(await db.select().from(s.task).where(eq(s.task.id, 'foreign-task'))).toHaveLength(1)
-      expect((await db.select().from(s.conversationInput).where(eq(s.conversationInput.id, 'foreign-conversation-input')))[0]).toMatchObject({ sourceTaskId: 'fixture-source-task', snapshotId: 'fixture-snapshot' })
+      await expect(importBundle(same, db, storage)).rejects.toThrow(/누락된 하위 행:.*message:foreign-message.*shared_result:foreign-result/)
+      expect(await db.select().from(s.task).where(eq(s.task.id, 'foreign-task'))).toHaveLength(0)
       expect(await db.select().from(s.message).where(eq(s.message.id, 'foreign-message'))).toHaveLength(0)
       expect(await db.select().from(s.sharedResult).where(eq(s.sharedResult.id, 'foreign-result'))).toHaveLength(0)
+      const rerun = await importBundle(base, db, storage)
+      expect(rerun.report['tasks → task']).toMatchObject({ imported: 0, skipped: 2 })
       const messageCollision = { format: 'mes-assistant-hub', version: 3, tables: {
         users: [base.tables.users[0]],
         assistants: [{ id: 'second-assistant', name: 'Second', level1: 'Example', level2: 'Draft', ownerId: 'fixture-user', createdBy: 'fixture-user', status: 'open', createdAt: at, updatedAt: at }],
@@ -249,6 +276,51 @@ describe('demo bundle DB import', () => {
       } }
       await expect(importBundle(messageCollision, db, storage)).rejects.toThrow(/ID 충돌: message:fixture-message-a/)
       expect(await db.select().from(s.thread).where(eq(s.thread.id, 'second-thread'))).toHaveLength(0)
+    } finally { await pool.end(); await isolated.drop() }
+  })
+
+  it('imports files and snapshots whose source task already exists when a new task references them', async () => {
+    const isolated = await createTempDb('import_cross_ref')
+    const pool = createPool(isolated.url)
+    try {
+      await runMigrations(isolated.url)
+      const db = drizzle(pool)
+      const storage = new FileStorageService(root)
+      await importBundle(base, db, storage)
+      const fixture = structuredClone(base) as any
+      fixture.tables.files = [{ id: 'cross-file', originTaskId: 'fixture-source-task', name: 'cross.txt', uploadedBy: 'fixture-user', uploadedAt: at, blobBase64: data.toString('base64') }]
+      fixture.tables.contextSnapshots = [{ id: 'cross-snapshot', sourceTaskId: 'fixture-source-task', mode: 'messages', messageIds: ['fixture-source-message'],
+        createdBy: 'fixture-user', createdAt: at }]
+      fixture.tables.tasks = [{ id: 'cross-task', code: 'WK-2099-0003', assistantId: 'fixture-assistant', title: 'Cross reference', ownerId: 'fixture-user',
+        createdBy: 'fixture-user', createdAt: at, inputs: [{ fileId: 'cross-file', selectedBy: 'fixture-user', selectedAt: at }] }]
+      fixture.tables.conversationInputs = [{ id: 'cross-input', taskId: 'cross-task', sourceTaskId: 'fixture-source-task', weight: 'reference',
+        mode: 'messages', snapshotId: 'cross-snapshot', selectedBy: 'fixture-user', selectedAt: at }]
+      fixture.tables.serviceRequests = []
+      fixture.tables.threads = []
+      fixture.tables.messages = []
+      fixture.tables.notes = []
+      fixture.tables.activity = []
+      await importBundle(fixture, db, storage)
+      expect(await db.select().from(s.fileObject).where(eq(s.fileObject.id, 'cross-file'))).toHaveLength(1)
+      expect(await db.select().from(s.contextSnapshot).where(eq(s.contextSnapshot.id, 'cross-snapshot'))).toHaveLength(1)
+      expect(await db.select().from(s.taskInput).where(eq(s.taskInput.taskId, 'cross-task'))).toHaveLength(1)
+      expect(await db.select().from(s.conversationInput).where(eq(s.conversationInput.id, 'cross-input'))).toHaveLength(1)
+    } finally { await pool.end(); await isolated.drop() }
+  })
+
+  it('uses the earliest tagged SR and reports additional SR links', async () => {
+    const isolated = await createTempDb('import_multi_sr')
+    const pool = createPool(isolated.url)
+    try {
+      await runMigrations(isolated.url)
+      const db = drizzle(pool)
+      const fixture = structuredClone(base) as any
+      fixture.tables.serviceRequests.push({ id: 'older-sr', code: 'SR-2099-0000', requesterId: 'fixture-user', title: 'Older', status: 'submitted',
+        createdAt: '2026-08-01T00:00:00.000Z', updatedAt: at })
+      fixture.tables.tasks[0].tags = ['SR-2099-0001', 'SR-2099-0000']
+      const result = await importBundle(fixture, db, new FileStorageService(root))
+      expect((await db.select().from(s.task).where(eq(s.task.id, 'fixture-task')))[0]?.srId).toBe('older-sr')
+      expect(result.report['tasks.tags → task.sr_id']).toMatchObject({ skipped: 1, reason: '다중 SR 연결 손실' })
     } finally { await pool.end(); await isolated.drop() }
   })
 

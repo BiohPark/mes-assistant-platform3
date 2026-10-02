@@ -3,7 +3,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { drizzle } from 'drizzle-orm/mysql2'
-import { eq, sql } from 'drizzle-orm'
+import { desc, eq, sql } from 'drizzle-orm'
 import type { Db } from './db.module.js'
 import { createPool } from './connection.js'
 import { hashPassword } from '../auth/password.js'
@@ -77,6 +77,7 @@ const id = (value: unknown) => String(value)
 const present = (value: unknown) => value !== undefined && value !== null && value !== ''
 const keyOf = (source: string, target: string) => `${source} → ${target}`
 export type ImportReport = Record<string, { imported: number; skipped: number; reason?: string }>
+export const DEFAULT_IMPORT_BUNDLE_MAX_BYTES = 256 * 1024 ** 2
 const same = (actual: Row, expected: Row) => Object.entries(expected).every(([key, value]) => value === undefined ||
   (value instanceof Date ? new Date(actual[key]).getTime() === value.getTime() :
     typeof value === 'object' && value !== null ? JSON.stringify(actual[key]) === JSON.stringify(value) : (actual[key] ?? null) === (value ?? null)))
@@ -196,14 +197,17 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
         id: id(sr.id), code: sr.code || null, requesterId: id(sr.requesterId), title: String(sr.title ?? ''), titleSource: sr.titleSource ?? (sr.title ? 'manual' : 'default'),
         body: String(sr.body ?? ''), status: sr.status ?? 'draft', submittedAt: date(sr.submittedAt), createdAt: date(sr.createdAt), updatedAt: date(sr.updatedAt),
       }))
-      const srByCode = new Map(rows(b, 'serviceRequests').map((sr) => [sr.code, sr.id]))
+      const srByCode = new Map<string, Row>(rows(b, 'serviceRequests').filter((sr) => sr.code).map((sr) => [String(sr.code), sr]))
+      const linkedSrs = (t: Row) => [...new Map<string, Row>((t.tags ?? []).map((tag: string) => srByCode.get(tag)).filter((sr: Row | undefined): sr is Row => !!sr).map((sr: Row) => [id(sr.id), sr])).values()]
+        .sort((a, c) => String(a.createdAt ?? '').localeCompare(String(c.createdAt ?? '')) || id(a.id).localeCompare(id(c.id)))
       const newTasks = await insert(tx, 'tasks', 'task', s.task, s.task.id, rows(b, 'tasks'), (t) => ({
-        id: id(t.id), code: String(t.code), assistantId: id(t.assistantId), srId: (t.tags ?? []).map((tag: string) => srByCode.get(tag)).find(Boolean), title: String(t.title), titleSource: t.titleSource ?? 'manual',
+        id: id(t.id), code: String(t.code), assistantId: id(t.assistantId), srId: linkedSrs(t)[0]?.id, title: String(t.title), titleSource: t.titleSource ?? 'manual',
         summary: String(t.summary ?? ''), status: t.status ?? 'todo', ownerId: id(t.ownerId), priority: t.priority ?? 'normal',
         dueDate: typeof t.dueDate === 'string' ? t.dueDate.slice(0, 10) : undefined, modelId: t.modelId,
         createdBy: id(t.createdBy), createdAt: date(t.createdAt), lastActivityAt: date(t.lastActivityAt ?? t.createdAt),
         startedAt: date(t.startedAt), completedAt: date(t.completedAt), completedBy: t.completedBy,
       }))
+      for (const t of rows(b, 'tasks')) for (const _ of linkedSrs(t).slice(1)) mark('tasks.tags', 'task.sr_id', false, '다중 SR 연결 손실')
       for (const th of rows(b, 'threads')) if (!!th.taskId === !!th.srId) throw new Error(`threads:${th.id} — taskId 또는 srId 하나가 필요합니다`)
       const taskThreads = children('threads', 'thread', rows(b, 'threads').filter((th) => th.taskId), 'taskId', 'tasks', newTasks)
       const srThreads = children('threads', 'thread', rows(b, 'threads').filter((th) => th.srId), 'srId', 'serviceRequests', newSrs)
@@ -222,14 +226,8 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
       const fileRows = [...rows(b, 'files')].sort((a, c) => Number(a.version ?? 1) - Number(c.version ?? 1))
       const fileIds = await existing(tx, s.fileObject, s.fileObject.id)
       for (const f of fileRows) {
-        if (rows(b, 'assistants').some((a) => a.imageId === f.id && !newAssistants.has(id(a.id)))) {
-          mark('files', 'file_object', false, '상위 행 건너뜀'); continue
-        }
-        if (f.originTaskId && !newTasks.has(id(f.originTaskId)) || f.originSrId && !newSrs.has(id(f.originSrId))) {
-          if (f.originTaskId && !rows(b, 'tasks').some((t) => id(t.id) === id(f.originTaskId)) ||
-            f.originSrId && !rows(b, 'serviceRequests').some((sr) => id(sr.id) === id(f.originSrId))) throw new Error(`files:${f.id} — 상위 행 없음`)
-          mark('files', 'file_object', false, '상위 행 건너뜀'); continue
-        }
+        if (f.originTaskId && !(await existing(tx, s.task, s.task.id)).has(id(f.originTaskId)) ||
+          f.originSrId && !(await existing(tx, s.serviceRequest, s.serviceRequest.id)).has(id(f.originSrId))) throw new Error(`files:${f.id} — 원본 업무 없음`)
         const name = validName(String(f.name ?? ''))
         if (typeof f.blobBase64 !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(f.blobBase64)) throw new Error(`파일 ${f.id}: blobBase64가 올바르지 않습니다`)
         const bytes = Buffer.from(f.blobBase64, 'base64')
@@ -263,10 +261,21 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
         if (!(sr.attachmentIds ?? []).length) continue
         const srThread = rows(b, 'threads').find((th) => th.srId === sr.id)
         if (!srThread || !newThreads.has(id(srThread.id))) throw new Error(`SR ${sr.id}: 접수 대화가 없습니다`)
-        const [last] = await tx.select({ seq: sql<number>`coalesce(max(${s.message.seq}), 0)` }).from(s.message).where(eq(s.message.threadId, id(srThread.id)))
+        const [firstUser] = await tx.select().from(s.message).where(sql`${s.message.threadId} = ${id(srThread.id)} and ${s.message.role} = 'user'`).orderBy(s.message.seq).limit(1)
+        if (firstUser) {
+          for (const fileId of sr.attachmentIds) {
+            const [old] = await tx.select().from(s.messageAttachment).where(sql`${s.messageAttachment.messageId} = ${firstUser.id} and ${s.messageAttachment.fileId} = ${fileId}`)
+            if (!old) await tx.insert(s.messageAttachment).values({ messageId: firstUser.id, fileId: id(fileId) })
+            mark('serviceRequests.attachmentIds', 'message_attachment', !old)
+          }
+          continue
+        }
+        const [last] = await tx.select({ seq: s.message.seq, createdAt: s.message.createdAt }).from(s.message)
+          .where(eq(s.message.threadId, id(srThread.id))).orderBy(desc(s.message.seq)).limit(1)
         const messageId = `${sr.id}:import-attachments`
         const attachmentMessage = await insert(tx, 'serviceRequests.attachmentIds', 'message', s.message, s.message.id, [{ id: messageId, sr, srThread, seq: Number(last?.seq ?? 0) + 1 }], (entry) => ({
-          id: entry.id, threadId: id(entry.srThread.id), seq: entry.seq, role: 'user', kind: 'discussion', content: String(entry.sr.body ?? ''), status: 'done', createdAt: date(entry.sr.createdAt),
+          id: entry.id, threadId: id(entry.srThread.id), seq: entry.seq, role: 'user', kind: 'discussion', content: '', authorId: id(entry.sr.requesterId),
+          status: 'done', createdAt: last?.createdAt ?? date(entry.sr.createdAt),
         }))
         for (const fileId of sr.attachmentIds) {
           if (!attachmentMessage.has(messageId)) { mark('serviceRequests.attachmentIds', 'message_attachment', false, '상위 행 건너뜀'); continue }
@@ -363,8 +372,9 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
         payload: a.payload ?? {}, at: date(a.at) }))
       await insert(tx, 'notifications', 'notification', s.notification, s.notification.id, rows(b, 'notifications'), (n) => ({
         id: id(n.id), userId: id(n.userId), title: String(n.title), body: String(n.body ?? ''), link: String(n.link ?? ''), at: date(n.at), readAt: n.read ? date(n.at) : null }))
+      for (const snap of rows(b, 'contextSnapshots')) if (!(await existing(tx, s.task, s.task.id)).has(id(snap.sourceTaskId))) throw new Error(`contextSnapshots:${snap.id} — 원본 업무 없음`)
       const newSnapshots = await insert(tx, 'contextSnapshots', 'context_snapshot', s.contextSnapshot, s.contextSnapshot.id,
-        children('contextSnapshots', 'context_snapshot', rows(b, 'contextSnapshots'), 'sourceTaskId', 'tasks', newTasks), (snap) => ({
+        rows(b, 'contextSnapshots'), (snap) => ({
         id: id(snap.id), sourceTaskId: id(snap.sourceTaskId), mode: snap.mode, upToMessageId: snap.upToMessageId, summaryText: snap.summaryText,
         summarySource: snap.summarySource, summaryModel: snap.summaryModel, createdBy: id(snap.createdBy), createdAt: date(snap.createdAt) }))
       for (const snap of rows(b, 'contextSnapshots')) for (const [seq, messageId] of (snap.messageIds ?? []).entries()) {
@@ -395,9 +405,73 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
       for (const activity of rows(b, 'activity')) if (activity.packageId) mark('activity.packageId', '—', false, '패키지 모델 제거')
       skip('packages', '—', '서버 대응 없음')
       skip('packageReceipts', '—', '서버 대응 없음')
+      // 기존 상위 행은 병합하지 않는다. bundle의 하위 행이 하나라도 없으면 전체 이관을 취소한다.
+      const missing: string[] = []
+      const requireChild = async (table: any, where: any, label: string) => {
+        const [found] = await tx.select().from(table).where(where).limit(1)
+        if (!found) missing.push(label)
+      }
+      const skippedParent = (source: string, value: unknown, created: Set<string>) =>
+        rows(b, source).some((row) => id(row.id) === id(value)) && !created.has(id(value))
+      for (const a of rows(b, 'assistants')) if (!newAssistants.has(id(a.id))) {
+        for (const [direction, labels] of [['input', a.expectedInputs ?? []], ['output', a.expectedOutputs ?? []]] as const)
+          for (const [sortOrder] of labels.entries()) await requireChild(s.assistantExpectedIo,
+            sql`${s.assistantExpectedIo.assistantId} = ${id(a.id)} and ${s.assistantExpectedIo.direction} = ${direction} and ${s.assistantExpectedIo.sortOrder} = ${sortOrder}`,
+            `assistant_expected_io:${a.id}/${direction}/${sortOrder}`)
+        for (const item of a.checklistTemplate ?? []) await requireChild(s.assistantChecklistTemplate, eq(s.assistantChecklistTemplate.id, id(item.id)), `assistant_checklist_template:${item.id}`)
+      }
+      for (const th of rows(b, 'threads')) if (th.taskId && skippedParent('tasks', th.taskId, newTasks) || th.srId && skippedParent('serviceRequests', th.srId, newSrs))
+        await requireChild(s.thread, eq(s.thread.id, id(th.id)), `thread:${th.id}`)
+      for (const m of rows(b, 'messages')) if (skippedParent('threads', m.threadId, newThreads))
+        await requireChild(s.message, eq(s.message.id, id(m.id)), `message:${m.id}`)
+      for (const n of rows(b, 'notes')) if (skippedParent('tasks', n.taskId, newTasks))
+        await requireChild(s.note, eq(s.note.id, id(n.id)), `note:${n.id}`)
+      for (const c of rows(b, 'conversationInputs')) if (skippedParent('tasks', c.taskId, newTasks))
+        await requireChild(s.conversationInput, eq(s.conversationInput.id, id(c.id)), `conversation_input:${c.id}`)
+      for (const a of rows(b, 'activity')) if (a.taskId && skippedParent('tasks', a.taskId, newTasks) || a.srId && skippedParent('serviceRequests', a.srId, newSrs))
+        await requireChild(s.activityLog, eq(s.activityLog.id, id(a.id)), `activity_log:${a.id}`)
+      for (const t of rows(b, 'tasks')) if (!newTasks.has(id(t.id))) {
+        for (const userId of t.assigneeIds ?? []) await requireChild(s.taskAssignee,
+          sql`${s.taskAssignee.taskId} = ${id(t.id)} and ${s.taskAssignee.userId} = ${id(userId)}`, `task_assignee:${t.id}/${userId}`)
+        for (const tag of t.tags ?? []) await requireChild(s.taskTag,
+          sql`${s.taskTag.taskId} = ${id(t.id)} and ${s.taskTag.tagKey} = ${String(tag)}`, `task_tag:${t.id}/${tag}`)
+        for (const input of t.inputs ?? []) await requireChild(s.taskInput,
+          sql`${s.taskInput.taskId} = ${id(t.id)} and ${s.taskInput.fileId} = ${id(input.fileId)}`, `task_input:${t.id}/${input.fileId}`)
+        for (const item of t.checklist ?? []) await requireChild(s.checklistItem, eq(s.checklistItem.id, id(item.id)), `checklist_item:${item.id}`)
+        if (t.feedback) await requireChild(s.taskFeedback, eq(s.taskFeedback.taskId, id(t.id)), `task_feedback:${t.id}`)
+        if (t.checklistReview) {
+          const reviewId = `${t.id}:import-review`
+          await requireChild(s.checklistReview, eq(s.checklistReview.id, reviewId), `checklist_review:${reviewId}`)
+          for (const item of t.checklistReview.items ?? []) await requireChild(s.checklistReviewItem,
+            sql`${s.checklistReviewItem.reviewId} = ${reviewId} and ${s.checklistReviewItem.itemId} = ${id(item.itemId)}`, `checklist_review_item:${reviewId}/${item.itemId}`)
+        }
+      }
+      for (const m of rows(b, 'messages')) if (!newMessages.has(id(m.id))) for (const fileId of m.attachmentIds ?? [])
+        await requireChild(s.messageAttachment, sql`${s.messageAttachment.messageId} = ${id(m.id)} and ${s.messageAttachment.fileId} = ${id(fileId)}`, `message_attachment:${m.id}/${fileId}`)
+      for (const n of rows(b, 'notes')) if (!newNotes.has(id(n.id))) for (const fileId of n.attachmentIds ?? [])
+        await requireChild(s.noteAttachment, sql`${s.noteAttachment.noteId} = ${id(n.id)} and ${s.noteAttachment.fileId} = ${id(fileId)}`, `note_attachment:${n.id}/${fileId}`)
+      for (const snap of rows(b, 'contextSnapshots')) if (!newSnapshots.has(id(snap.id))) for (const messageId of snap.messageIds ?? [])
+        await requireChild(s.contextSnapshotMessage, sql`${s.contextSnapshotMessage.snapshotId} = ${id(snap.id)} and ${s.contextSnapshotMessage.messageId} = ${id(messageId)}`, `context_snapshot_message:${snap.id}/${messageId}`)
+      for (const sr of rows(b, 'serviceRequests')) if (!newSrs.has(id(sr.id))) {
+        for (const result of sr.results ?? []) {
+          await requireChild(s.sharedResult, eq(s.sharedResult.id, id(result.id)), `shared_result:${result.id}`)
+          for (const fileId of result.fileIds ?? []) await requireChild(s.sharedResultFile,
+            sql`${s.sharedResultFile.resultId} = ${id(result.id)} and ${s.sharedResultFile.fileId} = ${id(fileId)}`, `shared_result_file:${result.id}/${fileId}`)
+        }
+        if ((sr.attachmentIds ?? []).length) {
+          const srThread = rows(b, 'threads').find((th) => th.srId === sr.id)
+          const [firstUser] = srThread ? await tx.select().from(s.message).where(sql`${s.message.threadId} = ${id(srThread.id)} and ${s.message.role} = 'user'`).orderBy(s.message.seq).limit(1) : []
+          for (const fileId of sr.attachmentIds) {
+            if (!firstUser) missing.push(`message_attachment:${sr.id}/${fileId}`)
+            else await requireChild(s.messageAttachment,
+              sql`${s.messageAttachment.messageId} = ${firstUser.id} and ${s.messageAttachment.fileId} = ${id(fileId)}`, `message_attachment:${firstUser.id}/${fileId}`)
+          }
+        }
+      }
       const handled = new Set(['users', 'assistants', 'serviceRequests', 'tasks', 'threads', 'messages', 'files', 'notes', 'activity', 'notifications', 'settings', 'conversationInputs', 'contextSnapshots', 'packages', 'packageReceipts'])
       for (const name of Object.keys(b.tables)) if (!handled.has(name)) skip(name, '—', '서버 대응 없음')
       if (conflicts.length) throw new Error(`ID 충돌: ${[...new Set(conflicts)].join(', ')}`)
+      if (missing.length) throw new Error(`누락된 하위 행: ${[...new Set(missing)].join(', ')}`)
       if (dryRun) throw new DryRunComplete()
     })
   } catch (error) {
@@ -416,7 +490,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const file = args.find((arg) => arg !== '--dry-run')
   if (!file || args.some((arg) => arg !== file && arg !== '--dry-run')) throw new Error('사용법: db:import <bundle.json> [--dry-run]')
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL이 필요합니다')
-  const maxBytes = Number(process.env.IMPORT_BUNDLE_MAX_BYTES ?? 1024 ** 3)
+  const maxBytes = Number(process.env.IMPORT_BUNDLE_MAX_BYTES ?? DEFAULT_IMPORT_BUNDLE_MAX_BYTES)
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw new Error('IMPORT_BUNDLE_MAX_BYTES는 양의 정수여야 합니다')
   if ((await stat(resolve(file))).size > maxBytes) throw new Error(`bundle 크기가 제한(${maxBytes} bytes)을 초과합니다`)
   const source = await readFile(resolve(file))
