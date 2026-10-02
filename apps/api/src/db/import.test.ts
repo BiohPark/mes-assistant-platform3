@@ -14,7 +14,8 @@ describe('demo bundle import rules', () => {
 
   it('imports v1 package tasks as one task per thread with SR tags and reference inputs', () => {
     const bundle = normalizeBundle({ ...empty, version: 1, tables: {
-      tasks: [{ id: 'task-a', code: 'WK-2099-0001', title: 'Draft', tags: ['alpha'], inputFileIds: ['file-a'], srIds: ['sr-a'], activeThreadId: 'thread-a', createdAt: at, createdBy: 'user-a' }],
+      tasks: [{ id: 'task-a', code: 'WK-2099-0001', title: 'Draft', tags: ['alpha'], inputFileIds: ['file-a'], srIds: ['sr-a'], activeThreadId: 'thread-a', createdAt: at, createdBy: 'user-a',
+        checklist: [{ id: 'check-a', label: 'Check' }], checklistReview: { by: 'user-a', at, met: 1, total: 1, source: 'rule', items: [{ itemId: 'check-a', met: true }] } }],
       threads: [{ id: 'thread-a', taskId: 'task-a', title: 'One', createdAt: at }, { id: 'thread-b', taskId: 'task-a', title: 'Two', createdAt: '2026-09-02T00:00:00.000Z' }],
       assistants: [{ id: 'urs-analyst', status: 'working' }, { id: 'assistant-a', status: 'working' }],
       serviceRequests: [{ id: 'sr-a', code: 'SR-2099-0001', title: 'Request' }],
@@ -22,7 +23,8 @@ describe('demo bundle import rules', () => {
     } })
     expect(bundle.tables.tasks).toMatchObject([
       { id: 'task-a', threadId: 'thread-a', titleSource: 'manual', tags: ['alpha', 'SR-2099-0001'], inputs: [{ fileId: 'file-a', weight: 'reference' }] },
-      { id: 'task-a_split1', code: 'WK-2099-0001-2', threadId: 'thread-b', inputs: [], outputFileIds: [] },
+      { id: 'task-a_split1', code: 'WK-2099-0001-2', threadId: 'thread-b', inputs: [], outputFileIds: [], checklist: [{ id: 'task-a_split1:check-a' }],
+        checklistReview: { items: [{ itemId: 'task-a_split1:check-a' }] } },
     ])
     expect(bundle.tables.threads?.[1]).toMatchObject({ taskId: 'task-a_split1' })
     expect(bundle.tables.serviceRequests?.[0]).toMatchObject({ titleSource: 'manual' })

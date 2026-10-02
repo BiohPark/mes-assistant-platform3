@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { drizzle } from 'drizzle-orm/mysql2'
@@ -8,6 +8,7 @@ import type { Db } from './db.module.js'
 import { createPool } from './connection.js'
 import { hashPassword } from '../auth/password.js'
 import { FileStorageService, createStorageKey, sha256 } from '../files/fileStorage.service.js'
+import { validName } from '../files/files.service.js'
 import * as s from './schema.js'
 
 type Row = Record<string, any>
@@ -38,14 +39,17 @@ export function normalizeBundle(input: unknown): Bundle {
   tables.tasks = tasks.flatMap((t) => {
     const own = threads.filter((th) => th.taskId === t.id).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
     const primary = t.threadId ?? t.activeThreadId ?? own[0]?.id
-    const base = { ...t, titleSource: t.titleSource ?? 'manual',
+    const base: Row = { ...t, titleSource: t.titleSource ?? 'manual',
       tags: [...new Set([...(t.tags ?? []), ...(t.srIds ?? []).map((id: string) => srCodes.get(id)).filter(Boolean)])],
       inputs: t.inputs ?? (t.inputFileIds ?? []).map((fileId: string) => ({ fileId, weight: 'reference', selectedAt: t.createdAt, selectedBy: t.createdBy })),
       threadId: primary, lastActivityAt: t.lastActivityAt ?? t.completedAt ?? t.startedAt ?? t.createdAt }
     const splits = own.filter((th) => th.id !== primary).map((th, i) => {
       const id = `${t.id}_split${i + 1}`
       th.taskId = id
-      return { ...base, id, code: `${t.code}-${i + 2}`, title: `${t.title} · ${th.title}`, inputs: [], outputFileIds: [], threadId: th.id, createdAt: th.createdAt, lastActivityAt: th.createdAt }
+      const itemIds = new Map((base.checklist ?? []).map((item: Row) => [String(item.id), `${id}:${String(item.id)}`]))
+      return { ...base, id, code: `${t.code}-${i + 2}`, title: `${t.title} · ${th.title}`, inputs: [], outputFileIds: [], threadId: th.id, createdAt: th.createdAt, lastActivityAt: th.createdAt,
+        checklist: (base.checklist ?? []).map((item: Row) => ({ ...item, id: itemIds.get(String(item.id)) })),
+        checklistReview: base.checklistReview && { ...base.checklistReview, items: (base.checklistReview.items ?? []).map((item: Row) => ({ ...item, itemId: itemIds.get(String(item.itemId)) ?? item.itemId })) } }
     })
     return [base, ...splits]
   })
@@ -73,12 +77,16 @@ const id = (value: unknown) => String(value)
 const present = (value: unknown) => value !== undefined && value !== null && value !== ''
 const keyOf = (source: string, target: string) => `${source} → ${target}`
 export type ImportReport = Record<string, { imported: number; skipped: number; reason?: string }>
+const same = (actual: Row, expected: Row) => Object.entries(expected).every(([key, value]) => value === undefined ||
+  (value instanceof Date ? new Date(actual[key]).getTime() === value.getTime() :
+    typeof value === 'object' && value !== null ? JSON.stringify(actual[key]) === JSON.stringify(value) : (actual[key] ?? null) === (value ?? null)))
 
 export async function importBundle(input: unknown, db: Db, storage: FileStorageService | undefined, dryRun = false): Promise<{ report: ImportReport; credentials: { loginId: string; password: string }[] }> {
   const b = normalizeBundle(input)
   const report: ImportReport = {}
   const credentials: { loginId: string; password: string }[] = []
   const written: string[] = []
+  const conflicts: string[] = []
   const known = new WeakMap<object, Set<string>>()
   const mark = (source: string, target: string, imported: boolean, reason?: string) => {
     const key = keyOf(source, target)
@@ -87,6 +95,16 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
     else { item.skipped++; item.reason = reason ?? '이미 존재' }
   }
   const skip = (source: string, target: string, reason: string) => { for (const _ of rows(b, source)) mark(source, target, false, reason) }
+  const children = (source: string, target: string, items: Row[], parentKey: string, parentSource: string, created: Set<string>) => {
+    const parents = new Set(rows(b, parentSource).map((row) => id(row.id)))
+    return items.filter((row) => {
+      const parentId = id(row[parentKey])
+      if (!parents.has(parentId)) throw new Error(`${source}:${row.id} — ${parentSource}:${parentId} 상위 행 없음`)
+      if (created.has(parentId)) return true
+      mark(source, target, false, '상위 행 건너뜀')
+      return false
+    })
+  }
   const existing = async (tx: Db, table: any, column: any): Promise<Set<string>> => {
     const cached = known.get(table)
     if (cached) return cached
@@ -95,14 +113,20 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
     known.set(table, ids)
     return ids
   }
-  const insert = async (tx: Db, source: string, target: string, table: any, primary: any, items: Row[], convert: (row: Row, index: number) => Row) => {
+  const insert = async (tx: Db, source: string, target: string, table: any, primary: any, items: Row[], convert: (row: Row, index: number) => Row,
+    allow?: (row: Row) => boolean) => {
     const seen = await existing(tx, table, primary)
     const created = new Set<string>()
     for (const [i, row] of items.entries()) {
       const value = convert(row, i)
       const rowId = id(value.id ?? value.key ?? value.taskId)
-      if (seen.has(rowId)) { mark(source, target, false); continue }
-      if (!dryRun) await tx.insert(table).values(value)
+      if (seen.has(rowId)) {
+        const [old] = await tx.select().from(table).where(eq(primary, rowId))
+        if (created.has(rowId) || !old || !same(old, value)) conflicts.push(`${target}:${rowId}`)
+        mark(source, target, false); continue
+      }
+      if (allow && !allow(row)) { mark(source, target, false, '상위 행 건너뜀'); continue }
+      await tx.insert(table).values(value)
       seen.add(rowId)
       created.add(rowId)
       mark(source, target, true)
@@ -112,18 +136,23 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
   try {
     await db.transaction(async (tx) => {
       // 한 이관 실행만 같은 DB에서 진행하도록 트랜잭션 범위 이름 잠금.
-      if (!dryRun) await tx.execute(sql`insert into db_lock (lock_key) values ('demo-import') on duplicate key update lock_key = lock_key`)
+      await tx.execute(sql`insert into db_lock (lock_key) values ('demo-import') on duplicate key update lock_key = lock_key`)
       const usedLogins = new Set((await tx.select({ loginId: s.appUser.loginId }).from(s.appUser)).map((x) => x.loginId).filter((x): x is string => !!x))
       const users = await existing(tx, s.appUser, s.appUser.id)
       for (const row of rows(b, 'users')) {
-        if (users.has(id(row.id))) { mark('users', 'app_user', false); continue }
+        if (users.has(id(row.id))) {
+          const [old] = await tx.select().from(s.appUser).where(eq(s.appUser.id, id(row.id)))
+          if (!old || !same(old, { name: String(row.name ?? row.id), role: String(row.role ?? ''), initials: String(row.initials ?? '').slice(0, 8), color: String(row.color ?? '#64748b'),
+            isSystemOwner: !!row.isSystemOwner, isBusinessOwner: !!row.isBusinessOwner || /requester|요청자/i.test(String(row.role ?? '')) })) conflicts.push(`app_user:${row.id}`)
+          mark('users', 'app_user', false); continue
+        }
         const loginId = loginIdFor(id(row.id), String(row.name ?? ''), usedLogins)
         const password = randomBytes(24).toString('base64url')
-        if (!dryRun) {
+        {
           await tx.insert(s.appUser).values({ id: id(row.id), loginId, passwordHash: await hashPassword(password), mustChangePassword: true,
             name: String(row.name ?? row.id), role: String(row.role ?? ''), initials: String(row.initials ?? '').slice(0, 8), color: String(row.color ?? '#64748b'),
             isSystemOwner: !!row.isSystemOwner, isBusinessOwner: !!row.isBusinessOwner || /requester|요청자/i.test(String(row.role ?? '')) })
-          credentials.push({ loginId, password })
+          if (!dryRun) credentials.push({ loginId, password })
         }
         users.add(id(row.id)); mark('users', 'app_user', true)
       }
@@ -132,12 +161,12 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
       for (const [group, names] of [['assistant_level1', level1], ['assistant_level2', level2]] as const) {
         if (!names.length) continue
         const [old] = await tx.select().from(s.codeGroup).where(eq(s.codeGroup.key, group))
-        if (!old && !dryRun) await tx.insert(s.codeGroup).values({ key: group, name: group === 'assistant_level1' ? '업무 Lv1' : '업무 Lv2' })
+        if (!old) await tx.insert(s.codeGroup).values({ key: group, name: group === 'assistant_level1' ? '업무 Lv1' : '업무 Lv2' })
         mark('assistants.levels', 'code_group', !old)
         for (const [i, name] of names.entries()) {
           const codeId = `${group}:${name}`
           const [oldCode] = await tx.select().from(s.code).where(eq(s.code.id, codeId))
-          if (!oldCode && !dryRun) await tx.insert(s.code).values({ id: codeId, groupKey: group, code: name, name, sortOrder: i })
+          if (!oldCode) await tx.insert(s.code).values({ id: codeId, groupKey: group, code: name, name, sortOrder: i })
           mark('assistants.levels', 'code', !oldCode)
         }
       }
@@ -148,19 +177,23 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
         color: String(a.color ?? '#64748b'), createdBy: id(a.createdBy ?? a.ownerId), createdAt: date(a.createdAt), updatedAt: date(a.updatedAt),
       }))
       for (const a of rows(b, 'assistants')) {
-        if (!newAssistants.has(id(a.id))) continue
+        if (!newAssistants.has(id(a.id))) {
+          for (const _ of [...(a.expectedInputs ?? []), ...(a.expectedOutputs ?? [])]) mark('assistants.expectedIo', 'assistant_expected_io', false, '상위 행 건너뜀')
+          for (const _ of a.checklistTemplate ?? []) mark('assistants.checklistTemplate', 'assistant_checklist_template', false, '상위 행 건너뜀')
+          continue
+        }
         for (const [direction, labels] of [['input', a.expectedInputs ?? []], ['output', a.expectedOutputs ?? []]] as const) {
           for (const [sortOrder, label] of labels.entries()) {
             const [old] = await tx.select().from(s.assistantExpectedIo).where(sql`${s.assistantExpectedIo.assistantId} = ${a.id} and ${s.assistantExpectedIo.direction} = ${direction} and ${s.assistantExpectedIo.sortOrder} = ${sortOrder}`)
-            if (!old && !dryRun) await tx.insert(s.assistantExpectedIo).values({ assistantId: id(a.id), direction, sortOrder, label: String(label) })
+            if (!old) await tx.insert(s.assistantExpectedIo).values({ assistantId: id(a.id), direction, sortOrder, label: String(label) })
             mark('assistants.expectedIo', 'assistant_expected_io', !old)
           }
         }
         await insert(tx, 'assistants.checklistTemplate', 'assistant_checklist_template', s.assistantChecklistTemplate, s.assistantChecklistTemplate.id,
           a.checklistTemplate ?? [], (item: Row, i: number) => ({ id: id(item.id), assistantId: id(a.id), sortOrder: i, label: String(item.label), required: !!item.required }))
       }
-      await insert(tx, 'serviceRequests', 'service_request', s.serviceRequest, s.serviceRequest.id, rows(b, 'serviceRequests'), (sr) => ({
-        id: id(sr.id), code: sr.code, requesterId: id(sr.requesterId), title: String(sr.title ?? ''), titleSource: sr.titleSource ?? (sr.title ? 'manual' : 'default'),
+      const newSrs = await insert(tx, 'serviceRequests', 'service_request', s.serviceRequest, s.serviceRequest.id, rows(b, 'serviceRequests'), (sr) => ({
+        id: id(sr.id), code: sr.code || null, requesterId: id(sr.requesterId), title: String(sr.title ?? ''), titleSource: sr.titleSource ?? (sr.title ? 'manual' : 'default'),
         body: String(sr.body ?? ''), status: sr.status ?? 'draft', submittedAt: date(sr.submittedAt), createdAt: date(sr.createdAt), updatedAt: date(sr.updatedAt),
       }))
       const srByCode = new Map(rows(b, 'serviceRequests').map((sr) => [sr.code, sr.id]))
@@ -171,12 +204,16 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
         createdBy: id(t.createdBy), createdAt: date(t.createdAt), lastActivityAt: date(t.lastActivityAt ?? t.createdAt),
         startedAt: date(t.startedAt), completedAt: date(t.completedAt), completedBy: t.completedBy,
       }))
-      await insert(tx, 'threads', 'thread', s.thread, s.thread.id, rows(b, 'threads'), (th) => ({ id: id(th.id), taskId: th.taskId ?? null, srId: th.srId ?? null,
+      for (const th of rows(b, 'threads')) if (!!th.taskId === !!th.srId) throw new Error(`threads:${th.id} — taskId 또는 srId 하나가 필요합니다`)
+      const taskThreads = children('threads', 'thread', rows(b, 'threads').filter((th) => th.taskId), 'taskId', 'tasks', newTasks)
+      const srThreads = children('threads', 'thread', rows(b, 'threads').filter((th) => th.srId), 'srId', 'serviceRequests', newSrs)
+      const newThreads = await insert(tx, 'threads', 'thread', s.thread, s.thread.id, [...taskThreads, ...srThreads], (th) => ({ id: id(th.id), taskId: th.taskId ?? null, srId: th.srId ?? null,
         title: String(th.title ?? ''), modelId: th.modelId, createdBy: id(th.createdBy), createdAt: date(th.createdAt) }))
       const orderedMessages: Row[] = rows(b, 'messages').map((m, index) => ({ ...m, _index: index }))
       orderedMessages.sort((a, c) => String(a.threadId).localeCompare(String(c.threadId)) || String(a.createdAt).localeCompare(String(c.createdAt)) || a._index - c._index)
       const sequence = new Map<string, number>()
-      await insert(tx, 'messages', 'message', s.message, s.message.id, orderedMessages, (m) => {
+      const newMessages = await insert(tx, 'messages', 'message', s.message, s.message.id,
+        children('messages', 'message', orderedMessages, 'threadId', 'threads', newThreads), (m) => {
         const threadId = id(m.threadId); const seq = (sequence.get(threadId) ?? 0) + 1; sequence.set(threadId, seq)
         return { id: id(m.id), threadId, seq, role: m.role, kind: m.kind, content: String(m.content ?? ''), authorId: m.authorId,
           status: m.status ?? 'done', error: m.error, createdAt: date(m.createdAt) }
@@ -185,37 +222,83 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
       const fileRows = [...rows(b, 'files')].sort((a, c) => Number(a.version ?? 1) - Number(c.version ?? 1))
       const fileIds = await existing(tx, s.fileObject, s.fileObject.id)
       for (const f of fileRows) {
-        if (fileIds.has(id(f.id))) { mark('files', 'file_object', false); continue }
+        if (rows(b, 'assistants').some((a) => a.imageId === f.id && !newAssistants.has(id(a.id)))) {
+          mark('files', 'file_object', false, '상위 행 건너뜀'); continue
+        }
+        if (f.originTaskId && !newTasks.has(id(f.originTaskId)) || f.originSrId && !newSrs.has(id(f.originSrId))) {
+          if (f.originTaskId && !rows(b, 'tasks').some((t) => id(t.id) === id(f.originTaskId)) ||
+            f.originSrId && !rows(b, 'serviceRequests').some((sr) => id(sr.id) === id(f.originSrId))) throw new Error(`files:${f.id} — 상위 행 없음`)
+          mark('files', 'file_object', false, '상위 행 건너뜀'); continue
+        }
+        const name = validName(String(f.name ?? ''))
         if (typeof f.blobBase64 !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(f.blobBase64)) throw new Error(`파일 ${f.id}: blobBase64가 올바르지 않습니다`)
         const bytes = Buffer.from(f.blobBase64, 'base64')
-        const storageKey = createStorageKey(String(f.name))
-        if (!dryRun) { written.push(storageKey); await storage!.write(storageKey, bytes) }
         const kind = f.originSrId ? 'sr_attachment' : f.originTaskId ? 'task_file' : 'assistant_image'
-        if (!dryRun) await tx.insert(s.fileObject).values({ id: id(f.id), kind, originTaskId: f.originTaskId, originSrId: f.originSrId,
-          originalName: String(f.name), mime: String(f.mime ?? 'application/octet-stream'), sizeBytes: bytes.length, sha256: sha256(bytes), storageKey,
-          source: f.source === 'assistant' ? 'assistant' : 'upload', isOutput: kind === 'task_file' && outputIds.has(f.id), version: Number(f.version ?? 1),
-          previousId: f.previousId, uploadedBy: id(f.uploadedBy), uploadedAt: date(f.uploadedAt) })
+        const metadata = { kind, originTaskId: f.originTaskId, originSrId: f.originSrId, originalName: name,
+          mime: String(f.mime ?? 'application/octet-stream'), sizeBytes: bytes.length, sha256: sha256(bytes),
+          source: f.source === 'assistant' ? 'assistant' : 'upload', isOutput: kind === 'task_file' && outputIds.has(f.id),
+          version: Number(f.version ?? 1), previousId: f.previousId, uploadedBy: id(f.uploadedBy), uploadedAt: date(f.uploadedAt) }
+        if (fileIds.has(id(f.id))) {
+          const [old] = await tx.select().from(s.fileObject).where(eq(s.fileObject.id, id(f.id)))
+          if (!old || !same(old, metadata)) conflicts.push(`file_object:${f.id}`)
+          mark('files', 'file_object', false); continue
+        }
+        const storageKey = createStorageKey(name)
+        if (!dryRun) { written.push(storageKey); await storage!.write(storageKey, bytes) }
+        await tx.insert(s.fileObject).values({ id: id(f.id), ...metadata, storageKey })
         fileIds.add(id(f.id)); mark('files', 'file_object', true)
       }
-      for (const a of rows(b, 'assistants')) if (a.imageId && newAssistants.has(id(a.id)) && !dryRun) await tx.update(s.assistant).set({ imageFileId: id(a.imageId) }).where(eq(s.assistant.id, id(a.id)))
+      for (const a of rows(b, 'assistants')) if (a.imageId) {
+        if (newAssistants.has(id(a.id))) await tx.update(s.assistant).set({ imageFileId: id(a.imageId) }).where(eq(s.assistant.id, id(a.id)))
+        else {
+          const [old] = await tx.select({ imageFileId: s.assistant.imageFileId }).from(s.assistant).where(eq(s.assistant.id, id(a.id)))
+          if (old && old.imageFileId !== id(a.imageId)) conflicts.push(`assistant:${a.id}`)
+        }
+      }
+      for (const sr of rows(b, 'serviceRequests')) {
+        if (!newSrs.has(id(sr.id))) {
+          for (const _ of sr.attachmentIds ?? []) mark('serviceRequests.attachmentIds', 'message_attachment', false, '상위 행 건너뜀')
+          continue
+        }
+        if (!(sr.attachmentIds ?? []).length) continue
+        const srThread = rows(b, 'threads').find((th) => th.srId === sr.id)
+        if (!srThread || !newThreads.has(id(srThread.id))) throw new Error(`SR ${sr.id}: 접수 대화가 없습니다`)
+        const [last] = await tx.select({ seq: sql<number>`coalesce(max(${s.message.seq}), 0)` }).from(s.message).where(eq(s.message.threadId, id(srThread.id)))
+        const messageId = `${sr.id}:import-attachments`
+        const attachmentMessage = await insert(tx, 'serviceRequests.attachmentIds', 'message', s.message, s.message.id, [{ id: messageId, sr, srThread, seq: Number(last?.seq ?? 0) + 1 }], (entry) => ({
+          id: entry.id, threadId: id(entry.srThread.id), seq: entry.seq, role: 'user', kind: 'discussion', content: String(entry.sr.body ?? ''), status: 'done', createdAt: date(entry.sr.createdAt),
+        }))
+        for (const fileId of sr.attachmentIds) {
+          if (!attachmentMessage.has(messageId)) { mark('serviceRequests.attachmentIds', 'message_attachment', false, '상위 행 건너뜀'); continue }
+          await tx.insert(s.messageAttachment).values({ messageId, fileId: id(fileId) })
+          mark('serviceRequests.attachmentIds', 'message_attachment', true)
+        }
+      }
       for (const t of rows(b, 'tasks')) {
-        if (!newTasks.has(id(t.id))) continue
+        if (!newTasks.has(id(t.id))) {
+          for (const [source, target, values] of [['tasks.assigneeIds', 'task_assignee', t.assigneeIds], ['tasks.tags', 'tag/task_tag', t.tags],
+            ['tasks.inputs', 'task_input', t.inputs], ['tasks.checklist', 'checklist_item', t.checklist]] as const)
+            for (const _ of values ?? []) mark(source, target, false, '상위 행 건너뜀')
+          if (t.feedback) mark('tasks.feedback', 'task_feedback', false, '상위 행 건너뜀')
+          if (t.checklistReview) mark('tasks.checklistReview', 'checklist_review', false, '상위 행 건너뜀')
+          continue
+        }
         for (const userId of t.assigneeIds ?? []) {
           const [old] = await tx.select().from(s.taskAssignee).where(sql`${s.taskAssignee.taskId} = ${t.id} and ${s.taskAssignee.userId} = ${userId}`)
-          if (!old && !dryRun) await tx.insert(s.taskAssignee).values({ taskId: id(t.id), userId: id(userId) })
+          if (!old) await tx.insert(s.taskAssignee).values({ taskId: id(t.id), userId: id(userId) })
           mark('tasks.assigneeIds', 'task_assignee', !old)
         }
         for (const value of t.tags ?? []) {
           const tagKey = String(value)
           const [oldTag] = await tx.select().from(s.tag).where(eq(s.tag.key, tagKey))
-          if (!oldTag && !dryRun) await tx.insert(s.tag).values({ key: tagKey, kind: tagKey.startsWith('SR-') ? 'sr' : 'keyword', label: tagKey })
+          if (!oldTag) await tx.insert(s.tag).values({ key: tagKey, kind: tagKey.startsWith('SR-') ? 'sr' : 'keyword', label: tagKey })
           const [old] = await tx.select().from(s.taskTag).where(sql`${s.taskTag.taskId} = ${t.id} and ${s.taskTag.tagKey} = ${tagKey}`)
-          if (!old && !dryRun) await tx.insert(s.taskTag).values({ taskId: id(t.id), tagKey, addedBy: id(t.createdBy), addedAt: date(t.createdAt) })
+          if (!old) await tx.insert(s.taskTag).values({ taskId: id(t.id), tagKey, addedBy: id(t.createdBy), addedAt: date(t.createdAt) })
           mark('tasks.tags', 'tag/task_tag', !old)
         }
         for (const [sortOrder, input] of (t.inputs ?? []).entries()) {
           const [old] = await tx.select().from(s.taskInput).where(sql`${s.taskInput.taskId} = ${t.id} and ${s.taskInput.fileId} = ${input.fileId}`)
-          if (!old && !dryRun) await tx.insert(s.taskInput).values({ taskId: id(t.id), fileId: id(input.fileId), weight: input.weight ?? 'reference', sortOrder,
+          if (!old) await tx.insert(s.taskInput).values({ taskId: id(t.id), fileId: id(input.fileId), weight: input.weight ?? 'reference', sortOrder,
             selectedBy: id(input.selectedBy ?? t.createdBy), selectedAt: date(input.selectedAt ?? t.createdAt) })
           mark('tasks.inputs', 'task_input', !old)
         }
@@ -228,59 +311,77 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
           const review = t.checklistReview
           const reviewId = `${t.id}:import-review`
           const [old] = await tx.select().from(s.checklistReview).where(eq(s.checklistReview.id, reviewId))
-          if (!old && !dryRun) await tx.insert(s.checklistReview).values({ id: reviewId, taskId: id(t.id), byUser: id(review.by), at: date(review.at), met: review.met, total: review.total, source: review.source })
+          if (!old) await tx.insert(s.checklistReview).values({ id: reviewId, taskId: id(t.id), byUser: id(review.by), at: date(review.at), met: review.met, total: review.total, source: review.source })
           mark('tasks.checklistReview', 'checklist_review', !old)
           for (const item of review.items ?? []) {
             const [oldItem] = await tx.select().from(s.checklistReviewItem).where(sql`${s.checklistReviewItem.reviewId} = ${reviewId} and ${s.checklistReviewItem.itemId} = ${item.itemId}`)
-            if (!oldItem && !dryRun) await tx.insert(s.checklistReviewItem).values({ reviewId, itemId: id(item.itemId), met: !!item.met, note: String(item.note ?? '') })
+            if (!oldItem) await tx.insert(s.checklistReviewItem).values({ reviewId, itemId: id(item.itemId), met: !!item.met, note: String(item.note ?? '') })
           }
         }
       }
       for (const m of rows(b, 'messages')) for (const fileId of m.attachmentIds ?? []) {
+        if (!newMessages.has(id(m.id))) { mark('messages.attachmentIds', 'message_attachment', false, '상위 행 건너뜀'); continue }
         const [old] = await tx.select().from(s.messageAttachment).where(sql`${s.messageAttachment.messageId} = ${m.id} and ${s.messageAttachment.fileId} = ${fileId}`)
-        if (!old && !dryRun) await tx.insert(s.messageAttachment).values({ messageId: id(m.id), fileId: id(fileId) })
+        if (!old) await tx.insert(s.messageAttachment).values({ messageId: id(m.id), fileId: id(fileId) })
         mark('messages.attachmentIds', 'message_attachment', !old)
       }
       for (const m of rows(b, 'messages')) if (m.requestSnapshot || m.requestInfo || m.heartbeatAt) mark('messages.requestInfo', '—', false, '서버 요청 기록과 구조 불일치')
-      await insert(tx, 'notes', 'note', s.note, s.note.id, rows(b, 'notes'), (n) => ({ id: id(n.id), taskId: id(n.taskId), authorId: id(n.authorId), content: String(n.content), createdAt: date(n.createdAt) }))
+      for (const m of rows(b, 'messages')) if (present(m.requestedBy)) mark('messages.requestedBy', '—', false, '서버 메시지 필드 없음')
+      const newNotes = await insert(tx, 'notes', 'note', s.note, s.note.id,
+        children('notes', 'note', rows(b, 'notes'), 'taskId', 'tasks', newTasks), (n) => ({ id: id(n.id), taskId: id(n.taskId), authorId: id(n.authorId), content: String(n.content), createdAt: date(n.createdAt) }))
       for (const n of rows(b, 'notes')) for (const fileId of n.attachmentIds ?? []) {
+        if (!newNotes.has(id(n.id))) { mark('notes.attachmentIds', 'note_attachment', false, '상위 행 건너뜀'); continue }
         const [old] = await tx.select().from(s.noteAttachment).where(sql`${s.noteAttachment.noteId} = ${n.id} and ${s.noteAttachment.fileId} = ${fileId}`)
-        if (!old && !dryRun) await tx.insert(s.noteAttachment).values({ noteId: id(n.id), fileId: id(fileId) })
+        if (!old) await tx.insert(s.noteAttachment).values({ noteId: id(n.id), fileId: id(fileId) })
         mark('notes.attachmentIds', 'note_attachment', !old)
       }
       for (const sr of rows(b, 'serviceRequests')) {
         for (const result of sr.results ?? []) {
+          if (!newSrs.has(id(sr.id))) { mark('serviceRequests.results', 'shared_result', false, '상위 행 건너뜀');
+            for (const _ of result.fileIds ?? []) mark('serviceRequests.results.fileIds', 'shared_result_file', false, '상위 행 건너뜀')
+            continue }
           const [old] = await tx.select().from(s.sharedResult).where(eq(s.sharedResult.id, id(result.id)))
-          if (!old && !dryRun) await tx.insert(s.sharedResult).values({ id: id(result.id), srId: id(sr.id), taskId: result.taskId, text: String(result.text ?? ''), byUser: id(result.by), at: date(result.at) })
+          const value = { id: id(result.id), srId: id(sr.id), taskId: result.taskId, text: String(result.text ?? ''), byUser: id(result.by), at: date(result.at) }
+          if (old && !same(old, value)) conflicts.push(`shared_result:${result.id}`)
+          if (!old) await tx.insert(s.sharedResult).values(value)
           mark('serviceRequests.results', 'shared_result', !old)
           for (const fileId of result.fileIds ?? []) {
+            if (old) { mark('serviceRequests.results.fileIds', 'shared_result_file', false, '상위 행 건너뜀'); continue }
             const [oldFile] = await tx.select().from(s.sharedResultFile).where(sql`${s.sharedResultFile.resultId} = ${result.id} and ${s.sharedResultFile.fileId} = ${fileId}`)
-            if (!oldFile && !dryRun) await tx.insert(s.sharedResultFile).values({ resultId: id(result.id), fileId: id(fileId) })
+            if (!oldFile) await tx.insert(s.sharedResultFile).values({ resultId: id(result.id), fileId: id(fileId) })
             mark('serviceRequests.results.fileIds', 'shared_result_file', !oldFile)
           }
         }
       }
-      await insert(tx, 'activity', 'activity_log', s.activityLog, s.activityLog.id, rows(b, 'activity'), (a) => ({
+      const newActivity = rows(b, 'activity').filter((a) => {
+        const blocked = a.taskId && !newTasks.has(id(a.taskId)) || a.srId && !newSrs.has(id(a.srId))
+        if (blocked) mark('activity', 'activity_log', false, '상위 행 건너뜀')
+        return !blocked
+      })
+      await insert(tx, 'activity', 'activity_log', s.activityLog, s.activityLog.id, newActivity, (a) => ({
         id: id(a.id), type: String(a.type), userId: id(a.userId), taskId: a.taskId, assistantId: a.assistantId, srId: a.srId,
         payload: a.payload ?? {}, at: date(a.at) }))
       await insert(tx, 'notifications', 'notification', s.notification, s.notification.id, rows(b, 'notifications'), (n) => ({
         id: id(n.id), userId: id(n.userId), title: String(n.title), body: String(n.body ?? ''), link: String(n.link ?? ''), at: date(n.at), readAt: n.read ? date(n.at) : null }))
-      await insert(tx, 'contextSnapshots', 'context_snapshot', s.contextSnapshot, s.contextSnapshot.id, rows(b, 'contextSnapshots'), (snap) => ({
+      const newSnapshots = await insert(tx, 'contextSnapshots', 'context_snapshot', s.contextSnapshot, s.contextSnapshot.id,
+        children('contextSnapshots', 'context_snapshot', rows(b, 'contextSnapshots'), 'sourceTaskId', 'tasks', newTasks), (snap) => ({
         id: id(snap.id), sourceTaskId: id(snap.sourceTaskId), mode: snap.mode, upToMessageId: snap.upToMessageId, summaryText: snap.summaryText,
         summarySource: snap.summarySource, summaryModel: snap.summaryModel, createdBy: id(snap.createdBy), createdAt: date(snap.createdAt) }))
       for (const snap of rows(b, 'contextSnapshots')) for (const [seq, messageId] of (snap.messageIds ?? []).entries()) {
+        if (!newSnapshots.has(id(snap.id))) { mark('contextSnapshots.messageIds', 'context_snapshot_message', false, '상위 행 건너뜀'); continue }
         const [old] = await tx.select().from(s.contextSnapshotMessage).where(sql`${s.contextSnapshotMessage.snapshotId} = ${snap.id} and ${s.contextSnapshotMessage.messageId} = ${messageId}`)
-        if (!old && !dryRun) await tx.insert(s.contextSnapshotMessage).values({ snapshotId: id(snap.id), messageId: id(messageId), seq })
+        if (!old) await tx.insert(s.contextSnapshotMessage).values({ snapshotId: id(snap.id), messageId: id(messageId), seq })
         mark('contextSnapshots.messageIds', 'context_snapshot_message', !old)
       }
-      await insert(tx, 'conversationInputs', 'conversation_input', s.conversationInput, s.conversationInput.id, rows(b, 'conversationInputs'), (c) => ({
+      await insert(tx, 'conversationInputs', 'conversation_input', s.conversationInput, s.conversationInput.id,
+        children('conversationInputs', 'conversation_input', rows(b, 'conversationInputs'), 'taskId', 'tasks', newTasks), (c) => ({
         id: id(c.id), taskId: id(c.taskId), sourceTaskId: id(c.sourceTaskId), weight: c.weight, mode: c.mode, snapshotId: id(c.snapshotId),
         selectedBy: id(c.selectedBy), selectedAt: date(c.selectedAt) }))
       for (const setting of rows(b, 'settings')) {
         for (const [key, value] of [['srIntakeAssistantId', setting.srIntakeAssistantId], ['requestBudgetBytes', setting.requestBudgetBytes]] as const) {
           if (!present(value)) continue
           const [old] = await tx.select().from(s.appSetting).where(eq(s.appSetting.key, key))
-          if (!old && !dryRun) await tx.insert(s.appSetting).values({ key, value })
+          if (!old) await tx.insert(s.appSetting).values({ key, value })
           mark('settings', 'app_setting', !old)
         }
         if (setting.llm) mark('settings.llm', '—', false, '서버 비밀/연결 설정 제외')
@@ -296,6 +397,7 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
       skip('packageReceipts', '—', '서버 대응 없음')
       const handled = new Set(['users', 'assistants', 'serviceRequests', 'tasks', 'threads', 'messages', 'files', 'notes', 'activity', 'notifications', 'settings', 'conversationInputs', 'contextSnapshots', 'packages', 'packageReceipts'])
       for (const name of Object.keys(b.tables)) if (!handled.has(name)) skip(name, '—', '서버 대응 없음')
+      if (conflicts.length) throw new Error(`ID 충돌: ${[...new Set(conflicts)].join(', ')}`)
       if (dryRun) throw new DryRunComplete()
     })
   } catch (error) {
@@ -314,7 +416,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const file = args.find((arg) => arg !== '--dry-run')
   if (!file || args.some((arg) => arg !== file && arg !== '--dry-run')) throw new Error('사용법: db:import <bundle.json> [--dry-run]')
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL이 필요합니다')
-  const input = JSON.parse(await readFile(resolve(file), 'utf8')) as unknown
+  const maxBytes = Number(process.env.IMPORT_BUNDLE_MAX_BYTES ?? 1024 ** 3)
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw new Error('IMPORT_BUNDLE_MAX_BYTES는 양의 정수여야 합니다')
+  if ((await stat(resolve(file))).size > maxBytes) throw new Error(`bundle 크기가 제한(${maxBytes} bytes)을 초과합니다`)
+  const source = await readFile(resolve(file))
+  if (source.byteLength > maxBytes) throw new Error(`bundle 크기가 제한(${maxBytes} bytes)을 초과합니다`)
+  const input = JSON.parse(source.toString('utf8')) as unknown
   const client = createPool(process.env.DATABASE_URL)
   try {
     const dryRun = args.includes('--dry-run')

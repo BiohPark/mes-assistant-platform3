@@ -5,7 +5,7 @@ import { DB, type Db } from '../db/db.module.js'
 import { EventsService } from '../events/events.service.js'
 import { activityLog, appUser, fileObject, tag, task, taskInput, taskTag } from '../db/schema.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
-import { FileStorageService, createStorageKey, sha256 } from './fileStorage.service.js'
+import { FileStorageService, createStorageKey, isWindowsReservedName, sha256 } from './fileStorage.service.js'
 import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
 import { assertFileAccess, assertSrAccess, assertTaskAccess } from '../sr/access.js'
 import { serviceRequest } from '../db/schema.js'
@@ -15,8 +15,8 @@ type FileRow = typeof fileObject.$inferSelect
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 const id = () => randomUUID()
 
-function validName(name: string): string {
-  if (!name || !name.trim() || name.length > 255 || /[/\\]/.test(name) || [...name].some((char) => char.charCodeAt(0) < 32) || name === '.' || name === '..') throw new BadRequestException('파일 이름이 올바르지 않습니다')
+export function validName(name: string): string {
+  if (!name || !name.trim() || name.length > 255 || /[/\\]/.test(name) || isWindowsReservedName(name) || name === '.' || name === '..') throw new BadRequestException('파일 이름이 올바르지 않습니다')
   return name
 }
 
