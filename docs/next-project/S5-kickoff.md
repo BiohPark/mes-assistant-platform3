@@ -1,6 +1,6 @@
 # S5 착수 계획 — 태스크 분할과 결정 (S5-1~7)
 
-> **상태: 결정 확정(2026-10-02, 사용자 "나머지 추천안으로 진행") — HANDOFF D43.** 태스크 4건·워커(codex-main·codex-critic)·쓰기 범위 제안값 함께 승인. ① s5-deploy 착수.
+> **상태: 완료(2026-10-02, 태그 `s5-done`)** — ①~④ 모두 `main` 병합. 결정은 D43(사용자 "나머지 추천안으로 진행"). 남은 것은 사용자 실기 확인(사내 Windows 서버 WinSW 설치·데모 백업 이관)뿐.
 
 S5 = 운영 준비. architecture §9: 비기능 점검(크기·보관·감사)·배포·(선택) 데모 데이터 이관 도구. 기능은 S4로 끝났다(대응표 남은 ⬜ 1 = 이관 도구).
 근거: PRD §6(제안값), HANDOFF D31·D32·D34, KNOWN_ISSUES KI-3·5·6·8·9, `docs/setup/windows.md` §6·§8 초안, 데모 `src/db/exportImport.ts`(bundle v1–3, 파일 본문 base64 포함).
