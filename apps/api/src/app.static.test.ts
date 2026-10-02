@@ -53,6 +53,17 @@ describe('web 정적 제공', () => {
     expect(missingApi.headers['content-type']).toMatch(/json/)
   })
 
+  it('공통 보안 헤더와 index CSP를 제공한다', async () => {
+    const client = await start(dist)
+    const page = await client.get('/c/abc').expect(200)
+    expect(page.headers['x-content-type-options']).toBe('nosniff')
+    expect(page.headers['referrer-policy']).toBe('same-origin')
+    expect(page.headers['x-frame-options']).toBe('DENY')
+    expect(page.headers['content-security-policy']).toContain("default-src 'self'")
+    const api = await client.get('/api/missing').expect(404)
+    expect(api.headers['x-content-type-options']).toBe('nosniff')
+  })
+
   it('인코딩된 상위 경로를 차단한다', async () => {
     const client = await start(dist)
     await client.get('/..%2f..%2fetc').expect(400)

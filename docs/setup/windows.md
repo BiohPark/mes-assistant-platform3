@@ -268,6 +268,19 @@ pnpm test:db
 
 IIS를 TLS 앞단으로 둘 때만 ARR 리버스 프록시가 전체 요청을 이 서비스로 넘기게 한다. `/api/events`의 SSE 응답 버퍼링을 끄고 프록시 유휴 시간을 스트림 유지 시간보다 길게 설정한다. 이벤트 브로드캐스트는 **단일 api 인스턴스** 전제다. IIS 없이도 api 포트로 직접 접속할 수 있다.
 
+### 운영 값과 기록 보관 (S5 ②, D43)
+
+비기능 기본값은 PRD §6 제안값이며 모두 `.env`로 조정한다: 파일당 `FILE_MAX_BYTES`(50 MB)·요청당 첨부 `FILE_MAX_PER_REQUEST`(20)·동시 응답 `REQUEST_MAX_ACTIVE`(20, 넘으면 "잠시 후 다시" 429)·세션 `SESSION_TTL_HOURS`·`SESSION_IDLE_HOURS`(12)·로그인/가입 시도 제한 `AUTH_ATTEMPT_MAX`/`AUTH_ATTEMPT_WINDOW_MS`(10회/10분, 인스턴스 메모리).
+
+활동 이력·요청 기록은 추가만 된다(앱에 수정·삭제 경로 없음). 요청 원본 JSON은 GMP 보존 기준이 확정되기 전까지 **자동 삭제하지 않는다**(D43 S5-4). 기준이 정해지면 서비스를 멈추고 DB를 백업한 뒤 수동으로 정리한다 — 대상은 종료 후 1년이 지난 요청의 `chat_request.snapshot` 값과, 그 JSON이 가리키는 `FILE_STORAGE_ROOT\requests\YYYY\MM\*.json` 파일이다. 먼저 대상을 확인한다:
+
+```sql
+SELECT id, finished_at, status FROM chat_request
+WHERE status IN ('succeeded','failed','cancelled','interrupted')
+  AND snapshot IS NOT NULL
+  AND finished_at < UTC_TIMESTAMP(6) - INTERVAL 1 YEAR;
+```
+
 ## 9. 문제 해결
 
 | 증상 | 원인·해결 |

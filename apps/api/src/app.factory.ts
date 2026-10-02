@@ -13,6 +13,12 @@ import { appSetting } from './db/schema.js'
 /** main.ts와 테스트가 같은 설정으로 앱을 꾸민다 */
 export function configureApp<T extends INestApplication>(app: T, config: AppConfig): T {
   app.setGlobalPrefix('api')
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('Referrer-Policy', 'same-origin')
+    res.setHeader('X-Frame-Options', 'DENY')
+    next()
+  })
   app.use(cookieParser(config.sessionSecret))
   if (existsSync(config.webDistDir)) {
     const webRoot = realpathSync.native(config.webDistDir)
@@ -33,6 +39,7 @@ export function configureApp<T extends INestApplication>(app: T, config: AppConf
         const actual = await realpath(file)
         const pathInRoot = relative(webRoot, actual)
         if (pathInRoot === '..' || pathInRoot.startsWith(`..${sep}`) || isAbsolute(pathInRoot)) return res.status(403).end()
+        if (file.endsWith('index.html')) res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
         res.sendFile(actual, { headers: { 'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache' } }, (error) => { if (error) next(error) })
       }
       void stat(target).then((info) => {

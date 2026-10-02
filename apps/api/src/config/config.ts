@@ -20,6 +20,9 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET은 32자 이상'),
   SESSION_TTL_HOURS: z.coerce.number().positive().default(12),
+  SESSION_IDLE_HOURS: z.coerce.number().positive().default(12),
+  AUTH_ATTEMPT_MAX: z.coerce.number().int().positive().default(10),
+  AUTH_ATTEMPT_WINDOW_MS: z.coerce.number().int().positive().default(600_000),
   AUTH_MODE: AuthModeSchema.default('local'),
   OIDC_ISSUER: z.string().optional(),
   OIDC_CLIENT_ID: z.string().optional(),
@@ -42,6 +45,7 @@ const EnvSchema = z.object({
   REQUEST_SWEEP_MS: z.coerce.number().int().positive().default(30_000),
   REQUEST_FLUSH_MS: z.coerce.number().int().positive().default(250),
   REQUEST_BUDGET_BYTES: z.coerce.number().int().positive().default(262_144),
+  REQUEST_MAX_ACTIVE: z.coerce.number().int().positive().default(20),
 }).superRefine((e, ctx) => {
   if (e.AUTH_MODE === 'oidc') {
     if (!e.OIDC_ISSUER || !z.url().safeParse(e.OIDC_ISSUER).success) ctx.addIssue({ code: 'custom', path: ['OIDC_ISSUER'], message: '유효한 URL이 필요합니다' })
@@ -73,6 +77,8 @@ export function loadConfig(env: Record<string, string | undefined>) {
     databaseUrl: e.DATABASE_URL,
     sessionSecret: e.SESSION_SECRET,
     sessionTtlHours: e.SESSION_TTL_HOURS,
+    sessionIdleHours: e.SESSION_IDLE_HOURS,
+    authAttempts: { max: e.AUTH_ATTEMPT_MAX, windowMs: e.AUTH_ATTEMPT_WINDOW_MS },
     authMode: e.AUTH_MODE,
     cookieSecure: appOrigin.startsWith('https://'),
     oidc: e.AUTH_MODE === 'oidc' ? {
@@ -89,7 +95,7 @@ export function loadConfig(env: Record<string, string | undefined>) {
     llm: { mode: e.LLM_MODE, preset: e.LLM_PRESET, baseUrl: e.LLM_BASE_URL, apiKey: e.LLM_API_KEY, defaultModel: e.LLM_DEFAULT_MODEL },
     request: { firstTokenMs: e.REQUEST_FIRST_TOKEN_MS, filesFirstTokenMs: e.REQUEST_FILES_FIRST_TOKEN_MS,
       idleMs: e.REQUEST_IDLE_MS, leaseMs: e.REQUEST_LEASE_MS, keepaliveMs: e.REQUEST_KEEPALIVE_MS,
-      sweepMs: e.REQUEST_SWEEP_MS, flushMs: e.REQUEST_FLUSH_MS, budgetBytes: e.REQUEST_BUDGET_BYTES },
+      sweepMs: e.REQUEST_SWEEP_MS, flushMs: e.REQUEST_FLUSH_MS, budgetBytes: e.REQUEST_BUDGET_BYTES, maxActive: e.REQUEST_MAX_ACTIVE },
   }
 }
 

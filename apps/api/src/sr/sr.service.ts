@@ -202,8 +202,7 @@ export class SrService {
       const [srThread] = await tx.select().from(thread).where(eq(thread.srId, srId))
       if (srThread) {
         const requests = await tx.select().from(chatRequest).where(eq(chatRequest.threadId, srThread.id))
-        if (requests.some((item) => item.status === 'pending' || item.status === 'streaming')) throw new ConflictException('응답이 끝난 뒤 삭제할 수 있습니다')
-        await tx.delete(chatRequest).where(eq(chatRequest.threadId, srThread.id))
+        if (requests.length) throw new ConflictException('요청 기록이 있는 초안은 삭제할 수 없습니다')
         const messages = await tx.select({ id: message.id }).from(message).where(eq(message.threadId, srThread.id))
         if (messages.length) await tx.delete(messageAttachment).where(inArray(messageAttachment.messageId, messages.map((item) => item.id)))
         await tx.delete(message).where(eq(message.threadId, srThread.id))

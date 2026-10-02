@@ -7,6 +7,7 @@ import { AppModule } from '../app.module.js'
 import { configureApp } from '../app.factory.js'
 import { CONFIG, loadConfig } from '../config/config.js'
 import { HEALTH_PROBE } from '../health/health.controller.js'
+import { AuthController } from './auth.controller.js'
 import { OIDC } from './oidc.service.js'
 import * as passwordService from './password.js'
 import { SESSION_STORE, type AuthUser, type SessionStore } from './session.service.js'
@@ -120,5 +121,36 @@ describe('local 인증 API', () => {
     await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(401)
     expect(inactiveVerify).toHaveBeenCalledTimes(1)
     inactiveVerify.mockRestore()
+  })
+
+  it.each(['login', 'signup'])('%s은 IP와 ID의 열 번째 실패 다음 시도를 제한한다', async (route) => {
+    const body = { loginId: route === 'login' ? 'missing' : 'member-1', password: 'password-1234' }
+    if (route === 'signup') await request(app.getHttpServer()).post('/api/auth/signup').send(body).expect(201)
+    for (let i = 0; i < 10; i++) await request(app.getHttpServer()).post(`/api/auth/${route}`).send(body).expect(route === 'login' ? 401 : 409)
+    await request(app.getHttpServer()).post(`/api/auth/${route}`).send(body).expect(429)
+    await request(app.getHttpServer()).post(`/api/auth/${route}`).send({ ...body, loginId: 'other-id' }).expect(429)
+  })
+
+  it('서로 다른 ID로 시도해도 IP 상한을 넘지 못한다', async () => {
+    for (let i = 0; i < config.authAttempts.max; i++) {
+      await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: `missing-${i}`, password: 'password-1234' }).expect(401)
+    }
+    await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'another-id', password: 'password-1234' }).expect(429)
+  })
+
+  it('시도 기록에 상한이 있고 요청마다 전체 기록을 순회하지 않는다', () => {
+    const controller = app.get(AuthController) as unknown as {
+      attempt: (req: { ip: string }, loginId: string) => () => void
+      attempts: Map<string, { count: number; until: number }>
+    }
+    const iterator = vi.spyOn(controller.attempts, Symbol.iterator)
+    let denied = 0
+    for (let i = 0; i < 5_100; i++) {
+      try { controller.attempt({ ip: `192.0.${Math.floor(i / 256)}.${i % 256}` }, `user-${i}`) }
+      catch (error) { expect(error).toMatchObject({ status: 429 }); denied++ }
+    }
+    expect(denied).toBeGreaterThan(0)
+    expect(controller.attempts.size).toBeLessThanOrEqual(10_000)
+    expect(iterator).not.toHaveBeenCalled()
   })
 })

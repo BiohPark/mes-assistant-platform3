@@ -6,7 +6,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createPool } from '../db/connection.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
-import { activityLog, appSetting, appUser, assistant, fileObject, notification, serviceRequest, sharedResult, task } from '../db/schema.js'
+import { activityLog, appSetting, appUser, assistant, chatRequest, fileObject, notification, serviceRequest, sharedResult, task } from '../db/schema.js'
+import { loadConfig } from '../config/config.js'
+import { RequestsService } from '../requests/requests.service.js'
 import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
 import { EventsService } from '../events/events.service.js'
@@ -48,6 +50,17 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     expect((await sr.list('requester')).map((x) => x.id)).toEqual([mine.id])
     await expect(sr.get('other', mine.id)).rejects.toMatchObject({ status: 403 })
     expect(await sr.list('staff')).toHaveLength(2)
+  })
+
+  it('종료된 응답 기록이 있는 접수 전 초안은 삭제하지 않는다', async () => {
+    const draft = await sr.create('requester')
+    const provider = { kind: 'mock' as const, ping: async () => ({ ok: true, detail: '' }), listModels: async () => ['glm-5.2'],
+      async *stream() { yield { type: 'delta' as const, text: '응답' }; yield { type: 'done' as const } } }
+    const requests = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' }), provider)
+    const started = await requests.start('requester', draft.threadId, { content: '접수 전 대화' }, `keep-${draft.id}`)
+    await started.done
+    await expect(sr.delete('requester', draft.id)).rejects.toMatchObject({ status: 409 })
+    expect((await db.select({ id: chatRequest.id }).from(chatRequest).where(eq(chatRequest.id, started.id)))).toHaveLength(1)
   })
 
   it('submits with unique code, notifies intake owner, and protects manual title', async () => {

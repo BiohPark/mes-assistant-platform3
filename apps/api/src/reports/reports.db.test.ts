@@ -83,4 +83,28 @@ describe('reports DB', () => {
     expect((await reports.get(7, 'day', 'reporter')).flow).toContainEqual({ fromAssistantId: fromAssistant!.id, toAssistantId: toAssistant!.id, count: 2 })
     expect((await reports.get(7, 'day', 'reporter', 'reporter')).flow).toContainEqual({ fromAssistantId: fromAssistant!.id, toAssistantId: toAssistant!.id, count: 1 })
   })
+
+  it('전체 기간 활동은 필요한 이벤트·열만 읽고 마지막 활동은 DB에서 집계한다', async () => {
+    const queries: string[] = []
+    const observed = drizzle(client, { logger: { logQuery: (query) => { queries.push(query) } } })
+    await new ReportsService(observed, new DbTasksService(observed)).get(7, 'day', 'reporter')
+    const activityQueries = queries.filter((query) => query.includes('from `activity_log`'))
+    expect(activityQueries).toHaveLength(3)
+    const history = activityQueries.find((query) => query.includes('`activity_log`.`type` in'))
+    expect(history).toBeDefined()
+    expect(history).not.toContain('`assistant_id`')
+    expect(history).not.toContain('`activity_log`.`user_id`')
+    expect(history).not.toContain('`activity_log`.`id`')
+    expect(activityQueries.some((query) => /max\([^)]*`at`\)/.test(query) && /group by .*`task_id`/.test(query))).toBe(true)
+  })
+
+  it('집계 이벤트가 아닌 최근 활동도 방치 판정의 마지막 시각에 반영한다', async () => {
+    const [selected] = await db.select().from(assistant)
+    const created = (await tasks.create('reporter', { assistantId: selected!.id })).task
+    await db.update(task).set({ createdAt: new Date(Date.now() - 10 * 86_400_000), startedAt: new Date(Date.now() - 10 * 86_400_000) }).where(eq(task.id, created.id))
+    await db.insert(activityLog).values({ id: 'report-fresh-note', taskId: created.id, userId: 'reporter', type: 'note.added', payload: {}, at: new Date() })
+    const result = await reports.get(7, 'day', 'reporter')
+    expect(result.signals.some((signal) => signal.taskId === created.id && signal.kind === 'stale')).toBe(false)
+    expect(result.signals.some((signal) => signal.taskId === created.id && signal.kind === 'long_task')).toBe(true)
+  })
 })

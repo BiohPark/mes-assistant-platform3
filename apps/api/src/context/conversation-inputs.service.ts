@@ -4,7 +4,7 @@ import { byteLength, eligibleMessages, newMessagesSince, type ContextSnapshot, t
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { EventsService } from '../events/events.service.js'
-import { activityLog, assistant, contextSnapshot, contextSnapshotMessage, conversationInput, message, tag, task, taskTag, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, contextSnapshot, contextSnapshotMessage, conversationInput, message, tag, task, taskTag, thread } from '../db/schema.js'
 import { assertTaskAccess } from '../sr/access.js'
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
@@ -60,7 +60,8 @@ export class DbConversationInputsService {
     if (!tags.size) return []
     const sources = await this.db.select({ source: task, assistant }).from(task).innerJoin(assistant, eq(assistant.id, task.assistantId))
       .where(and(inArray(task.id, [...tags.keys()]), isNull(task.deletedAt))).orderBy(desc(task.lastActivityAt))
-    const visibleSources = actor ? (await Promise.all(sources.map(async (item) => {
+    const [viewer] = actor ? await this.db.select({ isBusinessOwner: appUser.isBusinessOwner, isSystemOwner: appUser.isSystemOwner }).from(appUser).where(eq(appUser.id, actor)) : []
+    const visibleSources = actor && viewer?.isBusinessOwner && !viewer.isSystemOwner ? (await Promise.all(sources.map(async (item) => {
       try { await assertTaskAccess(this.db, actor, item.source.id); return item }
       catch (error) { if (error instanceof ForbiddenException) return null; throw error }
     }))).filter((item): item is (typeof sources)[number] => item !== null) : sources

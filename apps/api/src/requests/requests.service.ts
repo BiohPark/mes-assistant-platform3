@@ -6,7 +6,7 @@ import type { LlmSettings, Message, RequestInfo, RequestInput, ServiceRequest, T
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
 import { isDuplicateKey } from '../db/errors.js'
-import { activityLog, appSetting, assistant, chatRequest, chatRequestInput, fileObject, message, messageAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
+import { activityLog, appSetting, assistant, chatRequest, chatRequestInput, dbLock, fileObject, message, messageAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { EventsService } from '../events/events.service.js'
 import { DbLlmPorts } from '../llm/dbLlmPorts.js'
@@ -160,6 +160,17 @@ export class RequestsService implements OnModuleDestroy {
     return locked
   }
 
+  private async lockGlobalCapacity(tx: Tx) {
+    const lockKey = 'chat-request:global-capacity'
+    await tx.insert(dbLock).values({ lockKey }).onDuplicateKeyUpdate({ set: { lockKey } })
+    await tx.select({ key: dbLock.lockKey }).from(dbLock).where(eq(dbLock.lockKey, lockKey)).for('update')
+  }
+
+  private async assertGlobalCapacity(tx: Tx) {
+    const [row] = await tx.select({ count: sql<number>`count(*)` }).from(chatRequest).where(inArray(chatRequest.status, ACTIVE))
+    if (Number(row?.count ?? 0) >= this.config.request.maxActive) throw new HttpException('동시 응답이 많아 잠시 후 다시 시도해 주세요.', 429)
+  }
+
   private async scope(owner: typeof thread.$inferSelect, ports: DbLlmPorts): Promise<ChatScope> {
     if (owner.taskId) {
       const ownerTask = await ports.getTask(owner.taskId)
@@ -245,11 +256,13 @@ export class RequestsService implements OnModuleDestroy {
     let acquired: { id: string; replyMessageId: string; userMessageId: string; taskId?: string | null; deadlineAt?: number; duplicate?: boolean }
     try {
       acquired = await this.db.transaction(async (tx) => {
+        await this.lockGlobalCapacity(tx)
         const owner = await this.lockedOwner(tx, threadId)
         const [duplicate] = await tx.select().from(chatRequest).where(and(eq(chatRequest.threadId, threadId), eq(chatRequest.idempotencyKey, key)))
         if (duplicate) return { id: duplicate.id, replyMessageId: duplicate.replyMessageId, userMessageId: duplicate.userMessageId, duplicate: true }
         const [active] = await tx.select({ id: chatRequest.id }).from(chatRequest).where(and(eq(chatRequest.threadId, threadId), inArray(chatRequest.status, ACTIVE)))
         if (active) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
+        await this.assertGlobalCapacity(tx)
         const [attachmentSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'fileMaxPerRequest'))
         if (attachments.length > (typeof attachmentSetting?.value === 'number' ? attachmentSetting.value : this.config.fileMaxPerRequest)) throw new HttpException({ code: 'ATTACHMENT_LIMIT' }, 413)
         if (attachments.length) {
@@ -314,6 +327,7 @@ export class RequestsService implements OnModuleDestroy {
     if (!['failed', 'cancelled', 'interrupted'].includes(original.status)) throw new ConflictException({ code: 'NOT_FAILED' })
     const exclude = [...new Set(body.excludeFileIds ?? [])], inline = [...new Set(body.forceInlineFileIds ?? [])]
     const acquired = await this.db.transaction(async (tx) => {
+      await this.lockGlobalCapacity(tx)
       const owner = await this.lockedOwner(tx, original.threadId)
       const [duplicate] = await tx.select().from(chatRequest).where(and(eq(chatRequest.threadId, original.threadId), eq(chatRequest.idempotencyKey, key)))
       if (duplicate) return { id: duplicate.id, replyMessageId: duplicate.replyMessageId, userMessageId: duplicate.userMessageId, oneShot: [] as string[], duplicate: true }
@@ -321,6 +335,7 @@ export class RequestsService implements OnModuleDestroy {
       if (latest?.id !== original.replyMessageId) throw new ConflictException({ code: 'NOT_LATEST' })
       const [active] = await tx.select().from(chatRequest).where(and(eq(chatRequest.threadId, original.threadId), inArray(chatRequest.status, ACTIVE)))
       if (active) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
+      await this.assertGlobalCapacity(tx)
       const files = await tx.select().from(messageAttachment).where(eq(messageAttachment.messageId, original.userMessageId))
       const allowed = new Set(files.map((item) => item.fileId))
       const selected = owner.taskId ? await tx.select().from(taskInput).where(eq(taskInput.taskId, owner.taskId)) : []
@@ -539,14 +554,20 @@ export class RequestsService implements OnModuleDestroy {
       if (controller.signal.reason === 'timeout') failure = '응답 시간 초과 — 제한 시간 안에 응답이 오지 않았습니다.'
       try {
         if (controller.signal.reason !== 'lost' && controller.signal.reason !== 'cancelled') {
-          const ok = await this.transition(id, failure ? 'failed' : 'succeeded', failure, acc, info, snapshot)
-          if (ok) {
-            if (snapshotBytes && snapshot && typeof snapshot === 'object' && 'storageKey' in snapshot && typeof snapshot.storageKey === 'string') {
-              try { await this.storage.write(snapshot.storageKey, snapshotBytes) }
-              catch { await this.db.update(chatRequest).set({ snapshot: null }).where(eq(chatRequest.id, id)) }
+          let writtenKey: string | undefined
+          if (snapshotBytes && snapshot && typeof snapshot === 'object' && 'storageKey' in snapshot && typeof snapshot.storageKey === 'string') {
+            try { await this.storage.write(snapshot.storageKey, snapshotBytes); writtenKey = snapshot.storageKey }
+            catch { snapshot = JSON.parse(snapshotBytes.toString('utf8')) as unknown }
+          }
+          let transitioned = false
+          try {
+            transitioned = await this.transition(id, failure ? 'failed' : 'succeeded', failure, acc, info, snapshot)
+            if (transitioned) {
+              this.emit(id, failure ? { event: 'failed', data: { error: failure, code: errorCode('failed', failure, info?.bytes ?? 0), requestInfo: publicInfo(info) } } : { event: 'completed', data: { requestInfo: publicInfo(info) } })
+              if (!failure) void this.maybeTitle(id).catch(() => undefined)
             }
-            this.emit(id, failure ? { event: 'failed', data: { error: failure, code: errorCode('failed', failure, info?.bytes ?? 0), requestInfo: publicInfo(info) } } : { event: 'completed', data: { requestInfo: publicInfo(info) } })
-            if (!failure) void this.maybeTitle(id).catch(() => undefined)
+          } finally {
+            if (writtenKey && !transitioned) await this.storage.remove(writtenKey)
           }
         }
       } finally { this.runs.delete(id) }

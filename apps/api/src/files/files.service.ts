@@ -3,7 +3,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Inject, Inj
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { EventsService } from '../events/events.service.js'
-import { activityLog, fileObject, tag, task, taskInput, taskTag } from '../db/schema.js'
+import { activityLog, appUser, fileObject, tag, task, taskInput, taskTag } from '../db/schema.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { FileStorageService, createStorageKey, sha256 } from './fileStorage.service.js'
 import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
@@ -229,7 +229,8 @@ export class DbFilesService {
         ...(selectedById.has(row.id) && { selected: selectedById.get(row.id) }),
         ...(head !== row.id && { newerVersionId: head }), ...(olderVersionIds.length && { olderVersionIds }) }
     })
-    const visible = actor ? (await Promise.all(files.map(async (item) => {
+    const [viewer] = actor ? await this.db.select({ isBusinessOwner: appUser.isBusinessOwner, isSystemOwner: appUser.isSystemOwner }).from(appUser).where(eq(appUser.id, actor)) : []
+    const visible = actor && viewer?.isBusinessOwner && !viewer.isSystemOwner ? (await Promise.all(files.map(async (item) => {
       try { await assertFileAccess(this.db, actor, item.file.id); return item }
       catch (error) { if (error instanceof ForbiddenException) return null; throw error }
     }))).filter((item): item is (typeof files)[number] => item !== null) : files

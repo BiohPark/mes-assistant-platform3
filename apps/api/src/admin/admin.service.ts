@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common'
 import { and, asc, eq, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
-import { appSetting, appUser, assistant, assistantChecklistTemplate, assistantExpectedIo, checklistItem, code, codeGroup, fileObject, task } from '../db/schema.js'
+import { activityLog, appSetting, appUser, assistant, assistantChecklistTemplate, assistantExpectedIo, checklistItem, code, codeGroup, fileObject, task } from '../db/schema.js'
 import { isDuplicateKey } from '../db/errors.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { FILE_STORAGE } from '../files/files.service.js'
@@ -118,6 +118,8 @@ export class AdminService {
       if (await this.isIntake(id, tx as Db)) throw new ConflictException('접수 에이전트는 삭제할 수 없습니다')
       const [linked] = await tx.select({ id: task.id }).from(task).where(eq(task.assistantId, id)).limit(1)
       if (linked) throw new ConflictException('대화가 연결되어 있어 삭제할 수 없습니다')
+      const [recorded] = await tx.select({ id: activityLog.id }).from(activityLog).where(eq(activityLog.assistantId, id)).limit(1)
+      if (recorded) throw new ConflictException('활동 이력이 있어 삭제할 수 없습니다')
       await tx.delete(assistant).where(eq(assistant.id, id))
       if (row.imageFileId) await tx.update(fileObject).set({ deletedAt: new Date() }).where(eq(fileObject.id, row.imageFileId))
     })

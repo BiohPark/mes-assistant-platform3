@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { Inject, Injectable } from '@nestjs/common'
-import { and, eq, gt } from 'drizzle-orm'
+import { and, eq, gt, sql } from 'drizzle-orm'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
 import { appSession, appUser } from '../db/schema.js'
@@ -36,18 +36,28 @@ export class DbSessionStore implements SessionStore {
 
   async create(userId: string) {
     const token = randomBytes(32).toString('base64url')
-    const expiresAt = new Date(Date.now() + this.config.sessionTtlHours * 3600_000)
-    await this.db.insert(appSession).values({ id: hashToken(token), userId, expiresAt })
+    const [clock] = await this.db.select({ now: sql<Date>`current_timestamp(6)`.mapWith(appSession.createdAt) }).from(appUser).where(eq(appUser.id, userId))
+    if (!clock) throw new Error('세션 사용자를 찾을 수 없습니다')
+    const expiresAt = new Date(clock.now.getTime() + this.config.sessionTtlHours * 3600_000)
+    const idleExpiresAt = new Date(Math.min(expiresAt.getTime(), clock.now.getTime() + this.config.sessionIdleHours * 3600_000))
+    await this.db.insert(appSession).values({ id: hashToken(token), userId, createdAt: clock.now, expiresAt: idleExpiresAt })
     return { token, expiresAt }
   }
 
   async resolve(token: string): Promise<AuthUser | null> {
     const [row] = await this.db
-      .select({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner, mustChangePassword: appUser.mustChangePassword })
+      .select({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner, mustChangePassword: appUser.mustChangePassword, createdAt: appSession.createdAt, now: sql<Date>`current_timestamp(6)`.mapWith(appSession.createdAt) })
       .from(appSession)
       .innerJoin(appUser, eq(appUser.id, appSession.userId))
-      .where(and(eq(appSession.id, hashToken(token)), gt(appSession.expiresAt, new Date()), eq(appUser.active, true)))
-    return row ?? null
+      .where(and(eq(appSession.id, hashToken(token)), gt(appSession.expiresAt, sql`current_timestamp(6)`), eq(appUser.active, true)))
+    if (!row) return null
+    const absoluteExpiry = row.createdAt.getTime() + this.config.sessionTtlHours * 3600_000
+    if (absoluteExpiry <= row.now.getTime()) return null
+    const expiresAt = new Date(Math.min(absoluteExpiry, row.now.getTime() + this.config.sessionIdleHours * 3600_000))
+    const updated = await this.db.update(appSession).set({ expiresAt }).where(and(eq(appSession.id, hashToken(token)), gt(appSession.expiresAt, sql`current_timestamp(6)`)))
+    if (!updated[0].affectedRows) return null
+    const { createdAt: _createdAt, now: _now, ...user } = row
+    return user
   }
 
   async destroy(token: string) {

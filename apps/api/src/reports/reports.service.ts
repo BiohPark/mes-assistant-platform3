@@ -1,8 +1,8 @@
 import { ForbiddenException, Inject, Injectable } from '@nestjs/common'
 import { assistantStats, completionBuckets, feedbackDigest, inefficiencySignals, inputFlow, srLeadDays, srStatusDistribution, tagUsage, userActivityStats, type ActivityLog, type Assistant, type Granularity, type ServiceRequest, type User } from '@mes/domain'
-import { asc, eq, isNull } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, isNull, max, or } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appUser, assistant, fileObject, serviceRequest } from '../db/schema.js'
+import { activityLog, appUser, assistant, fileObject, serviceRequest, task } from '../db/schema.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
 
 @Injectable()
@@ -12,20 +12,34 @@ export class ReportsService {
   async get(days: number, granularity: Granularity, actor: string, userId?: string) {
     const [viewer] = await this.db.select({ isBusinessOwner: appUser.isBusinessOwner, isSystemOwner: appUser.isSystemOwner }).from(appUser).where(eq(appUser.id, actor))
     if (!viewer || (viewer.isBusinessOwner && !viewer.isSystemOwner)) throw new ForbiddenException('리포트 권한이 없습니다')
-    const [allTasks, activities, files, srs, assistants, users] = await Promise.all([
-      this.tasks.list(),
-      this.db.select().from(activityLog).orderBy(asc(activityLog.at)),
+    const tasks = await this.tasks.list(userId ? { mine: userId } : {})
+    const taskIds = tasks.map((row) => row.id)
+    const activityScope = or(isNull(activityLog.taskId), ...(taskIds.length ? [inArray(activityLog.taskId, taskIds)] : []))
+    const activityColumns = { id: activityLog.id, type: activityLog.type, userId: activityLog.userId, taskId: activityLog.taskId,
+      assistantId: activityLog.assistantId, srId: activityLog.srId, payload: activityLog.payload, at: activityLog.at }
+    const historyColumns = { type: activityLog.type, taskId: activityLog.taskId, srId: activityLog.srId, payload: activityLog.payload, at: activityLog.at }
+    const from = new Date(Date.now() - (days - 1) * 86_400_000)
+    const [sourceTasks, activities, lastActivityRows, recentActivities, files, srs, assistants, users] = await Promise.all([
+      userId ? this.db.select({ id: task.id, assistantId: task.assistantId }).from(task).where(isNull(task.deletedAt)) : Promise.resolve(tasks),
+      this.db.select(historyColumns).from(activityLog).where(and(activityScope,
+        inArray(activityLog.type, ['task.completed', 'task.reopened', 'sr.status_changed']))).orderBy(asc(activityLog.at)),
+      taskIds.length ? this.db.select({ taskId: activityLog.taskId, at: max(activityLog.at) }).from(activityLog)
+        .where(inArray(activityLog.taskId, taskIds)).groupBy(activityLog.taskId) : Promise.resolve([]),
+      this.db.select(activityColumns).from(activityLog).where(and(activityScope, gte(activityLog.at, from))).orderBy(asc(activityLog.at)),
       this.db.select({ id: fileObject.id, name: fileObject.originalName, version: fileObject.version,
         previousId: fileObject.previousId, originTaskId: fileObject.originTaskId }).from(fileObject).where(isNull(fileObject.deletedAt)),
-      this.db.select().from(serviceRequest),
-      this.db.select().from(assistant),
-      this.db.select().from(appUser),
+      this.db.select({ id: serviceRequest.id, status: serviceRequest.status, submittedAt: serviceRequest.submittedAt }).from(serviceRequest),
+      this.db.select({ id: assistant.id, name: assistant.name, color: assistant.color, status: assistant.status, ownerId: assistant.ownerId,
+        level1CodeId: assistant.level1CodeId, level2CodeId: assistant.level2CodeId, summary: assistant.summary, sortOrder: assistant.sortOrder,
+        usageExample: assistant.usageExample, createdBy: assistant.createdBy, createdAt: assistant.createdAt, updatedAt: assistant.updatedAt, imageFileId: assistant.imageFileId }).from(assistant),
+      this.db.select({ id: appUser.id, name: appUser.name, role: appUser.role, initials: appUser.initials, color: appUser.color }).from(appUser),
     ])
-    const tasks = userId ? allTasks.filter((row) => row.ownerId === userId || row.assigneeIds.includes(userId)) : allTasks
-    const taskIds = new Set(tasks.map((row) => row.id))
-    const activity: ActivityLog[] = activities.filter((row) => !row.taskId || taskIds.has(row.taskId)).map((row) => ({ id: row.id, type: row.type as ActivityLog['type'], userId: row.userId,
+    const mapActivity = (rows: typeof recentActivities): ActivityLog[] => rows.map((row) => ({ id: row.id, type: row.type as ActivityLog['type'], userId: row.userId,
       ...(row.taskId && { taskId: row.taskId }), ...(row.assistantId && { assistantId: row.assistantId }),
       ...(row.srId && { srId: row.srId }), payload: row.payload as Record<string, unknown>, at: row.at.toISOString() }))
+    const activity = activities.map((row) => ({ type: row.type as ActivityLog['type'], ...(row.taskId && { taskId: row.taskId }),
+      ...(row.srId && { srId: row.srId }), payload: row.payload as Record<string, unknown>, at: row.at.toISOString() }))
+    const lastActivity = new Map(lastActivityRows.filter((row) => row.taskId && row.at).map((row) => [row.taskId!, row.at!.toISOString()]))
     const completedAt = new Map<string, string>()
     for (const row of activity) if (row.type === 'task.completed' && row.taskId) completedAt.set(row.taskId, row.at)
     const reportTasks = tasks.map((row) => row.status === 'done' && completedAt.has(row.id)
@@ -52,11 +66,11 @@ export class ReportsService {
       },
       buckets: completionBuckets(reportTasks, days, granularity),
       assistantStats: assistantStats(reportTasks, assistantRows),
-      userStats: userActivityStats(activity, userRows, days),
-      flow: inputFlow(tasks, fileRows, allTasks).slice(0, 10),
+      userStats: userActivityStats(mapActivity(recentActivities), userRows, days),
+      flow: inputFlow(tasks, fileRows, sourceTasks).slice(0, 10),
       tags: tagUsage(reportTasks).slice(0, 12),
       srDist: srStatusDistribution(srRows),
-      signals: inefficiencySignals(reportTasks, activity, fileRows),
+      signals: inefficiencySignals(reportTasks, activity, fileRows, new Date(), lastActivity),
       digest: feedbackDigest(reportTasks, assistantRows, userRows),
       assistants: assistantRows,
       users: userRows,

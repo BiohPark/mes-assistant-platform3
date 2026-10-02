@@ -61,6 +61,41 @@ describe('RequestService DB', () => {
     expect((await db.select().from(chatRequest).where(eq(chatRequest.id, started.id)))[0]?.replyMessageId).toBe(started.replyMessageId)
   })
 
+  it('여러 스레드의 진행 중 요청을 전역 설정값 이하로 제한하고 종료 후 다시 허용한다', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const holding: ChatProvider = { ...provider, async *stream() { await held; yield { type: 'delta', text: '응답' }; yield { type: 'done' } } }
+    const runner = new RequestsService(db, { ...loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }),
+      request: { ...loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' }).request, maxActive: 2 } }, holding)
+    try {
+      const threads = await Promise.all([0, 1, 2].map(async () => (await tasks.create('member', { assistantId })).thread.id))
+      const first = await runner.start('member', threads[0]!, { content: '첫째' }, 'global-first')
+      const second = await runner.start('member', threads[1]!, { content: '둘째' }, 'global-second')
+      await expect(runner.start('member', threads[2]!, { content: '셋째' }, 'global-third')).rejects.toMatchObject({ status: 429 })
+      release()
+      await Promise.all([first.done, second.done])
+      const third = await runner.start('member', threads[2]!, { content: '셋째' }, 'global-third')
+      await third.done
+    } finally { release(); runner.onModuleDestroy() }
+  })
+
+  it('서로 다른 서비스 인스턴스도 같은 DB 전역 상한을 공유한다', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const holding: ChatProvider = { ...provider, async *stream() { await held; yield { type: 'done' } } }
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root, REQUEST_MAX_ACTIVE: '1' })
+    const firstRunner = new RequestsService(db, config, holding)
+    const secondRunner = new RequestsService(db, config, holding)
+    try {
+      const firstThread = (await tasks.create('member', { assistantId })).thread.id
+      const secondThread = (await tasks.create('member', { assistantId })).thread.id
+      const first = await firstRunner.start('member', firstThread, { content: '첫째' }, 'instance-first')
+      await expect(secondRunner.start('member', secondThread, { content: '둘째' }, 'instance-second')).rejects.toMatchObject({ status: 429 })
+      release()
+      await first.done
+    } finally { release(); firstRunner.onModuleDestroy(); secondRunner.onModuleDestroy() }
+  })
+
   it('preserves a manual title while an AI title suggestion is in flight', async () => {
     let beginTitle!: () => void
     let finishTitle!: () => void
@@ -547,6 +582,33 @@ describe('RequestService DB', () => {
     const now = new Date()
     const key = `requests/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${run.id}.json`
     expect(await new FileStorageService(root).exists(key)).toBe(false)
+  })
+
+  it('큰 snapshot 파일 쓰기 중 취소되어 종료 전이가 실패하면 파일을 삭제한다', async () => {
+    let writing!: () => void
+    let release!: () => void
+    const started = new Promise<void>((resolve) => { writing = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const original = FileStorageService.prototype.write
+    const write = vi.spyOn(FileStorageService.prototype, 'write').mockImplementation(async function (this: FileStorageService, key, bytes) {
+      await original.call(this, key, bytes)
+      if (key.startsWith('requests/')) { writing(); await held }
+    })
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
+      REQUEST_BUDGET_BYTES: String(2 * 1024 * 1024) }), provider)
+    try {
+      const { thread } = await tasks.create('member', { assistantId })
+      const run = await runner.start('member', thread.id, { content: 'x'.repeat(1_100_000) }, 'cancel-writing-snapshot')
+      await started
+      await runner.cancel(run.id)
+      release()
+      await run.done
+      const [row] = await db.select({ snapshot: chatRequest.snapshot }).from(chatRequest).where(eq(chatRequest.id, run.id))
+      expect(row?.snapshot).toBeNull()
+      const now = new Date()
+      const key = `requests/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${run.id}.json`
+      expect(await new FileStorageService(root).exists(key)).toBe(false)
+    } finally { release(); write.mockRestore(); runner.onModuleDestroy() }
   })
 
   it('interrupts unfinished requests on process restart even before lease expiry', async () => {
