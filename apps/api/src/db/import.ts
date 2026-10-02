@@ -4,8 +4,10 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { drizzle } from 'drizzle-orm/mysql2'
 import { desc, eq, sql } from 'drizzle-orm'
+import { isSrTag, normalizeTag, tagKey } from '@mes/domain'
 import type { Db } from './db.module.js'
 import { createPool } from './connection.js'
+import { SEED_ASSISTANTS } from './seedData.js'
 import { hashPassword } from '../auth/password.js'
 import { FileStorageService, createStorageKey, sha256 } from '../files/fileStorage.service.js'
 import { validName } from '../files/files.service.js'
@@ -18,6 +20,11 @@ const legacyCatalogOrder = new Map([
   'deviation-drafter', 'cc-writer', 'cc-item-builder', 'release-cca-writer', 'urs-analyst-basic', 'urs-analyst',
   'fds-writer', 'fds-reviewer', 'test-scenario-writer', 'deploy-verifier', 'cca-writer', 'protocol-reviewer',
 ].map((id, index) => [id, index + 1]))
+const legacyCatalogOwners = new Map([
+  ['deviation-drafter', 'u_dev2'], ['cc-writer', 'u_dev1'], ['cc-item-builder', 'u_dev1'], ['release-cca-writer', 'u_dev3'],
+  ['urs-analyst-basic', 'u_dev1'], ['urs-analyst', 'u_dev4'], ['fds-writer', ''], ['fds-reviewer', 'u_dev1'],
+  ['test-scenario-writer', 'u_dev3'], ['deploy-verifier', 'u_dev3'], ['cca-writer', 'u_dev3'], ['protocol-reviewer', ''],
+])
 
 export function validateBundle(input: unknown): input is Bundle {
   if (!input || typeof input !== 'object') return false
@@ -54,9 +61,18 @@ export function normalizeBundle(input: unknown): Bundle {
     return [base, ...splits]
   })
   tables.threads = threads
-  let legacyOrder = 1000
-  tables.assistants = (tables.assistants ?? []).map((a) => ({ ...a, status: a.status === 'working' ? 'developing' : a.status,
-    level1: a.level1 ?? '이전 데모', order: a.order ?? legacyCatalogOrder.get(a.id) ?? legacyOrder++, expectedInputs: a.expectedInputs ?? [], expectedOutputs: a.expectedOutputs ?? [] }))
+  const assistants = tables.assistants ?? []
+  const catalogIds = new Set(SEED_ASSISTANTS.map((a) => a.id))
+  const userIds = new Set((tables.users ?? []).map((user) => user.id))
+  tables.assistants = [
+    ...SEED_ASSISTANTS.filter((a) => !assistants.some((existing) => existing.id === a.id))
+      .map((a) => { const ownerId = legacyCatalogOwners.get(a.id) ?? a.ownerId
+        return { ...a, ownerId: userIds.has(ownerId) ? ownerId : '', createdBy: userIds.has('u_so') ? 'u_so' : '' } }),
+    ...assistants.filter((a) => catalogIds.has(a.id)).map((a) => ({ ...a, status: a.status === 'working' ? 'developing' : a.status,
+      order: a.order ?? legacyCatalogOrder.get(a.id), expectedInputs: a.expectedInputs ?? [], expectedOutputs: a.expectedOutputs ?? [] })),
+    ...assistants.filter((a) => !catalogIds.has(a.id)).map((a, index) => ({ ...a, status: a.status === 'working' ? 'developing' : a.status,
+      level1: '이전 데모', order: a.order ?? 1000 + index, expectedInputs: a.expectedInputs ?? [], expectedOutputs: a.expectedOutputs ?? [] })),
+  ]
   tables.serviceRequests = srs.map((sr) => ({ ...sr, titleSource: sr.titleSource ?? (sr.title ? 'manual' : 'default') }))
   return { ...input, tables }
 }
@@ -82,6 +98,10 @@ const validBase64 = (value: unknown): value is string => typeof value === 'strin
 export type ImportReport = Record<string, { imported: number; skipped: number; reason?: string }>
 export type CodeMapping = { kind: 'WK' | 'SR'; id: string; from: string; to: string }
 export const DEFAULT_IMPORT_BUNDLE_MAX_BYTES = 64 * 1024 ** 2
+export function parseBundleJson(source: Buffer): unknown {
+  try { return JSON.parse(source.toString('utf8')) as unknown }
+  catch { throw new Error('유효하지 않은 JSON 파일입니다.') }
+}
 export type ImportOptions = { defaultOwner?: string; allowMultiSr?: boolean }
 const same = (actual: Row, expected: Row) => Object.entries(expected).every(([key, value]) => value === undefined ||
   (value instanceof Date ? new Date(actual[key]).getTime() === value.getTime() :
@@ -364,12 +384,13 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
           mark('tasks.assigneeIds', 'task_assignee', !old)
         }
         for (const value of taskTags(t)) {
-          const tagKey = String(value)
-          const [oldTag] = await tx.select().from(s.tag).where(eq(s.tag.key, tagKey))
-          if (!oldTag) await tx.insert(s.tag).values({ key: tagKey, kind: tagKey.startsWith('SR-') ? 'sr' : 'keyword', label: tagKey })
-          const [old] = await tx.select().from(s.taskTag).where(sql`${s.taskTag.taskId} = ${t.id} and ${s.taskTag.tagKey} = ${tagKey}`)
-          if (old && !same(old, { addedBy: userRef(t.createdBy, `task:${t.id}.createdBy`), addedAt: date(t.createdAt) })) conflicts.push(`task_tag:${t.id}/${tagKey}`)
-          if (!old) await tx.insert(s.taskTag).values({ taskId: id(t.id), tagKey, addedBy: userRef(t.createdBy, `task:${t.id}.createdBy`), addedAt: date(t.createdAt) })
+          const label = String(value)
+          const key = tagKey(label)
+          const [oldTag] = await tx.select().from(s.tag).where(eq(s.tag.key, key))
+          if (!oldTag) await tx.insert(s.tag).values({ key, kind: isSrTag(normalizeTag(label)) ? 'sr' : 'keyword', label })
+          const [old] = await tx.select().from(s.taskTag).where(sql`${s.taskTag.taskId} = ${t.id} and ${s.taskTag.tagKey} = ${key}`)
+          if (old && !same(old, { addedBy: userRef(t.createdBy, `task:${t.id}.createdBy`), addedAt: date(t.createdAt) })) conflicts.push(`task_tag:${t.id}/${key}`)
+          if (!old) await tx.insert(s.taskTag).values({ taskId: id(t.id), tagKey: key, addedBy: userRef(t.createdBy, `task:${t.id}.createdBy`), addedAt: date(t.createdAt) })
           mark('tasks.tags', 'tag/task_tag', !old)
         }
         for (const [sortOrder, input] of (t.inputs ?? []).entries()) {
@@ -503,7 +524,7 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
         for (const userId of t.assigneeIds ?? []) await requireChild(s.taskAssignee,
           sql`${s.taskAssignee.taskId} = ${id(t.id)} and ${s.taskAssignee.userId} = ${id(userId)}`, `task_assignee:${t.id}/${userId}`, { taskId: id(t.id), userId: id(userId) })
         for (const tag of taskTags(t)) await requireChild(s.taskTag,
-          sql`${s.taskTag.taskId} = ${id(t.id)} and ${s.taskTag.tagKey} = ${String(tag)}`, `task_tag:${t.id}/${tag}`, { taskId: id(t.id), tagKey: String(tag), addedBy: userRef(t.createdBy, `task:${t.id}.createdBy`), addedAt: date(t.createdAt) })
+          sql`${s.taskTag.taskId} = ${id(t.id)} and ${s.taskTag.tagKey} = ${tagKey(String(tag))}`, `task_tag:${t.id}/${tagKey(String(tag))}`, { taskId: id(t.id), tagKey: tagKey(String(tag)), addedBy: userRef(t.createdBy, `task:${t.id}.createdBy`), addedAt: date(t.createdAt) })
         for (const [sortOrder, input] of (t.inputs ?? []).entries()) await requireChild(s.taskInput,
           sql`${s.taskInput.taskId} = ${id(t.id)} and ${s.taskInput.fileId} = ${id(input.fileId)}`, `task_input:${t.id}/${input.fileId}`, { taskId: id(t.id), fileId: id(input.fileId),
             weight: input.weight ?? 'reference', sortOrder, selectedBy: userRef(input.selectedBy || t.createdBy, `task:${t.id}.inputs.selectedBy`), selectedAt: date(input.selectedAt ?? t.createdAt) })
@@ -587,7 +608,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if ((await stat(resolve(file))).size > maxBytes) throw new Error(`bundle 크기가 제한(${maxBytes} bytes)을 초과합니다`)
     const source = await readFile(resolve(file))
     if (source.byteLength > maxBytes) throw new Error(`bundle 크기가 제한(${maxBytes} bytes)을 초과합니다`)
-    const input = JSON.parse(source.toString('utf8')) as unknown
+    const input = parseBundleJson(source)
     const client = createPool(process.env.DATABASE_URL)
     try {
       const storage = dryRun ? undefined : new FileStorageService(resolve(process.env.FILE_STORAGE_ROOT ?? 'storage'))

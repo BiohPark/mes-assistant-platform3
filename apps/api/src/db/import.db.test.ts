@@ -13,6 +13,7 @@ import { verifyPassword } from '../auth/password.js'
 import { importBundle } from './import.js'
 import { seedCatalog } from './seed.js'
 import { SEED_ASSISTANTS } from './seedData.js'
+import { DbTasksService } from '../tasks/tasks.service.js'
 import * as s from './schema.js'
 
 const at = '2026-09-01T00:00:00.000Z'
@@ -106,7 +107,8 @@ describe('demo bundle DB import', () => {
       expect(first.codeMappings).toEqual(dry.codeMappings)
       expect((await db.select().from(s.task).where(eq(s.task.id, 'task_seed_0001')))[0]?.code).toBe('WK-2026-0012')
       expect((await db.select().from(s.serviceRequest).where(eq(s.serviceRequest.id, 'sr_seed_0001')))[0]?.code).toBe('SR-2026-0006')
-      expect((await db.select().from(s.taskTag).where(eq(s.taskTag.taskId, 'task_seed_0001'))).map((row) => row.tagKey)).toContain('SR-2026-0007')
+      expect((await db.select().from(s.taskTag).where(eq(s.taskTag.taskId, 'task_seed_0001'))).map((row) => row.tagKey)).toContain('sr-2026-0007')
+      expect((await db.select().from(s.tag).where(eq(s.tag.key, 'sr-2026-0007')))[0]).toMatchObject({ kind: 'sr', label: 'SR-2026-0007' })
       const second = await importBundle(fixture, db, storage)
       expect(second.report['tasks → task']).toMatchObject({ imported: 0, skipped: fixture.tables.tasks.length })
       expect(second.codeMappings).toEqual(first.codeMappings)
@@ -114,6 +116,12 @@ describe('demo bundle DB import', () => {
       expect((await db.select({ n: count() }).from(s.serviceRequest))[0]!.n).toBe(fixture.tables.serviceRequests.length + 2)
       expect((await db.select().from(s.task).where(eq(s.task.id, 'server-task')))[0]?.code).toBe('WK-2026-0001')
       expect((await db.select().from(s.serviceRequest).where(eq(s.serviceRequest.id, 'server-sr')))[0]?.code).toBe('SR-2026-0001')
+      const tasks = new DbTasksService(db)
+      expect((await tasks.list({ tags: ['SR-2026-0007'] })).map((task) => task.id)).toContain('task_seed_0002')
+      expect((await tasks.get('task_seed_0002')).tags).toContain('SR-2026-0007')
+      await tasks.removeTag('u_so', 'task_seed_0002', 'SR-2026-0007')
+      expect((await tasks.get('task_seed_0002')).tags).not.toContain('SR-2026-0007')
+      expect((await tasks.list({ tags: ['SR-2026-0007'] })).map((task) => task.id)).not.toContain('task_seed_0002')
     } finally { await pool.end(); await isolated.drop() }
   })
 
@@ -232,13 +240,13 @@ describe('demo bundle DB import', () => {
       task.checklistReview = { by: 'fixture-user', at, met: 1, total: 1, source: 'rule', items: [{ itemId: 'fixture-check', met: true }] }
       v1.tables.packages = [{ id: 'fixture-package' }]
       v1.tables.threads.push({ id: 'fixture-thread-two', taskId: 'fixture-task', title: 'Follow up', createdBy: 'fixture-user', createdAt: '2026-09-02T00:00:00.000Z' })
-      const result = await importBundle(v1, drizzle(legacyClient), new FileStorageService(root))
+      const result = await importBundle(v1, drizzle(legacyClient), new FileStorageService(root), false, { defaultOwner: 'demo-fixture-user' })
       expect(result.report['packages → —']).toMatchObject({ imported: 0, skipped: 1, reason: '서버 대응 없음' })
       const db = drizzle(legacyClient)
       expect((await db.select().from(s.task).orderBy(s.task.id)).map((row) => [row.id, row.code, row.titleSource])).toEqual([
         ['fixture-source-task', 'WK-2099-0002', 'manual'], ['fixture-task', 'WK-2099-0001', 'manual'], ['fixture-task_split1', 'WK-2099-0001-2', 'manual'],
       ])
-      expect((await db.select().from(s.taskTag)).map((row) => row.tagKey)).toEqual(['SR-2099-0001', 'SR-2099-0001', 'SR-2099-0001'])
+      expect((await db.select().from(s.taskTag)).map((row) => row.tagKey)).toEqual(['sr-2099-0001', 'sr-2099-0001', 'sr-2099-0001'])
       expect((await db.select().from(s.taskInput))[0]).toMatchObject({ fileId: 'fixture-file', weight: 'reference' })
       expect((await db.select().from(s.thread).where(eq(s.thread.id, 'fixture-thread-two')))[0]).toMatchObject({ taskId: 'fixture-task_split1' })
       expect((await db.select().from(s.checklistItem).orderBy(s.checklistItem.id)).map((row) => [row.id, row.taskId])).toEqual([
@@ -248,6 +256,23 @@ describe('demo bundle DB import', () => {
         ['fixture-task:import-review', 'fixture-check'], ['fixture-task_split1:import-review', 'fixture-task_split1:fixture-check'],
       ])
     } finally { await legacyClient.end(); await legacyDb.drop() }
+  })
+
+  it('restores missing default assistants when importing a v1 bundle into an empty DB', async () => {
+    const isolated = await createTempDb('import_v1_defaults')
+    const pool = createPool(isolated.url)
+    try {
+      await runMigrations(isolated.url)
+      const db = drizzle(pool)
+      const fixture = await demoBundle()
+      fixture.version = 1
+      fixture.tables.assistants = []
+      const result = await importBundle(fixture, db, new FileStorageService(root), false, { defaultOwner: 'demo-u_so' })
+      expect(result.report['assistants → assistant']?.imported).toBe(SEED_ASSISTANTS.length)
+      expect((await db.select().from(s.assistant)).map((row) => row.id).sort()).toEqual(SEED_ASSISTANTS.map((a) => a.id).sort())
+      expect((await db.select().from(s.assistant).where(eq(s.assistant.id, 'deviation-drafter')))[0]?.ownerId).toBe('u_dev2')
+      expect((await db.select().from(s.task).where(eq(s.task.id, 'task_seed_0001')))[0]?.assistantId).toBe('urs-analyst')
+    } finally { await pool.end(); await isolated.drop() }
   })
 
   it('imports multiple draft SRs and selected SR attachments through the intake thread', async () => {

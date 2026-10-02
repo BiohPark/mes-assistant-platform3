@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_IMPORT_BUNDLE_MAX_BYTES, loginIdFor, normalizeBundle, validateBundle } from './import.js'
+import { DEFAULT_IMPORT_BUNDLE_MAX_BYTES, loginIdFor, normalizeBundle, parseBundleJson, validateBundle } from './import.js'
 
 const at = '2026-09-01T00:00:00.000Z'
 const empty = { format: 'mes-assistant-hub', version: 3, exportedAt: at, tables: {} }
@@ -31,8 +31,10 @@ describe('demo bundle import rules', () => {
     ])
     expect(bundle.tables.threads?.[1]).toMatchObject({ taskId: 'task-a_split1' })
     expect(bundle.tables.serviceRequests?.[0]).toMatchObject({ titleSource: 'manual' })
-    expect(bundle.tables.assistants?.[0]).toMatchObject({ status: 'developing', order: 6, expectedInputs: [], expectedOutputs: [] })
-    expect(bundle.tables.assistants?.[1]).toMatchObject({ status: 'developing', level1: '이전 데모', order: 1000, expectedInputs: [], expectedOutputs: [] })
+    expect(bundle.tables.assistants).toHaveLength(13)
+    expect(bundle.tables.assistants?.[0]).toMatchObject({ id: 'deviation-drafter', order: 1 })
+    expect(bundle.tables.assistants?.find((a) => a.id === 'urs-analyst')).toMatchObject({ status: 'developing', order: 6, expectedInputs: [], expectedOutputs: [] })
+    expect(bundle.tables.assistants?.at(-1)).toMatchObject({ id: 'assistant-a', status: 'developing', level1: '이전 데모', order: 1000, expectedInputs: [], expectedOutputs: [] })
     expect(bundle.tables.packages).toHaveLength(1)
   })
 
@@ -40,5 +42,14 @@ describe('demo bundle import rules', () => {
     const used = new Set(['demo-user-a'])
     expect(loginIdFor('user-a', 'User A', used)).toBe('demo-user-a-2')
     expect(loginIdFor('한글', '가상 사용자', used)).toMatch(/^demo-[a-z0-9-]{3,}$/)
+  })
+
+  it('does not expose malformed JSON input in a parse error', () => {
+    const secret = 'private-bundle-token'
+    let message = ''
+    try { parseBundleJson(Buffer.from(`{"secret": ${secret}}`)) }
+    catch (error) { message = (error as Error).message }
+    expect(message).toBe('유효하지 않은 JSON 파일입니다.')
+    expect(message).not.toContain(secret)
   })
 })
