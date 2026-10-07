@@ -159,6 +159,8 @@ pnpm db:seed
 
 다시 실행해도 안전하다(있는 항목은 건너뜀). `NODE_ENV=production`이면 거부한다 — 운영 DB에는 넣지 않는다. 시드 없이 시작하면 허브가 비어 있는 것이 정상이다.
 
+역할별 테스트 계정(`dev-owner` System Owner · `dev-member` 담당자 · `dev-requester` 요청자, 비밀번호 `DEV_USER_PASSWORD`)이 필요하면 개발용 `.env`에서 `SEED_DEV_ACCOUNTS=true`로 바꾼 뒤 `pnpm db:seed`를 실행한다. 실제 사용자가 한 명이라도 있는 DB에서는 만들지 않는다. **운영 `.env`에서는 켜지 않는다.** 시드는 SR 접수 에이전트가 비어 있으면 URS 분석 도우미로 지정한다.
+
 ## 5. 로그인
 
 ### 기본 — 앱 자체 로그인 (`AUTH_MODE=local`)
