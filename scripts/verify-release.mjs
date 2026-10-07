@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
 import { join, resolve } from 'node:path'
@@ -55,6 +55,10 @@ try {
   if (route.status !== 200 || !((await route.text()).includes('<html'))) throw new Error('SPA 경로 응답 오류')
   const mode = await fetch(`${base}/api/auth/mode`)
   if (mode.status !== 200 || (await mode.json()).mode !== 'local') throw new Error('api 응답 오류')
+  const health = await fetch(`${base}/api/health`)
+  const healthBody = await health.json()
+  const buildInfo = JSON.parse(readFileSync(join(bundle, 'api', 'dist', 'build-info.json'), 'utf8'))
+  if (healthBody.version !== buildInfo.version || healthBody.commit !== buildInfo.commit) throw new Error('배포 버전 정보 불일치')
   const missing = await fetch(`${base}/api/missing`)
   if (missing.status !== 404 || !missing.headers.get('content-type')?.includes('json')) throw new Error('api 404 응답 오류')
   console.log('배포 묶음 기동 확인: /, /c/abc, /api/auth/mode, /api/missing')

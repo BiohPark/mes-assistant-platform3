@@ -3,9 +3,9 @@
   <name>MES Hub</name>
   <description>MES Hub API and web</description>
   <executable>node.exe</executable>
-  <arguments>--env-file="%BASE%\..\..\.env" api\dist\main.js</arguments>
-  <workingdirectory>%BASE%\..\..</workingdirectory>
-  <logpath>%BASE%\..\..\logs</logpath>
+  <arguments>--env-file="%BASE%\..\config\.env" "%BASE%\..\app\api\dist\main.js"</arguments>
+  <workingdirectory>%BASE%\..\app</workingdirectory>
+  <logpath>%BASE%\..\logs</logpath>
   <log mode="roll-by-size">
     <sizeThreshold>10240</sizeThreshold>
     <keepFiles>8</keepFiles>

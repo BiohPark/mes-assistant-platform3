@@ -59,7 +59,8 @@ describe('세션·사용자 저장소 (MariaDB)', () => {
     const app = configureApp(moduleRef.createNestApplication(), local)
     try {
       await app.init()
-      await request(app.getHttpServer()).get('/api/health').expect(200, { status: 'ok', db: 'up' })
+      const health = await request(app.getHttpServer()).get('/api/health').expect(200)
+      expect(health.body).toEqual({ status: 'ok', db: 'up', version: expect.any(String), commit: expect.any(String) })
       const signup = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'api-local-member', password: 'password-1234', name: '홍 길동' }).expect(expectStatus(201))
       expect(signup.body.roles).toEqual(['member'])
       expect(signup.body.name).toBe('홍 길동')

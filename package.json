@@ -1,5 +1,6 @@
 {
   "name": "mes-agent-hub",
+  "version": "0.1.0",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -17,6 +18,7 @@
     "lint": "oxlint --deny-warnings --format default",
     "build": "pnpm -r build",
     "release": "node scripts/make-release.mjs",
+    "deploy:local": "node scripts/deploy-local.mjs",
     "dev": "concurrently -k -n api,web \"pnpm --filter @mes/api dev\" \"pnpm --filter @mes/web dev\"",
     "db:migrate": "pnpm --filter \"@mes/api...\" build && pnpm --filter @mes/api db:migrate",
     "db:seed": "pnpm --filter \"@mes/api...\" build && pnpm --filter @mes/api db:seed",

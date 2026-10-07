@@ -7,14 +7,19 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 test('release 검증은 점유된 포트를 피해 서버를 띄운다', async () => {
-  let reservation = createServer()
+  let reservation
   let port
   for (let attempt = 0; attempt < 100; attempt++) {
-    await new Promise((done, fail) => reservation.once('error', fail).listen(0, '127.0.0.1', done))
-    port = reservation.address().port
-    if (port >= 40000 && port < 60000) break
-    await new Promise((done) => reservation.close(done))
-    reservation = createServer()
+    const candidate = 40000 + Math.floor(Math.random() * 20000)
+    const server = createServer()
+    try {
+      await new Promise((done, fail) => server.once('error', fail).listen(candidate, '127.0.0.1', done))
+      reservation = server
+      port = candidate
+      break
+    } catch (error) {
+      if (error.code !== 'EADDRINUSE') throw error
+    }
   }
   assert.ok(port >= 40000 && port < 60000, `테스트용 포트가 기존 선택 범위 밖입니다: ${port}`)
   const directory = mkdtempSync(join(tmpdir(), 'mes-verify-port-'))
@@ -35,7 +40,7 @@ test('release 검증은 점유된 포트를 피해 서버를 띄운다', async (
     assert.equal(result.code, 0, result.output)
     assert.match(result.output, /배포 묶음 기동 확인/)
   } finally {
-    reservation.close()
+    reservation?.close()
     rmSync(directory, { recursive: true, force: true })
   }
 })

@@ -1,4 +1,4 @@
-import { resolve } from 'node:path'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { isIP } from 'node:net'
 import { z } from 'zod'
 import { AuthModeSchema, FILE_MAX_PER_REQUEST } from '@mes/contracts'
@@ -78,6 +78,11 @@ const EnvSchema = z.object({
   }
 })
 
+export function isOutsideApp(appPath: string, targetPath: string, pathApi = { relative, isAbsolute, sep }): boolean {
+  const fromApp = pathApi.relative(appPath, targetPath)
+  return pathApi.isAbsolute(fromApp) || fromApp === '..' || fromApp.startsWith(`..${pathApi.sep}`)
+}
+
 export type AppConfig = ReturnType<typeof loadConfig>
 
 /** 환경 변수 → 설정. 비밀값은 여기서만 읽고 로그에 남기지 않는다. */
@@ -89,6 +94,15 @@ export function loadConfig(env: Record<string, string | undefined>) {
   }
   const e = parsed.data
   const appOrigin = e.APP_ORIGIN.replace(/\/+$/, '')
+  const envFileAt = process.execArgv.findIndex((arg) => arg === '--env-file' || arg.startsWith('--env-file='))
+  const envFileArg = process.execArgv[envFileAt]
+  const configFile = envFileArg?.startsWith('--env-file=') ? envFileArg.slice('--env-file='.length) : envFileAt >= 0 ? process.execArgv[envFileAt + 1] : undefined
+  const configOutsideApp = configFile && isOutsideApp(process.cwd(), resolve(configFile))
+  if (env.NODE_ENV === 'production' || configOutsideApp) {
+    if (!isAbsolute(e.FILE_STORAGE_ROOT) || !isOutsideApp(process.cwd(), resolve(e.FILE_STORAGE_ROOT))) {
+      throw new Error('설정 오류 — FILE_STORAGE_ROOT: 운영에서는 app 밖의 절대 경로여야 합니다')
+    }
+  }
   return {
     port: e.API_PORT,
     appOrigin,
