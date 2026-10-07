@@ -20,23 +20,38 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
   const previous = (await (await page.request.get('/api/settings')).json()) as { defaultModel?: string }
   const originalOrder = ((await (await page.request.get('/api/assistants')).json()) as Array<{ id: string }>).map((row) => row.id)
   let id = ''
+  const level1 = `E2E 분류 ${Date.now()}`
+  const level2 = `E2E 하위 ${Date.now()}`
   try {
     await page.goto('/assistants/manage')
     await page.getByRole('button', { name: '새 에이전트' }).click()
     const editor = page.getByRole('dialog', { name: '에이전트 편집' })
     await expect(editor.getByLabel('ID', { exact: true })).toHaveCount(0)
     await editor.getByText('이름', { exact: true }).locator('input').fill('E2E 관리 도우미')
-    await editor.getByRole('combobox', { name: '분류 1' }).selectOption({ index: 1 })
-    await editor.getByRole('combobox', { name: '분류 2' }).selectOption({ index: 1 })
+    for (const [label, name] of [['분류 1', level1], ['분류 2', level2]] as const) {
+      const input = editor.getByRole('combobox', { name: label })
+      await input.fill(name)
+      await expect(page.getByRole('option', { name: `새로 추가: ${name}` })).toBeVisible()
+      await input.press('Enter')
+    }
     await editor.getByRole('combobox', { name: '담당자' }).selectOption({ index: 1 })
     const creation = page.waitForResponse((response) => response.url().endsWith('/api/assistants') && response.request().method() === 'POST')
     await editor.getByRole('button', { name: '저장', exact: true }).click()
     const created = await creation
     expect(created.status()).toBe(201)
     expect(created.request().postDataJSON()).not.toHaveProperty('id')
+    expect(created.request().postDataJSON()).toMatchObject({ level1, level2 })
+    expect(created.request().postDataJSON()).not.toHaveProperty('level1CodeId')
     id = ((await created.json()) as { id: string }).id
     expect(id).toMatch(/^a-[a-f0-9]{12}$/)
     await expect(editor).toBeHidden()
+    await page.getByRole('button', { name: '분류 코드', exact: true }).click()
+    await expect(page.getByRole('heading', { name: '분류 1', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '분류 2', exact: true })).toBeVisible()
+    const codeRow = page.getByRole('textbox', { name: `${level1} 이름` }).locator('..')
+    await expect(codeRow.getByText('자동', { exact: true })).toBeVisible()
+    await expect(codeRow.getByText('사용 1', { exact: true })).toBeVisible()
+    await expect(page.getByRole('combobox')).toHaveCount(0)
     await page.goto('/')
     await expect.poll(async () => await page.getByText('E2E 관리 도우미').count()).toBeGreaterThan(0)
     await page.goto('/assistants/manage')
@@ -59,6 +74,8 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
     if (id) {
       const removed = await page.request.delete(`/api/assistants/${id}`)
       expect(removed.status(), await removed.text()).toBe(204)
+      const codes = (await (await page.request.get('/api/codes?includeInactive=true')).json()) as Array<{ name: string }>
+      expect(codes.filter(row => row.name === level1 || row.name === level2)).toEqual([])
     }
     if (previous.defaultModel !== undefined) {
       const restored = await page.request.patch('/api/settings', { data: { defaultModel: previous.defaultModel } })

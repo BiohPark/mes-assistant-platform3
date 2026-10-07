@@ -5,7 +5,7 @@ import { SystemAssistantToolArgs } from '@mes/contracts'
 import { createAssistant } from '@/api/admin'
 import { addTag, listTasks, startConversation, updateTask, type Actor } from '@/api/tasks'
 import { queryClient } from '@/api/queryClient'
-import { listAssistants, listCodes, listUsers } from '@/lib/catalog'
+import { listAssistants, listUsers } from '@/lib/catalog'
 
 export interface ProposedAction {
   id: string
@@ -60,18 +60,15 @@ export async function applyProposal(actor: Actor, proposal: ProposedAction): Pro
         return { ok: true, message: `${task.code} 대화를 ${assistant.name}와 시작했습니다.`, link: `/c/${task.id}` }
       }
       case 'create_assistant': {
-        const [codes, users] = await Promise.all([listCodes(), listUsers()])
-        const findCode = (group: string, value: string) => codes.find((row) => row.groupKey === group && [row.id, row.code, row.name].some((candidate) => candidate.toLowerCase() === value.toLowerCase()))
-        const level1 = findCode('assistant_level1', str(args.level1))
-        const level2 = findCode('assistant_level2', str(args.level2))
-        if (!level1 || !level2) return { ok: false, message: '분류 코드를 찾을 수 없습니다. 관리에서 분류를 확인하세요.' }
+        const users = await listUsers()
         const owner = users.find((row) => row.name === str(args.ownerName))
         const created = await createAssistant({
-          ...(typeof args.id === 'string' && { id: args.id }), name: str(args.name, '새 에이전트'), level1CodeId: level1.id, level2CodeId: level2.id,
+          ...(typeof args.id === 'string' && { id: args.id }), name: str(args.name, '새 에이전트'), level1: str(args.level1), level2: str(args.level2),
           summary: str(args.summary), ownerId: owner?.id ?? actor.userId, status: 'developing', usageExample: '',
           expectedInputs: [], expectedOutputs: [], checklistTemplate: [['입력 자료 선택', true], ['결과 검토', true], ['산출물 저장', false]].map(([label, required]) => ({ id: newId(), label: String(label), required: Boolean(required) })), modelId: str(args.modelId) || undefined,
         })
         void queryClient.invalidateQueries({ queryKey: ['assistants'] })
+        void queryClient.invalidateQueries({ queryKey: ['managed-codes'] })
         return { ok: true, message: `"${created.name}" 에이전트를 카탈로그 끝에 등록했습니다. 관리에서 모델·링크를 매핑하세요.`, link: '/assistants/manage' }
       }
       case 'add_tag': {

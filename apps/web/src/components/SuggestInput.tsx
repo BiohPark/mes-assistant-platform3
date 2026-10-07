@@ -14,6 +14,7 @@ export interface Option {
 export type SuggestSource = (query: string) => Option[] | Promise<Option[]>
 interface CommonProps {
   source: SuggestSource
+  normalizeValue?: (value: string) => string
   allowCreate?: boolean
   quickPicks?: Option[]
   placeholder?: string
@@ -30,12 +31,13 @@ export type SuggestInputProps = CommonProps & (
   | { mode: 'multi'; value: Option[]; onChange: (value: Option[]) => void }
 )
 
-const normalize = (value: string) => value.trim().normalize('NFC')
-const key = (value: string) => normalize(value).toLowerCase()
+const defaultNormalize = (value: string) => value.trim().normalize('NFC')
 type Results = { query: string; status: 'pending' | 'ready' | 'error'; options: Option[] }
 
 export function SuggestInput(props: SuggestInputProps) {
   const t = useT()
+  const normalize = props.normalizeValue ?? defaultNormalize
+  const key = (value: string) => normalize(value).toLowerCase()
   const { source, allowCreate = false, quickPicks = [], disabled, className } = props
   const [text, setText] = useState('')
   const [open, setOpen] = useState(false)

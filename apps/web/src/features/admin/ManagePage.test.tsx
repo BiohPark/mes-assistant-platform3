@@ -87,11 +87,55 @@ it('새 에이전트는 ID 없이 생성하고 연결 모델을 직접 입력할
   fireEvent.click(screen.getByRole('button', { name: '새 에이전트' }))
   expect(screen.queryByLabelText('ID')).not.toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('이름'), { target: { value: '새 도우미' } })
-  await screen.findByRole('option', { name: 'SDLC' })
-  fireEvent.change(screen.getByLabelText('분류 1'), { target: { value: 'l1' } })
-  fireEvent.change(screen.getByLabelText('분류 2'), { target: { value: 'l2' } })
+  fireEvent.change(screen.getByRole('combobox', { name: '분류 1' }), { target: { value: '새 분류' } })
+  await screen.findByRole('option', { name: '새로 추가: 새 분류' })
+  fireEvent.keyDown(screen.getByRole('combobox', { name: '분류 1' }), { key: 'Enter' })
+  fireEvent.change(screen.getByRole('combobox', { name: '분류 2' }), { target: { value: '새 하위' } })
+  await screen.findByRole('option', { name: '새로 추가: 새 하위' })
+  fireEvent.keyDown(screen.getByRole('combobox', { name: '분류 2' }), { key: 'Enter' })
   fireEvent.change(screen.getByLabelText('연결 모델'), { target: { value: 'custom-model' } })
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
-  await waitFor(() => expect(body).toMatchObject({ name: '새 도우미', modelId: 'custom-model', ownerId: 'owner' }))
+  await waitFor(() => expect(body).toMatchObject({ name: '새 도우미', modelId: 'custom-model', ownerId: 'owner', level1: '새 분류', level2: '새 하위' }))
   expect(body).not.toHaveProperty('id')
+})
+
+it('코드 탭은 두 분류 섹션·사용 수·자동 배지를 표시하고 추가 폼은 없다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [
+    { id: assistant.level1CodeId, groupKey: 'assistant_level1', code: 'SDLC', name: 'SDLC', sortOrder: 1, active: true, isAuto: false },
+    { id: assistant.level2CodeId, groupKey: 'assistant_level2', code: '분석', name: '분석', sortOrder: 2, active: true, isAuto: true },
+  ])))
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  fireEvent.click(screen.getByRole('button', { name: '분류 코드' }))
+  expect(await screen.findByRole('heading', { name: '분류 1' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '분류 2' })).toBeInTheDocument()
+  expect(await screen.findByText('자동')).toBeInTheDocument()
+  expect(screen.getAllByText('사용 1')).toHaveLength(2)
+  expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '추가' })).not.toBeInTheDocument()
+  expect(screen.getByRole('textbox', { name: 'SDLC 이름' })).toHaveValue('SDLC')
+  expect(screen.getByRole('spinbutton', { name: '분석 순서' })).toHaveValue(2)
+  expect(screen.getAllByRole('checkbox', { name: '활성' })).toHaveLength(2)
+})
+
+it('코드 이름·순서·활성을 계속 수정하고 비활성 코드도 관리 목록에 유지한다', async () => {
+  const item = { id: 'assistant_level1:SDLC', groupKey: 'assistant_level1', code: 'SDLC', name: 'SDLC', sortOrder: 1, active: true, isAuto: false }
+  const patches: unknown[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'PATCH') { const patch: unknown = JSON.parse(String(init.body)); patches.push(patch); Object.assign(item, patch); return jsonResponse(200, item) }
+    if (url === '/api/codes?includeInactive=true') return jsonResponse(200, [item])
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  fireEvent.click(screen.getByRole('button', { name: '분류 코드' }))
+  const name = await screen.findByRole('textbox', { name: 'SDLC 이름' })
+  fireEvent.change(name, { target: { value: '새 이름' } })
+  fireEvent.blur(name)
+  const order = await screen.findByRole('spinbutton', { name: '새 이름 순서' })
+  fireEvent.change(order, { target: { value: '4' } })
+  fireEvent.blur(order)
+  await waitFor(() => expect(patches).toContainEqual({ sortOrder: 4 }))
+  fireEvent.click(screen.getByRole('checkbox', { name: '활성' }))
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: '활성' })).not.toBeChecked())
+  expect(screen.getByRole('textbox', { name: '새 이름 이름' })).toHaveValue('새 이름')
+  expect(patches).toEqual([{ name: '새 이름' }, { sortOrder: 4 }, { active: false }])
 })
