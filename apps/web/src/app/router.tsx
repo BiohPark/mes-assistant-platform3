@@ -11,6 +11,7 @@ const DraftConversationPage = lazy(() => import('@/features/conversation/DraftCo
 const TaskPage = lazy(() => import('@/features/task/TaskPage').then((module) => ({ default: module.TaskPage })))
 const ManagePage = lazy(() => import('@/features/admin/ManagePage').then((module) => ({ default: module.ManagePage })))
 const SettingsPage = lazy(() => import('@/features/admin/SettingsPage').then((module) => ({ default: module.SettingsPage })))
+const DiagnosticsPage = lazy(() => import('@/features/admin/DiagnosticsPage').then((module) => ({ default: module.DiagnosticsPage })))
 const SrIntakePage = lazy(() => import('@/features/sr/SrIntakePage').then((module) => ({ default: module.SrIntakePage })))
 const SrManagePage = lazy(() => import('@/features/sr/SrManagePage').then((module) => ({ default: module.SrManagePage })))
 const ReportsPage = lazy(() => import('@/features/reports/ReportsPage').then((module) => ({ default: module.ReportsPage })))
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
       { path: 'tasks/:taskId', element: <StaffOnly><Suspense fallback={null}><LegacyTaskRedirect /></Suspense></StaffOnly> },
       { path: 'assistants/manage', element: <OwnerOnly><Suspense fallback={null}><ManagePage /></Suspense></OwnerOnly> },
       { path: 'settings', element: <OwnerOnly><Suspense fallback={null}><SettingsPage /></Suspense></OwnerOnly> },
+      { path: 'admin/diagnostics', element: <OwnerOnly><Suspense fallback={null}><DiagnosticsPage /></Suspense></OwnerOnly> },
       { path: 'password', element: <PasswordPage /> },
       { path: 'my-info', element: <MyInfoPage /> },
       { path: '*', element: <StaffOnly><Navigate to="/" replace /></StaffOnly> },

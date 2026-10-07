@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { TopBar } from '@/app/TopBar'
@@ -57,5 +58,5 @@ function UsersSection() {
 }
 export function SettingsPage() {
   const query = useQuery({ queryKey: ['settings'], queryFn: getSettings })
-  return <><TopBar title="설정" /><div className="flex-1 overflow-auto p-4"><div className="mx-auto max-w-3xl space-y-4">{query.data ? <SettingsForm key={JSON.stringify(query.data)} initial={query.data} /> : <p>설정을 불러오는 중…</p>}<UsersSection /></div></div></>
+  return <><TopBar title="설정" /><div className="flex-1 overflow-auto p-4"><div className="mx-auto max-w-3xl space-y-4"><Link className="text-sm text-primary underline" to="/admin/diagnostics">진단 화면 열기</Link>{query.data ? <SettingsForm key={JSON.stringify(query.data)} initial={query.data} /> : <p>설정을 불러오는 중…</p>}<UsersSection /></div></div></>
 }

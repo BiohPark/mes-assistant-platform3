@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router'
-import { LayoutGrid, Boxes, Settings, Bot, ClipboardList, BarChart3 } from 'lucide-react'
+import { LayoutGrid, Boxes, Settings, Bot, ClipboardList, BarChart3, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -63,6 +63,7 @@ function AppContent() {
               {me.roles.includes('system_owner') && <>
                 <NavLink to="/assistants/manage" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Bot className="size-4" /><span className="hidden lg:inline">에이전트 관리</span></NavLink>
                 <NavLink to="/settings" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Settings className="size-4" /><span className="hidden lg:inline">설정</span></NavLink>
+                <NavLink to="/admin/diagnostics" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Activity className="size-4" /><span className="hidden lg:inline">진단</span></NavLink>
               </>}
             </nav>
           </aside>

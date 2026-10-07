@@ -11,7 +11,7 @@ vi.mock('@/features/sr/SrIntakePage', () => ({ SrIntakePage: () => <div>SR 접�
 
 afterEach(() => { roles = ['requester'] })
 
-it.each(['/', '/new/agent', '/c/task', '/reports', '/sr/manage', '/tasks/task', '/settings', '/assistants/manage'])('BO는 %s에서 /sr로 이동한다', async (path) => {
+it.each(['/', '/new/agent', '/c/task', '/reports', '/sr/manage', '/tasks/task', '/settings', '/admin/diagnostics', '/assistants/manage'])('BO는 %s에서 /sr로 이동한다', async (path) => {
   const memory = createMemoryRouter(router.routes, { initialEntries: [path] })
   render(<RouterProvider router={memory} />)
   await waitFor(() => expect(memory.state.location.pathname).toBe('/sr'))
