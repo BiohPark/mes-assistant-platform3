@@ -6,6 +6,7 @@ async function signup(page: Page, suffix: string) {
   await page.goto('/signup')
   await page.getByLabel('ID').fill(id)
   await page.getByLabel('비밀번호', { exact: true }).fill(password)
+  await page.getByLabel('이름').fill(id)
   await page.getByLabel('비밀번호 확인').fill(password)
   await page.getByRole('button', { name: '회원가입' }).click()
   await expect(page).toHaveURL(/\/$/)

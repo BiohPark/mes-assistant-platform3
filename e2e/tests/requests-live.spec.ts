@@ -7,6 +7,7 @@ test('S5 파일 처리 완료 뒤 첨부하여 답변한다', async ({ page }) =
   await page.goto('/signup')
   await page.getByLabel('ID').fill(`e2e-live-success-${Date.now()}`)
   await page.getByLabel('비밀번호', { exact: true }).fill('e2e-password-1234')
+  await page.getByLabel('이름').fill('가상 사용자')
   await page.getByLabel('비밀번호 확인').fill('e2e-password-1234')
   await page.getByRole('button', { name: '회원가입' }).click()
   await expect(page).toHaveURL(/\/$/) // 세션 쿠키가 잡힌 뒤 API 호출
@@ -33,6 +34,7 @@ test('E2 파일 전달 실패 후 텍스트로 보내기를 선택해 복구한�
   await page.goto('/signup')
   await page.getByLabel('ID').fill(`e2e-live-${Date.now()}`)
   await page.getByLabel('비밀번호', { exact: true }).fill('e2e-password-1234')
+  await page.getByLabel('이름').fill('가상 사용자')
   await page.getByLabel('비밀번호 확인').fill('e2e-password-1234')
   await page.getByRole('button', { name: '회원가입' }).click()
   await expect(page).toHaveURL(/\/$/) // 세션 쿠키가 잡힌 뒤 API 호출
