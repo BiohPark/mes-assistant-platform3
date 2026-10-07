@@ -1,3 +1,4 @@
+import { newId } from '@/lib/ids'
 import { useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -51,7 +52,7 @@ export function DraftConversationPage() {
       const creationKey = `mes-draft-create:${assistant.id}:${refId ?? ''}`
       const stored = sessionStorage.getItem(creationKey)
       const attempt = stored ? JSON.parse(stored) as { key: string; body: StartConversationInput } : {
-        key: crypto.randomUUID(), body: { assistantId: assistant.id, tags, ...(assigneeId && { assigneeIds: [assigneeId] }), ...(refId && { referenceTaskId: refId }), ...(discussion && !attachments.length && text.trim() && { firstMessage: text.trim() }) },
+        key: newId(), body: { assistantId: assistant.id, tags, ...(assigneeId && { assigneeIds: [assigneeId] }), ...(refId && { referenceTaskId: refId }), ...(discussion && !attachments.length && text.trim() && { firstMessage: text.trim() }) },
       }
       if (!created.current) {
         sessionStorage.setItem(creationKey, JSON.stringify(attempt))

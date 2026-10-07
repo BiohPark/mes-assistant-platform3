@@ -1,3 +1,4 @@
+import { newId } from '@/lib/ids'
 import { normalizeTag } from '@mes/domain'
 import { SystemAssistantToolArgs } from '@mes/contracts'
 import { createAssistant } from '@/api/admin'
@@ -67,7 +68,7 @@ export async function applyProposal(actor: Actor, proposal: ProposedAction): Pro
         const created = await createAssistant({
           id: str(args.id), name: str(args.name, '새 에이전트'), level1CodeId: level1.id, level2CodeId: level2.id,
           summary: str(args.summary), ownerId: owner?.id ?? actor.userId, status: 'developing', usageExample: '',
-          expectedInputs: [], expectedOutputs: [], checklistTemplate: [['입력 자료 선택', true], ['결과 검토', true], ['산출물 저장', false]].map(([label, required]) => ({ id: crypto.randomUUID(), label: String(label), required: Boolean(required) })), modelId: str(args.modelId) || undefined,
+          expectedInputs: [], expectedOutputs: [], checklistTemplate: [['입력 자료 선택', true], ['결과 검토', true], ['산출물 저장', false]].map(([label, required]) => ({ id: newId(), label: String(label), required: Boolean(required) })), modelId: str(args.modelId) || undefined,
         })
         void queryClient.invalidateQueries({ queryKey: ['assistants'] })
         return { ok: true, message: `"${created.name}" 에이전트를 카탈로그 끝에 등록했습니다. 관리에서 모델·링크를 매핑하세요.`, link: '/assistants/manage' }
