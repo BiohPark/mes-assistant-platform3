@@ -1,8 +1,10 @@
+import { useT } from '@/i18n'
+import { MODEL_SOURCE_KEY } from '@/lib/labels'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, ChevronDown, Cpu, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
-import { MODEL_SOURCE_LABEL, resolveModel, type Task } from '@mes/domain'
+import { resolveModel, type Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
 import { setTaskModel } from '@/api/tasks'
 import { getSettings } from '@/api/admin'
@@ -14,6 +16,7 @@ import { cn } from '@/lib/utils'
 
 /** 대화 모델 지정은 task.modelId에 저장한다. 스레드별 모델 지정은 S3에서 연결한다. */
 export function ModelPicker({ task, assistant, disabled }: { task: Task; assistant: Assistant; disabled?: boolean }) {
+  const t = useT()
   const actor = useActor()
   const [open, setOpen] = useState(false)
   const [custom, setCustom] = useState('')
@@ -34,7 +37,7 @@ export function ModelPicker({ task, assistant, disabled }: { task: Task; assista
     finally { setSaving(false) }
   }
   return <div className="relative inline-block">
-    <button type="button" disabled={disabled} onClick={() => setOpen(!open)} className={cn('inline-flex h-6 items-center gap-1 rounded-full border bg-background px-1.5 font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground', missingOnServer && 'border-amber-400 text-amber-700')} title="이 대화의 모델 변경" aria-expanded={open}><Cpu className="size-3" />{resolved.modelId || '(모델 없음)'}<span className="text-xs opacity-70">{MODEL_SOURCE_LABEL[resolved.source]}</span>{missingOnServer && <AlertTriangle className="size-3" />}<ChevronDown className="size-3 opacity-60" /></button>
+    <button type="button" disabled={disabled} onClick={() => setOpen(!open)} className={cn('inline-flex h-6 items-center gap-1 rounded-full border bg-background px-1.5 font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground', missingOnServer && 'border-amber-400 text-amber-700')} title="이 대화의 모델 변경" aria-expanded={open}><Cpu className="size-3" />{resolved.modelId || '(모델 없음)'}<span className="text-xs opacity-70">{t(MODEL_SOURCE_KEY[resolved.source])}</span>{missingOnServer && <AlertTriangle className="size-3" />}<ChevronDown className="size-3 opacity-60" /></button>
     {open && <div className="absolute left-0 z-20 mt-1 w-[22rem] rounded-xl border bg-popover p-3 shadow-md">
       <div className="mb-2 flex items-center justify-between"><div className="text-xs font-semibold">assistant 모델</div><Button variant="ghost" size="icon-xs" aria-label="모델 목록 새로고침" onClick={() => void reload()} disabled={loading}><RefreshCw className={cn(loading && 'animate-spin')} /></Button></div>
       <div className="mb-2 rounded-xl border bg-muted/40 p-2 text-xs leading-relaxed text-muted-foreground"><span className={cn(current && 'font-semibold text-foreground')}>이 대화: <span className="font-mono">{current || '–'}</span></span><span className="mx-1 opacity-50">›</span><span className={cn(!current && assistant.modelId && 'font-semibold text-foreground')}>에이전트 매핑: <span className="font-mono">{assistant.modelId || '–'}</span></span></div>

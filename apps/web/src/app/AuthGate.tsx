@@ -1,3 +1,4 @@
+import { useT } from '@/i18n'
 import { useEffect, useEffectEvent, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
@@ -17,6 +18,7 @@ interface AuthGateProps {
 
 /** 로그인 사용자를 확인하고, 세션이 없으면 설정된 로그인 화면으로 보낸다 */
 export function AuthGate({ children, redirectToLogin, retryDelayMs = 1000 }: AuthGateProps) {
+  const t = useT()
   const navigate = useNavigate()
   const { data, error, refetch, isFetching } = useQuery({
     queryKey: ['me'],
@@ -52,13 +54,13 @@ export function AuthGate({ children, redirectToLogin, retryDelayMs = 1000 }: Aut
   if ((error && !unauthorized) || modeError) {
     return (
       <div role="alert" className="p-8 text-sm">
-        <h1 className="mb-2 text-lg font-semibold">서버에 연결할 수 없습니다</h1>
-        <p className="mb-3 text-muted-foreground">잠시 뒤 다시 시도하세요. 계속되면 관리자에게 알려 주세요.</p>
+        <h1 className="mb-2 text-lg font-semibold">{t('common.serverUnavailable')}</h1>
+        <p className="mb-3 text-muted-foreground">{t('common.serverUnavailableHelp')}</p>
         <Button size="sm" variant="outline" disabled={isFetching || isFetchingMode} onClick={() => void (modeError ? refetchMode() : refetch())}>
-          다시 시도
+          {t('common.retry')}
         </Button>
       </div>
     )
   }
-  return <div className="p-4 text-sm text-muted-foreground">불러오는 중…</div>
+  return <div className="p-4 text-sm text-muted-foreground">{t('common.loading')}</div>
 }

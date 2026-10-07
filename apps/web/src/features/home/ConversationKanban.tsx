@@ -1,3 +1,4 @@
+import { useT } from '@/i18n'
 import { useQuery } from '@tanstack/react-query'
 import { Filter, MessageSquarePlus, RotateCcw, Search, X } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router'
@@ -14,7 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { TASK_STATUS_LABEL } from '@/lib/labels'
+import { TASK_STATUS_KEY } from '@/lib/labels'
 import { cn } from '@/lib/utils'
 import { ConversationCard } from './ConversationCard'
 
@@ -22,6 +23,7 @@ const colId = (assistantId: string) => `kanban-col-${assistantId}`
 
 /** 에이전트 순서의 대화 열. 필터 상태는 URL에 두어 같은 주소를 공유할 수 있다. */
 export function ConversationKanban() {
+  const t = useT()
   const [params, setParams] = useSearchParams()
   const filter = filterFromParams(params)
   const actor = useActor()
@@ -39,7 +41,7 @@ export function ConversationKanban() {
   const toggleStage = (key: string) => update({ stages: filter.stages.includes(key) ? filter.stages.filter((value) => value !== key) : [...filter.stages, key] })
   const addFilterTag = (tag: string) => { if (!filter.tags.some((value) => tagKey(value) === tagKey(tag))) update({ tags: [...filter.tags, tag] }) }
   async function changeStatus(taskId: string, status: TaskStatus) {
-    try { await setTaskStatus(actor, taskId, status); toast.success(`상태를 '${TASK_STATUS_LABEL[status]}'(으)로 바꿨습니다.`) }
+    try { await setTaskStatus(actor, taskId, status); toast.success(`상태를 '${t(TASK_STATUS_KEY[status])}'(으)로 바꿨습니다.`) }
     catch (error) { toast.error(error instanceof Error ? error.message : '상태를 바꾸지 못했습니다') }
   }
 
@@ -47,7 +49,7 @@ export function ConversationKanban() {
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative w-full sm:w-56"><Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" /><Input value={filter.q} onChange={(event) => update({ q: event.target.value })} placeholder="코드 · 제목 · 태그 검색" className="h-8 pl-8" /></div>
       <details className="relative"><summary className={cn('flex h-8 cursor-pointer items-center gap-1 rounded-lg border px-2 text-xs', filter.stages.length > 0 && 'border-primary text-primary')}><Filter className="size-3.5" />단계{filter.stages.length > 0 && ` ${filter.stages.length}`}</summary><div className="absolute z-20 mt-1 w-72 space-y-2 rounded-xl border bg-popover p-3 shadow-md"><div className="text-xs font-medium">업무 단계 (여러 개 선택)</div>{stages.map((group) => <div key={group.level1} className="space-y-1"><div className="text-xs text-muted-foreground">{group.level1}</div><div className="flex flex-wrap gap-1">{group.stages.map((stage) => <button key={stage.key} type="button" aria-pressed={filter.stages.includes(stage.key)} onClick={() => toggleStage(stage.key)} className={cn('rounded-full border px-2 py-0.5 text-xs', filter.stages.includes(stage.key) ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-muted')}>{stage.level2}</button>)}</div></div>)}</div></details>
-      <ToggleGroup type="multiple" variant="outline" size="sm" value={filter.statuses} onValueChange={(values) => update({ statuses: values as TaskStatus[] })} aria-label="상태 필터" className="flex-wrap">{TASK_STATUSES.map((status) => <ToggleGroupItem key={status} value={status} className="text-xs">{TASK_STATUS_LABEL[status]}</ToggleGroupItem>)}</ToggleGroup>
+      <ToggleGroup type="multiple" variant="outline" size="sm" value={filter.statuses} onValueChange={(values) => update({ statuses: values as TaskStatus[] })} aria-label="상태 필터" className="flex-wrap">{TASK_STATUSES.map((status) => <ToggleGroupItem key={status} value={status} className="text-xs">{t(TASK_STATUS_KEY[status])}</ToggleGroupItem>)}</ToggleGroup>
       <Label className="flex items-center gap-1.5 text-xs"><Switch checked={filter.mine} onCheckedChange={(mine) => update({ mine })} />내 대화</Label>
       <TagInput tags={filter.tags} suggest={suggest} onAdd={addFilterTag} onRemove={(tag) => update({ tags: filter.tags.filter((value) => value !== tag) })} placeholder="태그 필터" />
       {focused && <span className="inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs"><AssistantAvatar assistant={focused} size="xs" className="size-5 rounded-full text-xs" />{focused.name}<button type="button" aria-label="에이전트 필터 해제" onClick={() => update({ assistantId: undefined })}><X className="size-3" /></button></span>}

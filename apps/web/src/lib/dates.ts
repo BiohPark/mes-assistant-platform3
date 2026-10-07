@@ -1,5 +1,10 @@
 import { differenceInCalendarDays, format, formatDistanceToNowStrict, isValid, parseISO } from 'date-fns'
-import { ko } from 'date-fns/locale'
+import { enUS, ko } from 'date-fns/locale'
+import { useMemo } from 'react'
+import type { Locale } from '@mes/contracts'
+import { useLocale } from '@/i18n'
+
+const locales = { ko, en: enUS }
 
 function toDate(iso?: string): Date | undefined {
   if (!iso) return undefined
@@ -7,18 +12,27 @@ function toDate(iso?: string): Date | undefined {
   return isValid(d) ? d : undefined
 }
 
-export function formatDate(iso?: string, pattern = 'yyyy-MM-dd'): string {
+export function formatDate(iso?: string, pattern = 'yyyy-MM-dd', locale: Locale = 'ko'): string {
   const d = toDate(iso)
-  return d ? format(d, pattern) : '-'
+  return d ? format(d, pattern, { locale: locales[locale] }) : '-'
 }
 
-export function formatDateTime(iso?: string): string {
-  return formatDate(iso, 'MM-dd HH:mm')
+export function formatDateTime(iso?: string, locale: Locale = 'ko'): string {
+  return formatDate(iso, 'MM-dd HH:mm', locale)
 }
 
-export function formatRelative(iso?: string): string {
+export function formatRelative(iso?: string, locale: Locale = 'ko'): string {
   const d = toDate(iso)
-  return d ? formatDistanceToNowStrict(d, { addSuffix: true, locale: ko }) : '-'
+  return d ? formatDistanceToNowStrict(d, { addSuffix: true, locale: locales[locale] }) : '-'
+}
+
+export function useDates() {
+  const locale = useLocale()
+  return useMemo(() => ({
+    formatDate: (iso?: string, pattern = 'yyyy-MM-dd') => formatDate(iso, pattern, locale),
+    formatDateTime: (iso?: string) => formatDateTime(iso, locale),
+    formatRelative: (iso?: string) => formatRelative(iso, locale),
+  }), [locale])
 }
 
 /** 기한까지 남은 일수. 음수면 지연 */

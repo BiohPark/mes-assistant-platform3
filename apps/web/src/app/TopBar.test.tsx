@@ -52,7 +52,7 @@ describe('TopBar', () => {
     expect(document.documentElement).toHaveClass('dark')
     expect(document.documentElement.lang).toBe('en')
     await userEvent.click(screen.getByRole('button', { name: /김운영/ }))
-    await userEvent.click(screen.getByRole('menuitem', { name: '로그아웃' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Log out' }))
     const theme = status === 204 ? 'system' : 'dark'
     const locale = status === 204 ? 'ko' : 'en'
     await waitFor(() => expect(screen.getByLabelText('프로필 상태')).toHaveTextContent(`${theme}·${locale}`))
@@ -89,7 +89,7 @@ describe('TopBar', () => {
     finish(jsonResponse(200, { name: me.name, theme: 'dark', locale: 'en' }))
     await userEvent.click(screen.getByRole('button', { name: /김운영/ }))
     await waitFor(() => expect(screen.getByRole('menuitemradio', { name: 'English' })).not.toHaveAttribute('aria-disabled', 'true'))
-    await userEvent.click(screen.getByRole('menuitemradio', { name: '라이트' }))
+    await userEvent.click(screen.getByRole('menuitemradio', { name: 'Light' }))
     await waitFor(() => expect(document.documentElement).not.toHaveClass('dark'))
     server = { ...server, theme: 'light' }
     finish(jsonResponse(200, { name: me.name, theme: 'light', locale: 'en' }))

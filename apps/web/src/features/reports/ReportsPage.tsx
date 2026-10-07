@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { SrStatusBadge } from '@/components/StatusBadges'
 import { TagChip } from '@/components/TagChip'
-import { formatDateTime } from '@/lib/dates'
+import { useDates } from '@/lib/dates'
 import { BarsChart } from './charts'
 
 function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
@@ -17,6 +17,7 @@ function Card({ title, children, action }: { title: string; children: React.Reac
 }
 
 export function ReportsPage() {
+  const { formatDateTime } = useDates()
   const [days, setDays] = useState(30)
   const [granularity, setGranularity] = useState<Granularity>('week')
   const [userId, setUserId] = useState('')

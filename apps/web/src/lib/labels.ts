@@ -1,35 +1,36 @@
-import type { ActivityType, AssistantStatus, Priority, SrStatus, TaskStatus } from '@mes/domain'
+import type { ActivityType, AssistantStatus, ModelSource, Priority, SrStatus, TaskStatus } from '@mes/domain'
+import type { TranslationKey } from '@/i18n'
 
-export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
-  todo: '대기',
-  in_progress: '진행 중',
-  on_hold: '보류',
-  done: '완료',
-}
+export const TASK_STATUS_KEY = {
+  todo: 'status.task.todo',
+  in_progress: 'status.task.in_progress',
+  on_hold: 'status.task.on_hold',
+  done: 'status.task.done',
+} as const satisfies Record<TaskStatus, TranslationKey>
 
-export const ASSISTANT_STATUS_LABEL: Record<AssistantStatus, string> = {
-  open: '오픈',
-  developing: '개발 중',
-  testing: '테스트',
-  retired: '폐기',
-}
+export const ASSISTANT_STATUS_KEY = {
+  open: 'status.assistant.open',
+  developing: 'status.assistant.developing',
+  testing: 'status.assistant.testing',
+  retired: 'status.assistant.retired',
+} as const satisfies Record<AssistantStatus, TranslationKey>
 
-export const SR_STATUS_LABEL: Record<SrStatus, string> = {
-  draft: '대화 중',
-  submitted: '접수됨',
-  reviewing: '검토 중',
-  in_progress: '진행 중',
-  responded: '답변 공유',
-  done: '완료',
-  rejected: '반려',
-}
+export const SR_STATUS_KEY = {
+  draft: 'status.sr.draft',
+  submitted: 'status.sr.submitted',
+  reviewing: 'status.sr.reviewing',
+  in_progress: 'status.sr.in_progress',
+  responded: 'status.sr.responded',
+  done: 'status.sr.done',
+  rejected: 'status.sr.rejected',
+} as const satisfies Record<SrStatus, TranslationKey>
 
-export const PRIORITY_LABEL: Record<Priority, string> = {
-  low: '낮음',
-  normal: '보통',
-  high: '높음',
-  urgent: '긴급',
-}
+export const PRIORITY_KEY = {
+  low: 'status.priority.low',
+  normal: 'status.priority.normal',
+  high: 'status.priority.high',
+  urgent: 'status.priority.urgent',
+} as const satisfies Record<Priority, TranslationKey>
 
 export const PRIORITY_CLASS: Record<Priority, string> = {
   low: 'bg-tone-neutral-bg text-tone-neutral-fg',
@@ -38,37 +39,44 @@ export const PRIORITY_CLASS: Record<Priority, string> = {
   urgent: 'bg-tone-danger-bg text-tone-danger-fg',
 }
 
-export const ACTIVITY_LABEL: Record<ActivityType, string> = {
-  'task.created': '대화 시작',
-  'task.started': '업무 시작',
-  'task.completed': '업무 완료',
-  'task.reopened': '업무 재개',
-  'task.hold': '업무 보류',
-  'task.status_changed': '상태 변경',
-  'checklist.checked': '체크리스트 완료',
-  'checklist.unchecked': '체크리스트 해제',
-  'checklist.reviewed': 'AI 달성도 점검',
-  'file.uploaded': '파일 업로드',
-  'file.tagged_output': '산출물 저장',
-  'input.selected': '입력 선택',
-  'input.removed': '입력 해제',
-  'context.selected': '참조 대화 선택',
-  'context.removed': '참조 대화 해제',
-  'context.refreshed': '참조 대화 갱신',
-  'note.added': '메모 작성',
-  'message.sent': '메시지 전송',
-  'thread.created': '스레드 생성',
-  'model.changed': '모델 변경',
-  'feedback.given': 'assistant 피드백',
-  'tag.added': '태그 추가',
-  'tag.removed': '태그 제거',
-  'assistant.created': '에이전트 등록',
-  'assistant.updated': '에이전트 수정',
-  'assistant.status_changed': '에이전트 상태 변경',
-  'assistant.reordered': '에이전트 순서 변경',
-  'sr.created': 'SR 대화 시작',
-  'sr.submitted': 'SR 접수',
-  'sr.status_changed': 'SR 상태 변경',
-  'sr.task_started': 'SR 연결 업무 시작',
-  'sr.result_shared': 'SR 결과 공유',
-}
+export const ACTIVITY_KEY = {
+  'task.created': 'status.activity.task.created',
+  'task.started': 'status.activity.task.started',
+  'task.completed': 'status.activity.task.completed',
+  'task.reopened': 'status.activity.task.reopened',
+  'task.hold': 'status.activity.task.hold',
+  'task.status_changed': 'status.activity.task.status_changed',
+  'checklist.checked': 'status.activity.checklist.checked',
+  'checklist.unchecked': 'status.activity.checklist.unchecked',
+  'checklist.reviewed': 'status.activity.checklist.reviewed',
+  'file.uploaded': 'status.activity.file.uploaded',
+  'file.tagged_output': 'status.activity.file.tagged_output',
+  'input.selected': 'status.activity.input.selected',
+  'input.removed': 'status.activity.input.removed',
+  'context.selected': 'status.activity.context.selected',
+  'context.removed': 'status.activity.context.removed',
+  'context.refreshed': 'status.activity.context.refreshed',
+  'note.added': 'status.activity.note.added',
+  'message.sent': 'status.activity.message.sent',
+  'thread.created': 'status.activity.thread.created',
+  'model.changed': 'status.activity.model.changed',
+  'feedback.given': 'status.activity.feedback.given',
+  'tag.added': 'status.activity.tag.added',
+  'tag.removed': 'status.activity.tag.removed',
+  'assistant.created': 'status.activity.assistant.created',
+  'assistant.updated': 'status.activity.assistant.updated',
+  'assistant.status_changed': 'status.activity.assistant.status_changed',
+  'assistant.reordered': 'status.activity.assistant.reordered',
+  'sr.created': 'status.activity.sr.created',
+  'sr.submitted': 'status.activity.sr.submitted',
+  'sr.status_changed': 'status.activity.sr.status_changed',
+  'sr.task_started': 'status.activity.sr.task_started',
+  'sr.result_shared': 'status.activity.sr.result_shared',
+} as const satisfies Record<ActivityType, TranslationKey>
+
+export const MODEL_SOURCE_KEY = {
+  thread: 'common.modelSource.thread',
+  task: 'common.modelSource.task',
+  assistant: 'common.modelSource.assistant',
+  settings: 'common.modelSource.settings',
+} as const satisfies Record<ModelSource, TranslationKey>
