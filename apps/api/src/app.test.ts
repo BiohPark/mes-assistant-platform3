@@ -33,9 +33,9 @@ const config = loadConfig({
   OIDC_CLIENT_SECRET: 'secret',
 })
 
-const member: AuthUser = { id: 'u-member', name: '이담당', role: '', isSystemOwner: false }
-const owner: AuthUser = { id: 'u-owner', name: '김운영', role: '', isSystemOwner: true }
-const businessOwner: AuthUser = { id: 'u-bo', name: '요청자', role: '', isSystemOwner: false, isBusinessOwner: true }
+const member: AuthUser = { id: 'u-member', name: '이담당', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false }
+const owner: AuthUser = { id: 'u-owner', name: '김운영', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: true }
+const businessOwner: AuthUser = { id: 'u-bo', name: '요청자', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false, isBusinessOwner: true }
 const dualOwner: AuthUser = { ...businessOwner, id: 'u-dual', isSystemOwner: true }
 
 describe('api 골격', () => {
@@ -93,7 +93,7 @@ describe('api 골격', () => {
 
   it('GET /api/me — 세션 사용자와 역할', async () => {
     const res = await request(app.getHttpServer()).get('/api/me').set('Cookie', 'mes_session=owner').expect(200)
-    expect(MeSchema.parse(res.body)).toEqual({ id: 'u-owner', name: '김운영', role: '', roles: ['member', 'system_owner'] })
+    expect(MeSchema.parse(res.body)).toEqual({ id: 'u-owner', name: '김운영', role: '', roles: ['member', 'system_owner'], theme: 'system', locale: 'ko' })
   })
 
   it('mock 모드 모델 목록은 예시 모델을 서버에서 반환한다', async () => {

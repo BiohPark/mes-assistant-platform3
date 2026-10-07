@@ -1,3 +1,4 @@
+import type { ProfilePatch } from '@mes/contracts'
 import { randomBytes } from 'node:crypto'
 import { ConflictException, Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common'
 import { eq, sql } from 'drizzle-orm'
@@ -21,6 +22,15 @@ export class AccountsService {
       if (!row) throw new NotFoundException('사용자를 찾을 수 없습니다')
       await tx.update(appUser).set({ name, initials: initialsOf(name) }).where(eq(appUser.id, id))
       return { name }
+    })
+  }
+  async profile(id: string, input: ProfilePatch) {
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.select({ id: appUser.id }).from(appUser).where(eq(appUser.id, id)).for('update')
+      if (!row) throw new NotFoundException('사용자를 찾을 수 없습니다')
+      await tx.update(appUser).set({ ...input, ...(input.name !== undefined && { initials: initialsOf(input.name) }) }).where(eq(appUser.id, id))
+      const [updated] = await tx.select({ name: appUser.name, theme: appUser.theme, locale: appUser.locale }).from(appUser).where(eq(appUser.id, id))
+      return updated!
     })
   }
   async role(id: string, field: 'isSystemOwner' | 'isBusinessOwner', enabled: boolean) {

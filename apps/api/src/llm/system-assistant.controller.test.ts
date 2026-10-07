@@ -12,7 +12,7 @@ import { DB } from '../db/db.module.js'
 import { LLM_PROVIDER } from './provider.token.js'
 
 const config = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' })
-const sessions: SessionStore = { create: vi.fn(async () => ({ token: '', expiresAt: new Date() })), resolve: vi.fn(async (token: string) => token === 'member' ? { id: 'm', name: 'Member', role: '', isSystemOwner: false } : null), destroy: vi.fn(async () => undefined) }
+const sessions: SessionStore = { create: vi.fn(async () => ({ token: '', expiresAt: new Date() })), resolve: vi.fn(async (token: string) => token === 'member' ? { id: 'm', name: 'Member', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false } : null), destroy: vi.fn(async () => undefined) }
 let settings: Array<{ value: unknown }> = []
 const db = { select: () => ({ from: () => ({ where: async () => settings }) }) }
 

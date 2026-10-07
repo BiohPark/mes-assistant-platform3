@@ -14,14 +14,14 @@ import { DbCatalogReader } from '../catalog/catalog.service.js'
 const config = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
 const admin = { getSettings: vi.fn(async () => ({})), settings: vi.fn(async () => ({})), createAssistant: vi.fn(async () => ({})),
   order: vi.fn(async () => undefined), codes: vi.fn(async () => []), updateAssistant: vi.fn(async () => ({})), deleteAssistant: vi.fn(async () => undefined) }
-const accounts = { users: vi.fn(async () => []), role: vi.fn(async () => undefined), active: vi.fn(async () => undefined), name: vi.fn(async (_id: string, name: string) => ({ name })), temporaryPassword: vi.fn(async () => ({ temporaryPassword: 'secret' })), changePassword: vi.fn(async () => undefined) }
+const accounts = { profile: vi.fn(async (_id: string, input: unknown) => input), users: vi.fn(async () => []), role: vi.fn(async () => undefined), active: vi.fn(async () => undefined), name: vi.fn(async (_id: string, name: string) => ({ name })), temporaryPassword: vi.fn(async () => ({ temporaryPassword: 'secret' })), changePassword: vi.fn(async () => undefined) }
 
 describe('관리 API 서버 권한', () => {
   let app: INestApplication
   beforeEach(async () => {
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CONFIG).useValue(config)
-      .overrideProvider(SESSION_STORE).useValue({ resolve: async (token: string) => token === 'so' ? { id: 'so', name: 'SO', role: '', isSystemOwner: true } : token === 'forced' ? { id: 'forced', name: '사용자', role: '', isSystemOwner: false, mustChangePassword: true } : token === 'member' ? { id: 'member', name: '사용자', role: '', isSystemOwner: false } : null })
+      .overrideProvider(SESSION_STORE).useValue({ resolve: async (token: string) => token === 'so' ? { id: 'so', name: 'SO', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: true } : token === 'forced' ? { id: 'forced', name: '사용자', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false, mustChangePassword: true } : token === 'member' ? { id: 'member', name: '사용자', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false } : null })
       .overrideProvider(AdminService).useValue(admin)
       .overrideProvider(DbCatalogReader).useValue({ assistants: async () => [{ id: 'new-agent', order: 1, checklistTemplate: [] }] })
       .overrideProvider(AccountsService).useValue(accounts)
@@ -44,8 +44,27 @@ describe('관리 API 서버 권한', () => {
     await request(app.getHttpServer()).patch('/api/users/u1').set('Cookie', 'mes_session=so').send({ name: '새 이름' }).expect(200)
     expect(accounts.name).toHaveBeenCalledWith('u1', '새 이름')
     await request(app.getHttpServer()).patch('/api/users/me').set('Cookie', 'mes_session=member').send({ name: '내 이름' }).expect(200)
-    expect(accounts.name).toHaveBeenCalledWith('member', '내 이름')
+    expect(accounts.profile).toHaveBeenCalledWith('member', { name: '내 이름' })
     await request(app.getHttpServer()).patch('/api/users/me').set('Cookie', 'mes_session=member').send({ name: ' ' }).expect(400)
+  })
+  it('프로필은 본인만 저장하고 SO도 타인의 테마·언어를 바꿀 수 없다', async () => {
+    await request(app.getHttpServer()).patch('/api/users/me').send({ theme: 'dark' }).expect(401)
+    for (const cookie of ['member', 'so']) {
+      await request(app.getHttpServer()).patch('/api/users/me').set('Cookie', `mes_session=${cookie}`).send({ theme: 'dark', locale: 'en' }).expect(200)
+      expect(accounts.profile).toHaveBeenCalledWith(cookie, { theme: 'dark', locale: 'en' })
+    }
+    await request(app.getHttpServer()).patch('/api/users/member').set('Cookie', 'mes_session=so').send({ theme: 'light' }).expect(400)
+    await request(app.getHttpServer()).patch('/api/users/member').set('Cookie', 'mes_session=so').send({ name: '이름', locale: 'en' }).expect(400)
+  })
+  it('빈 프로필·잘못된 값·알 수 없는 키는 저장하지 않는다', async () => {
+    for (const input of [{}, { theme: 'auto' }, { locale: 'ja' }, { theme: null }, { name: ' ' }, { id: 'so', theme: 'dark' }, { name: '정상', isSystemOwner: true }]) {
+      await request(app.getHttpServer()).patch('/api/users/me').set('Cookie', 'mes_session=member').send(input).expect(400)
+    }
+    expect(accounts.profile).not.toHaveBeenCalled()
+    for (const input of [{ theme: 'system' }, { theme: 'light' }, { locale: 'ko' }, { name: ' 새 이름 ', theme: 'dark', locale: 'en' }]) {
+      await request(app.getHttpServer()).patch('/api/users/me').set('Cookie', 'mes_session=member').send(input).expect(200)
+    }
+    expect(accounts.profile).toHaveBeenLastCalledWith('member', { name: '새 이름', theme: 'dark', locale: 'en' })
   })
   it('에이전트 쓰기·순서는 SO만 허용한다', async () => {
     await request(app.getHttpServer()).post('/api/assistants').set('Cookie', 'mes_session=member').send({}).expect(403)

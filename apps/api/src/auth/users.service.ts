@@ -48,14 +48,14 @@ export class DbUserDirectory implements UserDirectory {
         if (isDuplicateKey(error)) return null
         throw error
       }
-      const [row] = await tx.select({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner }).from(appUser).where(eq(appUser.id, id))
+      const [row] = await tx.select({ id: appUser.id, name: appUser.name, role: appUser.role, theme: appUser.theme, locale: appUser.locale, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner }).from(appUser).where(eq(appUser.id, id))
       return row ?? null
     })
   }
 
   async findByLoginId(loginId: string) {
     const [row] = await this.db.select({
-      id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner,
+      id: appUser.id, name: appUser.name, role: appUser.role, theme: appUser.theme, locale: appUser.locale, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner,
       hash: appUser.passwordHash, active: appUser.active, mustChangePassword: appUser.mustChangePassword,
     }).from(appUser).where(eq(appUser.loginId, loginId))
     if (!row?.hash) return null
@@ -82,7 +82,7 @@ export class DbUserDirectory implements UserDirectory {
         if (!existing) throw error
         await tx.update(appUser).set({ name, initials: initialsOf(name) }).where(eq(appUser.id, existing.id))
       }
-      const [row] = await tx.select({ id: appUser.id, name: appUser.name, role: appUser.role, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner, active: appUser.active }).from(appUser).where(eq(appUser.ssoSubject, subject))
+      const [row] = await tx.select({ id: appUser.id, name: appUser.name, role: appUser.role, theme: appUser.theme, locale: appUser.locale, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner, active: appUser.active }).from(appUser).where(eq(appUser.ssoSubject, subject))
       if (!row?.active) throw new UnauthorizedException('비활성 계정은 로그인할 수 없습니다')
       return row!
     })

@@ -1,4 +1,5 @@
 // MariaDB DDL 정본. 마이그레이션과 schema-drift 테스트로 일치 여부를 확인한다.
+import type { Theme, Locale } from '@mes/contracts'
 import { sql, type AnyColumn } from 'drizzle-orm'
 import type { AnyMySqlColumn } from 'drizzle-orm/mysql-core'
 import {
@@ -51,7 +52,12 @@ export const appUser = mysqlTable('app_user', {
   createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
   loginId: varchar('login_id', { length: 191 }).unique('app_user_login_id_key'),
   passwordHash: text('password_hash'),
-})
+  theme: varchar('theme', { length: 8 }).$type<Theme>().notNull().default('system'),
+  locale: varchar('locale', { length: 8 }).$type<Locale>().notNull().default('ko'),
+}, (t) => [
+  check('app_user_theme_check', inList(t.theme, ['system', 'light', 'dark'])),
+  check('app_user_locale_check', inList(t.locale, ['ko', 'en'])),
+])
 
 export const codeGroup = mysqlTable('code_group', {
   key: varchar('key', { length: 191 }).primaryKey(),

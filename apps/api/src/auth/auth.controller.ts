@@ -7,7 +7,7 @@ import { OIDC, type OidcPort, type PendingLogin } from './oidc.service.js'
 import { hashPassword, verifyPassword } from './password.js'
 import { Public } from './public.decorator.js'
 import { rolesOf } from './roles.js'
-import { SESSION_COOKIE, SESSION_STORE, type SessionStore } from './session.service.js'
+import { SESSION_COOKIE, SESSION_STORE, type SessionStore, type AuthUser } from './session.service.js'
 import { USER_DIRECTORY, type UserDirectory } from './users.service.js'
 
 const PENDING_COOKIE = 'mes_oidc'
@@ -135,10 +135,10 @@ export class AuthController {
     }
   }
 
-  private async respondWithSession(user: { id: string; name: string; role: string; isSystemOwner: boolean; isBusinessOwner?: boolean; mustChangePassword?: boolean }, res: Response): Promise<Me> {
+  private async respondWithSession(user: AuthUser, res: Response): Promise<Me> {
     const { token, expiresAt } = await this.sessions.create(user.id)
     res.cookie(SESSION_COOKIE, token, this.cookie({ expires: expiresAt }))
-    return { id: user.id, name: user.name, role: user.role, roles: rolesOf(user), ...(user.mustChangePassword && { mustChangePassword: true }) }
+    return { id: user.id, name: user.name, role: user.role, theme: user.theme, locale: user.locale, roles: rolesOf(user), ...(user.mustChangePassword && { mustChangePassword: true }) }
   }
 
   @Get('auth/mode')
@@ -223,6 +223,6 @@ export class AuthController {
   @Get('me')
   me(@Req() req: AuthedRequest): Me {
     const user = req.user!
-    return { id: user.id, name: user.name, role: user.role, roles: rolesOf(user), ...(user.mustChangePassword && { mustChangePassword: true }) }
+    return { id: user.id, name: user.name, role: user.role, theme: user.theme, locale: user.locale, roles: rolesOf(user), ...(user.mustChangePassword && { mustChangePassword: true }) }
   }
 }

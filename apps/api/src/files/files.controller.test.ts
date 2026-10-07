@@ -30,7 +30,7 @@ describe('files HTTP API', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CONFIG).useValue(config).overrideProvider(DbFilesService).useValue(service)
       .overrideProvider(HEALTH_PROBE).useValue(async () => true)
-      .overrideProvider(SESSION_STORE).useValue({ resolve: async (token: string) => token === 'member' ? { id: 'u', name: '사용자', role: '', isSystemOwner: false } : null })
+      .overrideProvider(SESSION_STORE).useValue({ resolve: async (token: string) => token === 'member' ? { id: 'u', name: '사용자', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false } : null })
       .overrideProvider(OIDC).useValue({}).overrideProvider(USER_DIRECTORY).useValue({}).compile()
     app = configureApp(moduleRef.createNestApplication(), config)
     await app.init()
