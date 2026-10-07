@@ -27,7 +27,7 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
       parameters: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: '카탈로그 키 (영문 kebab-case)' },
+          id: { type: 'string', description: '카탈로그 키 (생략하면 서버 생성)' },
           modelId: { type: 'string', description: '사내 AI 모델 ID (모르면 생략)' },
           name: { type: 'string' },
           level1: { type: 'string', description: '업무 Lv1' },
@@ -35,7 +35,7 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
           summary: { type: 'string' },
           ownerName: { type: 'string' },
         },
-        required: ['id', 'name', 'level1', 'level2'],
+        required: ['name', 'level1', 'level2'],
       },
     },
   },

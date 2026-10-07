@@ -27,3 +27,16 @@ describe('assistantLink1', () => {
     expect(assistantLink1('', { ...assistant, link1: 'https://direct.test/' }, 'https://example.test/')).toBe('https://direct.test/')
   })
 })
+
+
+it('내부 ID만 있으면 설정 규칙이 있어도 링크를 만들지 않는다', () => {
+  expect(assistantLink1('https://owui.test/api', { id: 'internal' })).toBeUndefined()
+  expect(assistantLink1('https://owui.test/api', { id: 'internal' }, 'https://owui.test/?assistant={assistantId}')).toBeUndefined()
+})
+
+it('모델은 직접 링크·설정 규칙·기본 주소 순으로 사용하고 빈 기본 주소는 숨긴다', () => {
+  expect(assistantLink1('', { id: 'internal', link1: 'https://direct.test' })).toBe('https://direct.test')
+  expect(assistantLink1('', { id: 'internal', modelId: 'mapped' })).toBeUndefined()
+  expect(assistantLink1('https://owui.test/api', { id: 'internal', modelId: 'mapped' })).toBe('https://owui.test/?model=mapped')
+  expect(assistantLink1('', { id: 'legacy agent', modelId: 'mapped' }, 'https://owui.test/?agent={assistantId}')).toBe('https://owui.test/?agent=legacy%20agent')
+})

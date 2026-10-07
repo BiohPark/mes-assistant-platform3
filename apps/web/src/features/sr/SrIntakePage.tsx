@@ -1,3 +1,4 @@
+import { useT } from '@/i18n'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -15,6 +16,7 @@ import { SharedResults } from './SharedResults'
 import { useMe } from '@/app/auth'
 
 export function SrIntakePage() {
+  const t = useT()
   const me = useMe()
   const client = useQueryClient()
   const { data: rows = [] } = useQuery({ queryKey: ['sr'], queryFn: listSr })
@@ -44,11 +46,11 @@ export function SrIntakePage() {
   return <><TopBar title="SR 접수" /><div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-auto p-4 md:grid-cols-[16rem_1fr]">
     <aside className="space-y-3">{settings && (settings.srIntakeAssistantId ? <Button onClick={create}>접수 대화 시작</Button> : <p role="status" className="text-sm">System Owner가 설정에서 SR 접수 에이전트를 지정해야 합니다{me.roles.includes('system_owner') && <> · <Link to="/settings" className="underline">설정으로 이동</Link></>}</p>)}<SrList rows={rows} selectedId={selectedId} onSelect={setSelectedId} /></aside>
     <div className="space-y-4">{selected ? <>
-      <header className="space-y-2"><div className="flex items-center gap-2"><h1 className="text-lg font-semibold">{selected.code || '접수 전 대화'}</h1><span className="text-sm text-muted-foreground">{selected.status}</span></div>
+      <header className="space-y-2"><div className="flex items-center gap-2"><h1 className="text-lg font-semibold">{selected.code || '접수 전 대화'}</h1><span className="text-sm text-muted-foreground">{t(`status.sr.${selected.status}`)}</span></div>
         {selected.status !== 'draft' && (selected.requesterId === me.id || me.roles.includes('system_owner')) && <SrTitleEditor key={selected.id} sr={selected} onSaved={refresh} />}</header>
       <section className="max-h-80 space-y-2 overflow-y-auto rounded-lg border p-3" aria-label="접수 대화">
         {messages.map((message) => <div key={message.id} className="rounded-xl bg-muted/40 p-2 text-sm"><b>{message.role === 'user' ? '요청자' : '접수 에이전트'}</b><p className="whitespace-pre-wrap">{message.content}</p>
-          {message.attachmentIds.map((id) => <a key={id} className="block text-primary underline" href={`/api/files/${encodeURIComponent(id)}/content`}>첨부 {id}</a>)}</div>)}
+          {message.attachmentIds.map((id, index) => <a key={id} className="block text-primary underline" href={`/api/files/${encodeURIComponent(id)}/content`}>{t('sr.attachment', { number: index + 1 })}</a>)}</div>)}
         {chat.run && <div className="rounded-xl bg-muted/40 p-2 text-sm"><b>접수 에이전트</b><p className="whitespace-pre-wrap">{chat.run.text}</p></div>}
       </section>
       {selected.status !== 'done' && selected.status !== 'rejected' && <div className="space-y-2"><Textarea aria-label="접수 메시지" value={text} onChange={(event) => setText(event.target.value)} placeholder="요청 내용을 입력하세요" />

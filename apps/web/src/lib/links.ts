@@ -8,9 +8,10 @@ export function assistantExternalUrl(baseUrl: string, assistantId: string): stri
   return `${openWebUiBase(baseUrl)}/?model=${encodeURIComponent(assistantId)}`
 }
 
-/** 링크1: 저장된 link1이 있으면 그대로, 없으면 모델 ID(없으면 어시스턴트 ID)로 파생 */
-export function assistantLink1(baseUrl: string, assistant: { id: string; link1?: string; modelId?: string }, rule?: string): string {
+/** 링크1: 저장된 link1이 있으면 그대로, 없으면 모델 ID로 파생. 연결 정보가 없으면 숨긴다 */
+export function assistantLink1(baseUrl: string, assistant: { id: string; link1?: string; modelId?: string }, rule?: string): string | undefined {
   if (assistant.link1) return assistant.link1
-  if (rule) return rule.replaceAll('{modelId}', encodeURIComponent(assistant.modelId || assistant.id)).replaceAll('{assistantId}', encodeURIComponent(assistant.id))
-  return assistantExternalUrl(baseUrl, assistant.modelId || assistant.id)
+  if (!assistant.modelId) return undefined
+  if (rule) return rule.replaceAll('{modelId}', encodeURIComponent(assistant.modelId)).replaceAll('{assistantId}', encodeURIComponent(assistant.id))
+  return baseUrl ? assistantExternalUrl(baseUrl, assistant.modelId) : undefined
 }

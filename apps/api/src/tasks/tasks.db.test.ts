@@ -44,7 +44,7 @@ describe('tasks DB', () => {
     const created = await Promise.all(Array.from({ length: 10 }, () => service.create('member', { assistantId, tags: ['#sr-2026-0002', 'SR-2026-0002', ' cca item '] })))
     expect(new Set(created.map((item) => item.task.code)).size).toBe(10)
     expect(created.every((item) => /^WK-\d{4}-\d{4}$/.test(item.task.code))).toBe(true)
-    expect(created[0]!.task).toMatchObject({ titleSource: 'default', status: 'in_progress', ownerId: 'member', tags: ['SR-2026-0002', 'cca-item'] })
+    expect(created[0]!.task).toMatchObject({ titleSource: 'default', status: 'in_progress', ownerId: 'member', assigneeIds: ['member'], tags: ['SR-2026-0002', 'cca-item'] })
     expect(created[0]!.task.threadId).toBe(created[0]!.thread.id)
     expect(await service.get(created[0]!.task.id)).toMatchObject({ thread: { id: created[0]!.thread.id, taskId: created[0]!.task.id } })
     expect((await service.activity(created[0]!.task.id)).filter((item) => item.type === 'tag.added').map((item) => item.payload)).toEqual(expect.arrayContaining([{ tag: 'SR-2026-0002' }, { tag: 'cca-item' }]))

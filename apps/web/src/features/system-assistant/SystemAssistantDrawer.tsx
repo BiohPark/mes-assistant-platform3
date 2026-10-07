@@ -1,3 +1,4 @@
+import { useT } from '@/i18n'
 import { newId } from '@/lib/ids'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -20,10 +21,12 @@ interface LocalMessage {
   waiting?: boolean
 }
 
-const EXAMPLES = ['FDS 작성 도우미로 "알람 필터 FDS" 대화 시작해줘 SR-2026-0002', '에이전트 등록: ID label-check, 이름 라벨 검증 도우미, Record › 라벨', 'WK-2026-0009 에 #release-2026-10 태그 붙여줘', 'WK-2026-0006 에 SR-2026-0001 태그 붙여줘']
+
 
 /** 도구 호출은 제안으로만 표시한다. 적용 버튼을 누른 경우에만 기존 API를 호출한다. */
 export function SystemAssistantDrawer() {
+  const t = useT()
+  const EXAMPLES = ['FDS 작성 도우미로 "알람 필터 FDS" 대화 시작해줘 SR-2026-0002', t('admin.createAssistantExample'), 'WK-2026-0009 에 #release-2026-10 태그 붙여줘', 'WK-2026-0006 에 SR-2026-0001 태그 붙여줘']
   const open = useUiStore((state) => state.assistantOpen)
   const setOpen = useUiStore((state) => state.setAssistantOpen)
   const actor = useActor()
@@ -56,7 +59,7 @@ export function SystemAssistantDrawer() {
     const history: SystemMessage[] = [...messages, user].map(({ role, content }) => ({ role, content }))
     try {
       const reply = await sendSystemMessage(history, controller.signal)
-      setMessages((current) => current.map((item) => item.id === botId ? { ...item, content: reply.text, proposals: reply.toolCalls.map(toProposal), waiting: false } : item))
+      setMessages((current) => current.map((item) => item.id === botId ? { ...item, content: reply.text, proposals: reply.toolCalls.map((call) => toProposal(call, t)), waiting: false } : item))
     } catch (error) {
       const message = controller.signal.aborted ? '요청을 중지했습니다.' : error instanceof Error ? error.message : '응답 실패'
       setMessages((current) => current.map((item) => item.id === botId ? { ...item, content: `⚠️ ${message}`, waiting: false } : item))
@@ -97,7 +100,7 @@ export function SystemAssistantDrawer() {
               <div className="flex items-center gap-1.5 text-xs font-medium"><Wrench className="size-3" />{proposal.invalidReason ? '제안 불가' : '제안된 작업'}</div>
               <div className="mt-1 text-xs">{proposal.summary}</div>
               {proposal.invalidReason && <div role="alert" className="mt-1 text-xs text-destructive">{proposal.invalidReason}</div>}
-              <details className="mt-1"><summary className="cursor-pointer text-xs text-muted-foreground">인자 보기</summary><pre className="mt-1 max-h-40 overflow-auto rounded-xl bg-muted p-2 text-xs">{JSON.stringify(proposal.args, null, 2)}</pre></details>
+              <details className="mt-1"><summary className="cursor-pointer text-xs text-muted-foreground">인자 보기</summary><pre className="mt-1 max-h-40 overflow-auto rounded-xl bg-muted p-2 text-xs">{JSON.stringify(Object.fromEntries(Object.entries(proposal.args).filter(([key]) => proposal.name !== 'create_assistant' || key !== 'id')), null, 2)}</pre></details>
               <div className="mt-2 flex items-center gap-2">
                 {proposal.applied ? <><span className={cn('inline-flex items-center gap-1 text-xs', proposal.applied.ok ? 'text-emerald-700' : 'text-destructive')}><Check className="size-3" />{proposal.applied.message}</span>{proposal.applied.link && <Button variant="link" size="xs" className="h-auto p-0" onClick={() => { navigate(proposal.applied!.link!); setOpen(false) }}>이동 <ArrowRight /></Button>}</> : proposal.ignored ? <span className="text-xs text-muted-foreground">무시함</span> : <>{!proposal.invalidReason && <Button size="xs" disabled={!!applying} onClick={() => void apply(message.id, proposal)}>적용</Button>}<Button size="xs" variant="ghost" onClick={() => setMessages((current) => current.map((item) => item.id === message.id ? { ...item, proposals: item.proposals?.map((entry) => entry.id === proposal.id ? { ...entry, ignored: true } : entry) } : item))}>무시</Button></>}
               </div>

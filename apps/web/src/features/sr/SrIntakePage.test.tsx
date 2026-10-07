@@ -18,3 +18,22 @@ it.each([
   expect(screen.queryByRole('button', { name: '접수 대화 시작' })).not.toBeInTheDocument()
   expect(!!screen.queryByRole('link', { name: '설정으로 이동' })).toBe(link)
 })
+
+
+it('접수 상태와 첨부를 읽을 수 있는 이름으로 표시하고 UUID는 숨긴다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/service-requests/internal-sr') return jsonResponse(200, {
+      id: 'internal-sr', code: 'SR-2026-0001', requesterId: 'u', title: '요청', titleSource: 'manual', body: '', status: 'reviewing',
+      threadId: 'thread', attachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01',
+    })
+    if (url === '/api/threads/thread/messages') return jsonResponse(200, [{ id: 'm', threadId: 'thread', role: 'user', kind: 'chat', content: '요청 내용', createdAt: '2026-10-01', authorId: 'u', attachmentIds: ['internal-file-uuid'], status: 'done' }])
+    if (url === '/api/service-requests') return jsonResponse(200, [{ id: 'internal-sr', code: 'SR-2026-0001', title: '요청', status: 'reviewing' }])
+    return jsonResponse(200, [])
+  }))
+  const { container } = renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['requester'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext>, { route: '/sr?id=internal-sr' })
+  expect(await screen.findAllByText('검토 중')).toHaveLength(2)
+  expect(await screen.findByRole('link', { name: '첨부 1' })).toHaveAttribute('href', '/api/files/internal-file-uuid/content')
+  expect(container).not.toHaveTextContent('internal-file-uuid')
+  expect(screen.getByRole('button', { name: /SR-2026-0001/ })).toHaveTextContent('검토 중')
+  expect(container).not.toHaveTextContent('reviewing')
+})

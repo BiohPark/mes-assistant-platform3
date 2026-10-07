@@ -34,6 +34,24 @@ describe('SR 접수 에이전트 보호 (데모 테스트 4건)', () => {
   })
   afterAll(async () => { await client?.end(); await temp?.drop() })
 
+  it('ID 없는 동시 생성은 짧고 고유한 서버 ID를 만들고 수정 후 유지한다', async () => {
+    const input = { name: '자동 ID', level1CodeId: 'assistant_level1:SDLC', level2CodeId: 'assistant_level2:분석',
+      summary: '', ownerId: 'owner', status: 'open' as const, usageExample: '', expectedInputs: ['입력'], expectedOutputs: [], checklistTemplate: [] }
+    const created = await Promise.all(Array.from({ length: 12 }, () => admin.createAssistant('owner', input)))
+    expect(new Set(created.map((row) => row.id)).size).toBe(12)
+    for (const row of created) {
+      expect(row.id).toMatch(/^a-[a-f0-9]{12}$/)
+      expect(await db.select().from(assistantExpectedIo).where(eq(assistantExpectedIo.assistantId, row.id))).toMatchObject([{ label: '입력' }])
+      expect((await admin.updateAssistant(row.id, { name: '수정' })).id).toBe(row.id)
+      await admin.deleteAssistant(row.id)
+    }
+    expect((await admin.updateAssistant('urs-analyst-basic', { summary: '기존 ID 유지' })).id).toBe('urs-analyst-basic')
+  })
+  it('명시한 기존 ID의 중복 생성은 덮어쓰지 않고 충돌로 거부한다', async () => {
+    await expect(admin.createAssistant('owner', { id: 'urs-analyst-basic', name: '중복', level1CodeId: 'assistant_level1:SDLC', level2CodeId: 'assistant_level2:분석',
+      summary: '', ownerId: 'owner', status: 'open', usageExample: '', expectedInputs: [], expectedOutputs: [], checklistTemplate: [] })).rejects.toMatchObject({ status: 409 })
+    expect((await admin.assistant('urs-analyst-basic')).name).not.toBe('중복')
+  })
   it('refuses to retire the current intake assistant', async () => {
     await expect(admin.updateAssistant('urs-analyst', { status: 'retired' })).rejects.toMatchObject({ status: 409 })
     expect((await admin.assistant('urs-analyst')).status).not.toBe('retired')

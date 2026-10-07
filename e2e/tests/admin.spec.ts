@@ -19,22 +19,29 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
   await owner(page)
   const previous = (await (await page.request.get('/api/settings')).json()) as { defaultModel?: string }
   const originalOrder = ((await (await page.request.get('/api/assistants')).json()) as Array<{ id: string }>).map((row) => row.id)
-  const id = `admin-${Date.now().toString(36)}`
+  let id = ''
   try {
     await page.goto('/assistants/manage')
     await page.getByRole('button', { name: '새 에이전트' }).click()
     const editor = page.getByRole('dialog', { name: '에이전트 편집' })
-    await editor.getByText('ID', { exact: true }).locator('input').fill(id)
+    await expect(editor.getByLabel('ID', { exact: true })).toHaveCount(0)
     await editor.getByText('이름', { exact: true }).locator('input').fill('E2E 관리 도우미')
     await editor.getByRole('combobox', { name: '분류 1' }).selectOption({ index: 1 })
     await editor.getByRole('combobox', { name: '분류 2' }).selectOption({ index: 1 })
     await editor.getByRole('combobox', { name: '담당자' }).selectOption({ index: 1 })
+    const creation = page.waitForResponse((response) => response.url().endsWith('/api/assistants') && response.request().method() === 'POST')
     await editor.getByRole('button', { name: '저장', exact: true }).click()
+    const created = await creation
+    expect(created.status()).toBe(201)
+    expect(created.request().postDataJSON()).not.toHaveProperty('id')
+    id = ((await created.json()) as { id: string }).id
+    expect(id).toMatch(/^a-[a-f0-9]{12}$/)
     await expect(editor).toBeHidden()
     await page.goto('/')
     await expect.poll(async () => await page.getByText('E2E 관리 도우미').count()).toBeGreaterThan(0)
     await page.goto('/assistants/manage')
-    await expect(page.getByText(id, { exact: true })).toBeVisible() // 목록 로드 전에 순서 편집을 누르면 초안이 비어 draggable 카드가 없다
+    await expect(page.getByText('E2E 관리 도우미', { exact: true })).toBeVisible()
+    await expect(page.getByText(id, { exact: true })).toHaveCount(0) // 목록 로드 전에 순서 편집을 누르면 초안이 비어 draggable 카드가 없다
     await page.getByRole('button', { name: '순서 편집' }).click()
     const cards = page.locator('[draggable="true"]')
     await cards.first().dragTo(cards.last()) // 시드 에이전트를 뒤로 — 새 에이전트가 맨 앞에 오면 병렬 spec들이 assistants[0]으로 집어 삭제가 막힌다
@@ -49,8 +56,10 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
     const current = (await (await page.request.get('/api/assistants')).json()) as Array<{ id: string; revision: number }>
     const revisions = Object.fromEntries(current.map((row) => [row.id, row.revision]))
     await page.request.put('/api/assistants/order', { data: { ids: [...originalOrder.filter((row) => row !== id), id].filter((row) => row in revisions), revisions } })
-    const removed = await page.request.delete(`/api/assistants/${id}`)
-    expect(removed.status(), await removed.text()).toBe(204)
+    if (id) {
+      const removed = await page.request.delete(`/api/assistants/${id}`)
+      expect(removed.status(), await removed.text()).toBe(204)
+    }
     if (previous.defaultModel !== undefined) {
       const restored = await page.request.patch('/api/settings', { data: { defaultModel: previous.defaultModel } })
       expect(restored.ok()).toBe(true)

@@ -12,7 +12,7 @@ import { AccountsService } from './accounts.service.js'
 import { DbCatalogReader } from '../catalog/catalog.service.js'
 
 const config = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
-const admin = { getSettings: vi.fn(async () => ({})), settings: vi.fn(async () => ({})), createAssistant: vi.fn(async () => ({})),
+const admin = { getSettings: vi.fn(async () => ({})), settings: vi.fn(async () => ({})), createAssistant: vi.fn(async () => ({ id: 'new-agent' })),
   order: vi.fn(async () => undefined), codes: vi.fn(async () => []), updateAssistant: vi.fn(async () => ({})), deleteAssistant: vi.fn(async () => undefined) }
 const accounts = { profile: vi.fn(async (_id: string, input: unknown) => input), users: vi.fn(async () => []), role: vi.fn(async () => undefined), active: vi.fn(async () => undefined), name: vi.fn(async (_id: string, name: string) => ({ name })), temporaryPassword: vi.fn(async () => ({ temporaryPassword: 'secret' })), changePassword: vi.fn(async () => undefined) }
 
@@ -78,6 +78,20 @@ describe('관리 API 서버 권한', () => {
     }).expect(201)
     expect(admin.createAssistant).toHaveBeenCalledWith('so', expect.objectContaining({ checklistTemplate: [] }))
     expect(response.body).toMatchObject({ id: 'new-agent', order: 1, checklistTemplate: [] })
+  })
+  it('ID를 생략한 생성은 서버가 반환한 ID의 카탈로그 응답을 사용한다', async () => {
+    const response = await request(app.getHttpServer()).post('/api/assistants').set('Cookie', 'mes_session=so').send({
+      name: '새 에이전트', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', ownerId: 'so',
+      status: 'open', usageExample: '', expectedInputs: [], expectedOutputs: [], checklistTemplate: [],
+    }).expect(201)
+    expect(response.body).toMatchObject({ id: 'new-agent', order: 1, checklistTemplate: [] })
+  })
+  it('명시한 빈 ID는 거부하고 기존 ID 수정은 허용하지 않는다', async () => {
+    await request(app.getHttpServer()).post('/api/assistants').set('Cookie', 'mes_session=so').send({
+      id: '', name: '새 에이전트', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', ownerId: 'so',
+      status: 'open', usageExample: '', expectedInputs: [], expectedOutputs: [],
+    }).expect(400)
+    await request(app.getHttpServer()).patch('/api/assistants/new-agent').set('Cookie', 'mes_session=so').send({ id: 'changed' }).expect(400)
   })
   it('임시 비밀번호 상태에는 me·변경 이외 API를 차단한다', async () => {
     const forbidden = await request(app.getHttpServer()).get('/api/settings').set('Cookie', 'mes_session=forced').expect(403)
