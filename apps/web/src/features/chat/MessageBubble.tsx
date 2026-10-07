@@ -4,11 +4,12 @@ import { MessagesSquare, Paperclip } from 'lucide-react'
 import { Markdown } from '@/components/Markdown'
 import { UserAvatar } from '@/components/UserAvatar'
 import { useUserMap } from '@/app/hooks'
-import { formatDateTime } from '@/lib/dates'
+import { useDates } from '@/lib/dates'
 
 export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithoutFiles, onRetryAsText, onRequestInfo }: {
   message: Message; onSaveAsOutput?: () => void; onRetry?: () => void; onRetryWithoutFiles?: () => void; onRetryAsText?: () => void; onRequestInfo?: () => void
 }) {
+  const { formatDateTime } = useDates()
   const user = useUserMap().get(message.authorId ?? '')
   const assistant = message.role === 'assistant'
   const attachments = useQueries({ queries: message.attachmentIds.map((id) => ({ queryKey: ['file', id], queryFn: async () => {

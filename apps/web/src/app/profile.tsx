@@ -4,9 +4,11 @@ import { useTheme } from 'next-themes'
 import type { Locale, Me, Theme } from '@mes/contracts'
 import { toast } from 'sonner'
 import { setMyProfile } from '@/api/admin'
+import { createT, I18nProvider } from '@/i18n'
+import { ko } from '@/i18n/ko'
 
-export const themeOptions = [{ value: 'system', label: '시스템 설정' }, { value: 'light', label: '라이트' }, { value: 'dark', label: '다크' }] as const
-export const localeOptions = [{ value: 'ko', label: '한국어' }, { value: 'en', label: 'English' }] as const
+export const themeOptions = [{ value: 'system', label: ko.common.themeSystem, key: 'common.themeSystem' }, { value: 'light', label: ko.common.themeLight, key: 'common.themeLight' }, { value: 'dark', label: ko.common.themeDark, key: 'common.themeDark' }] as const
+export const localeOptions = [{ value: 'ko', label: ko.common.korean, key: 'common.korean' }, { value: 'en', label: ko.common.english, key: 'common.english' }] as const
 
 type Preferences = Pick<Me, 'theme' | 'locale'>
 const ProfileContext = createContext<{
@@ -60,11 +62,11 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         if (input.theme !== undefined) setTheme(current?.theme ?? previous.theme)
         if (input.locale !== undefined) setLocale(current?.locale ?? previous.locale)
       }
-      toast.error(error instanceof Error ? error.message : '프로필을 저장하지 못했습니다')
+      toast.error(error instanceof Error ? error.message : createT(locale)('common.profileSaveFailed'))
     },
     onSettled: () => client.invalidateQueries({ queryKey: ['me'] }),
   })
-  return <ProfileContext value={{ theme: theme as Theme, locale, setLocale, reset, save: mutation.mutate, pending: mutation.isPending, saving: mutation.isPending ? mutation.variables : undefined }}>{children}</ProfileContext>
+  return <ProfileContext value={{ theme: theme as Theme, locale, setLocale, reset, save: mutation.mutate, pending: mutation.isPending, saving: mutation.isPending ? mutation.variables : undefined }}><I18nProvider locale={locale}>{children}</I18nProvider></ProfileContext>
 }
 
 export function useProfile() {

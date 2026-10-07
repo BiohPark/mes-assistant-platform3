@@ -1,3 +1,4 @@
+import { useT } from '@/i18n'
 import { Link } from 'react-router'
 import { CalendarClock, FileInput, MoreHorizontal, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -7,8 +8,8 @@ import { TagChip } from '@/components/TagChip'
 import { AvatarGroup } from '@/components/UserAvatar'
 import { useUserMap } from '@/app/hooks'
 import { primarySrTag, srTagColor, TASK_STATUSES, type Task, type TaskStatus } from '@mes/domain'
-import { daysUntil, formatRelative } from '@/lib/dates'
-import { TASK_STATUS_LABEL } from '@/lib/labels'
+import { daysUntil, useDates } from '@/lib/dates'
+import { TASK_STATUS_KEY } from '@/lib/labels'
 import { cn } from '@/lib/utils'
 
 const MAX_TAGS = 3
@@ -25,6 +26,8 @@ interface ConversationCardProps {
  * stretched-link + z-10 액션 패턴으로 <a> 중첩을 피한다.
  */
 export function ConversationCard({ task, onTagClick, onStatusChange }: ConversationCardProps) {
+  const { formatRelative } = useDates()
+  const t = useT()
   const users = useUserMap()
   const sr = primarySrTag(task.tags)
   const daysLeft = daysUntil(task.dueDate)
@@ -80,7 +83,7 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
               <DropdownMenuRadioGroup value={task.status} onValueChange={(v) => onStatusChange(v as TaskStatus)}>
                 {TASK_STATUSES.filter((s) => s !== 'done').map((s) => (
                   <DropdownMenuRadioItem key={s} value={s} className="text-xs">
-                    {TASK_STATUS_LABEL[s]}
+                    {t(TASK_STATUS_KEY[s])}
                   </DropdownMenuRadioItem>
                 ))}
               </DropdownMenuRadioGroup>

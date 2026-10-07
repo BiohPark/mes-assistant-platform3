@@ -5,9 +5,10 @@ import { addChecklistItem, applyChecklistReview, removeChecklistItem, reviewChec
 import { useUserMap } from '@/app/hooks'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { formatDateTime } from '@/lib/dates'
+import { useDates } from '@/lib/dates'
 
 export function ChecklistPanel({ task }: { task: Task }) {
+  const { formatDateTime } = useDates()
   const users = useUserMap()
   const [label, setLabel] = useState('')
   const [busy, setBusy] = useState(false)

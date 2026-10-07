@@ -7,13 +7,6 @@ export interface ResolvedModel {
   source: ModelSource
 }
 
-export const MODEL_SOURCE_LABEL: Record<ModelSource, string> = {
-  thread: '이 대화',
-  task: '이 대화',
-  assistant: '에이전트 매핑',
-  settings: '공통 기본 모델',
-}
-
 /** 모델 결정 순서: 대화 > 업무 > 에이전트 매핑(modelId) > 설정 기본. 빈 문자열은 미지정. 링크에서 모델을 추정하지 않는다. */
 export function resolveModel(input: {
   thread?: Pick<Thread, 'modelId'>

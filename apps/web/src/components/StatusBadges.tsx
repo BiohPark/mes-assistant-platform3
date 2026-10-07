@@ -1,6 +1,7 @@
+import { useT } from '@/i18n'
 import { cn } from '@/lib/utils'
 import type { AssistantStatus, Priority, SrStatus, TaskStatus } from '@mes/domain'
-import { ASSISTANT_STATUS_LABEL, PRIORITY_CLASS, PRIORITY_LABEL, SR_STATUS_LABEL, TASK_STATUS_LABEL } from '@/lib/labels'
+import { ASSISTANT_STATUS_KEY, PRIORITY_CLASS, PRIORITY_KEY, SR_STATUS_KEY, TASK_STATUS_KEY } from '@/lib/labels'
 
 const NEUTRAL = 'bg-tone-neutral-bg text-tone-neutral-fg'
 const INFO = 'bg-tone-info-bg text-tone-info-fg'
@@ -24,17 +25,21 @@ const SR_STATUS_CLASS: Record<SrStatus, string> = {
 const base = 'inline-flex h-5 items-center rounded-full px-2 text-[11px] font-medium whitespace-nowrap'
 
 export function TaskStatusBadge({ status, className }: { status: TaskStatus; className?: string }) {
-  return <span className={cn(base, TASK_STATUS_CLASS[status], className)}>{TASK_STATUS_LABEL[status]}</span>
+  const t = useT()
+  return <span className={cn(base, TASK_STATUS_CLASS[status], className)}>{t(TASK_STATUS_KEY[status])}</span>
 }
 
 export function AssistantStatusBadge({ status, className }: { status: AssistantStatus; className?: string }) {
-  return <span className={cn(base, ASSISTANT_STATUS_CLASS[status], className)}>{ASSISTANT_STATUS_LABEL[status]}</span>
+  const t = useT()
+  return <span className={cn(base, ASSISTANT_STATUS_CLASS[status], className)}>{t(ASSISTANT_STATUS_KEY[status])}</span>
 }
 
 export function SrStatusBadge({ status, className }: { status: SrStatus; className?: string }) {
-  return <span className={cn(base, SR_STATUS_CLASS[status], className)}>{SR_STATUS_LABEL[status]}</span>
+  const t = useT()
+  return <span className={cn(base, SR_STATUS_CLASS[status], className)}>{t(SR_STATUS_KEY[status])}</span>
 }
 
 export function PriorityBadge({ priority, className }: { priority: Priority; className?: string }) {
-  return <span className={cn(base, PRIORITY_CLASS[priority], className)}>{PRIORITY_LABEL[priority]}</span>
+  const t = useT()
+  return <span className={cn(base, PRIORITY_CLASS[priority], className)}>{t(PRIORITY_KEY[priority])}</span>
 }

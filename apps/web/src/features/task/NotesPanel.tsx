@@ -8,9 +8,10 @@ import { useCurrentUserId, useUserMap } from '@/app/hooks'
 import { useMe } from '@/app/auth'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { formatDateTime } from '@/lib/dates'
+import { useDates } from '@/lib/dates'
 
 export function NotesPanel({ task }: { task: Task }) {
+  const { formatDateTime } = useDates()
   const users = useUserMap()
   const me = useCurrentUserId()
   const isSystemOwner = useMe().roles.includes('system_owner')

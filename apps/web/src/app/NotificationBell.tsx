@@ -1,3 +1,4 @@
+import { useNumberFormat } from '@/lib/numbers'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Bell, CheckCheck } from 'lucide-react'
@@ -6,9 +7,11 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { listNotifications, markAllRead, markRead, unreadCount } from '@/api/notifications'
-import { formatRelative } from '@/lib/dates'
+import { useDates } from '@/lib/dates'
 
 export function NotificationBell() {
+  const number = useNumberFormat()
+  const { formatRelative } = useDates()
   const [open, setOpen] = useState(false)
   const query = useQueryClient()
   const navigate = useNavigate()
@@ -18,14 +21,14 @@ export function NotificationBell() {
   const refresh = () => void query.invalidateQueries({ queryKey: ['notifications'] })
   return <DropdownMenu open={open} onOpenChange={setOpen}>
     <DropdownMenuTrigger asChild>
-      <Button variant="ghost" size="icon-sm" aria-label={`알림${unread ? ` ${unread}건 미읽음` : ''}`} className="relative">
+      <Button variant="ghost" size="icon-sm" aria-label={`알림${unread ? ` ${number(unread)}건 미읽음` : ''}`} className="relative">
         <Bell />
-        {unread > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-semibold text-white">{unread > 99 ? '99+' : unread}</span>}
+        {unread > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-semibold text-white">{unread > 99 ? '99+' : number(unread)}</span>}
       </Button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end" className="w-80">
       <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold">
-        <span>알림 {unread > 0 && <span className="font-normal text-muted-foreground">미읽음 {unread}</span>}</span>
+        <span>알림 {unread > 0 && <span className="font-normal text-muted-foreground">미읽음 {number(unread)}</span>}</span>
         <Button size="xs" variant="ghost" disabled={unread === 0} onClick={() => void markAllRead().then(refresh, () => toast.error('알림을 읽음 처리하지 못했습니다.'))}><CheckCheck />모두 읽음</Button>
       </div>
       <DropdownMenuSeparator />

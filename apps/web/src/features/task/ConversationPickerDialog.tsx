@@ -1,3 +1,4 @@
+import { useLocale } from '@/i18n'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { eligibleMessages, type Message } from '@mes/domain'
@@ -82,5 +83,5 @@ export function ConversationPickerDialog({ taskId, candidate, current, initialMo
   </DialogContent></Dialog>
 }
 
-function MessageLine({ message }: { message: Message }) { return <div className="min-w-0 text-xs"><span className="font-medium">{message.role === 'user' ? '사용자' : 'assistant'}</span><span className="ml-2 text-muted-foreground">{new Date(message.createdAt).toLocaleString()}</span><p className="line-clamp-2 whitespace-pre-wrap">{message.content}</p></div> }
+function MessageLine({ message }: { message: Message }) { const locale = useLocale(); return <div className="min-w-0 text-xs"><span className="font-medium">{message.role === 'user' ? '사용자' : 'assistant'}</span><span className="ml-2 text-muted-foreground">{new Date(message.createdAt).toLocaleString(locale)}</span><p className="line-clamp-2 whitespace-pre-wrap">{message.content}</p></div> }
 function Preview({ messages }: { messages: Message[] }) { return <ul className="max-h-64 space-y-2 overflow-y-auto rounded-xl border p-2">{messages.map((item) => <li key={item.id}><MessageLine message={item} /></li>)}</ul> }

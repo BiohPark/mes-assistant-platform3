@@ -1,9 +1,10 @@
+import { useT } from '@/i18n'
 import { UserAvatar } from '@/components/UserAvatar'
 import { useUserMap } from '@/app/hooks'
 import type { ActivityLog } from '@mes/domain'
-import { ACTIVITY_LABEL } from '@/lib/labels'
+import { ACTIVITY_KEY } from '@/lib/labels'
 import { describeActivity } from '@/lib/activity'
-import { formatDateTime } from '@/lib/dates'
+import { useDates } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 
 interface ActivityPanelProps {
@@ -21,6 +22,8 @@ const HIGHLIGHT: Partial<Record<ActivityLog['type'], string>> = {
 }
 
 export function ActivityPanel({ activity }: ActivityPanelProps) {
+  const { formatDateTime } = useDates()
+  const t = useT()
   const users = useUserMap()
   return (
     <div className="flex h-full flex-col">
@@ -33,7 +36,7 @@ export function ActivityPanel({ activity }: ActivityPanelProps) {
             <li key={a.id} className="flex gap-2 border-l-2 py-1.5 pl-2.5">
               <UserAvatar user={user} size="xs" className="mt-0.5" />
               <div className="min-w-0 flex-1 text-xs leading-snug">
-                <span className="font-medium">{user?.name ?? '시스템'}</span> <span className={cn(HIGHLIGHT[a.type])}>{(ACTIVITY_LABEL[a.type] ?? a.type)}</span>
+                <span className="font-medium">{user?.name ?? '시스템'}</span> <span className={cn(HIGHLIGHT[a.type])}>{(ACTIVITY_KEY[a.type] ? t(ACTIVITY_KEY[a.type]) : a.type)}</span>
                 {detail && <div className="truncate text-muted-foreground">{detail}</div>}
                 <div className="text-xs text-muted-foreground/80">{formatDateTime(a.at)}</div>
               </div>
