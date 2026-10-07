@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   check:
+    timeout-minutes: 20
     name: typecheck · lint · test (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -29,6 +30,7 @@ jobs:
       - run: pnpm test
 
   setup-guide:
+    timeout-minutes: 30
     # docs/setup/windows.md의 ```powershell ci 블록을 그대로 실행 — 문서와 실제가 어긋나면 실패
     # (MariaDB는 문서 4장 (b) "직접 설치" 경로. Windows 러너는 리눅스 컨테이너를 못 돌려 Keycloak·E2E는 제외)
     name: 설치 가이드 검증 (windows.md)
@@ -48,6 +50,7 @@ jobs:
       - run: node scripts/run-doc-commands.mjs docs/setup/windows.md
 
   db:
+    timeout-minutes: 20
     name: DB 통합 테스트 (MariaDB ${{ matrix.mariadb }})
     runs-on: ubuntu-latest
     strategy:
@@ -81,6 +84,7 @@ jobs:
       - run: pnpm test:db
 
   e2e:
+    timeout-minutes: 30
     name: E2E (docker compose + Playwright, ${{ matrix.llm_mode }})
     runs-on: ubuntu-latest
     strategy:
@@ -111,6 +115,7 @@ jobs:
           path: e2e/test-results
 
   e2e-windows:
+    timeout-minutes: 30
     name: E2E (windows, mock)
     runs-on: windows-latest
     steps:
