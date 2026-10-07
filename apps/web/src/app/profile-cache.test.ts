@@ -5,10 +5,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const html = readFileSync(resolve(import.meta.dirname, '../../index.html'), 'utf8')
 function applyCache() {
-  const script = html.match(/<script id="profile-cache">([\s\S]*?)<\/script>/)?.[1]
-  expect(script).toBeDefined()
+  const page = new DOMParser().parseFromString(html, 'text/html')
+  const script = page.head.querySelector('script#profile-cache')
+  expect(script?.getAttribute('src')).toBe('/profile-cache.js')
+  expect(script?.hasAttribute('async')).toBe(false)
+  expect(script?.hasAttribute('defer')).toBe(false)
+  expect(script?.getAttribute('type')).not.toBe('module')
+  expect(script?.textContent).toBe('')
   expect(html.indexOf('id="profile-cache"')).toBeLessThan(html.indexOf('</head>'))
-  window.eval(script!)
+  window.eval(readFileSync(resolve(import.meta.dirname, '../../public/profile-cache.js'), 'utf8'))
 }
 
 describe('첫 페인트 전 프로필 캐시', () => {

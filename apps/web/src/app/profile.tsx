@@ -13,6 +13,7 @@ const ProfileContext = createContext<{
   theme: Theme
   locale: Locale
   setLocale: (locale: Locale) => void
+  reset: () => void
   save: (input: Partial<Preferences>) => void
   pending: boolean
   saving: Partial<Preferences> | undefined
@@ -29,6 +30,14 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = locale
     try { localStorage.setItem('mes-locale', locale) } catch { /* 캐시 저장이 막혀도 화면에는 적용한다 */ }
   }, [locale])
+  function reset() {
+    setTheme('system')
+    setLocale('ko')
+    try {
+      localStorage.setItem('mes-theme', 'system')
+      localStorage.setItem('mes-locale', 'ko')
+    } catch { /* 캐시 저장이 막혀도 화면에는 적용한다 */ }
+  }
   const mutation = useMutation({
     mutationFn: (input: Partial<Preferences>) => setMyProfile(input),
     onMutate: async (input) => {
@@ -38,7 +47,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       if (input.locale !== undefined) setLocale(input.locale)
       return previous
     },
-    onSuccess: (updated, input) => {
+    onSuccess: async (updated, input) => {
+      await client.cancelQueries({ queryKey: ['me'] })
       client.setQueryData<Me>(['me'], (current) => current ? { ...current,
         ...(input.theme !== undefined && { theme: updated.theme }),
         ...(input.locale !== undefined && { locale: updated.locale }),
@@ -52,8 +62,9 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       }
       toast.error(error instanceof Error ? error.message : '프로필을 저장하지 못했습니다')
     },
+    onSettled: () => client.invalidateQueries({ queryKey: ['me'] }),
   })
-  return <ProfileContext value={{ theme: theme as Theme, locale, setLocale, save: mutation.mutate, pending: mutation.isPending, saving: mutation.isPending ? mutation.variables : undefined }}>{children}</ProfileContext>
+  return <ProfileContext value={{ theme: theme as Theme, locale, setLocale, reset, save: mutation.mutate, pending: mutation.isPending, saving: mutation.isPending ? mutation.variables : undefined }}>{children}</ProfileContext>
 }
 
 export function useProfile() {

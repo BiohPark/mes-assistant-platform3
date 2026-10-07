@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -37,11 +37,47 @@ describe('내 정보 프로필 세그먼트', () => {
     expect(localStorage.getItem('mes-theme')).toBe('light')
     expect(screen.getByRole('radio', { name: '라이트' })).toBeChecked()
   })
+  it.each([
+    { input: { theme: 'dark' as const }, label: '다크', theme: 'dark', locale: 'ko' },
+    { input: { locale: 'en' as const }, label: 'English', theme: 'system', locale: 'en' },
+  ])('저장 중 시작된 늦은 /me가 $label 저장값을 덮어쓰지 않고 저장 뒤 서버를 재조회한다', async ({ input, label, theme, locale }) => {
+    let client!: ReturnType<typeof useQueryClient>
+    function CaptureClient() { client = useQueryClient(); return null }
+    let server: Me = { ...me, roles: [...me.roles] }
+    let finishSave!: (response: Response) => void
+    let finishStaleMe!: (response: Response) => void
+    let reads = 0
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (url !== '/api/me') return new Promise<Response>((resolve) => { finishSave = resolve })
+      reads++
+      if (reads === 2) return new Promise<Response>((resolve) => { finishStaleMe = resolve })
+      return Promise.resolve(jsonResponse(200, server))
+    }))
+    renderWithProviders(<AuthGate><TooltipProvider><MyInfoPage /><CaptureClient /></TooltipProvider></AuthGate>)
+    await screen.findByLabelText('이름')
+    await userEvent.click(screen.getByRole('radio', { name: label }))
+    await waitFor(() => expect(screen.getByRole('radio', { name: label })).toBeChecked())
+    let staleRead!: Promise<void>
+    await act(async () => { staleRead = client.refetchQueries({ queryKey: ['me'] }) })
+    const staleMe = jsonResponse(200, server)
+    server = { ...server, ...input, name: '서버의 최신 이름' }
+    await act(async () => { finishSave(jsonResponse(200, { name: me.name, theme: server.theme, locale: server.locale })) })
+    await waitFor(() => expect(screen.getByRole('radio', { name: label })).toBeEnabled())
+    await act(async () => { finishStaleMe(staleMe); await staleRead })
+    expect(client.getQueryData<Me>(['me'])).toMatchObject({ theme, locale, name: '서버의 최신 이름' })
+    await waitFor(() => expect(screen.getByRole('radio', { name: label })).toBeChecked())
+    expect(document.documentElement.classList.contains('dark')).toBe(theme === 'dark')
+    expect(document.documentElement.lang).toBe(locale)
+    expect(localStorage.getItem('mes-theme')).toBe(theme)
+    expect(localStorage.getItem('mes-locale')).toBe(locale)
+    expect(screen.getByRole('button', { name: /서버의 최신 이름/ })).toBeInTheDocument()
+  })
   it('늦은 테마 응답이 이미 저장된 새 이름을 덮어쓰지 않는다', async () => {
+    let server: Me = { ...me, roles: [...me.roles] }
     let finishName!: (response: Response) => void
     let finishTheme!: (response: Response) => void
     vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
-      if (url === '/api/me') return Promise.resolve(jsonResponse(200, { ...me, roles: [...me.roles] }))
+      if (url === '/api/me') return Promise.resolve(jsonResponse(200, server))
       const input = JSON.parse(init!.body as string) as { name?: string }
       return new Promise<Response>((resolve) => { if (input.name) finishName = resolve; else finishTheme = resolve })
     }))
@@ -51,8 +87,10 @@ describe('내 정보 프로필 세그먼트', () => {
     await userEvent.type(screen.getByLabelText('이름'), '새 이름')
     await userEvent.click(screen.getByRole('button', { name: '저장' }))
     await userEvent.click(screen.getByRole('radio', { name: '다크' }))
+    server = { ...server, name: '새 이름' }
     finishName(jsonResponse(200, { name: '새 이름', theme: 'dark', locale: 'ko' }))
     await screen.findByRole('button', { name: /새 이름/ })
+    server = { ...server, theme: 'dark' }
     finishTheme(jsonResponse(200, { name: me.name, theme: 'dark', locale: 'ko' }))
     await waitFor(() => expect(screen.getByRole('radio', { name: '다크' })).toBeEnabled())
     expect(screen.getByRole('button', { name: /새 이름/ })).toBeInTheDocument()

@@ -81,7 +81,7 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
           <DropdownMenuItem onClick={() => void navigate('/password')}><KeyRound />비밀번호 변경</DropdownMenuItem>
           <DropdownMenuItem
             onClick={() =>
-              logout().then(onLoggedOut, () => toast.error('로그아웃하지 못했습니다. 다시 시도하세요.'))
+              logout().then(() => { profile.reset(); onLoggedOut() }, () => toast.error('로그아웃하지 못했습니다. 다시 시도하세요.'))
             }
           >
             <LogOut />

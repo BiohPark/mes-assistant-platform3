@@ -6,10 +6,16 @@ import { jsonResponse, renderWithProviders } from '@/test/render'
 import { AuthGate } from './AuthGate'
 import { MeContext } from './auth'
 import { TopBar } from './TopBar'
+import { useProfile } from './profile'
 
 vi.mock('./NotificationBell', () => ({ NotificationBell: () => null }))
 
 const me = { theme: 'system' as const, locale: 'ko' as const, id: 'u1', name: '김운영', role: '', roles: ['member', 'system_owner'] as const }
+
+function ProfileState() {
+  const profile = useProfile()
+  return <output aria-label="프로필 상태">{profile.theme}·{profile.locale}</output>
+}
 
 describe('TopBar', () => {
   beforeEach(() => { localStorage.clear(); document.documentElement.className = ''; document.documentElement.lang = 'ko' })
@@ -35,9 +41,33 @@ describe('TopBar', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/auth/logout', expect.objectContaining({ method: 'POST' }))
   })
 
+  it.each([204, 500])('로그아웃 응답 %s에서 성공한 경우에만 화면·두 캐시를 system·ko로 초기화한다', async (status) => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/me'
+      ? jsonResponse(200, { ...me, roles: ['member'], theme: 'dark', locale: 'en' })
+      : jsonResponse(status)))
+    const afterLogout = vi.fn(() => ({ theme: localStorage.getItem('mes-theme'), locale: localStorage.getItem('mes-locale') }))
+    renderWithProviders(<AuthGate><TooltipProvider><TopBar onLoggedOut={afterLogout} /><ProfileState /></TooltipProvider></AuthGate>)
+    await screen.findByRole('button', { name: /김운영/ })
+    await waitFor(() => expect(screen.getByLabelText('프로필 상태')).toHaveTextContent('dark·en'))
+    expect(document.documentElement).toHaveClass('dark')
+    expect(document.documentElement.lang).toBe('en')
+    await userEvent.click(screen.getByRole('button', { name: /김운영/ }))
+    await userEvent.click(screen.getByRole('menuitem', { name: '로그아웃' }))
+    const theme = status === 204 ? 'system' : 'dark'
+    const locale = status === 204 ? 'ko' : 'en'
+    await waitFor(() => expect(screen.getByLabelText('프로필 상태')).toHaveTextContent(`${theme}·${locale}`))
+    expect(localStorage.getItem('mes-theme')).toBe(theme)
+    expect(localStorage.getItem('mes-locale')).toBe(locale)
+    expect(document.documentElement.classList.contains('dark')).toBe(status !== 204)
+    expect(document.documentElement.lang).toBe(locale)
+    expect(afterLogout).toHaveBeenCalledTimes(status === 204 ? 1 : 0)
+    if (status === 204) expect(afterLogout.mock.results[0]?.value).toEqual({ theme: 'system', locale: 'ko' })
+  })
+
   it('테마·언어 메뉴는 즉시 적용하고 서버에 저장한다', async () => {
+    let server = { ...me, roles: ['member'], theme: 'system', locale: 'ko' }
     let finish!: (response: Response) => void
-    const fetchMock = vi.fn((url: string) => url === '/api/me' ? Promise.resolve(jsonResponse(200, { ...me, roles: ['member'] })) : new Promise<Response>((resolve) => { finish = resolve }))
+    const fetchMock = vi.fn((url: string) => url === '/api/me' ? Promise.resolve(jsonResponse(200, server)) : new Promise<Response>((resolve) => { finish = resolve }))
     vi.stubGlobal('fetch', fetchMock)
     renderWithProviders(<AuthGate><TooltipProvider><TopBar /></TooltipProvider></AuthGate>)
     await screen.findByRole('button', { name: /김운영/ })
@@ -47,6 +77,7 @@ describe('TopBar', () => {
     await waitFor(() => expect(document.documentElement).toHaveClass('dark'))
     expect(localStorage.getItem('mes-theme')).toBe('dark')
     expect(fetchMock).toHaveBeenLastCalledWith('/api/users/me', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ theme: 'dark' }) }))
+    server = { ...server, theme: 'dark' }
     finish(jsonResponse(200, { name: me.name, theme: 'dark', locale: 'ko' }))
     await userEvent.click(screen.getByRole('button', { name: /김운영/ }))
     await waitFor(() => expect(screen.getByRole('menuitemradio', { name: 'English' })).not.toHaveAttribute('aria-disabled', 'true'))
@@ -54,11 +85,13 @@ describe('TopBar', () => {
     await waitFor(() => expect(document.documentElement.lang).toBe('en'))
     expect(localStorage.getItem('mes-locale')).toBe('en')
     expect(fetchMock).toHaveBeenLastCalledWith('/api/users/me', expect.objectContaining({ body: JSON.stringify({ locale: 'en' }) }))
+    server = { ...server, locale: 'en' }
     finish(jsonResponse(200, { name: me.name, theme: 'dark', locale: 'en' }))
     await userEvent.click(screen.getByRole('button', { name: /김운영/ }))
     await waitFor(() => expect(screen.getByRole('menuitemradio', { name: 'English' })).not.toHaveAttribute('aria-disabled', 'true'))
     await userEvent.click(screen.getByRole('menuitemradio', { name: '라이트' }))
     await waitFor(() => expect(document.documentElement).not.toHaveClass('dark'))
+    server = { ...server, theme: 'light' }
     finish(jsonResponse(200, { name: me.name, theme: 'light', locale: 'en' }))
   })
   it('저장 실패 시 테마·언어와 캐시를 되돌리고 토스트로 알린다', async () => {
