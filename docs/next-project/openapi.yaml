@@ -164,7 +164,7 @@ paths:
         '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Assistant' } } } } }
     post:
       tags: [assistants]
-      summary: 에이전트 추가 (SO 전용)
+      summary: 에이전트 추가 (SO 전용). id 생략 시 서버가 a- 접두의 짧은 무작위 ID 생성
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/AssistantInput' } } } }
       responses:
         '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/Assistant' } } } }
@@ -217,7 +217,7 @@ paths:
       tags: [assistants]
       summary: 에이전트 수정 (SO 전용). 부분 수정은 기대 입출력·체크리스트를 보존. 접수 에이전트는 중단 불가(409)
       parameters: [{ $ref: '#/components/parameters/assistantId' }]
-      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/AssistantInput' } } } }
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/AssistantPatch' } } } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Assistant' } } } }
     delete:
@@ -839,7 +839,29 @@ components:
         expectedOutputs: { type: array, items: { type: string } }
         checklistTemplate: { type: array, items: { type: object, properties: { id: { type: string }, label: { type: string }, required: { type: boolean } } } }
     AssistantInput:
-      allOf: [{ $ref: '#/components/schemas/Assistant' }]
+      allOf:
+        - $ref: '#/components/schemas/AssistantPatch'
+        - type: object
+          required: [name, level1CodeId, level2CodeId, summary, ownerId, status, usageExample, expectedInputs, expectedOutputs]
+          properties:
+            id: { type: string, minLength: 1, maxLength: 191, description: '선택. 생략 시 서버 생성(a- + 무작위 12자리 hex). 기존 ID는 유지.' }
+    AssistantPatch:
+      type: object
+      description: 부분 수정. 내부 ID는 변경 불가. 생략한 필드는 유지.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 1000 }
+        level1CodeId: { type: string, minLength: 1, maxLength: 191 }
+        level2CodeId: { type: string, minLength: 1, maxLength: 191 }
+        summary: { type: string }
+        ownerId: { type: string, minLength: 1, maxLength: 191 }
+        status: { enum: [open, developing, testing, retired] }
+        usageExample: { type: string, description: 첫 질문 예시 }
+        modelId: { type: [string, 'null'] }
+        link1: { type: [string, 'null'], description: 'OpenWebUI 링크. 비우면 link1Rule 사용. modelId·link1이 모두 없으면 링크 숨김. 규칙의 {assistantId}는 호환 유지.' }
+        docUrl: { type: [string, 'null'] }
+        expectedInputs: { type: array, maxItems: 100, items: { type: string, minLength: 1, maxLength: 1000 } }
+        expectedOutputs: { type: array, maxItems: 100, items: { type: string, minLength: 1, maxLength: 1000 } }
+        checklistTemplate: { type: array, maxItems: 100, items: { type: object, required: [id, label, required], properties: { id: { type: string, minLength: 1, maxLength: 191 }, label: { type: string, minLength: 1, maxLength: 1000 }, required: { type: boolean } } } }
     Task:
       type: object
       properties:

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common'
 import { and, asc, eq, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
@@ -10,7 +10,7 @@ import { FileStorageService, createStorageKey, sha256 } from '../files/fileStora
 import { Optional, PayloadTooLargeException } from '@nestjs/common'
 
 type AssistantInput = {
-  id: string; name: string; level1CodeId: string; level2CodeId: string; summary: string; ownerId: string
+  id?: string; name: string; level1CodeId: string; level2CodeId: string; summary: string; ownerId: string
   status: 'open' | 'developing' | 'testing' | 'retired'; usageExample: string; modelId?: string | null
   link1?: string | null; docUrl?: string | null; expectedInputs: string[]; expectedOutputs: string[]
   checklistTemplate: { id: string; label: string; required: boolean }[]
@@ -57,21 +57,27 @@ export class AdminService {
   async createAssistant(actor: string, input: AssistantInput) {
     if (input.status === 'retired') throw new BadRequestException('새 에이전트는 폐기 상태로 만들 수 없습니다')
     try {
-      await this.db.transaction(async (tx) => {
+      const id = await this.db.transaction(async (tx) => {
         await this.validateRefs(tx as Db, input)
         await tx.execute(sql`insert into db_lock (lock_key) values ('assistant-order') on duplicate key update lock_key = lock_key`)
+        let id = input.id
+        if (id === undefined) {
+          do { id = `a-${randomBytes(6).toString('hex')}` }
+          while ((await tx.select({ id: assistant.id }).from(assistant).where(eq(assistant.id, id))).length)
+        }
         const [last] = await tx.select({ order: assistant.sortOrder }).from(assistant).orderBy(sql`${assistant.sortOrder} desc`).limit(1)
-        await tx.insert(assistant).values({ id: input.id, name: input.name, level1CodeId: input.level1CodeId,
+        await tx.insert(assistant).values({ id, name: input.name, level1CodeId: input.level1CodeId,
           level2CodeId: input.level2CodeId, summary: input.summary, sortOrder: (last?.order ?? 0) + 1,
           modelId: input.modelId, link1: input.link1, docUrl: input.docUrl, ownerId: input.ownerId,
           status: input.status, usageExample: input.usageExample, color: '#2563eb', createdBy: actor })
-        await this.replaceNested(tx, input.id, input)
+        await this.replaceNested(tx, id, input)
+        return id
       })
+      return this.assistant(id)
     } catch (error) {
       if (isDuplicateKey(error)) throw new ConflictException('이미 존재하는 에이전트 ID입니다')
       throw error
     }
-    return this.assistant(input.id)
   }
   private async replaceNested(tx: Parameters<Parameters<Db['transaction']>[0]>[0], id: string, input: AssistantPatch) {
     if (input.expectedInputs !== undefined || input.expectedOutputs !== undefined) {

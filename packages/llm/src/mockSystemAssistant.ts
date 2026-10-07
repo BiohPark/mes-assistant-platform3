@@ -14,13 +14,6 @@ function quoted(text: string): string | undefined {
   return m?.[1]
 }
 
-function kebab(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9가-힣]+/g, '-')
-    .replace(/^-|-$/g, '')
-}
-
 const HELP =
   "예: 'FDS 작성 도우미로 \"알람 필터 FDS\" 대화 시작해줘 SR-2026-0002', 'WK-2026-0006 에 SR-2026-0001 태그 붙여줘', 'WK-2026-0007 에 #release-2026-10 태그'"
 
@@ -35,13 +28,14 @@ export function mockSystemAssistant(userText: string): MockSystemResult {
     const tag = sr ?? hashTag!
     return { text: `${task} 대화에 ${tag} 태그를 붙이겠습니다.`, toolCalls: [call('add_tag', { taskCode: task, tag })] }
   }
-  if (/(어시스턴트|에이전트)\s*(등록|추가|생성)/.test(t)) {
-    const id = /ID\s*[:：]?\s*([a-z0-9-]+)/i.exec(t)?.[1]
-    const name = /이름\s*[:：]?\s*([^,，]+)/.exec(t)?.[1]?.trim() ?? quoted(t) ?? '새 에이전트'
+  const englishRegistration = /^Register an agent named ([^,]+),/i.exec(t)
+  if (/(어시스턴트|에이전트)\s*(등록|추가|생성)/.test(t) || englishRegistration) {
+    const id = /\bID\b\s*[:：]?\s*([a-z0-9-]+)/i.exec(t)?.[1]
+    const name = englishRegistration?.[1]?.trim() ?? /이름\s*[:：]?\s*([^,，]+)/.exec(t)?.[1]?.trim() ?? quoted(t) ?? '새 에이전트'
     const lv = /([^,，\s]+)\s*[›>]\s*([^,，\s]+)/.exec(t)
     return {
       text: `"${name}" 에이전트를 등록하겠습니다. 모델 ID는 관리 페이지에서 매핑하세요.`,
-      toolCalls: [call('create_assistant', { id: id ?? kebab(name), name, level1: lv?.[1] ?? '공통', level2: lv?.[2] ?? '기타', summary: '' })],
+      toolCalls: [call('create_assistant', { ...(id && { id }), name, level1: lv?.[1] ?? '공통', level2: lv?.[2] ?? '기타', summary: '' })],
     }
   }
   const m = /(.+?)\s*(?:어시스턴트|에이전트|도우미)?\s*(?:로|으로|에|에서|와|과)\s*["'“”「](.+?)["'“”」]\s*(?:업무|대화)/.exec(t)

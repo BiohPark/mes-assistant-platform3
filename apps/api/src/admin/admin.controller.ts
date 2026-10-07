@@ -16,7 +16,7 @@ const assistantFields = z.object({
   docUrl: z.string().nullable().optional(), expectedInputs: z.array(label).max(100), expectedOutputs: z.array(label).max(100),
   checklistTemplate: z.array(template).max(100).optional(),
 }).strict()
-const createAssistant = assistantFields.extend({ id: key })
+const createAssistant = assistantFields.extend({ id: key.optional() })
 const patchAssistant = assistantFields.partial()
 const settings = z.object({
   defaultModel: label.optional(), fileDelivery: z.enum(['inline', 'openwebui']).optional(),
@@ -42,8 +42,8 @@ export class AdminAssistantsController {
   @Roles('system_owner')
   async create(@Req() req: AuthedRequest, @Body() body: unknown) {
     const input = parse(createAssistant, body)
-    await this.admin.createAssistant(req.user!.id, { ...input, checklistTemplate: input.checklistTemplate ?? defaultChecklist() })
-    return this.view(input.id)
+    const created = await this.admin.createAssistant(req.user!.id, { ...input, checklistTemplate: input.checklistTemplate ?? defaultChecklist() })
+    return this.view(created.id)
   }
   @Put('order')
   @Roles('system_owner')
