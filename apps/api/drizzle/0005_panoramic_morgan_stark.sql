@@ -1,0 +1,1 @@
+ALTER TABLE `code` ADD `is_auto` boolean DEFAULT false NOT NULL;

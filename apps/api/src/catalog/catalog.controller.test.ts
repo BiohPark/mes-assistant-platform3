@@ -21,7 +21,7 @@ describe('catalog read API', () => {
   const reader: CatalogReader = {
     assistants: vi.fn(async () => [assistant]), stats: vi.fn(async () => [{ assistantId: 'a', open: 0, inProgress: 0, onHold: 0, done: 0 }]),
     users: vi.fn(async () => [{ id: 'u', name: '사용자', initials: '사', color: '#123456', isSystemOwner: false, isBusinessOwner: false }]),
-    codes: vi.fn(async () => [{ id: 'assistant_level1:SDLC', groupKey: 'assistant_level1', code: 'SDLC', name: 'SDLC', sortOrder: 0, active: true }]),
+    codes: vi.fn(async () => [{ id: 'assistant_level1:SDLC', groupKey: 'assistant_level1', code: 'SDLC', name: 'SDLC', sortOrder: 0, active: true, isAuto: false }]),
   }
 
   beforeEach(async () => {

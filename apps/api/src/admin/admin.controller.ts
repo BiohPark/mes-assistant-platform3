@@ -8,15 +8,17 @@ import { DbCatalogReader } from '../catalog/catalog.service.js'
 
 const key = z.string().trim().min(1).max(191)
 const label = z.string().trim().min(1).max(1000)
+const codeName = z.string().transform(value => value.trim().replace(/\s+/gu, ' ').normalize('NFC')).pipe(z.string().min(1).max(191))
 const status = z.enum(['open', 'developing', 'testing', 'retired'])
 const template = z.object({ id: key, label, required: z.boolean() }).strict()
 const assistantFields = z.object({
-  name: label, level1CodeId: key, level2CodeId: key, summary: z.string(), ownerId: key,
+  name: label, level1: codeName.optional(), level2: codeName.optional(), level1CodeId: key.optional(), level2CodeId: key.optional(), summary: z.string(), ownerId: key,
   status, usageExample: z.string(), modelId: z.string().nullable().optional(), link1: z.string().nullable().optional(),
   docUrl: z.string().nullable().optional(), expectedInputs: z.array(label).max(100), expectedOutputs: z.array(label).max(100),
   checklistTemplate: z.array(template).max(100).optional(),
 }).strict()
-const createAssistant = assistantFields.extend({ id: key.optional() })
+const createAssistant = assistantFields.extend({ id: key.optional() }).refine((input) =>
+  (input.level1 !== undefined || input.level1CodeId !== undefined) && (input.level2 !== undefined || input.level2CodeId !== undefined))
 const patchAssistant = assistantFields.partial()
 const settings = z.object({
   defaultModel: label.optional(), fileDelivery: z.enum(['inline', 'openwebui']).optional(),

@@ -72,6 +72,7 @@ export const code = mysqlTable('code', {
   name: text('name').notNull(),
   sortOrder: integer('sort_order').notNull().default(0),
   active: boolean('active').notNull().default(true),
+  isAuto: boolean('is_auto').notNull().default(false),
 }, (t) => [unique('code_group_key_code_key').on(t.groupKey, t.code)])
 
 export const fileObject = mysqlTable(

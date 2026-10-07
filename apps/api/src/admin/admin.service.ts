@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common'
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, or, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appSetting, appUser, assistant, assistantChecklistTemplate, assistantExpectedIo, checklistItem, code, codeGroup, fileObject, task } from '../db/schema.js'
 import { isDuplicateKey } from '../db/errors.js'
@@ -10,7 +10,7 @@ import { FileStorageService, createStorageKey, sha256 } from '../files/fileStora
 import { Optional, PayloadTooLargeException } from '@nestjs/common'
 
 type AssistantInput = {
-  id?: string; name: string; level1CodeId: string; level2CodeId: string; summary: string; ownerId: string
+  id?: string; name: string; level1?: string; level2?: string; level1CodeId?: string; level2CodeId?: string; summary: string; ownerId: string
   status: 'open' | 'developing' | 'testing' | 'retired'; usageExample: string; modelId?: string | null
   link1?: string | null; docUrl?: string | null; expectedInputs: string[]; expectedOutputs: string[]
   checklistTemplate: { id: string; label: string; required: boolean }[]
@@ -29,6 +29,51 @@ export class AdminService {
     @Optional() @Inject(FILE_STORAGE) private readonly storage?: FileStorageService,
     @Optional() @Inject(CONFIG) private readonly config?: AppConfig) {}
 
+  private async lockCodes(tx: Db) {
+    // 이름 변형의 동시 생성과 마지막 참조 정리는 같은 잠금 아래 직렬화한다.
+    await tx.execute(sql`insert into db_lock (lock_key) values ('assistant-codes') on duplicate key update lock_key = lock_key`)
+  }
+  private async resolveCode(tx: Db, group: string, value: string) {
+    const name = value.trim().replace(/\s+/gu, ' ').normalize('NFC')
+    if (!name || name.length > 191) throw new BadRequestException('분류 이름은 1~191자여야 합니다')
+    const find = async () => {
+      const rows = await tx.select().from(code).where(eq(code.groupKey, group)).orderBy(asc(code.id)).for('update')
+      return rows.find(row => row.name.trim().replace(/\s+/gu, ' ').normalize('NFC').toLowerCase() === name.toLowerCase())
+    }
+    let row = await find()
+    if (!row) {
+      const id = `${group}:${name}`
+      if (id.length > 191) throw new BadRequestException('코드 ID는 191자를 넘을 수 없습니다')
+      try {
+        await tx.insert(code).values({ id, groupKey: group, code: name, name, isAuto: true })
+        return id
+      } catch (error) {
+        if (!isDuplicateKey(error)) throw error
+        row = await find()
+        if (!row) throw new ConflictException('이미 존재하는 코드입니다')
+      }
+    }
+    if (!row.active) await tx.update(code).set({ active: true }).where(eq(code.id, row.id))
+    return row.id
+  }
+  private async resolveCodes(tx: Db, input: AssistantPatch) {
+    const refs: { level1CodeId?: string; level2CodeId?: string } = {}
+    for (const level of ['level1', 'level2'] as const) {
+      const field = `${level}CodeId` as const
+      if (input[level] !== undefined) refs[field] = await this.resolveCode(tx, `assistant_${level}`, input[level])
+      else if (input[field] !== undefined) refs[field] = input[field]
+    }
+    return refs
+  }
+  private async cleanupCodes(tx: Db, ids: string[]) {
+    for (const id of [...new Set(ids)].sort()) {
+      const [row] = await tx.select().from(code).where(eq(code.id, id)).for('update')
+      if (!row?.isAuto) continue
+      const [linked] = await tx.select({ id: assistant.id }).from(assistant)
+        .where(or(eq(assistant.level1CodeId, id), eq(assistant.level2CodeId, id))).limit(1).for('update')
+      if (!linked) await tx.delete(code).where(and(eq(code.id, id), eq(code.isAuto, true)))
+    }
+  }
   private async codeValid(tx: Db, id: string, group: string) {
     const [row] = await tx.select({ id: code.id }).from(code).where(and(eq(code.id, id), eq(code.groupKey, group), eq(code.active, true))).for('update')
     if (!row) throw new BadRequestException('활성 분류 코드를 선택하세요')
@@ -58,7 +103,10 @@ export class AdminService {
     if (input.status === 'retired') throw new BadRequestException('새 에이전트는 폐기 상태로 만들 수 없습니다')
     try {
       const id = await this.db.transaction(async (tx) => {
-        await this.validateRefs(tx as Db, input)
+        await this.lockCodes(tx as Db)
+        const refs = await this.resolveCodes(tx as Db, input)
+        if (!refs.level1CodeId || !refs.level2CodeId) throw new BadRequestException('분류 이름 또는 코드를 입력하세요')
+        await this.validateRefs(tx as Db, { ...input, ...refs })
         await tx.execute(sql`insert into db_lock (lock_key) values ('assistant-order') on duplicate key update lock_key = lock_key`)
         let id = input.id
         if (id === undefined) {
@@ -66,8 +114,8 @@ export class AdminService {
           while ((await tx.select({ id: assistant.id }).from(assistant).where(eq(assistant.id, id))).length)
         }
         const [last] = await tx.select({ order: assistant.sortOrder }).from(assistant).orderBy(sql`${assistant.sortOrder} desc`).limit(1)
-        await tx.insert(assistant).values({ id, name: input.name, level1CodeId: input.level1CodeId,
-          level2CodeId: input.level2CodeId, summary: input.summary, sortOrder: (last?.order ?? 0) + 1,
+        await tx.insert(assistant).values({ id, name: input.name, level1CodeId: refs.level1CodeId,
+          level2CodeId: refs.level2CodeId, summary: input.summary, sortOrder: (last?.order ?? 0) + 1,
           modelId: input.modelId, link1: input.link1, docUrl: input.docUrl, ownerId: input.ownerId,
           status: input.status, usageExample: input.usageExample, color: '#2563eb', createdBy: actor })
         await this.replaceNested(tx, id, input)
@@ -102,23 +150,27 @@ export class AdminService {
   }
   async updateAssistant(id: string, patch: AssistantPatch) {
     await this.db.transaction(async (tx) => {
+      await this.lockCodes(tx as Db)
       const [current] = await tx.select().from(assistant).where(eq(assistant.id, id)).for('update')
       if (!current) throw new NotFoundException('에이전트를 찾을 수 없습니다')
+      const refs = await this.resolveCodes(tx as Db, patch)
       await this.validateRefs(tx as Db, {
-        ...(patch.level1CodeId && patch.level1CodeId !== current.level1CodeId ? { level1CodeId: patch.level1CodeId } : {}),
-        ...(patch.level2CodeId && patch.level2CodeId !== current.level2CodeId ? { level2CodeId: patch.level2CodeId } : {}),
+        ...(refs.level1CodeId && refs.level1CodeId !== current.level1CodeId ? { level1CodeId: refs.level1CodeId } : {}),
+        ...(refs.level2CodeId && refs.level2CodeId !== current.level2CodeId ? { level2CodeId: refs.level2CodeId } : {}),
         ...(patch.ownerId && patch.ownerId !== current.ownerId ? { ownerId: patch.ownerId } : {}),
       })
       if (patch.status === 'retired' && await this.isIntake(id, tx as Db)) throw new ConflictException('접수 에이전트는 중단할 수 없습니다')
-      const { expectedInputs, expectedOutputs, checklistTemplate, ...fields } = patch
-      void expectedInputs; void expectedOutputs; void checklistTemplate
-      await tx.update(assistant).set({ ...fields, revision: current.revision + 1, updatedAt: new Date() }).where(eq(assistant.id, id))
+      const { expectedInputs, expectedOutputs, checklistTemplate, level1, level2, ...fields } = patch
+      void expectedInputs; void expectedOutputs; void checklistTemplate; void level1; void level2
+      await tx.update(assistant).set({ ...fields, ...refs, revision: current.revision + 1, updatedAt: new Date() }).where(eq(assistant.id, id))
       await this.replaceNested(tx, id, patch)
+      await this.cleanupCodes(tx as Db, [current.level1CodeId, current.level2CodeId])
     })
     return this.assistant(id)
   }
   async deleteAssistant(id: string) {
     await this.db.transaction(async (tx) => {
+      await this.lockCodes(tx as Db)
       const [row] = await tx.select().from(assistant).where(eq(assistant.id, id)).for('update')
       if (!row) throw new NotFoundException('에이전트를 찾을 수 없습니다')
       if (await this.isIntake(id, tx as Db)) throw new ConflictException('접수 에이전트는 삭제할 수 없습니다')
@@ -127,6 +179,7 @@ export class AdminService {
       const [recorded] = await tx.select({ id: activityLog.id }).from(activityLog).where(eq(activityLog.assistantId, id)).limit(1)
       if (recorded) throw new ConflictException('활동 이력이 있어 삭제할 수 없습니다')
       await tx.delete(assistant).where(eq(assistant.id, id))
+      await this.cleanupCodes(tx as Db, [row.level1CodeId, row.level2CodeId])
       if (row.imageFileId) await tx.update(fileObject).set({ deletedAt: new Date() }).where(eq(fileObject.id, row.imageFileId))
     })
   }

@@ -86,6 +86,20 @@ describe('관리 API 서버 권한', () => {
     }).expect(201)
     expect(response.body).toMatchObject({ id: 'new-agent', order: 1, checklistTemplate: [] })
   })
+  it('분류 이름과 전환 기간 ID를 받고 누락·빈 이름은 거부한다', async () => {
+    const base = { name: '도우미', summary: '', ownerId: 'so', status: 'open', usageExample: '', expectedInputs: [], expectedOutputs: [] }
+    await request(app.getHttpServer()).post('/api/assistants').set('Cookie', 'mes_session=so').send({ ...base, level1: '신규', level2: '신규' }).expect(201)
+    expect(admin.createAssistant).toHaveBeenCalledWith('so', expect.objectContaining({ level1: '신규', level2: '신규' }))
+    await request(app.getHttpServer()).post('/api/assistants').set('Cookie', 'mes_session=so').send({ ...base, level1: ' Cafe\u0301   TOOL ', level2: '  신규\t 분류 ' }).expect(201)
+    expect(admin.createAssistant).toHaveBeenCalledWith('so', expect.objectContaining({ level1: 'Café TOOL', level2: '신규 분류' }))
+    await request(app.getHttpServer()).post('/api/assistants').set('Cookie', 'mes_session=so').send({ ...base, level1: '신규', level2CodeId: 'legacy' }).expect(201)
+    for (const fields of [{ level1: '신규' }, { level1: ' ', level2: '정상' }, { level1: 'x'.repeat(192), level2: '정상' }]) {
+      await request(app.getHttpServer()).post('/api/assistants').set('Cookie', 'mes_session=so').send({ ...base, ...fields }).expect(400)
+    }
+    await request(app.getHttpServer()).patch('/api/assistants/new-agent').set('Cookie', 'mes_session=so').send({ level2: '수정' }).expect(200)
+    expect(admin.updateAssistant).toHaveBeenCalledWith('new-agent', { level2: '수정' })
+    await request(app.getHttpServer()).patch('/api/assistants/new-agent').set('Cookie', 'mes_session=so').send({ level2: ' ' }).expect(400)
+  })
   it('명시한 빈 ID는 거부하고 기존 ID 수정은 허용하지 않는다', async () => {
     await request(app.getHttpServer()).post('/api/assistants').set('Cookie', 'mes_session=so').send({
       id: '', name: '새 에이전트', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', ownerId: 'so',
