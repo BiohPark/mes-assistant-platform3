@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
@@ -14,6 +14,9 @@ function run(args) {
 }
 
 run(['build'])
+const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
+const commit = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout?.trim() || 'unknown'
+writeFileSync(join(root, 'apps', 'api', 'dist', 'build-info.json'), JSON.stringify({ version, commit, builtAt: new Date().toISOString() }))
 rmSync(bundle, { recursive: true, force: true })
 mkdirSync(join(root, 'release'), { recursive: true })
 writeFileSync(join(root, 'release', '.gitignore'), '*\n')
@@ -32,7 +35,7 @@ for (const name of ['contracts', 'domain', 'llm']) {
 for (const name of ['seed.js', 'seed.js.map', 'seed.d.ts', 'seedData.js', 'seedData.js.map', 'seedData.d.ts']) {
   rmSync(join(bundle, 'api', 'dist', 'db', name), { force: true })
 }
-for (const parts of [['api', 'dist', 'main.js'], ['api', 'dist', 'db', 'migrate.js'], ['web', 'dist', 'index.html'], ['deploy', 'windows', 'mes-hub.xml']]) {
+for (const parts of [['api', 'dist', 'main.js'], ['api', 'dist', 'build-info.json'], ['api', 'dist', 'db', 'migrate.js'], ['web', 'dist', 'index.html'], ['deploy', 'windows', 'mes-hub.xml']]) {
   if (!existsSync(join(bundle, ...parts))) throw new Error(`배포 묶음 누락: ${join(...parts)}`)
 }
 for (const parts of [['api', 'src'], ['api', 'storage'], ['api', 'vitest.config.ts']]) {
