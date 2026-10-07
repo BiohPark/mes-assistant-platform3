@@ -32,10 +32,10 @@ export const PRIORITY_LABEL: Record<Priority, string> = {
 }
 
 export const PRIORITY_CLASS: Record<Priority, string> = {
-  low: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
-  normal: 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300',
-  high: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
-  urgent: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300',
+  low: 'bg-tone-neutral-bg text-tone-neutral-fg',
+  normal: 'bg-tone-info-bg text-tone-info-fg',
+  high: 'bg-tone-warning-bg text-tone-warning-fg',
+  urgent: 'bg-tone-danger-bg text-tone-danger-fg',
 }
 
 export const ACTIVITY_LABEL: Record<ActivityType, string> = {

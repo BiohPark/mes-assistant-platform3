@@ -24,7 +24,7 @@ export function ActivityPanel({ activity }: ActivityPanelProps) {
   const users = useUserMap()
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-2 text-right text-[10px] text-muted-foreground">{activity.length}건</div>
+      <div className="mb-2 text-right text-[11px] text-muted-foreground">{activity.length}건</div>
       <ol className="min-h-0 flex-1 overflow-y-auto">
         {activity.map((a) => {
           const user = users.get(a.userId)
@@ -32,10 +32,10 @@ export function ActivityPanel({ activity }: ActivityPanelProps) {
           return (
             <li key={a.id} className="flex gap-2 border-l-2 py-1.5 pl-2.5">
               <UserAvatar user={user} size="xs" className="mt-0.5" />
-              <div className="min-w-0 flex-1 text-[11px] leading-snug">
+              <div className="min-w-0 flex-1 text-xs leading-snug">
                 <span className="font-medium">{user?.name ?? '시스템'}</span> <span className={cn(HIGHLIGHT[a.type])}>{(ACTIVITY_LABEL[a.type] ?? a.type)}</span>
                 {detail && <div className="truncate text-muted-foreground">{detail}</div>}
-                <div className="text-[10px] text-muted-foreground/80">{formatDateTime(a.at)}</div>
+                <div className="text-xs text-muted-foreground/80">{formatDateTime(a.at)}</div>
               </div>
             </li>
           )

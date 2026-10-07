@@ -22,10 +22,10 @@ export function ChecklistPanel({ task }: { task: Task }) {
   return <section className="space-y-3 text-xs" data-testid="checklist-panel">
     <div className="font-semibold">체크리스트 {done}/{task.checklist.length}{missing > 0 && <span className="ml-2 font-normal text-amber-700">중요 {missing}개 미체크</span>}</div>
     <div className="h-1 rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{ width: task.checklist.length ? `${done / task.checklist.length * 100}%` : '0%' }} /></div>
-    <ul className="space-y-1">{task.checklist.map((item) => <li key={item.id} className="flex items-start gap-2 rounded border p-2">
+    <ul className="space-y-1">{task.checklist.map((item) => <li key={item.id} className="flex items-start gap-2 rounded-xl border p-2">
       <input type="checkbox" aria-label={item.label} checked={item.checked} disabled={readOnly || busy} onChange={() => void run(() => toggleChecklist(task.id, item.id))} />
       <div className="min-w-0 flex-1"><div className={item.checked ? 'text-muted-foreground line-through' : ''}>{item.label}{item.required && <span className="ml-1 text-amber-700">중요</span>}</div>
-        {item.checkedAt && <div className="text-[10px] text-muted-foreground">{users.get(item.checkedBy ?? '')?.name ?? item.checkedBy} · {formatDateTime(item.checkedAt)}</div>}
+        {item.checkedAt && <div className="text-xs text-muted-foreground">{users.get(item.checkedBy ?? '')?.name ?? item.checkedBy} · {formatDateTime(item.checkedAt)}</div>}
       </div>
       {!readOnly && <Button variant="ghost" size="xs" aria-label={`${item.label} 삭제`} disabled={busy} onClick={() => void run(() => removeChecklistItem(task.id, item.id))}>삭제</Button>}
     </li>)}</ul>
@@ -33,7 +33,7 @@ export function ChecklistPanel({ task }: { task: Task }) {
       <Input aria-label="체크리스트 새 항목" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="항목 추가" className="h-7 text-xs" disabled={busy} />
       <Button size="xs" type="submit" disabled={busy || !label.trim()}>추가</Button>
     </form>}
-    <div className="rounded border p-2">
+    <div className="rounded-xl border p-2">
       <div className="font-semibold">AI 달성도</div>
       {task.checklistReview ? <><p className="my-1">{task.checklistReview.met}/{task.checklistReview.total} 달성{task.checklistReview.source === 'rule' && ' · 규칙 판단'}</p>
         <ul className="space-y-1">{task.checklistReview.items.map((item) => <li key={item.itemId}>{item.met ? '✓' : '·'} {task.checklist.find((check) => check.id === item.itemId)?.label ?? '삭제된 항목'}{item.note && <span className="block pl-3 text-muted-foreground">{item.note}</span>}</li>)}</ul>

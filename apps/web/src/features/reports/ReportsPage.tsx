@@ -46,7 +46,7 @@ export function ReportsPage() {
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">{[
           ['완료 업무', data.kpi.done, '건'], ['평균 리드타임', data.kpi.avgLead, '일'], ['재오픈', data.kpi.reopens, '건'],
           ['체크리스트 이행률', data.kpi.checkRate, '%'], ['SR 접수→완료', data.kpi.srLead, '일'],
-        ].map(([label, value, unit]) => <div key={label} className="rounded-xl border bg-card px-3 py-2"><div className="text-[11px] text-muted-foreground">{label}</div><strong className="text-lg">{value ?? '-'}</strong><span className="ml-0.5 text-xs text-muted-foreground">{value === undefined ? '' : unit}</span></div>)}</div>
+        ].map(([label, value, unit]) => <div key={label} className="rounded-xl border bg-card px-3 py-2"><div className="text-xs text-muted-foreground">{label}</div><strong className="text-lg">{value ?? '-'}</strong><span className="ml-0.5 text-xs text-muted-foreground">{value === undefined ? '' : unit}</span></div>)}</div>
         <div className="grid gap-4 lg:grid-cols-2">
           <Card title="완료 추이"><BarsChart data={data.buckets} xKey="label" series={[{ key: 'done', name: '완료 업무' }]} /></Card>
           <Card title="에이전트별 평균 리드타임 (최대값 강조)"><BarsChart data={data.assistantStats.filter((row) => row.avgLeadDays !== undefined).map((row) => ({ name: row.assistant.name, days: row.avgLeadDays }))} xKey="name" series={[{ key: 'days', name: '평균 일수' }]} unit="일" highlightMax /></Card>

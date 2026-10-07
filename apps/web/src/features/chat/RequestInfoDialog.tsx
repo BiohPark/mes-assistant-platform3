@@ -10,7 +10,7 @@ export function RequestInfoDialog({ requestId, onClose }: { requestId: string; o
       <p>{statusLabel[record.data.status] ?? record.data.status} · {record.data.model} · {record.data.bytes ?? '계산 중'} / {record.data.limitBytes} bytes</p>
       {record.data.retryOf && <p>재시도한 요청: {record.data.retryOf}</p>}
       {record.data.error && <p role="alert" className="text-destructive">{record.data.error}</p>}
-      <ul className="space-y-1">{record.data.inputs.map((input, index) => <li key={index} className="rounded border p-2">
+      <ul className="space-y-1">{record.data.inputs.map((input, index) => <li key={index} className="rounded-xl border p-2">
         {input.weight === 'main' ? '★' : '☑'} {input.sourceLabel ?? input.fileId ?? '참조 대화'} {input.fileVersion ? `v${input.fileVersion}` : ''} · {input.kind === 'conversation' ? `${input.mode === 'summary' ? '요약' : input.mode === 'messages' ? '메시지 선택' : '전체'} · 메시지 ${input.messageCount ?? 0}개` : deliveryLabel[input.delivery ?? ''] ?? input.delivery ?? '참조'} · {input.bytes} bytes
         {input.error && <span className="block text-destructive">{input.error}</span>}
       </li>)}</ul>

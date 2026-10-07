@@ -20,6 +20,6 @@ export function BarsChart({ data, xKey, series, unit = '', highlightMax, stacked
       }
     </div>)}
     {rows.length === 0 && <p className="text-xs text-muted-foreground">표시할 데이터가 없습니다.</p>}
-    {series.length > 1 && <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground">{series.map((item, i) => <span key={item.key} className="flex items-center gap-1"><span className="size-2 rounded-sm" style={{ backgroundColor: SERIES[i % SERIES.length] }} />{item.name}</span>)}</div>}
+    {series.length > 1 && <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">{series.map((item, i) => <span key={item.key} className="flex items-center gap-1"><span className="size-2 rounded-sm" style={{ backgroundColor: SERIES[i % SERIES.length] }} />{item.name}</span>)}</div>}
   </div>
 }

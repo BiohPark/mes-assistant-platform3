@@ -43,11 +43,11 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-background px-4">
-      <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h1>
+      <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{title}</h1>
       {actions}
       {!requesterOnly && <Button variant="ghost" size="icon-sm" aria-label="시스템 assistant 열기" onClick={() => setAssistantOpen(true)}><Sparkles /></Button>}
       {!requesterOnly && <NotificationBell />}
-      {isOwner && llmStatus.data && <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{llmStatus.data.mode === 'mock' ? 'Mock' : 'Live'}</span>}
+      {isOwner && llmStatus.data && <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{llmStatus.data.mode === 'mock' ? 'Mock' : 'Live'}</span>}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="sm" className="gap-2 pl-1.5">
@@ -59,7 +59,7 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuLabel className="text-xs text-muted-foreground">
             {me.name}
-            {isOwner && <span className="ml-1.5 rounded bg-primary/10 px-1.5 py-0.5 text-primary">System Owner</span>}
+            {isOwner && <span className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-primary">System Owner</span>}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => void navigate('/my-info')}><UserRound />내 정보</DropdownMenuItem>

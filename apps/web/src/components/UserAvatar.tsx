@@ -9,7 +9,7 @@ interface UserAvatarProps {
   showName?: boolean
 }
 
-const SIZE = { xs: 'size-5 text-[10px]', sm: 'size-6 text-[11px]', md: 'size-8 text-xs' }
+const SIZE = { xs: 'size-5 text-xs', sm: 'size-6 text-xs', md: 'size-8 text-xs' }
 
 export function UserAvatar({ user, size = 'sm', className, showName }: UserAvatarProps) {
   const avatar = (
@@ -52,7 +52,7 @@ export function AvatarGroup({ users, max = 3 }: AvatarGroupProps) {
         <UserAvatar key={u?.id ?? i} user={u} size="sm" className="ring-2 ring-background" />
       ))}
       {rest > 0 && (
-        <span className="inline-flex size-6 items-center justify-center rounded-full bg-muted text-[10px] font-medium ring-2 ring-background">
+        <span className="inline-flex size-6 items-center justify-center rounded-full bg-muted text-[11px] font-medium ring-2 ring-background">
           +{rest}
         </span>
       )}

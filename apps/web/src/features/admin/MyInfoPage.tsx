@@ -19,7 +19,7 @@ export function MyInfoPage() {
       toast.success('이름을 저장했습니다')
     } catch (error) { toast.error(error instanceof Error ? error.message : '변경 실패') }
   }
-  return <><TopBar title="내 정보" /><div className="flex-1 p-6"><form onSubmit={(event) => void submit(event)} className="mx-auto max-w-sm space-y-3 rounded border bg-card p-5 text-sm">
+  return <><TopBar title="내 정보" /><div className="flex-1 p-6"><form onSubmit={(event) => void submit(event)} className="mx-auto max-w-sm space-y-3 rounded-xl border bg-card p-5 text-sm">
     <label className="block">이름<Input value={name} onChange={(event) => setName(event.target.value)} required minLength={1} maxLength={40} /></label>
     <Button type="submit">저장</Button>
   </form></div></>

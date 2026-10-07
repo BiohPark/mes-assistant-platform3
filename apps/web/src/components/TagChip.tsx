@@ -28,7 +28,7 @@ export function TagChip({ tag, onClick, onRemove, size = 'sm', className }: TagC
     <span
       className={cn(
         'inline-flex max-w-full items-center gap-1 rounded-full border bg-muted/40 text-foreground/80',
-        size === 'xs' ? 'h-5 px-1.5 text-[10px]' : 'h-6 px-2 text-[11px]',
+        size === 'xs' ? 'h-5 px-1.5 text-xs' : 'h-6 px-2 text-xs',
         className,
       )}
       style={color ? { borderColor: color } : undefined}

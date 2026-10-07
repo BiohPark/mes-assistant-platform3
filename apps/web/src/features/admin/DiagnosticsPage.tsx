@@ -50,9 +50,9 @@ export function DiagnosticsPage() {
     <div className="flex gap-2"><Button variant="outline" onClick={() => void query.refetch()}>다시 확인</Button>
       <Button disabled={!query.data} onClick={() => { if (query.data) void copyText(formatDiagnostics(query.data)).then((ok) => toast[ok ? 'success' : 'error'](ok ? '진단 텍스트를 복사했습니다' : '복사하지 못했습니다')) }}>텍스트로 복사</Button></div>
     {query.isError && <p role="alert">진단 정보를 불러오지 못했습니다.</p>}
-    {query.data && <><section className="rounded border bg-card p-4"><h2 className="mb-3 font-semibold">환경과 연결 상태</h2>
+    {query.data && <><section className="rounded-xl border bg-card p-4"><h2 className="mb-3 font-semibold">환경과 연결 상태</h2>
       <dl className="grid grid-cols-[minmax(10rem,1fr)_2fr] gap-2 text-sm">{rows(query.data).map(([name, value]) => <div className="contents" key={name}><dt className="text-muted-foreground">{name}</dt><dd className="break-all">{value}</dd></div>)}</dl>
-    </section><section className="rounded border bg-card p-4"><h2 className="mb-3 font-semibold">최근 서버 오류</h2>
+    </section><section className="rounded-xl border bg-card p-4"><h2 className="mb-3 font-semibold">최근 서버 오류</h2>
       {query.data.recentErrors.length ? <ul className="space-y-2 text-sm">{query.data.recentErrors.map((error, index) => <li key={`${error.at}-${index}`}>{error.at} · {error.path} · {error.status} · {error.message}</li>)}</ul> : <p className="text-sm text-muted-foreground">기록된 오류가 없습니다.</p>}
     </section></>}
   </div></div></>
