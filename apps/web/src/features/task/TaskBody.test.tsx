@@ -16,7 +16,7 @@ it('offers narrow-screen tabs, placeholders, and the activity panel', async () =
     if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
   const mobileTabs = within(screen.getByRole('tablist', { name: '대화 화면 탭' }))
   fireEvent.click(mobileTabs.getByRole('tab', { name: '자료' }))
   expect(screen.getByRole('tablist', { name: '자료 탭' })).toBeInTheDocument()

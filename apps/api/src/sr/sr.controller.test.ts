@@ -24,7 +24,7 @@ describe('SR HTTP API', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CONFIG).useValue(config)
-      .overrideProvider(SESSION_STORE).useValue({ resolve: async () => ({ id: 'u', name: 'User', role: '', isSystemOwner: false }) })
+      .overrideProvider(SESSION_STORE).useValue({ resolve: async () => ({ id: 'u', name: 'User', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false }) })
       .overrideProvider(SrService).useValue(sr).compile()
     app = configureApp(moduleRef.createNestApplication(), config)
     await app.init()

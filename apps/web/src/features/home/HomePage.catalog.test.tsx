@@ -25,7 +25,7 @@ beforeEach(() => {
 })
 
 function renderHome() {
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><TooltipProvider><HomePage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><HomePage /></TooltipProvider></MeContext>)
 }
 
 describe('HomePage catalog', () => {

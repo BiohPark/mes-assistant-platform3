@@ -12,7 +12,7 @@ import { RequestsService } from './requests.service.js'
 describe('requests HTTP', () => {
   let app: INestApplication
   const config = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' })
-  const sessions: SessionStore = { create: vi.fn(async () => ({ token: '', expiresAt: new Date() })), resolve: vi.fn(async () => ({ id: 'u', name: 'User', role: '', isSystemOwner: false })), destroy: vi.fn(async () => undefined) }
+  const sessions: SessionStore = { create: vi.fn(async () => ({ token: '', expiresAt: new Date() })), resolve: vi.fn(async () => ({ id: 'u', name: 'User', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false })), destroy: vi.fn(async () => undefined) }
   const start = vi.fn(async () => ({ id: 'r', userMessageId: 'u1', replyMessageId: 'a1', done: Promise.resolve() }))
   const estimate = vi.fn(async () => ({ bytes: 10, limitBytes: 100, overLimit: false, attachmentLimit: 10, inputs: [] }))
   beforeAll(async () => {

@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -7,11 +8,31 @@ import { useMe } from './auth'
 
 function Who() {
   const me = useMe()
-  return <div>안녕하세요 {me.name}</div>
+  const client = useQueryClient()
+  return <><div>안녕하세요 {me.name}</div><button onClick={() => client.setQueryData(['me'], { ...me, id: 'u2', name: '다른 사용자', theme: 'light', locale: 'ko' })}>사용자 전환</button></>
 }
 
 describe('AuthGate', () => {
   afterEach(() => vi.unstubAllGlobals())
+
+  it('/me 프로필이 로그인 전 캐시를 덮어쓰고 사용자 변경도 반영한다', async () => {
+    localStorage.setItem('mes-theme', 'light')
+    localStorage.setItem('mes-locale', 'ko')
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { id: 'u1', name: '이담당', role: '', roles: ['member'], theme: 'dark', locale: 'en' })))
+    renderWithProviders(<AuthGate redirectToLogin={vi.fn()}><Who /></AuthGate>)
+    expect(await screen.findByText('안녕하세요 이담당')).toBeInTheDocument()
+    await waitFor(() => expect(document.documentElement).toHaveClass('dark'))
+    expect(document.documentElement.lang).toBe('en')
+    expect(localStorage.getItem('mes-theme')).toBe('dark')
+    expect(localStorage.getItem('mes-locale')).toBe('en')
+    await userEvent.click(screen.getByRole('button', { name: '사용자 전환' }))
+    expect(await screen.findByText('안녕하세요 다른 사용자')).toBeInTheDocument()
+    await waitFor(() => expect(document.documentElement).not.toHaveClass('dark'))
+    expect(document.documentElement.lang).toBe('ko')
+    expect(localStorage.getItem('mes-theme')).toBe('light')
+    expect(localStorage.getItem('mes-locale')).toBe('ko')
+    localStorage.clear()
+  })
 
   it('세션이 없으면(401) SSO 로그인으로 보낸다', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/auth/mode' ? jsonResponse(200, { mode: 'oidc' }) : jsonResponse(401)))
@@ -29,7 +50,7 @@ describe('AuthGate', () => {
   })
 
   it('로그인 사용자를 아래 화면에 넘긴다', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { id: 'u1', name: '이담당', role: '', roles: ['member'] })))
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { id: 'u1', name: '이담당', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const })))
     renderWithProviders(<AuthGate redirectToLogin={vi.fn()}><Who /></AuthGate>)
     expect(await screen.findByText('안녕하세요 이담당')).toBeInTheDocument()
   })
@@ -44,7 +65,7 @@ describe('AuthGate', () => {
     expect(redirect).not.toHaveBeenCalled()
 
     // 서버가 돌아오면 "다시 시도"로 새로고침 없이 들어간다
-    fetchMock.mockResolvedValue(jsonResponse(200, { id: 'u1', name: '이담당', role: '', roles: ['member'] }))
+    fetchMock.mockResolvedValue(jsonResponse(200, { id: 'u1', name: '이담당', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }))
     await userEvent.click(screen.getByRole('button', { name: '다시 시도' }))
     expect(await screen.findByText('안녕하세요 이담당')).toBeInTheDocument()
   })
@@ -67,7 +88,7 @@ describe('AuthGate', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(502))
-      .mockResolvedValueOnce(jsonResponse(200, { id: 'u1', name: '이담당', role: '', roles: ['member'] }))
+      .mockResolvedValueOnce(jsonResponse(200, { id: 'u1', name: '이담당', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }))
     vi.stubGlobal('fetch', fetchMock)
     renderWithProviders(<AuthGate redirectToLogin={vi.fn()} retryDelayMs={1}><Who /></AuthGate>)
     expect(await screen.findByText('안녕하세요 이담당')).toBeInTheDocument()

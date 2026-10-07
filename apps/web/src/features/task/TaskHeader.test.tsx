@@ -17,7 +17,7 @@ it('saves edited title as manual and requires a reason when reopening', async ()
     calls.push([url, init])
     return new Response(JSON.stringify({}), { status: 200 })
   }))
-  const wrap = (value: Task) => <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><MemoryRouter><TaskHeader task={value} assistant={assistant} /></MemoryRouter></MeContext></QueryClientProvider>
+  const wrap = (value: Task) => <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MemoryRouter><TaskHeader task={value} assistant={assistant} /></MemoryRouter></MeContext></QueryClientProvider>
   const view = render(wrap(task))
   fireEvent.click(screen.getByRole('button', { name: '기본 제목' }))
   fireEvent.change(screen.getByRole('textbox', { name: '대화 제목' }), { target: { value: '내 제목' } })
@@ -34,7 +34,7 @@ it('saves edited title as manual and requires a reason when reopening', async ()
 it('keeps the reopen reason available when the server rejects the change', async () => {
   let attempts = 0
   vi.stubGlobal('fetch', vi.fn(async (url: string) => { if (url === '/api/tasks/t/status') { attempts++; return new Response(JSON.stringify({ message: '다시 시도하세요' }), { status: 409 }) } return new Response('[]', { status: 200 }) }))
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><MemoryRouter><TaskHeader task={{ ...task, status: 'done' }} assistant={assistant} /></MemoryRouter></MeContext></QueryClientProvider>)
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MemoryRouter><TaskHeader task={{ ...task, status: 'done' }} assistant={assistant} /></MemoryRouter></MeContext></QueryClientProvider>)
   fireEvent.click(screen.getByRole('button', { name: '다시 열기' }))
   fireEvent.change(screen.getByPlaceholderText('사유를 입력하세요'), { target: { value: '추가 작업' } })
   fireEvent.click(screen.getByRole('button', { name: '재개 확인' }))

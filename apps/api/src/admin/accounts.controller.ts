@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Put, Req } from '@nestjs/common'
-import { PasswordSchema, UserNameSchema } from '@mes/contracts'
+import { PasswordSchema, ProfilePatchSchema, UserNameSchema } from '@mes/contracts'
 import { z } from 'zod'
 import type { AuthedRequest } from '../auth/guards.js'
 import { Roles } from '../auth/roles.decorator.js'
@@ -19,7 +19,7 @@ export class AccountsController {
   @Roles('system_owner')
   users() { return this.accounts.users() }
   @Patch('me')
-  ownName(@Req() req: AuthedRequest, @Body() body: unknown) { return this.accounts.name(req.user!.id, parse(nameBody, body).name) }
+  ownProfile(@Req() req: AuthedRequest, @Body() body: unknown) { return this.accounts.profile(req.user!.id, parse(ProfilePatchSchema, body)) }
   @Patch(':id')
   @Roles('system_owner')
   name(@Param('id') id: string, @Body() body: unknown) { return this.accounts.name(id, parse(nameBody, body).name) }

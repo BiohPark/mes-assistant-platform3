@@ -3,8 +3,16 @@ import { AuthModeSchema, CredentialsSchema, LoginIdSchema, MeSchema, PasswordSch
 
 describe('auth contracts', () => {
   it('openapi User 스키마와 같은 모양의 /me 응답을 받아들인다', () => {
-    const me = MeSchema.parse({ id: 'u1', name: '김운영', role: '', roles: ['member', 'system_owner'] })
+    const me = MeSchema.parse({ id: 'u1', name: '김운영', role: '', roles: ['member', 'system_owner'], theme: 'system', locale: 'ko' })
     expect(me.roles).toEqual(['member', 'system_owner'])
+  })
+
+  it('프로필 테마·언어는 허용 값만 받고 필수다', () => {
+    const user = { id: 'u1', name: '김운영', role: '', roles: ['member'], theme: 'dark', locale: 'en' }
+    expect(MeSchema.parse(user)).toMatchObject({ theme: 'dark', locale: 'en' })
+    for (const patch of [{ theme: 'other' }, { locale: 'ja' }, { theme: undefined }, { locale: undefined }]) {
+      expect(MeSchema.safeParse({ ...user, ...patch }).success).toBe(false)
+    }
   })
 
   it('정의되지 않은 역할은 거부한다', () => {

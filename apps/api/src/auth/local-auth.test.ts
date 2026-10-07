@@ -24,7 +24,7 @@ const users: UserDirectory = {
   upsertFromClaims: vi.fn(async () => { throw new Error('OIDC called') }),
   createLocal: vi.fn(async (id, hash, name) => {
     if (rows.has(id)) return null
-    const user = { id: `u-${id}`, name: name ?? id, role: '', isSystemOwner: config.initialSystemOwners.includes(id) && ![...rows.values()].some((row) => row.user.isSystemOwner) }
+    const user = { id: `u-${id}`, name: name ?? id, role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: config.initialSystemOwners.includes(id) && ![...rows.values()].some((row) => row.user.isSystemOwner) }
     rows.set(id, { user, hash, active: true })
     return user
   }),
@@ -60,7 +60,7 @@ describe('local 인증 API', () => {
 
   it('회원가입은 세션 쿠키와 Me를 돌려주고 중복은 409', async () => {
     const res = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'member-1', password: 'password-1234' }).expect(201)
-    expect(res.body).toEqual({ id: 'u-member-1', name: 'member-1', role: '', roles: ['member'] })
+    expect(res.body).toEqual({ id: 'u-member-1', name: 'member-1', role: '', roles: ['member'], theme: 'system', locale: 'ko' })
     expect(String(res.headers['set-cookie'])).toMatch(/mes_session=local-token.*HttpOnly/)
     expect(rows.get('member-1')?.hash).toMatch(/^scrypt\$/)
     const hash = vi.spyOn(passwordService, 'hashPassword')
@@ -84,14 +84,14 @@ describe('local 인증 API', () => {
     const first = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(201)
     expect(first.body.roles).toEqual(['member', 'system_owner'])
     rows.get('dev-owner')!.user.isSystemOwner = false
-    rows.set('existing-so', { user: { id: 'u-existing-so', name: 'existing-so', role: '', isSystemOwner: true }, hash: '', active: true })
+    rows.set('existing-so', { user: { id: 'u-existing-so', name: 'existing-so', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: true }, hash: '', active: true })
     const login = await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(200)
     expect(login.body.roles).toEqual(['member'])
     expect(rows.get('dev-owner')?.user.isSystemOwner).toBe(false)
   })
 
   it('이미 SO가 있으면 목록의 다른 ID도 member로 가입한다', async () => {
-    rows.set('existing-so', { user: { id: 'u-existing-so', name: 'existing-so', role: '', isSystemOwner: true }, hash: '', active: true })
+    rows.set('existing-so', { user: { id: 'u-existing-so', name: 'existing-so', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: true }, hash: '', active: true })
     const response = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(201)
     expect(response.body.roles).toEqual(['member'])
   })

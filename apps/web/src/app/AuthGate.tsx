@@ -1,6 +1,8 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useEffectEvent, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
+import { useTheme } from 'next-themes'
+import { useProfile } from './profile'
 import { Button } from '@/components/ui/button'
 import { HttpError, MeContext, fetchAuthMode, fetchMe } from './auth'
 
@@ -24,6 +26,14 @@ export function AuthGate({ children, redirectToLogin, retryDelayMs = 1000 }: Aut
     retryDelay: retryDelayMs,
     staleTime: 60_000,
   })
+  const { setTheme } = useTheme()
+  const { setLocale, saving } = useProfile()
+  const applyProfile = useEffectEvent(() => {
+    if (!data) return
+    if (saving?.theme === undefined) setTheme(data.theme)
+    if (saving?.locale === undefined) setLocale(data.locale)
+  })
+  useEffect(() => { applyProfile() }, [data?.theme, data?.locale])
   const unauthorized = isUnauthorized(error)
   const { data: mode, error: modeError, refetch: refetchMode, isFetching: isFetchingMode } = useQuery({
     queryKey: ['auth-mode'], queryFn: fetchAuthMode, staleTime: Infinity, enabled: unauthorized,

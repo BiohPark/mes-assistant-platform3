@@ -72,7 +72,7 @@ paths:
   /me:
     get:
       tags: [auth]
-      summary: 현재 사용자와 역할
+      summary: 현재 사용자와 역할·테마·언어 프로필
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
 
@@ -81,13 +81,43 @@ paths:
       tags: [misc]
       summary: 사용자 목록 (로그인 사용자 전원 — 담당자·소유자 표시용). S4 ①에서 /users에서 이동
       responses:
-        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/User' } } } } }
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CatalogUser' } } } } }
   /users:
     get:
       tags: [admin]
       summary: 계정 관리 목록 (SO 전용 — 역할·활성·변경 강제 상태 포함). S4 ①
       responses:
-        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/User' } } } } }
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ManagedUser' } } } } }
+        '403': { $ref: '#/components/responses/Problem' }
+  /users/me:
+    patch:
+      tags: [admin]
+      summary: 본인 프로필 변경 — 이름·테마·언어 (U2). SO도 타인의 테마·언어는 변경할 수 없다
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                name: { type: string, minLength: 1, maxLength: 40, description: 앞뒤 공백 제거 후 검증 }
+                theme: { $ref: '#/components/schemas/Theme' }
+                locale: { $ref: '#/components/schemas/Locale' }
+      responses:
+        '200': { description: 저장된 프로필, content: { application/json: { schema: { $ref: '#/components/schemas/UserProfile' } } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+  /users/{userId}:
+    patch:
+      tags: [admin]
+      summary: 사용자 이름 변경 (SO 전용). 테마·언어는 허용하지 않는다
+      parameters: [{ $ref: '#/components/parameters/userId' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [name], properties: { name: { type: string, minLength: 1, maxLength: 40 } } } } } }
+      responses:
+        '200': { description: 변경된 이름, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string } } } } } }
+        '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
   /users/{userId}/system-owner:
     put:
@@ -745,13 +775,47 @@ components:
         status: { type: integer }
         detail: { type: string, description: 화면에 그대로 보여 줄 한국어 설명 }
         code: { type: string, enum: [active_request, task_done, in_use, budget_exceeded, delivery_failed, forbidden, conflict, not_found, validation] }
+    Theme: { type: string, enum: [system, light, dark], default: system }
+    Locale: { type: string, enum: [ko, en], default: ko }
+    UserProfile:
+      type: object
+      required: [name, theme, locale]
+      properties:
+        name: { type: string }
+        theme: { $ref: '#/components/schemas/Theme' }
+        locale: { $ref: '#/components/schemas/Locale' }
+    CatalogUser:
+      type: object
+      required: [id, name, initials, color, isSystemOwner, isBusinessOwner]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        initials: { type: string }
+        color: { type: string }
+        isSystemOwner: { type: boolean }
+        isBusinessOwner: { type: boolean }
+    ManagedUser:
+      type: object
+      required: [id, loginId, name, active, isSystemOwner, isBusinessOwner, mustChangePassword]
+      properties:
+        id: { type: string }
+        loginId: { type: [string, 'null'] }
+        name: { type: string }
+        active: { type: boolean }
+        isSystemOwner: { type: boolean }
+        isBusinessOwner: { type: boolean }
+        mustChangePassword: { type: boolean }
     User:
       type: object
+      required: [id, name, role, roles, theme, locale]
       properties:
         id: { type: string }
         name: { type: string }
         role: { type: string }
         roles: { type: array, items: { enum: [member, system_owner, requester] } }
+        theme: { $ref: '#/components/schemas/Theme' }
+        locale: { $ref: '#/components/schemas/Locale' }
+        mustChangePassword: { type: boolean }
     InputWeight: { type: string, enum: [main, reference] }
     ContextMode: { type: string, enum: [full, messages, summary] }
     TaskStatus: { type: string, enum: [todo, in_progress, on_hold, done] }

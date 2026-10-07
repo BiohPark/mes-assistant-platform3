@@ -1,7 +1,7 @@
 import 'reflect-metadata'
 import { Module, type INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import request from 'supertest'
@@ -62,6 +62,27 @@ describe('web 정적 제공', () => {
     expect(page.headers['content-security-policy']).toContain("default-src 'self'")
     const api = await client.get('/api/missing').expect(404)
     expect(api.headers['x-content-type-options']).toBe('nosniff')
+  })
+
+  it('동기 프로필 스크립트를 같은 출처에서 제공하고 index의 CSP는 self만 허용한다', async () => {
+    const html = readFileSync(join(import.meta.dirname, '../../web/index.html'), 'utf8')
+    const scriptPath = html.match(/<script\b[^>]*\bid="profile-cache"[^>]*\bsrc="([^"]+)"/)?.[1]
+    expect(scriptPath).toBe('/profile-cache.js')
+    const script = readFileSync(join(import.meta.dirname, '../../web/public/profile-cache.js'), 'utf8')
+    writeFileSync(join(dist, 'index.html'), html)
+    writeFileSync(join(dist, 'profile-cache.js'), script)
+    const client = await start(dist)
+    for (const path of ['/', '/my-info']) {
+      const page = await client.get(path).expect(200)
+      expect(page.text).toBe(html)
+      expect(page.headers['content-security-policy'].split(';').map((directive: string) => directive.trim()))
+        .toContain("script-src 'self'")
+    }
+    const asset = await client.get(scriptPath!).expect(200)
+    expect(asset.headers['content-type']).toMatch(/javascript/)
+    expect(asset.headers['x-content-type-options']).toBe('nosniff')
+    expect(asset.headers['cache-control']).toBe('no-cache')
+    expect(asset.text).toBe(script)
   })
 
   it('인코딩된 상위 경로를 차단한다', async () => {

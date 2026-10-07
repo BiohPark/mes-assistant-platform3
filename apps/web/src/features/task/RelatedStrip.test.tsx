@@ -17,7 +17,7 @@ it('finds conversations sharing either tag and removes the current conversation'
     if (url.includes('tag%5B%5D=%EB%91%98%EC%A7%B8')) return jsonResponse(200, [{ ...base, id: 'other', code: 'WK-2026-0002', title: '관련 대화', tags: ['둘째'] }])
     return jsonResponse(200, [base])
   }))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><TooltipProvider><RelatedStrip task={base} /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><RelatedStrip task={base} /></TooltipProvider></MeContext>)
   const button = await screen.findByText('연결된 대화 1')
   fireEvent.click(button)
   expect(screen.getByRole('link', { name: /WK-2026-0002.*관련 대화/ })).toHaveAttribute('href', '/c/other')
