@@ -2,23 +2,23 @@ import { cn } from '@/lib/utils'
 import type { AssistantStatus, Priority, SrStatus, TaskStatus } from '@mes/domain'
 import { ASSISTANT_STATUS_LABEL, PRIORITY_CLASS, PRIORITY_LABEL, SR_STATUS_LABEL, TASK_STATUS_LABEL } from '@/lib/labels'
 
-const SLATE = 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-const BLUE = 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
-const AMBER = 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
-const EMERALD = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-const VIOLET = 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300'
-const RED = 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300'
+const NEUTRAL = 'bg-tone-neutral-bg text-tone-neutral-fg'
+const INFO = 'bg-tone-info-bg text-tone-info-fg'
+const WARNING = 'bg-tone-warning-bg text-tone-warning-fg'
+const SUCCESS = 'bg-tone-success-bg text-tone-success-fg'
+const VIOLET = 'bg-tone-violet-bg text-tone-violet-fg'
+const DANGER = 'bg-tone-danger-bg text-tone-danger-fg'
 
-const TASK_STATUS_CLASS: Record<TaskStatus, string> = { todo: SLATE, in_progress: BLUE, on_hold: AMBER, done: EMERALD }
-const ASSISTANT_STATUS_CLASS: Record<AssistantStatus, string> = { open: EMERALD, developing: AMBER, testing: BLUE, retired: SLATE }
+const TASK_STATUS_CLASS: Record<TaskStatus, string> = { todo: NEUTRAL, in_progress: INFO, on_hold: WARNING, done: SUCCESS }
+const ASSISTANT_STATUS_CLASS: Record<AssistantStatus, string> = { open: SUCCESS, developing: WARNING, testing: INFO, retired: NEUTRAL }
 const SR_STATUS_CLASS: Record<SrStatus, string> = {
-  draft: SLATE,
+  draft: NEUTRAL,
   submitted: VIOLET,
-  reviewing: AMBER,
-  in_progress: BLUE,
-  responded: 'bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300',
-  done: EMERALD,
-  rejected: RED,
+  reviewing: WARNING,
+  in_progress: INFO,
+  responded: 'bg-tone-teal-bg text-tone-teal-fg',
+  done: SUCCESS,
+  rejected: DANGER,
 }
 
 const base = 'inline-flex h-5 items-center rounded-full px-2 text-[11px] font-medium whitespace-nowrap'

@@ -80,7 +80,7 @@ export function SystemAssistantDrawer() {
     <aside role="dialog" aria-modal="true" aria-label="시스템 assistant" className="ml-auto flex h-full w-full flex-col bg-background shadow-xl sm:max-w-md">
       <div className="border-b px-4 py-3">
         <div className="flex items-center gap-2 text-sm font-semibold"><span className="flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground"><Sparkles className="size-3.5" /></span>시스템 assistant
-          <span className="ml-auto text-[10px] font-normal text-muted-foreground">{model.data ? model.data.mode === 'mock' ? 'Mock (규칙 기반)' : model.data.model : ''}</span>
+          <span className="ml-auto text-xs font-normal text-muted-foreground">{model.data ? model.data.mode === 'mock' ? 'Mock (규칙 기반)' : model.data.model : ''}</span>
           <Button variant="ghost" size="icon-sm" aria-label="시스템 assistant 닫기" onClick={() => setOpen(false)}><X /></Button>
         </div>
         <p className="mt-1 text-xs text-muted-foreground">대화 시작, 에이전트 등록, 태그 연결을 요청하세요. 제안을 확인한 뒤 적용합니다.</p>
@@ -94,12 +94,12 @@ export function SystemAssistantDrawer() {
               {message.content ? <Markdown content={message.content} className="text-xs" /> : message.waiting ? <span className="text-xs text-muted-foreground">생각 중…</span> : null}
             </div>
             {message.proposals?.map((proposal) => <div key={proposal.id} className="rounded-lg border border-primary/30 bg-primary/5 p-2.5 text-left">
-              <div className="flex items-center gap-1.5 text-[11px] font-medium"><Wrench className="size-3" />{proposal.invalidReason ? '제안 불가' : '제안된 작업'}</div>
+              <div className="flex items-center gap-1.5 text-xs font-medium"><Wrench className="size-3" />{proposal.invalidReason ? '제안 불가' : '제안된 작업'}</div>
               <div className="mt-1 text-xs">{proposal.summary}</div>
               {proposal.invalidReason && <div role="alert" className="mt-1 text-xs text-destructive">{proposal.invalidReason}</div>}
-              <details className="mt-1"><summary className="cursor-pointer text-[10px] text-muted-foreground">인자 보기</summary><pre className="mt-1 max-h-40 overflow-auto rounded bg-muted p-2 text-[10px]">{JSON.stringify(proposal.args, null, 2)}</pre></details>
+              <details className="mt-1"><summary className="cursor-pointer text-xs text-muted-foreground">인자 보기</summary><pre className="mt-1 max-h-40 overflow-auto rounded-xl bg-muted p-2 text-xs">{JSON.stringify(proposal.args, null, 2)}</pre></details>
               <div className="mt-2 flex items-center gap-2">
-                {proposal.applied ? <><span className={cn('inline-flex items-center gap-1 text-[11px]', proposal.applied.ok ? 'text-emerald-700' : 'text-destructive')}><Check className="size-3" />{proposal.applied.message}</span>{proposal.applied.link && <Button variant="link" size="xs" className="h-auto p-0" onClick={() => { navigate(proposal.applied!.link!); setOpen(false) }}>이동 <ArrowRight /></Button>}</> : proposal.ignored ? <span className="text-xs text-muted-foreground">무시함</span> : <>{!proposal.invalidReason && <Button size="xs" disabled={!!applying} onClick={() => void apply(message.id, proposal)}>적용</Button>}<Button size="xs" variant="ghost" onClick={() => setMessages((current) => current.map((item) => item.id === message.id ? { ...item, proposals: item.proposals?.map((entry) => entry.id === proposal.id ? { ...entry, ignored: true } : entry) } : item))}>무시</Button></>}
+                {proposal.applied ? <><span className={cn('inline-flex items-center gap-1 text-xs', proposal.applied.ok ? 'text-emerald-700' : 'text-destructive')}><Check className="size-3" />{proposal.applied.message}</span>{proposal.applied.link && <Button variant="link" size="xs" className="h-auto p-0" onClick={() => { navigate(proposal.applied!.link!); setOpen(false) }}>이동 <ArrowRight /></Button>}</> : proposal.ignored ? <span className="text-xs text-muted-foreground">무시함</span> : <>{!proposal.invalidReason && <Button size="xs" disabled={!!applying} onClick={() => void apply(message.id, proposal)}>적용</Button>}<Button size="xs" variant="ghost" onClick={() => setMessages((current) => current.map((item) => item.id === message.id ? { ...item, proposals: item.proposals?.map((entry) => entry.id === proposal.id ? { ...entry, ignored: true } : entry) } : item))}>무시</Button></>}
               </div>
             </div>)}
           </div>

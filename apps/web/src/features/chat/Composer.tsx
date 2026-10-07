@@ -75,7 +75,7 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
               key={s}
               type="button"
               onClick={() => setText(s)}
-              className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               {s}
             </button>
@@ -85,13 +85,13 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
       {pending.length > 0 && (
         <div className="mb-1.5 flex flex-wrap gap-1">
           {pending.map((p, i) => (
-            <span key={i} className="inline-flex items-center gap-1 rounded-md border bg-muted/50 px-1.5 py-0.5 text-[11px]">
+            <span key={i} className="inline-flex items-center gap-1 rounded-full border bg-muted/50 px-1.5 py-0.5 text-xs">
               <Paperclip className="size-3" />
               {p.file.name}
               {allowPin && (
                 <button
                   type="button"
-                  className={cn('inline-flex items-center gap-0.5 rounded px-1', p.once ? 'text-muted-foreground' : 'text-primary')}
+                  className={cn('inline-flex items-center gap-0.5 rounded-lg px-1', p.once ? 'text-muted-foreground' : 'text-primary')}
                   aria-pressed={!p.once}
                   onClick={() => setPending((cur) => cur.map((x, j) => (j === i ? { ...x, once: !x.once } : x)))}
                   title={p.once ? '이번 메시지에만 씁니다. 누르면 대화 입력으로 고정합니다' : '대화 입력(☑ 참고)으로 고정 — 다음 턴에도 AI에 갑니다. 누르면 이번 메시지만'}

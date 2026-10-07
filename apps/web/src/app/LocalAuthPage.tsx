@@ -55,10 +55,10 @@ export function LocalAuthPage({ kind, onSuccess }: Props) {
     <div className="flex h-full items-center justify-center bg-muted/30 p-6">
       <form onSubmit={(event) => void submit(event)} className="w-full max-w-sm space-y-4 rounded-lg border bg-background p-6 shadow-sm">
         <h1 className="text-lg font-semibold">{signup ? '회원가입' : '로그인'}</h1>
-        <label className="block space-y-1 text-sm">ID<input className="w-full rounded-md border bg-background px-3 py-2" value={loginId} onChange={(event) => setLoginId(event.target.value)} autoComplete="username" required /></label>
-        {signup && <label className="block space-y-1 text-sm">이름<input className="w-full rounded-md border bg-background px-3 py-2" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required minLength={1} maxLength={40} /></label>}
-        <label className="block space-y-1 text-sm">비밀번호<input className="w-full rounded-md border bg-background px-3 py-2" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={signup ? 'new-password' : 'current-password'} required /></label>
-        {signup && <label className="block space-y-1 text-sm">비밀번호 확인<input className="w-full rounded-md border bg-background px-3 py-2" type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" required /></label>}
+        <label className="block space-y-1 text-sm">ID<input className="w-full rounded-lg border bg-background px-3 py-2" value={loginId} onChange={(event) => setLoginId(event.target.value)} autoComplete="username" required /></label>
+        {signup && <label className="block space-y-1 text-sm">이름<input className="w-full rounded-lg border bg-background px-3 py-2" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required minLength={1} maxLength={40} /></label>}
+        <label className="block space-y-1 text-sm">비밀번호<input className="w-full rounded-lg border bg-background px-3 py-2" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={signup ? 'new-password' : 'current-password'} required /></label>
+        {signup && <label className="block space-y-1 text-sm">비밀번호 확인<input className="w-full rounded-lg border bg-background px-3 py-2" type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" required /></label>}
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <Button type="submit" disabled={pending || mode === undefined} className="w-full">{signup ? '회원가입' : '로그인'}</Button>
         <p className="text-center text-sm text-muted-foreground">{signup ? '이미 계정이 있나요?' : '계정이 없나요?'} <Link className="text-primary underline" to={signup ? '/login' : '/signup'}>{signup ? '로그인' : '회원가입'}</Link></p>

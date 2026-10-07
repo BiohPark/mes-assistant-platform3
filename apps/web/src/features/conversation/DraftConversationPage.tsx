@@ -96,13 +96,13 @@ export function DraftConversationPage() {
           <div className="flex items-start gap-3">
             <AssistantAvatar assistant={assistant} size="md" />
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] text-muted-foreground">{assistant.level1} › {assistant.level2}</div>
+              <div className="text-xs text-muted-foreground">{assistant.level1} › {assistant.level2}</div>
               <div className="flex flex-wrap items-center gap-2"><h1 className="text-lg font-semibold">{assistant.name}</h1><AssistantStatusBadge status={assistant.status} /></div>
               <p className="mt-1 text-sm text-muted-foreground">{assistant.summary}</p>
               {owner && <span className="mt-2 inline-flex items-center gap-1 text-xs"><UserAvatar user={owner} size="xs" />{owner.name}</span>}
             </div>
           </div>
-          {(assistant.expectedInputs.length > 0 || assistant.expectedOutputs.length > 0) && <div className="flex flex-wrap items-center gap-1.5 rounded-xl border bg-muted/30 p-3 text-[11px]">
+          {(assistant.expectedInputs.length > 0 || assistant.expectedOutputs.length > 0) && <div className="flex flex-wrap items-center gap-1.5 rounded-xl border bg-muted/30 p-3 text-xs">
             {assistant.expectedInputs.map((item) => <span key={item} className="rounded-full border bg-background px-2 py-0.5">{item}</span>)}
             {assistant.expectedInputs.length > 0 && assistant.expectedOutputs.length > 0 && <ArrowRight className="size-3.5 text-muted-foreground" />}
             {assistant.expectedOutputs.map((item) => <span key={item} className="rounded-full border bg-violet-50 px-2 py-0.5 text-violet-800">{item}</span>)}

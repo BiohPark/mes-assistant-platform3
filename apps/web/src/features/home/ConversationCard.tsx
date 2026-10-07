@@ -37,9 +37,9 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
       style={{ borderLeftColor: sr ? srTagColor(sr) : undefined, borderLeftWidth: sr ? 3 : undefined }}
     >
       <Link to={`/c/${task.id}`} className="absolute inset-0 rounded-xl" aria-label={`${task.code} ${task.title} 열기`} />
-      <div className="pointer-events-none flex items-center gap-1.5 text-[10px] text-muted-foreground">
+      <div className="pointer-events-none flex items-center gap-1.5 text-xs text-muted-foreground">
         <span className="font-mono">{task.code}</span>
-        <TaskStatusBadge status={task.status} className="h-4 px-1.5 text-[10px]" />
+        <TaskStatusBadge status={task.status} className="h-5 px-1.5 text-[11px]" />
         {task.titleSource === 'ai' && <Sparkles className="size-2.5 text-violet-500" aria-label="AI 제목" />}
         <span className="ml-auto">{formatRelative(task.lastActivityAt)}</span>
       </div>
@@ -49,10 +49,10 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
           {task.tags.slice(0, MAX_TAGS).map((t) => (
             <TagChip key={t} tag={t} size="xs" onClick={onTagClick} />
           ))}
-          {extraTags > 0 && <span className="text-[10px] text-muted-foreground">+{extraTags}</span>}
+          {extraTags > 0 && <span className="text-[11px] text-muted-foreground">+{extraTags}</span>}
         </div>
       )}
-      <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
+      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
         <span className="pointer-events-none">
           <AvatarGroup users={[task.ownerId, ...task.assigneeIds.filter((id) => id !== task.ownerId)].map((id) => users.get(id))} max={3} />
         </span>

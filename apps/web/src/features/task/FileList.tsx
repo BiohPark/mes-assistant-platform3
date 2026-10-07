@@ -20,8 +20,8 @@ export function FileList({ files, taskId, onToggleOutput, onPreview, canDelete =
   if (!files.length) return <div className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">파일이 없습니다.</div>
   return <><ul className="space-y-1">{files.map((file) => <li key={file.id} data-testid={`file-${file.id}`} className="flex items-center gap-1 rounded-lg border bg-card px-2 py-1.5 text-xs">
     <button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => onPreview?.(file)}>{file.name} v{file.version}</button>
-    {file.source === 'assistant' && <span className="rounded bg-violet-50 px-1 text-[10px] text-violet-800">assistant</span>}
-    <span className="text-[10px] text-muted-foreground">{formatSize(file.size)}</span>
+    {file.source === 'assistant' && <span className="rounded-full bg-violet-50 px-1 text-[11px] text-violet-800">assistant</span>}
+    <span className="text-xs text-muted-foreground">{formatSize(file.size)}</span>
     {renderActions?.(file)}
     {taskId && onToggleOutput && <button type="button" aria-label={file.isOutput ? '산출물 해제' : '산출물로 지정'} onClick={() => onToggleOutput(file.id, !file.isOutput)}><Sparkles className={`size-3.5 ${file.isOutput ? 'fill-violet-300 text-violet-500' : ''}`} /></button>}
     <button type="button" aria-label="버전 기록" onClick={() => setHistory(file)}><History className="size-3.5" /></button>

@@ -26,7 +26,7 @@ export function AssistantCardBody({ row, owner, dimmed }: { row: AssistantRow; o
         <AssistantStatusBadge status={a.status} />
       </div>
       <div className={cn('pointer-events-none min-w-0', dimmed && 'opacity-60')}>
-        <div className="text-[11px] text-muted-foreground">
+        <div className="text-xs text-muted-foreground">
           {a.level1} › {a.level2}
         </div>
         <div className="truncate font-semibold" title={a.name}>
@@ -38,7 +38,7 @@ export function AssistantCardBody({ row, owner, dimmed }: { row: AssistantRow; o
         <span className="inline-flex items-center gap-1 text-muted-foreground">
           <span className="font-medium text-foreground">{row.activeCount}</span> 진행
           {row.overdueCount > 0 && <span className="text-red-600">· 지연 {row.overdueCount}</span>}
-          {!a.modelId && <span className="ml-1 rounded-full border px-1 text-[9px]">기본 모델</span>}
+          {!a.modelId && <span className="ml-1 rounded-full border px-1 text-[11px]">기본 모델</span>}
         </span>
         {owner && <UserAvatar user={owner} size="xs" />}
       </div>

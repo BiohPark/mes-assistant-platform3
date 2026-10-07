@@ -89,7 +89,7 @@ export function TagInput({ tags, onAdd, onRemove, suggest, onChipClick, readOnly
             role="combobox"
             aria-expanded={open && options.length > 0}
             aria-controls={listId}
-            className="h-6 w-28 rounded-full border border-dashed bg-transparent pr-2 pl-5 text-[11px] outline-none placeholder:text-muted-foreground focus:w-40 focus:border-solid focus:border-ring"
+            className="h-6 w-28 rounded-full border border-dashed bg-transparent pr-2 pl-5 text-xs outline-none placeholder:text-muted-foreground focus:w-40 focus:border-solid focus:border-ring"
           />
           {open && options.length > 0 && (
             <ul id={listId} role="listbox" className="absolute top-7 left-0 z-50 w-56 overflow-hidden rounded-lg border bg-popover p-1 shadow-md">
@@ -107,7 +107,7 @@ export function TagInput({ tags, onAdd, onRemove, suggest, onChipClick, readOnly
                   className={cn('flex cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1 text-xs', i === activeIndex && 'bg-muted')}
                 >
                   <TagChip tag={o.tag} size="xs" />
-                  <span className="text-[10px] text-muted-foreground">{o.hint}</span>
+                  <span className="text-xs text-muted-foreground">{o.hint}</span>
                 </li>
               ))}
             </ul>

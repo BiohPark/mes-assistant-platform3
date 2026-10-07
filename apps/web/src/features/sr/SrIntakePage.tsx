@@ -47,9 +47,9 @@ export function SrIntakePage() {
       <header className="space-y-2"><div className="flex items-center gap-2"><h1 className="text-lg font-semibold">{selected.code || '접수 전 대화'}</h1><span className="text-sm text-muted-foreground">{selected.status}</span></div>
         {selected.status !== 'draft' && (selected.requesterId === me.id || me.roles.includes('system_owner')) && <SrTitleEditor key={selected.id} sr={selected} onSaved={refresh} />}</header>
       <section className="max-h-80 space-y-2 overflow-y-auto rounded-lg border p-3" aria-label="접수 대화">
-        {messages.map((message) => <div key={message.id} className="rounded-md bg-muted/40 p-2 text-sm"><b>{message.role === 'user' ? '요청자' : '접수 에이전트'}</b><p className="whitespace-pre-wrap">{message.content}</p>
+        {messages.map((message) => <div key={message.id} className="rounded-xl bg-muted/40 p-2 text-sm"><b>{message.role === 'user' ? '요청자' : '접수 에이전트'}</b><p className="whitespace-pre-wrap">{message.content}</p>
           {message.attachmentIds.map((id) => <a key={id} className="block text-primary underline" href={`/api/files/${encodeURIComponent(id)}/content`}>첨부 {id}</a>)}</div>)}
-        {chat.run && <div className="rounded-md bg-muted/40 p-2 text-sm"><b>접수 에이전트</b><p className="whitespace-pre-wrap">{chat.run.text}</p></div>}
+        {chat.run && <div className="rounded-xl bg-muted/40 p-2 text-sm"><b>접수 에이전트</b><p className="whitespace-pre-wrap">{chat.run.text}</p></div>}
       </section>
       {selected.status !== 'done' && selected.status !== 'rejected' && <div className="space-y-2"><Textarea aria-label="접수 메시지" value={text} onChange={(event) => setText(event.target.value)} placeholder="요청 내용을 입력하세요" />
         <input aria-label="SR 첨부" type="file" multiple onChange={(event) => setFiles([...event.target.files ?? []])} />

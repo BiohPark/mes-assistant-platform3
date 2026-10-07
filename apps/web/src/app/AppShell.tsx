@@ -36,7 +36,7 @@ function AppContent() {
               </span>
               <div className="hidden leading-tight lg:block">
                 <div className="text-sm font-semibold">MES Agent Hub</div>
-                <div className="text-[10px] text-muted-foreground">대화 · 태그 · SR</div>
+                <div className="text-xs text-muted-foreground">대화 · 태그 · SR</div>
               </div>
             </div>
             <nav className="flex flex-col gap-1">

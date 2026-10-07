@@ -20,7 +20,7 @@ export function NotificationBell() {
     <DropdownMenuTrigger asChild>
       <Button variant="ghost" size="icon-sm" aria-label={`알림${unread ? ` ${unread}건 미읽음` : ''}`} className="relative">
         <Bell />
-        {unread > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">{unread > 99 ? '99+' : unread}</span>}
+        {unread > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-semibold text-white">{unread > 99 ? '99+' : unread}</span>}
       </Button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end" className="w-80">
@@ -33,8 +33,8 @@ export function NotificationBell() {
         {!items.data?.length && <p className="p-4 text-center text-xs text-muted-foreground">알림이 없습니다.</p>}
         {items.data?.slice(0, 30).map((item) => <DropdownMenuItem key={item.id} className="flex flex-col items-start gap-0.5" onSelect={() => void markRead(item.id).then(() => { refresh(); void navigate(item.link) }, () => toast.error('알림을 읽음 처리하지 못했습니다.'))}>
           <span className="flex w-full items-center gap-1.5 text-xs font-medium">{!item.read && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}<span className="truncate">{item.title}</span></span>
-          <span className="w-full truncate text-[11px] text-muted-foreground">{item.body}</span>
-          <span className="text-[10px] text-muted-foreground">{formatRelative(item.at)}</span>
+          <span className="w-full truncate text-xs text-muted-foreground">{item.body}</span>
+          <span className="text-xs text-muted-foreground">{formatRelative(item.at)}</span>
         </DropdownMenuItem>)}
       </div>
     </DropdownMenuContent>
