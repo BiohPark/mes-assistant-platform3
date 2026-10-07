@@ -9,7 +9,7 @@ describe('HomePage (S0 빈 허브)', () => {
   it('에이전트가 아직 없다는 빈 상태를 보여 준다', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
     renderWithProviders(
-      <MeContext value={{ id: 'u1', name: '이담당', role: '', roles: ['member'] }}>
+      <MeContext value={{ id: 'u1', name: '이담당', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}>
         <TooltipProvider>
           <HomePage />
         </TooltipProvider>

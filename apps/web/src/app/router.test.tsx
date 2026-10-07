@@ -5,7 +5,7 @@ import { MeContext } from './auth'
 import { router } from './router'
 
 let roles: Array<'member' | 'requester' | 'system_owner'> = ['requester']
-vi.mock('./AppShell', () => ({ AppShell: () => <MeContext value={{ id: 'u', name: '사용자', role: '', roles }}><Outlet /></MeContext> }))
+vi.mock('./AppShell', () => ({ AppShell: () => <MeContext value={{ theme: 'system', locale: 'ko', id: 'u', name: '사용자', role: '', roles }}><Outlet /></MeContext> }))
 vi.mock('@/features/home/HomePage', () => ({ HomePage: () => <div>허브 화면</div> }))
 vi.mock('@/features/sr/SrIntakePage', () => ({ SrIntakePage: () => <div>SR 접수 화면</div> }))
 

@@ -20,7 +20,7 @@ it('8개 섹션을 보여주고 기간·단위 변경 시 서버에 다시 요�
     }
     return jsonResponse(404)
   }))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><TooltipProvider><ReportsPage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><ReportsPage /></TooltipProvider></MeContext>)
   for (const title of ['완료 추이', '에이전트별 평균 리드타임', '사용자별 활동', 'SR 상태 분포', '자료 흐름', '태그별 대화', '에이전트별 현황', 'assistant 피드백 다이제스트']) {
     expect(await screen.findByRole('heading', { name: new RegExp(title) })).toBeInTheDocument()
   }

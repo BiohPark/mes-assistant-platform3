@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Assistant } from '@mes/contracts'
+import { ThemeProvider } from 'next-themes'
+import { ProfileProvider } from '@/app/profile'
 import { MeContext } from '@/app/auth'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { jsonResponse, renderWithProviders } from '@/test/render'
@@ -18,7 +20,7 @@ afterEach(() => { vi.unstubAllGlobals(); assistantRows = [assistant] })
 it('enables order editing after assistants load and shows every card', () => {
   assistantRows = []
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const page = () => <QueryClientProvider client={client}><MemoryRouter><MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'] }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext></MemoryRouter></QueryClientProvider>
+  const page = () => <QueryClientProvider client={client}><MemoryRouter><ThemeProvider attribute="class" defaultTheme="system" storageKey="mes-theme" disableTransitionOnChange><ProfileProvider><MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext></ProfileProvider></ThemeProvider></MemoryRouter></QueryClientProvider>
   const { container, rerender } = render(page())
   expect(screen.getByRole('button', { name: '순서 편집' })).toBeDisabled()
 
@@ -37,7 +39,7 @@ it('removes an image without submitting unsaved assistant edits', async () => {
     if (url === '/api/codes?includeInactive=true') return jsonResponse(200, [])
     return jsonResponse(200, {})
   }))
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'] }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: '편집' }))
   fireEvent.change(screen.getByLabelText('이름'), { target: { value: '저장하지 않은 이름' } })
   expect(screen.getByRole('button', { name: '이미지 제거' })).toHaveAttribute('type', 'button')

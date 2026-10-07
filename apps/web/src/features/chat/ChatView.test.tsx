@@ -31,7 +31,7 @@ it('reloads messages after the first AI request when the initial message fetch r
   }))
   queueFirstRequest('h', { content: '첫 AI 질문', attachmentIds: [], oneShotFileIds: [] })
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><TooltipProvider><ChatView task={task} /></TooltipProvider></MeContext></QueryClientProvider>)
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><ChatView task={task} /></TooltipProvider></MeContext></QueryClientProvider>)
   await waitFor(() => expect(messageFetches).toBe(1))
   await waitFor(() => expect(sessionStorage.length).toBe(0))
   finishInitialFetch(Response.json([]))
@@ -45,7 +45,7 @@ it('keeps a discussion draft and shows an error when the message API fails', asy
     ? new Response(JSON.stringify({ message: '저장 실패' }), { status: 500 })
     : new Response('[]', { status: 200 })))
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   const input = screen.getByRole('textbox', { name: '팀 의견 입력' })
   fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(input, { target: { value: '남길 의견' } })
@@ -64,7 +64,7 @@ it('uploads a pinned attachment and stores it on the discussion message', async 
     return new Response('[]', { status: 200 })
   }))
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
-  const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
@@ -82,7 +82,7 @@ it('sends an AI request through SSE and leaves pinning to the server', async () 
     return new Response('[]', { status: 200 })
   }))
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
-  const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
   fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '질문' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
@@ -110,7 +110,7 @@ it.each(['over-limit', 'estimate failure'] as const)('reuses the uploaded draft 
     return new Response('[]', { status: 200 })
   }))
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
-  const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
   fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '질문' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
@@ -129,7 +129,7 @@ it('shows the phase of a request running in another tab', async () => {
     return new Response('[]', { status: 200 })
   }))
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   await waitFor(() => expect(screen.getByText('파일 올리는 중 1/1')).toBeVisible())
 })
 
@@ -140,7 +140,7 @@ it('disables AI send when the estimate exceeds the request budget', async () => 
     return new Response('[]', { status: 200 })
   }))
   const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'] }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '길어진 초안' } })
   await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeDisabled())
   expect(screen.getByRole('alert')).toHaveTextContent('요청 크기 한도')

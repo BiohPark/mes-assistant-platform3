@@ -9,11 +9,15 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { UserAvatar } from '@/components/UserAvatar'
 import { logout, useMe } from './auth'
+import { localeOptions, themeOptions, useProfile } from './profile'
+import type { Locale, Theme } from '@mes/contracts'
 import { NotificationBell } from './NotificationBell'
 import { useUiStore } from './uiStore'
 
@@ -27,6 +31,7 @@ const goToLoggedOut = () => window.location.assign('/logged-out')
 
 export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarProps) {
   const me = useMe()
+  const profile = useProfile()
   const navigate = useNavigate()
   const isOwner = me.roles.includes('system_owner')
   const requesterOnly = me.roles.includes('requester') && !isOwner
@@ -61,6 +66,16 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
             {me.name}
             {isOwner && <span className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-primary">System Owner</span>}
           </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>테마</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={profile.theme} onValueChange={(theme) => profile.save({ theme: theme as Theme })}>
+            {themeOptions.map((option) => <DropdownMenuRadioItem key={option.value} value={option.value} disabled={profile.pending}>{option.label}</DropdownMenuRadioItem>)}
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>언어</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={profile.locale} onValueChange={(locale) => profile.save({ locale: locale as Locale })}>
+            {localeOptions.map((option) => <DropdownMenuRadioItem key={option.value} value={option.value} disabled={profile.pending}>{option.label}</DropdownMenuRadioItem>)}
+          </DropdownMenuRadioGroup>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => void navigate('/my-info')}><UserRound />내 정보</DropdownMenuItem>
           <DropdownMenuItem onClick={() => void navigate('/password')}><KeyRound />비밀번호 변경</DropdownMenuItem>

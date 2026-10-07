@@ -1,4 +1,4 @@
-import { AssistantSchema, CodeSchema, type Assistant } from '@mes/contracts'
+import { AssistantSchema, CodeSchema, ProfileSchema, type Assistant, type ProfilePatch } from '@mes/contracts'
 
 export async function adminRequest(path: string, method: string, body?: unknown) {
   const response = await fetch(`/api/${path}`, { method, credentials: 'same-origin',
@@ -37,6 +37,7 @@ export const updateCode = (id: string, patch: { name?: string; sortOrder?: numbe
 export type ManagedUser = { id: string; loginId: string | null; name: string; active: boolean; isSystemOwner: boolean; isBusinessOwner: boolean; mustChangePassword: boolean }
 export const listManagedUsers = async () => await adminRequest('users', 'GET') as ManagedUser[]
 export const setUserName = (id: string, name: string) => adminRequest(`users/${encodeURIComponent(id)}`, 'PATCH', { name })
-export const setMyName = (name: string) => adminRequest('users/me', 'PATCH', { name })
+export const setMyProfile = async (input: ProfilePatch) => ProfileSchema.parse(await adminRequest('users/me', 'PATCH', input))
+export const setMyName = (name: string) => setMyProfile({ name })
 export const setUserFlag = (id: string, field: 'system-owner' | 'business-owner' | 'active', enabled: boolean) => adminRequest(`users/${encodeURIComponent(id)}/${field}`, 'PUT', { enabled })
 export const temporaryPassword = async (id: string) => await adminRequest(`users/${encodeURIComponent(id)}/temporary-password`, 'POST') as { temporaryPassword: string }

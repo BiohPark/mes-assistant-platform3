@@ -8,7 +8,7 @@ describe('local 인증 화면', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('로그인 폼은 API에 제출하고 성공하면 홈으로 간다', async () => {
-    const fetchMock = vi.fn(async (url: string) => url === '/api/auth/mode' ? jsonResponse(200, { mode: 'local' }) : jsonResponse(200, { id: 'u1', name: 'member', role: '', roles: ['member'] }))
+    const fetchMock = vi.fn(async (url: string) => url === '/api/auth/mode' ? jsonResponse(200, { mode: 'local' }) : jsonResponse(200, { id: 'u1', name: 'member', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }))
     vi.stubGlobal('fetch', fetchMock)
     const navigate = vi.fn()
     renderWithProviders(<LocalAuthPage kind="login" onSuccess={navigate} />)
@@ -42,7 +42,7 @@ describe('local 인증 화면', () => {
   })
 
   it('회원가입 이름을 필수로 받고 API에 전송한다', async () => {
-    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => url === '/api/auth/mode' ? jsonResponse(200, { mode: 'local' }) : jsonResponse(201, { id: 'u', name: '홍길동', role: '', roles: ['member'] }))
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => url === '/api/auth/mode' ? jsonResponse(200, { mode: 'local' }) : jsonResponse(201, { id: 'u', name: '홍길동', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }))
     vi.stubGlobal('fetch', fetchMock)
     const navigate = vi.fn()
     renderWithProviders(<LocalAuthPage kind="signup" onSuccess={navigate} />)

@@ -1,3 +1,5 @@
+import { ThemeProvider } from 'next-themes'
+import { ProfileProvider } from '@/app/profile'
 import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
@@ -7,7 +9,7 @@ export function renderWithProviders(ui: ReactNode, { route = '/' } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>
+      <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange storageKey="mes-theme"><ProfileProvider><MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter></ProfileProvider></ThemeProvider>
     </QueryClientProvider>,
   )
 }
