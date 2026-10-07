@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createServer } from 'node:net'
 import { join, resolve } from 'node:path'
 
 const bundle = resolve(import.meta.dirname, '..', 'release', 'mes-hub')
@@ -26,7 +27,12 @@ const isolated = mkdtempSync(join(tmpdir(), 'mes-release-'))
 cpSync(bundle, isolated, { recursive: true })
 checkBundle(isolated)
 
-const port = 40000 + Math.floor(Math.random() * 20000)
+const reservation = createServer()
+await new Promise((done, fail) => reservation.once('error', fail).listen(0, '127.0.0.1', done))
+const address = reservation.address()
+if (!address || typeof address === 'string') throw new Error('검증 서버 포트를 할당하지 못했습니다')
+const port = address.port
+await new Promise((done) => reservation.close(done))
 const base = `http://127.0.0.1:${port}`
 const server = spawn(process.execPath, ['--env-file=.env.example', join('api', 'dist', 'main.js')], {
   cwd: isolated,

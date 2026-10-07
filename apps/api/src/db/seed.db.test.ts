@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/mysql2'
 import { eq } from 'drizzle-orm'
-import { afterAll, beforeAll, expect, it } from 'vitest'
+import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import { createTempDb } from '../test/tempDb.js'
 import { createPool } from './connection.js'
 import { runMigrations } from './migrate.js'
@@ -58,4 +58,28 @@ it('값 없음·false·production에서는 개발 계정을 만들지 않는다'
     delete process.env.SEED_DEV_ACCOUNTS
   }
   expect((await db.select().from(appUser).where(eq(appUser.loginId, 'dev-requester')))).toHaveLength(0)
+})
+
+it('실제 사용자가 있으면 플래그가 true여도 개발 계정을 만들지 않는다', async () => {
+  const db = drizzle(client)
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+  process.env.SEED_DEV_ACCOUNTS = 'true'
+  try {
+    for (const user of [{ id: 'real-user-local', loginId: 'real-user' }, { id: 'real-user-sso', ssoSubject: 'real-user' }]) {
+      await db.insert(appUser).values({ ...user, name: '실제 사용자', initials: '실', color: '#000000' })
+      try {
+        log.mockClear()
+        await seedCatalog(db, { devUserPassword: 'dev-password-1234' })
+        expect(log).toHaveBeenCalledWith('개발 계정 시드 건너뜀: DB에 실제 사용자가 있습니다.')
+        for (const loginId of ['dev-owner', 'dev-member', 'dev-requester']) {
+          expect(await db.select().from(appUser).where(eq(appUser.loginId, loginId))).toHaveLength(0)
+        }
+      } finally {
+        await db.delete(appUser).where(eq(appUser.id, user.id))
+      }
+    }
+  } finally {
+    delete process.env.SEED_DEV_ACCOUNTS
+    log.mockRestore()
+  }
 })
