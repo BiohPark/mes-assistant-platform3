@@ -231,7 +231,7 @@ api(워크스페이스 패키지 빌드 → 감시 모드)와 web(Vite)이 함�
 pnpm release
 ```
 
-`release\mes-hub`가 생성된다. api가 web 정적 파일을 함께 제공하므로 앱과 `/api/*`는 `APP_ORIGIN`의 같은 주소를 쓴다. 묶음의 `.env.example`을 `.env`로 복사하고 운영 값을 채운 뒤, 묶음 폴더에서 `node --env-file=.env api\dist\main.js`로 실행한다. 대상 PC에는 Node 22와 MariaDB만 필요하고 pnpm은 필요 없다. `WEB_DIST_DIR`을 비우면 묶음의 `web\dist`를 자동으로 찾는다. 개발 모드는 계속 Vite(`pnpm dev`)를 쓴다.
+`release\mes-hub`가 생성된다. api가 web 정적 파일을 함께 제공하므로 앱과 `/api/*`는 `APP_ORIGIN`의 같은 주소를 쓴다. 운영 설치는 8장의 `deploy:local`을 사용한다. 대상 PC에는 Node 22, pnpm 10, MariaDB가 필요하다. `WEB_DIST_DIR`을 비우면 묶음의 `web\dist`를 자동으로 찾는다. 개발 모드는 계속 Vite(`pnpm dev`)를 쓴다.
 
 CI는 생성된 묶음을 직접 기동해 정적 페이지와 API를 확인한다. 서비스 설치는 운영 서버에서 8장대로 한다.
 
@@ -260,17 +260,20 @@ pnpm test:db
 
 ## 8. 운영 배포 — Windows 서비스
 
-1. 서버에 Node 22와 MariaDB를 설치하고, 4장의 문자셋·정렬 및 앱 DB 사용자를 준비한다. 빌드 PC에서 `pnpm release`를 실행해 `release\mes-hub` 전체를 서버에 복사한다.
-2. 묶음 루트에서 `.env.example`을 `.env`로 복사해 `DATABASE_URL`, `SESSION_SECRET`, `APP_ORIGIN`(예: `http://서버주소:3000` 또는 TLS 프록시의 `https://…`), `FILE_STORAGE_ROOT` 등 운영 값으로 바꾼다. 파일 저장소는 배포 묶음 **밖의 절대 경로**로 두고, 로그 폴더(`logs`)와 함께 서비스 계정에 쓰기 권한을 준다. `.env`는 서비스 계정과 관리자만 읽도록 ACL을 제한한다. 비밀값을 XML에 넣지 않는다.
-3. 묶음 루트에서 `node --env-file=.env api\dist\db\migrate.js`로 DB를 마이그레이션한다. 첫 배포라면 관리자가 `INITIAL_SYSTEM_OWNERS`의 ID로 가장 먼저 가입한다.
-4. [WinSW v2.12.0 공식 릴리스](https://github.com/winsw/winsw/releases/tag/v2.12.0)에서 Windows x64용 안정판 실행 파일을 받아 `deploy\windows\mes-hub.exe`로 저장한다. 저장소와 배포 묶음에는 exe가 없다. 관리자 PowerShell에서 `deploy\windows\mes-hub.exe install` 후 `deploy\windows\mes-hub.exe start`를 실행한다. 동봉된 `mes-hub.xml`은 WinSW v2 형식을 유지한다. XML은 묶음 루트를 작업 폴더로 하여 `node.exe --env-file=<묶음 루트>\.env api\dist\main.js`를 실행하고, 실패 시 재시작하며 `logs`에 10 MB 단위로 로그를 회전한다. 서비스 계정의 PATH에서 `node.exe`를 찾을 수 있어야 한다.
-5. 브라우저에서 `APP_ORIGIN`을 열고 로그인 및 `/api/health` 응답을 확인한다. 실제 서비스 계정과 ACL·네트워크 접근은 서버에서 확인한다.
+운영 HOME(예: `D:\mes-hub`)에는 `app`(교체 대상), `config\.env`, `service`(WinSW exe/XML), `storage`, `logs`, `backups`를 둔다. 설정·파일·서비스·로그는 `app` 밖에 유지한다. 서버에 Node 22, pnpm 10, MariaDB를 설치하고 4장의 DB 문자셋·정렬 및 앱 DB 사용자를 준비한다. 서버의 저장소에서 `git pull` 후 다음 순서로 설치한다.
+
+1. `pnpm deploy:local -- --home D:\mes-hub --init`을 실행한다. 이 명령은 폴더·`config\.env`·`service\mes-hub.xml`을 새로 만든다. 기존 설정이나 앱을 덮어쓰지 않는다.
+2. `D:\mes-hub\config\.env`에서 `DATABASE_URL`, `SESSION_SECRET`, `APP_ORIGIN`(예: `http://서버주소:3000`), `INITIAL_SYSTEM_OWNERS` 등 운영 값을 설정한다. 초기 생성 시 `SEED_DEV_ACCOUNTS=false`, `FILE_STORAGE_ROOT=D:\mes-hub\storage`, `NODE_ENV=production`으로 설정된다. 서비스 계정이 `config\.env`를 읽고 `storage`·`logs`에 쓸 수 있게 ACL을 설정한다. 비밀값을 XML에 넣지 않는다.
+3. `pnpm deploy:local -- --home D:\mes-hub`로 첫 앱을 배포하고 DB를 마이그레이션한다. 아직 서비스 exe가 없으면 시작과 상태 확인을 생략한다. [WinSW v2.12.0 공식 릴리스](https://github.com/winsw/winsw/releases/tag/v2.12.0)의 Windows x64 실행 파일을 `D:\mes-hub\service\mes-hub.exe`로 둔 뒤, 관리자 PowerShell에서 `D:\mes-hub\service\mes-hub.exe install`과 `D:\mes-hub\service\mes-hub.exe start`를 실행한다. 서비스 계정의 PATH에서 `node.exe`를 찾을 수 있어야 한다. 첫 배포라면 `INITIAL_SYSTEM_OWNERS`의 ID로 가장 먼저 가입한다.
+4. 브라우저에서 `APP_ORIGIN`을 열고 `/api/health`의 상태·버전·커밋을 확인한다. SO로 로그인하여 **진단** 메뉴(`/admin/diagnostics`)를 열고 **다시 확인**을 누른다. 문제가 있으면 **텍스트로 복사**하여 대화에 붙여 넣는다. 복사 텍스트에는 비밀값 대신 설정 여부만 나온다.
 
 ### 데모 bundle 이관
 
-서비스를 멈추고 DB와 `FILE_STORAGE_ROOT`를 백업한 뒤, 묶음 루트에서 `node --env-file=.env api\dist\db\import.js C:\path\bundle.json --dry-run --default-owner <loginId>`로 테이블별 건수를 확인한다. 소유자가 빈 행이 있으면 `--default-owner`에 기존 또는 함께 가져올 사용자의 로그인 ID를 지정한다. 이어서 `--dry-run` 없이 실행한다. bundle 크기 제한은 기본 64 MiB이며 `IMPORT_BUNDLE_MAX_BYTES`로 조정한다. macOS/Node 22에서 60 MiB bundle의 최대 RSS는 382 MiB였다. Windows에서는 별도 측정 전까지 이관 프로세스에 최소 512 MiB의 여유 메모리를 둔다. 다중 SR 업무는 기본적으로 목록을 보여 주고 중단한다. 가장 이른 SR만 연결하고 나머지 연결의 권한·조회 손실을 수용할 때만 `--allow-multi-sr`를 지정한다. 새 계정의 로그인 ID와 임시 비밀번호는 실행 종료 시 표준 출력에 한 번만 표시되므로 각 사용자에게 안전한 경로로 전달한다. 같은 ID의 에이전트·코드는 서버 값을 유지하고 차이를 보고한다. 기존 콘텐츠와 그 하위 행의 내용·관계가 다르거나 누락되면 전체 이관을 중단한다.
+서비스를 멈추고 DB와 `FILE_STORAGE_ROOT`를 백업한 뒤, `D:\mes-hub\app`에서 `node --env-file=D:\mes-hub\config\.env api\dist\db\import.js C:\path\bundle.json --dry-run --default-owner <loginId>`로 테이블별 건수를 확인한다. 소유자가 빈 행이 있으면 `--default-owner`에 기존 또는 함께 가져올 사용자의 로그인 ID를 지정한다. 이어서 `--dry-run` 없이 실행한다. bundle 크기 제한은 기본 64 MiB이며 `IMPORT_BUNDLE_MAX_BYTES`로 조정한다. macOS/Node 22에서 60 MiB bundle의 최대 RSS는 382 MiB였다. Windows에서는 별도 측정 전까지 이관 프로세스에 최소 512 MiB의 여유 메모리를 둔다. 다중 SR 업무는 기본적으로 목록을 보여 주고 중단한다. 가장 이른 SR만 연결하고 나머지 연결의 권한·조회 손실을 수용할 때만 `--allow-multi-sr`를 지정한다. 새 계정의 로그인 ID와 임시 비밀번호는 실행 종료 시 표준 출력에 한 번만 표시되므로 각 사용자에게 안전한 경로로 전달한다. 같은 ID의 에이전트·코드는 서버 값을 유지하고 차이를 보고한다. 기존 콘텐츠와 그 하위 행의 내용·관계가 다르거나 누락되면 전체 이관을 중단한다.
 
-업데이트할 때는 먼저 외부 쓰기를 멈추고 `deploy\windows\mes-hub.exe stop`으로 서비스를 중지한다. 그 상태에서 **DB를 백업**하고 기존 묶음 폴더를 별도로 보관한 뒤, 새 묶음으로 폴더를 교체한다(기존 `.env`, `deploy\windows\mes-hub.exe`, `logs`를 새 묶음의 같은 위치에 복원). 위 마이그레이션 → `deploy\windows\mes-hub.exe start` → 브라우저 확인 순서다. 파일 저장소는 묶음 밖에 유지한다. 문제가 생기면 서비스를 중지하고 이전 묶음을 복원해 다시 시작한다. DB 스키마가 바뀐 릴리스는 이전 묶음과 중지 직후 백업한 DB를 함께 복원한 다음 서비스를 시작한다.
+업데이트 전 외부 쓰기를 멈추고 **DB와 storage를 백업**한다. 저장소에서 `git pull` 후 `pnpm deploy:local -- --home D:\mes-hub --dry-run`으로 작업을 확인하고, `pnpm deploy:local -- --home D:\mes-hub`을 실행한다. 도구는 release 빌드 → 서비스 중지 → 기존 `app`을 `backups\app-<시각>`으로 이동 → 새 묶음 복사 → `config\.env`로 마이그레이션 → 서비스 시작 → `/api/health` 확인 순서로 진행한다. 서비스가 없으면 중지·시작 안내만 출력한다. 서비스 제어를 건너뛸 때는 `--no-service`를 붙인다.
+
+문제가 생기면 `pnpm deploy:local -- --home D:\mes-hub --rollback`으로 최신 `app` 백업을 복원한다. **DB는 자동 복원되지 않는다.** 스키마가 바뀐 릴리스는 업데이트 직전의 DB 백업도 함께 복원한 뒤 서비스를 시작한다. 설정·파일 저장소·로그는 롤백 중에도 유지된다.
 
 IIS를 TLS 앞단으로 둘 때만 ARR 리버스 프록시가 전체 요청을 이 서비스로 넘기게 한다. `/api/events`의 SSE 응답 버퍼링을 끄고 프록시 유휴 시간을 스트림 유지 시간보다 길게 설정한다. 이벤트 브로드캐스트는 **단일 api 인스턴스** 전제다. IIS 없이도 api 포트로 직접 접속할 수 있다.
 
