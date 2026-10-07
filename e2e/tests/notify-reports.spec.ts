@@ -27,12 +27,14 @@ test('대화 배정 알림이 두 컨텍스트의 벨에 즉시 표시되고 읽
     await expect(second.getByRole('button', { name: '알림' })).toBeVisible()
     const assistants = await (await owner.request.get('/api/assistants')).json() as Array<{ id: string }>
     await owner.goto(`/new/${assistants[0]!.id}`)
-    await owner.getByLabel('담당자').selectOption(assigneeId)
-    await owner.getByRole('button', { name: '팀 의견 (AI 미전송)' }).click()
-    await owner.getByRole('textbox', { name: '팀 의견 입력' }).fill('알림 E2E 대화')
-    await owner.getByRole('button', { name: '전송', exact: true }).click()
+    await expect(owner.getByLabel('담당자', { exact: true })).toHaveCount(0)
+    // 초안 배정 UI는 제거됨. 서버의 명시 배정 계약으로 알림을 검증한다.
+    const created = await owner.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id, assigneeIds: [assigneeId], firstMessage: '알림 E2E 대화' } })
+    expect(created.status()).toBe(201)
+    const task = (await created.json()) as { id: string; assigneeIds: string[] }
+    expect(task.assigneeIds).toEqual([assigneeId])
+    await owner.goto(`/c/${task.id}`)
     await expect(owner).toHaveURL(/\/c\/[^/]+$/, { timeout: 15_000 })
-    const task = { id: owner.url().split('/').at(-1)! }
     await expect(first.getByRole('button', { name: '알림 1건 미읽음' })).toBeVisible({ timeout: 15_000 })
     await expect(second.getByRole('button', { name: '알림 1건 미읽음' })).toBeVisible({ timeout: 15_000 })
     await first.getByRole('button', { name: '알림 1건 미읽음' }).click()
