@@ -23,6 +23,7 @@ export function AppShell() {
 
 function AppContent() {
   const me = useMe()
+  const requesterOnly = me.roles.includes('requester') && !me.roles.includes('system_owner')
   if (me.mustChangePassword) return <PasswordPage />
   return (
     <>
@@ -39,7 +40,7 @@ function AppContent() {
               </div>
             </div>
             <nav className="flex flex-col gap-1">
-              {NAV.map(({ to, label, icon: Icon, end }) => (
+              {!requesterOnly && NAV.map(({ to, label, icon: Icon, end }) => (
                 <NavLink
                   key={to}
                   to={to}
@@ -56,7 +57,7 @@ function AppContent() {
                   <span className="hidden lg:inline">{label}</span>
                 </NavLink>
               ))}
-              {(me.roles.includes('requester') || me.roles.includes('system_owner')) && <NavLink to="/sr" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><ClipboardList className="size-4" /><span className="hidden lg:inline">SR 접수</span></NavLink>}
+              <NavLink to="/sr" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><ClipboardList className="size-4" /><span className="hidden lg:inline">SR 접수</span></NavLink>
               {(!me.roles.includes('requester') || me.roles.includes('system_owner')) && <NavLink to="/reports" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><BarChart3 className="size-4" /><span className="hidden lg:inline">리포트</span></NavLink>}
               {(!me.roles.includes('requester') || me.roles.includes('system_owner')) && <NavLink to="/sr/manage" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><ClipboardList className="size-4" /><span className="hidden lg:inline">SR 관리</span></NavLink>}
               {me.roles.includes('system_owner') && <>
@@ -69,7 +70,7 @@ function AppContent() {
             <Outlet />
           </main>
         </div>
-        <SystemAssistantDrawer />
+        {!requesterOnly && <SystemAssistantDrawer />}
         <Toaster position="bottom-right" richColors closeButton />
     </>
   )

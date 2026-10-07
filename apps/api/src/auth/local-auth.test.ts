@@ -22,9 +22,9 @@ const sessions: SessionStore = {
 }
 const users: UserDirectory = {
   upsertFromClaims: vi.fn(async () => { throw new Error('OIDC called') }),
-  createLocal: vi.fn(async (id, hash) => {
+  createLocal: vi.fn(async (id, hash, name) => {
     if (rows.has(id)) return null
-    const user = { id: `u-${id}`, name: id, role: '', isSystemOwner: config.initialSystemOwners.includes(id) && ![...rows.values()].some((row) => row.user.isSystemOwner) }
+    const user = { id: `u-${id}`, name: name ?? id, role: '', isSystemOwner: config.initialSystemOwners.includes(id) && ![...rows.values()].some((row) => row.user.isSystemOwner) }
     rows.set(id, { user, hash, active: true })
     return user
   }),
@@ -67,6 +67,15 @@ describe('local 인증 API', () => {
     await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'member-1', password: 'password-1234' }).expect(409)
     expect(hash).not.toHaveBeenCalled()
     hash.mockRestore()
+  })
+
+  it('회원가입 이름을 저장하고 공백·길이 오류는 거부한다', async () => {
+    const body = { loginId: 'named-member', password: 'password-1234', name: '홍 길동' }
+    const result = await request(app.getHttpServer()).post('/api/auth/signup').send(body).expect(201)
+    expect(result.body.name).toBe('홍 길동')
+    expect(users.createLocal).toHaveBeenCalledWith('named-member', expect.any(String), '홍 길동')
+    await request(app.getHttpServer()).post('/api/auth/signup').send({ ...body, loginId: 'blank-name', name: ' ' }).expect(400)
+    await request(app.getHttpServer()).post('/api/auth/signup').send({ ...body, loginId: 'long-name', name: '가'.repeat(41) }).expect(400)
   })
 
   it('SO 부트스트랩은 첫 가입에만 적용한다', async () => {

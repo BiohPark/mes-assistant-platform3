@@ -14,7 +14,7 @@ import { DbCatalogReader } from '../catalog/catalog.service.js'
 const config = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
 const admin = { getSettings: vi.fn(async () => ({})), settings: vi.fn(async () => ({})), createAssistant: vi.fn(async () => ({})),
   order: vi.fn(async () => undefined), codes: vi.fn(async () => []), updateAssistant: vi.fn(async () => ({})), deleteAssistant: vi.fn(async () => undefined) }
-const accounts = { users: vi.fn(async () => []), role: vi.fn(async () => undefined), active: vi.fn(async () => undefined), temporaryPassword: vi.fn(async () => ({ temporaryPassword: 'secret' })), changePassword: vi.fn(async () => undefined) }
+const accounts = { users: vi.fn(async () => []), role: vi.fn(async () => undefined), active: vi.fn(async () => undefined), name: vi.fn(async (_id: string, name: string) => ({ name })), temporaryPassword: vi.fn(async () => ({ temporaryPassword: 'secret' })), changePassword: vi.fn(async () => undefined) }
 
 describe('관리 API 서버 권한', () => {
   let app: INestApplication
@@ -38,6 +38,14 @@ describe('관리 API 서버 권한', () => {
     await request(app.getHttpServer()).get('/api/users').set('Cookie', 'mes_session=so').expect(200)
     await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ defaultModel: 'm' }).expect(200)
     expect(admin.settings).toHaveBeenCalledWith({ defaultModel: 'm' })
+  })
+  it('SO만 다른 사용자의 이름을 수정하고 본인은 내 정보를 수정한다', async () => {
+    await request(app.getHttpServer()).patch('/api/users/u1').set('Cookie', 'mes_session=member').send({ name: '새 이름' }).expect(403)
+    await request(app.getHttpServer()).patch('/api/users/u1').set('Cookie', 'mes_session=so').send({ name: '새 이름' }).expect(200)
+    expect(accounts.name).toHaveBeenCalledWith('u1', '새 이름')
+    await request(app.getHttpServer()).patch('/api/users/me').set('Cookie', 'mes_session=member').send({ name: '내 이름' }).expect(200)
+    expect(accounts.name).toHaveBeenCalledWith('member', '내 이름')
+    await request(app.getHttpServer()).patch('/api/users/me').set('Cookie', 'mes_session=member').send({ name: ' ' }).expect(400)
   })
   it('에이전트 쓰기·순서는 SO만 허용한다', async () => {
     await request(app.getHttpServer()).post('/api/assistants').set('Cookie', 'mes_session=member').send({}).expect(403)

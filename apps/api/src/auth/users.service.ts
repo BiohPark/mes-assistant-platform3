@@ -17,7 +17,7 @@ export interface SsoClaims {
 
 export interface UserDirectory {
   upsertFromClaims(claims: SsoClaims): Promise<AuthUser>
-  createLocal(loginId: string, hash: string): Promise<AuthUser | null>
+  createLocal(loginId: string, hash: string, name?: string): Promise<AuthUser | null>
   findByLoginId(loginId: string): Promise<{ user: AuthUser; hash: string; active: boolean } | null>
 }
 
@@ -33,7 +33,7 @@ export class DbUserDirectory implements UserDirectory {
     @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
-  async createLocal(loginId: string, hash: string): Promise<AuthUser | null> {
+  async createLocal(loginId: string, hash: string, name = loginId): Promise<AuthUser | null> {
     const id = randomUUID()
     return this.db.transaction(async (tx) => {
       const candidate = this.config.initialSystemOwners.includes(loginId)
@@ -41,7 +41,7 @@ export class DbUserDirectory implements UserDirectory {
       const [owner] = candidate ? await tx.select({ id: appUser.id }).from(appUser).where(eq(appUser.isSystemOwner, true)).limit(1) : []
       try {
         await tx.insert(appUser).values({
-          id, loginId, passwordHash: hash, name: loginId, initials: initialsOf(loginId), color: pickColor(id),
+          id, loginId, passwordHash: hash, name, initials: initialsOf(name), color: pickColor(id),
           isSystemOwner: candidate && !owner,
         })
       } catch (error) {

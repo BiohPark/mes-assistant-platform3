@@ -1,5 +1,5 @@
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, HttpException, Inject, NotFoundException, Post, Req, Res, UnauthorizedException } from '@nestjs/common'
-import { CredentialsSchema, type Me } from '@mes/contracts'
+import { CredentialsSchema, SignupSchema, type Me } from '@mes/contracts'
 import type { CookieOptions, Request, Response } from 'express'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import type { AuthedRequest } from './guards.js'
@@ -150,13 +150,13 @@ export class AuthController {
   async signup(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<Me> {
     this.ensureLocal()
     this.checkOrigin(req)
-    const parsed = CredentialsSchema.safeParse(body)
+    const parsed = SignupSchema.safeParse(body)
     if (!parsed.success) throw new BadRequestException('ID 또는 비밀번호 형식이 올바르지 않습니다')
-    const { loginId, password } = parsed.data
+    const { loginId, password, name } = parsed.data
     const attempt = await this.attempt(req, loginId)
     try {
       if (await this.users.findByLoginId(loginId)) { attempt.failed(); throw new ConflictException('이미 사용 중인 ID입니다') }
-      const user = await this.users.createLocal(loginId, await hashPassword(password))
+      const user = await this.users.createLocal(loginId, await hashPassword(password), name)
       if (!user) { attempt.failed(); throw new ConflictException('이미 사용 중인 ID입니다') }
       attempt.succeeded()
       return this.respondWithSession(user, res)

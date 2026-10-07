@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { Link, useSearchParams } from 'react-router'
 import { createSr, deleteSr, getSr, listSr, uploadSrFile } from '@/api/sr'
 import { getMessages } from '@/api/tasks'
+import { getSettings } from '@/api/admin'
 import { useChat } from '@/features/chat/useChat'
 import { TopBar } from '@/app/TopBar'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,7 @@ export function SrIntakePage() {
   const me = useMe()
   const client = useQueryClient()
   const { data: rows = [] } = useQuery({ queryKey: ['sr'], queryFn: listSr })
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: getSettings })
   const [params, setParams] = useSearchParams()
   const selectedId = params.get('id') ?? ''
   const setSelectedId = (id: string) => setParams(id ? { id } : {})
@@ -41,7 +43,7 @@ export function SrIntakePage() {
     } catch (error) { toast.error(String(error)) } finally { setBusy(false) }
   }
   return <><TopBar title="SR 접수" /><div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-auto p-4 md:grid-cols-[16rem_1fr]">
-    <aside className="space-y-3"><Button onClick={create}>접수 대화 시작</Button><SrList rows={rows} selectedId={selectedId} onSelect={setSelectedId} /></aside>
+    <aside className="space-y-3">{settings && (settings.srIntakeAssistantId ? <Button onClick={create}>접수 대화 시작</Button> : <p role="status" className="text-sm">System Owner가 설정에서 SR 접수 에이전트를 지정해야 합니다{me.roles.includes('system_owner') && <> · <Link to="/settings" className="underline">설정으로 이동</Link></>}</p>)}<SrList rows={rows} selectedId={selectedId} onSelect={setSelectedId} /></aside>
     <div className="space-y-4">{selected ? <>
       <header className="space-y-2"><div className="flex items-center gap-2"><h1 className="text-lg font-semibold">{selected.code || '접수 전 대화'}</h1><span className="text-sm text-muted-foreground">{selected.status}</span></div>
         {selected.status !== 'draft' && (selected.requesterId === me.id || me.roles.includes('system_owner')) && <SrTitleEditor key={selected.id} sr={selected} onSaved={refresh} />}</header>
@@ -58,6 +60,6 @@ export function SrIntakePage() {
       <SharedResults results={selected.results} />
       {selected.conversations.length > 0 && <p className="text-xs text-muted-foreground">연결 업무 진행 중 · 내부 대화는 요청자에게 공개되지 않습니다.</p>}
       <SrConvertDialog sr={selected} open={convert} onOpenChange={setConvert} onSaved={refresh} />
-    </> : <div className="rounded-lg border p-6 text-sm text-muted-foreground">접수 대화를 선택하거나 새로 시작하세요. <Link to="/" className="underline">허브로 이동</Link></div>}</div>
+    </> : <div className="rounded-lg border p-6 text-sm text-muted-foreground">접수 대화를 선택하거나 새로 시작하세요. {!me.roles.includes('requester') || me.roles.includes('system_owner') ? <Link to="/" className="underline">허브로 이동</Link> : null}</div>}</div>
   </div></>
 }

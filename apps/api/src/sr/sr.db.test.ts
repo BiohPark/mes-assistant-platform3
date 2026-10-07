@@ -39,7 +39,7 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     ])
     assistantId = (await db.select().from(assistant))[0]!.id
     await db.update(assistant).set({ ownerId: 'staff' }).where(eq(assistant.id, assistantId))
-    await db.insert(appSetting).values({ key: 'srIntakeAssistantId', value: assistantId })
+    await db.update(appSetting).set({ value: assistantId }).where(eq(appSetting.key, 'srIntakeAssistantId'))
     sr = new SrService(db, new DbTasksService(db), new EventsService())
   })
   afterAll(async () => { await client?.end(); await temp?.drop() })
