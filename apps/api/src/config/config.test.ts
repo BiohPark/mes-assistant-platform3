@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { loadConfig } from './config.js'
+import { resolve, win32 } from 'node:path'
+import { isOutsideApp, loadConfig } from './config.js'
 
 const base = {
   DATABASE_URL: 'mysql://u:p@localhost:3306/db',
@@ -68,21 +69,31 @@ describe('loadConfig', () => {
 
   it('파일 저장 루트는 절대 경로로 풀어 둔다 (Windows 드라이브·UNC도 path.resolve가 처리)', () => {
     const c = loadConfig({ ...base, FILE_STORAGE_ROOT: 'storage' })
-    expect(c.fileStorageRoot).toMatch(/storage$/)
-    expect(c.fileStorageRoot).not.toBe('storage')
+    expect(c.fileStorageRoot).toBe(resolve('storage'))
   })
 
   it('운영 환경은 app 안이나 상대 경로의 파일 저장소를 거부한다', () => {
     const app = process.cwd()
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', FILE_STORAGE_ROOT: './storage' })).toThrow(/FILE_STORAGE_ROOT/)
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', FILE_STORAGE_ROOT: `${app}/storage` })).toThrow(/FILE_STORAGE_ROOT/)
-    expect(loadConfig({ ...base, NODE_ENV: 'production', FILE_STORAGE_ROOT: '/tmp/mes-hub-storage' }).fileStorageRoot).toBe('/tmp/mes-hub-storage')
+    expect(loadConfig({ ...base, NODE_ENV: 'production', FILE_STORAGE_ROOT: resolve(app, '..', 'mes-hub-storage') }).fileStorageRoot).toBe(resolve(app, '..', 'mes-hub-storage'))
   })
 
   it('app 밖의 설정 파일을 쓰면 NODE_ENV 없이도 운영 파일 저장소 규칙을 적용한다', () => {
-    process.execArgv.push('--env-file=../config/.env')
-    try { expect(() => loadConfig({ ...base, FILE_STORAGE_ROOT: './storage' })).toThrow(/FILE_STORAGE_ROOT/) }
-    finally { process.execArgv.pop() }
+    for (const args of [['--env-file=../config/.env'], ['--env-file', '../config/.env']]) {
+      process.execArgv.push(...args)
+      try { expect(() => loadConfig({ ...base, FILE_STORAGE_ROOT: './storage' })).toThrow(/FILE_STORAGE_ROOT/) }
+      finally { process.execArgv.splice(-args.length) }
+    }
+  })
+
+  it('Windows에서는 다른 드라이브와 UNC 공유를 app 밖으로 인정한다', () => {
+    const app = 'C:\\mes-hub\\app'
+    expect(isOutsideApp(app, 'D:\\mes-hub\\storage', win32)).toBe(true)
+    expect(isOutsideApp(app, '\\\\server\\share\\storage', win32)).toBe(true)
+    expect(isOutsideApp(app, 'C:\\mes-hub\\storage', win32)).toBe(true)
+    expect(isOutsideApp(app, 'C:\\mes-hub\\app\\storage', win32)).toBe(false)
+    expect(isOutsideApp(app, app, win32)).toBe(false)
   })
 
   it('LLM은 기본적으로 mock이며 live에는 URL과 키가 필요하다', () => {

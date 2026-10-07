@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 
 const repo = resolve(import.meta.dirname, '..')
@@ -11,6 +11,20 @@ function run(command, commandArgs, options = {}) {
   if (result.status !== 0) throw new Error(`${command} ${commandArgs.join(' ')} 실패 (${result.status})`)
 }
 function stamp() { return new Date().toISOString().replace(/[:.]/g, '-') }
+function verifyCopy(source, destination) {
+  const before = lstatSync(source)
+  const after = lstatSync(destination)
+  if (before.isDirectory() !== after.isDirectory() || before.isFile() !== after.isFile() || before.isSymbolicLink() !== after.isSymbolicLink()) {
+    throw new Error(`배포 묶음 복사 검증 실패: ${source}`)
+  }
+  if (before.isDirectory()) {
+    const names = readdirSync(source).sort()
+    if (JSON.stringify(names) !== JSON.stringify(readdirSync(destination).sort())) throw new Error(`배포 묶음 복사 검증 실패: ${source}`)
+    for (const name of names) verifyCopy(join(source, name), join(destination, name))
+  } else if (before.isFile() && before.size !== after.size) {
+    throw new Error(`배포 묶음 복사 검증 실패: ${source}`)
+  }
+}
 function service(home, action, disabled) {
   const exe = join(home, 'service', 'mes-hub.exe')
   if (disabled) { console.log(`서비스 ${action} 생략 (--no-service)`); return false }
@@ -37,11 +51,12 @@ const noService = args.includes('--no-service')
 const dryRun = args.includes('--dry-run')
 const init = args.includes('--init')
 const rollback = args.includes('--rollback')
-if (init && rollback) throw new Error('--init과 --rollback은 함께 쓸 수 없습니다')
+const start = args.includes('--start')
+if ([init, rollback, start].filter(Boolean).length > 1) throw new Error('--init, --rollback, --start는 함께 쓸 수 없습니다')
 if (bundle === app || home === repo || home.startsWith(`${repo}/`)) throw new Error('운영 HOME은 저장소 밖이어야 합니다')
 
 if (dryRun) {
-  console.log(`예정: ${init ? 'config/service/storage/logs/backups 초기 구조 생성' : rollback ? '서비스 중지 → 최근 app 백업 복원 → 서비스 시작 → 상태 확인' : 'release 빌드 → 서비스 중지 → app 백업 → 새 app 복사 → DB 마이그레이션 → 서비스 시작 → 상태 확인'}`)
+  console.log(`예정: ${init ? 'config/service/storage/logs/backups 초기 구조 생성' : rollback ? '서비스 중지 → 최근 app 백업 복원 → DB 복원 안내 (--start 별도)' : start ? '서비스 시작 → 상태 확인' : 'release 빌드 → 새 app 임시 복사·검증 → 서비스 중지 → app 백업·교체 → DB 마이그레이션 → 서비스 시작 → 상태 확인'}`)
   console.log(`HOME: ${home}`)
   console.log(`설정 유지: ${join(home, 'config', '.env')}`)
   process.exit(0)
@@ -53,7 +68,12 @@ if (rollback) {
   service(home, 'stop', noService)
   if (existsSync(app)) renameSync(app, join(backups, `failed-${stamp()}`))
   renameSync(join(backups, latest), app)
-  console.log('DB는 자동으로 되돌리지 않습니다. 필요한 경우 별도 DB 백업을 복원하세요.')
+  console.log('DB는 자동으로 되돌리지 않습니다. 필요한 경우 별도 DB 백업을 복원한 뒤 --start로 서비스를 시작하세요.')
+  process.exit(0)
+}
+
+if (start) {
+  if (!existsSync(app)) throw new Error('시작할 app이 없습니다')
   if (service(home, 'start', noService)) await health(home)
   process.exit(0)
 }
@@ -84,9 +104,17 @@ for (const path of ['api/dist/main.js', 'api/dist/db/migrate.js', '.env.example'
 }
 for (const dir of ['config', 'service', 'storage', 'logs', 'backups']) mkdirSync(join(home, dir), { recursive: true })
 if (!existsSync(join(home, 'config', '.env'))) throw new Error('config/.env가 없습니다. 먼저 --init을 실행하세요')
-service(home, 'stop', noService)
-if (existsSync(app)) renameSync(app, join(backups, `app-${stamp()}`))
-cpSync(bundle, app, { recursive: true })
+const staged = mkdtempSync(join(home, 'app-staging-'))
+try {
+  cpSync(bundle, staged, { recursive: true })
+  verifyCopy(bundle, staged)
+  for (const path of ['api/dist/main.js', 'api/dist/db/migrate.js', '.env.example', 'deploy/windows/mes-hub.xml']) {
+    if (!existsSync(join(staged, path))) throw new Error(`배포 묶음 복사 검증 실패: ${path}`)
+  }
+  service(home, 'stop', noService)
+  if (existsSync(app)) renameSync(app, join(backups, `app-${stamp()}`))
+  renameSync(staged, app)
+} finally { rmSync(staged, { recursive: true, force: true }) }
 run(process.execPath, ['--env-file', join(home, 'config', '.env'), join(app, 'api', 'dist', 'db', 'migrate.js')], { cwd: app })
 if (service(home, 'start', noService)) await health(home)
 console.log(`배포 완료: ${app}`)

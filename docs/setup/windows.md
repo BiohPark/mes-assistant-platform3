@@ -271,9 +271,9 @@ pnpm test:db
 
 서비스를 멈추고 DB와 `FILE_STORAGE_ROOT`를 백업한 뒤, `D:\mes-hub\app`에서 `node --env-file=D:\mes-hub\config\.env api\dist\db\import.js C:\path\bundle.json --dry-run --default-owner <loginId>`로 테이블별 건수를 확인한다. 소유자가 빈 행이 있으면 `--default-owner`에 기존 또는 함께 가져올 사용자의 로그인 ID를 지정한다. 이어서 `--dry-run` 없이 실행한다. bundle 크기 제한은 기본 64 MiB이며 `IMPORT_BUNDLE_MAX_BYTES`로 조정한다. macOS/Node 22에서 60 MiB bundle의 최대 RSS는 382 MiB였다. Windows에서는 별도 측정 전까지 이관 프로세스에 최소 512 MiB의 여유 메모리를 둔다. 다중 SR 업무는 기본적으로 목록을 보여 주고 중단한다. 가장 이른 SR만 연결하고 나머지 연결의 권한·조회 손실을 수용할 때만 `--allow-multi-sr`를 지정한다. 새 계정의 로그인 ID와 임시 비밀번호는 실행 종료 시 표준 출력에 한 번만 표시되므로 각 사용자에게 안전한 경로로 전달한다. 같은 ID의 에이전트·코드는 서버 값을 유지하고 차이를 보고한다. 기존 콘텐츠와 그 하위 행의 내용·관계가 다르거나 누락되면 전체 이관을 중단한다.
 
-업데이트 전 외부 쓰기를 멈추고 **DB와 storage를 백업**한다. 저장소에서 `git pull` 후 `pnpm deploy:local -- --home D:\mes-hub --dry-run`으로 작업을 확인하고, `pnpm deploy:local -- --home D:\mes-hub`을 실행한다. 도구는 release 빌드 → 서비스 중지 → 기존 `app`을 `backups\app-<시각>`으로 이동 → 새 묶음 복사 → `config\.env`로 마이그레이션 → 서비스 시작 → `/api/health` 확인 순서로 진행한다. 서비스가 없으면 중지·시작 안내만 출력한다. 서비스 제어를 건너뛸 때는 `--no-service`를 붙인다.
+업데이트 전 외부 쓰기를 멈추고 **DB와 storage를 백업**한다. 저장소에서 `git pull` 후 `pnpm deploy:local -- --home D:\mes-hub --dry-run`으로 작업을 확인하고, `pnpm deploy:local -- --home D:\mes-hub`을 실행한다. 도구는 release 빌드 → 새 묶음을 임시 폴더에 복사·검증 → 서비스 중지 → 기존 `app`을 `backups\app-<시각>`으로 이동하고 새 묶음으로 교체 → `config\.env`로 마이그레이션 → 서비스 시작 → `/api/health` 확인 순서로 진행한다. 복사·검증 실패 시 기존 `app`과 롤백 백업은 그대로 둔다. 서비스가 없으면 중지·시작 안내만 출력한다. 서비스 제어를 건너뛸 때는 `--no-service`를 붙인다.
 
-문제가 생기면 `pnpm deploy:local -- --home D:\mes-hub --rollback`으로 최신 `app` 백업을 복원한다. **DB는 자동 복원되지 않는다.** 스키마가 바뀐 릴리스는 업데이트 직전의 DB 백업도 함께 복원한 뒤 서비스를 시작한다. 설정·파일 저장소·로그는 롤백 중에도 유지된다.
+문제가 생기면 `pnpm deploy:local -- --home D:\mes-hub --rollback`으로 서비스를 중지하고 최신 `app` 백업을 복원한다. **DB는 자동 복원되지 않고 서비스도 시작하지 않는다.** 필요한 경우 업데이트 직전의 DB 백업을 복원한 뒤 `pnpm deploy:local -- --home D:\mes-hub --start`로 서비스를 시작하고 상태를 확인한다. 설정·파일 저장소·로그는 롤백 중에도 유지된다.
 
 IIS를 TLS 앞단으로 둘 때만 ARR 리버스 프록시가 전체 요청을 이 서비스로 넘기게 한다. `/api/events`의 SSE 응답 버퍼링을 끄고 프록시 유휴 시간을 스트림 유지 시간보다 길게 설정한다. 이벤트 브로드캐스트는 **단일 api 인스턴스** 전제다. IIS 없이도 api 포트로 직접 접속할 수 있다.
 
