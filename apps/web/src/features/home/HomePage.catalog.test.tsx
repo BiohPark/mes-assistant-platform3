@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MeContext } from '@/app/auth'
@@ -126,4 +126,25 @@ describe('HomePage catalog', () => {
     await user.click(screen.getByRole('button', { name: '다시 시도' }))
     expect(await screen.findByText('분석 도우미')).toBeInTheDocument()
   })
+})
+
+
+it('허브 링크도 내부 ID fallback을 숨기고 연결된 모델·직접 링크만 연다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/assistants') return jsonResponse(200, [
+      { ...items[0], id: 'internal-unmapped', name: '연결 없음' },
+      { ...items[0], id: 'mapped-agent', name: '모델 연결', modelId: 'model A' },
+      { ...items[0], id: 'direct-agent', name: '직접 연결', link1: 'https://direct.test' },
+    ])
+    if (url === '/api/settings') return jsonResponse(200, { link1Rule: 'https://owui.test/?model={modelId}&agent={assistantId}' })
+    return jsonResponse(200, [])
+  }))
+  renderHome()
+  await screen.findByText('연결 없음')
+  await waitFor(() => expect(screen.getAllByRole('link', { name: 'OpenWebUI' })).toHaveLength(2))
+  const unmappedCard = screen.getByText('연결 없음').closest<HTMLDivElement>('div.group')!
+  expect(within(unmappedCard).queryByText('OpenWebUI')).not.toBeInTheDocument()
+  expect(screen.getAllByRole('link', { name: 'OpenWebUI' }).map((link) => link.getAttribute('href'))).toEqual([
+    'https://owui.test/?model=model%20A&agent=mapped-agent', 'https://direct.test',
+  ])
 })

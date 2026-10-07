@@ -47,6 +47,27 @@ export const en = {
     assistantLabel: 'Select an agent',
     assistantInvalid: 'Choose an agent from the list',
   },
+  admin: {
+    createAssistantProposal: 'Register agent: {name} — {level1} › {level2}',
+    createAssistantExample: 'Register an agent named Label Validation Helper, Record › Label',
+    connectedModel: 'Connected model',
+    openWebUiLink: 'OpenWebUI link (leave blank to use the configured rule)',
+    documentUrl: 'Documentation URL',
+    firstQuestionExamples: 'First question examples',
+    agentModel: '{name} connected model',
+    modelSaved: 'Connected model saved',
+  },
+  chat: {
+    openWebUi: 'Open in OpenWebUI',
+    documentation: 'Documentation',
+    referenceConversation: 'Reference conversation · Matching tags will select it as a primary input.',
+  },
+  sr: {
+    requester: 'Requester',
+    requesterStatus: 'Requester {name} · Status {status}',
+    attachment: 'Attachment {number}',
+    sharedFile: 'Shared file {number}',
+  },
   nav: {
     hub: 'Agent Hub',
     sr: 'Submit SR',

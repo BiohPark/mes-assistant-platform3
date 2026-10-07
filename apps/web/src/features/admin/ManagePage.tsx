@@ -1,3 +1,5 @@
+import { useT } from '@/i18n'
+import { useModelList } from '@/lib/useModelList'
 import { newId } from '@/lib/ids'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -10,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createAssistant, createCode, deleteAssistant, listManagedCodes, saveOrder, updateAssistant, updateCode, uploadImage, type AssistantInput } from '@/api/admin'
 
-const empty = (ownerId: string): AssistantInput => ({ id: '', name: '', level1CodeId: '', level2CodeId: '', summary: '', ownerId,
+const empty = (ownerId: string): AssistantInput => ({ name: '', level1CodeId: '', level2CodeId: '', summary: '', ownerId,
   status: 'open', usageExample: '', modelId: '', link1: '', docUrl: '', expectedInputs: [], expectedOutputs: [],
   checklistTemplate: [['입력 자료 선택', true], ['결과 검토', true], ['산출물 저장', false]].map(([label, required]) => ({ id: newId(), label: String(label), required: Boolean(required) })) })
 const fromAssistant = (row: Assistant): AssistantInput => ({ id: row.id, name: row.name, level1CodeId: row.level1CodeId,
@@ -35,6 +37,8 @@ function ImageDropzone({ assistant, onSaved }: { assistant: Assistant; onSaved: 
 }
 
 function AssistantEditorSheet({ assistant, onClose, onSaved }: { assistant?: Assistant; onClose: () => void; onSaved: () => void }) {
+  const t = useT()
+  const { models } = useModelList()
   const users = useUsers()
   const codes = useQuery({ queryKey: ['managed-codes'], queryFn: listManagedCodes }).data ?? []
   const [form, setForm] = useState<AssistantInput>(() => assistant ? fromAssistant(assistant) : empty(users[0]?.id ?? ''))
@@ -62,17 +66,18 @@ function AssistantEditorSheet({ assistant, onClose, onSaved }: { assistant?: Ass
     <div className="h-full w-full max-w-xl overflow-auto bg-background p-5 shadow-xl">
       <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">{assistant ? '에이전트 수정' : '새 에이전트'}</h2><Button variant="ghost" onClick={onClose}>닫기</Button></div>
       <form onSubmit={(event) => void submit(event)} className="space-y-3 text-sm">
-        <label className="block">ID<Input value={form.id} disabled={!!assistant} onChange={(event) => change('id', event.target.value)} required maxLength={191} /></label>
         <label className="block">이름<Input value={form.name} onChange={(event) => change('name', event.target.value)} required /></label>
         {(['assistant_level1', 'assistant_level2'] as const).map((group) => <label key={group} className="block">{group === 'assistant_level1' ? '분류 1' : '분류 2'}
           <select className="w-full rounded-lg border bg-background p-2" value={group === 'assistant_level1' ? form.level1CodeId : form.level2CodeId} required onChange={(event) => change(group === 'assistant_level1' ? 'level1CodeId' : 'level2CodeId', event.target.value)}>
             <option value="">선택</option>{codeOptions(group).map((item) => <option key={item.id} value={item.id}>{item.name}{item.active ? '' : ' (비활성)'}</option>)}
           </select></label>)}
         <label className="block">담당자<select className="w-full rounded-lg border bg-background p-2" value={form.ownerId} required onChange={(event) => change('ownerId', event.target.value)}><option value="">선택</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
-        <label className="block">상태<select className="w-full rounded-lg border bg-background p-2" value={form.status} onChange={(event) => change('status', event.target.value as AssistantInput['status'])}>{['open', 'developing', 'testing', 'retired'].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-        {(['modelId', 'link1', 'docUrl'] as const).map((field) => <label key={field} className="block">{field}<Input value={form[field] ?? ''} onChange={(event) => change(field, event.target.value)} /></label>)}
+        <label className="block">상태<select className="w-full rounded-lg border bg-background p-2" value={form.status} onChange={(event) => change('status', event.target.value as AssistantInput['status'])}>{(['open', 'developing', 'testing', 'retired'] as const).map((value) => <option key={value} value={value}>{t(`status.assistant.${value}`)}</option>)}</select></label>
+        <label className="block">{t('admin.connectedModel')}<Input list="assistant-models" value={form.modelId ?? ''} onChange={(event) => change('modelId', event.target.value)} /><datalist id="assistant-models">{models.map((model) => <option key={model} value={model} />)}</datalist></label>
+        <label className="block">{t('admin.openWebUiLink')}<Input value={form.link1 ?? ''} onChange={(event) => change('link1', event.target.value)} /></label>
+        <label className="block">{t('admin.documentUrl')}<Input value={form.docUrl ?? ''} onChange={(event) => change('docUrl', event.target.value)} /></label>
         <label className="block">설명<textarea className="w-full rounded-lg border bg-background p-2" value={form.summary} onChange={(event) => change('summary', event.target.value)} /></label>
-        <label className="block">사용 예시<textarea className="w-full rounded-lg border bg-background p-2" value={form.usageExample} onChange={(event) => change('usageExample', event.target.value)} /></label>
+        <label className="block">{t('admin.firstQuestionExamples')}<textarea className="w-full rounded-lg border bg-background p-2" value={form.usageExample} onChange={(event) => change('usageExample', event.target.value)} /></label>
         {(['expectedInputs', 'expectedOutputs'] as const).map((field) => <label key={field} className="block">{field === 'expectedInputs' ? '기대 입력' : '기대 출력'} (줄마다 한 항목)<textarea className="w-full rounded-lg border bg-background p-2" value={form[field].join('\n')} onChange={(event) => change(field, lines(event.target.value))} /></label>)}
         <fieldset className="space-y-2"><legend>체크리스트 기본값</legend>{form.checklistTemplate.map((item, index) => <div key={item.id} className="flex gap-2"><Input aria-label={`체크리스트 ${index + 1}`} value={item.label} onChange={(event) => change('checklistTemplate', form.checklistTemplate.map((entry, i) => i === index ? { ...entry, label: event.target.value } : entry))} /><label className="flex items-center gap-1"><input type="checkbox" checked={item.required} onChange={(event) => change('checklistTemplate', form.checklistTemplate.map((entry, i) => i === index ? { ...entry, required: event.target.checked } : entry))} />필수</label><Button type="button" variant="outline" disabled={index === 0} onClick={() => moveChecklist(index, -1)}>↑</Button><Button type="button" variant="outline" disabled={index === form.checklistTemplate.length - 1} onClick={() => moveChecklist(index, 1)}>↓</Button><Button type="button" variant="outline" onClick={() => change('checklistTemplate', form.checklistTemplate.filter((_, i) => i !== index))}>삭제</Button></div>)}<Button type="button" variant="outline" onClick={() => change('checklistTemplate', [...form.checklistTemplate, { id: newId(), label: '', required: false }])}>항목 추가</Button></fieldset>
         {assistant && <ImageDropzone assistant={assistant} onSaved={onSaved} />}
@@ -83,8 +88,9 @@ function AssistantEditorSheet({ assistant, onClose, onSaved }: { assistant?: Ass
 }
 
 function AssistantTable({ rows, onEdit, onSaved }: { rows: Assistant[]; onEdit: (row: Assistant) => void; onSaved: () => void }) {
+  const t = useT()
   const [saving, setSaving] = useState<string | null>(null)
-  return <div className="overflow-x-auto rounded-xl border bg-card"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/50"><tr><th className="p-2">에이전트</th><th className="p-2">분류</th><th className="p-2">상태</th><th className="p-2">모델 ID</th><th className="p-2">관리</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="border-b last:border-0"><td className="flex items-center gap-2 p-2"><AssistantAvatar assistant={row} size="sm" /><span>{row.name}<small className="block text-muted-foreground">{row.id}</small></span></td><td className="p-2">{row.level1} / {row.level2}</td><td className="p-2">{row.status}</td><td className="p-2"><Input aria-label={`${row.name} 모델 ID`} defaultValue={row.modelId ?? ''} key={`${row.id}-${row.revision}`} onBlur={(event) => { const modelId = event.target.value.trim(); if (modelId === (row.modelId ?? '')) return; setSaving(row.id); void updateAssistant(row.id, { modelId }).then(() => { onSaved(); toast.success('모델 ID를 저장했습니다') }, (error: unknown) => toast.error(error instanceof Error ? error.message : '저장 실패')).finally(() => setSaving(null)) }} disabled={saving === row.id} /></td><td className="p-2"><Button size="sm" variant="outline" onClick={() => onEdit(row)}>편집</Button></td></tr>)}</tbody></table></div>
+  return <div className="overflow-x-auto rounded-xl border bg-card"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/50"><tr><th className="p-2">에이전트</th><th className="p-2">분류</th><th className="p-2">상태</th><th className="p-2">{t('admin.connectedModel')}</th><th className="p-2">관리</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="border-b last:border-0"><td className="flex items-center gap-2 p-2"><AssistantAvatar assistant={row} size="sm" /><span>{row.name}</span></td><td className="p-2">{row.level1} / {row.level2}</td><td className="p-2">{t(`status.assistant.${row.status}`)}</td><td className="p-2"><Input aria-label={t('admin.agentModel', { name: row.name })} defaultValue={row.modelId ?? ''} key={`${row.id}-${row.revision}`} onBlur={(event) => { const modelId = event.target.value.trim(); if (modelId === (row.modelId ?? '')) return; setSaving(row.id); void updateAssistant(row.id, { modelId }).then(() => { onSaved(); toast.success(t('admin.modelSaved')) }, (error: unknown) => toast.error(error instanceof Error ? error.message : '저장 실패')).finally(() => setSaving(null)) }} disabled={saving === row.id} /></td><td className="p-2"><Button size="sm" variant="outline" onClick={() => onEdit(row)}>편집</Button></td></tr>)}</tbody></table></div>
 }
 
 function SortableAssistantGrid({ rows, onSaved }: { rows: Assistant[]; onSaved: () => void }) {
@@ -114,7 +120,7 @@ export function ManagePage() {
   const [editor, setEditor] = useState<Assistant | 'new' | null>(null)
   const [search, setSearch] = useState('')
   const sorted = [...rows].sort((a, b) => a.order - b.order)
-  const filtered = sorted.filter((row) => `${row.name} ${row.id} ${row.level1} ${row.level2}`.toLowerCase().includes(search.toLowerCase()))
+  const filtered = sorted.filter((row) => `${row.name} ${row.level1} ${row.level2}`.toLowerCase().includes(search.toLowerCase()))
   const refresh = () => { void client.invalidateQueries({ queryKey: ['assistants'] }) }
   useEffect(() => { if (editor === 'new' && users.length === 0) void client.invalidateQueries({ queryKey: ['users'] }) }, [editor, users.length, client])
   return <><TopBar title="에이전트 관리" actions={<Button size="sm" onClick={() => setEditor('new')}>새 에이전트</Button>} /><div className="flex-1 space-y-4 overflow-auto p-4 lg:p-6"><div className="flex gap-2"><Button variant={tab === 'assistants' ? 'default' : 'outline'} onClick={() => setTab('assistants')}>에이전트</Button><Button variant={tab === 'codes' ? 'default' : 'outline'} onClick={() => setTab('codes')}>분류 코드</Button></div>{tab === 'codes' ? <CodesPanel /> : <><Input className="max-w-xs" placeholder="에이전트 검색" value={search} onChange={(event) => setSearch(event.target.value)} /><AssistantTable rows={filtered} onEdit={setEditor} onSaved={refresh} />{!search && <SortableAssistantGrid rows={sorted} onSaved={refresh} />}</>}</div>{editor && <AssistantEditorSheet key={editor === 'new' ? 'new' : editor.id} assistant={editor === 'new' ? undefined : editor} onClose={() => setEditor(null)} onSaved={refresh} />}</>

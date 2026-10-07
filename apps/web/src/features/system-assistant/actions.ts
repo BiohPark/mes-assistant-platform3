@@ -1,3 +1,4 @@
+import { createT, type Translator } from '@/i18n'
 import { newId } from '@/lib/ids'
 import { normalizeTag } from '@mes/domain'
 import { SystemAssistantToolArgs } from '@mes/contracts'
@@ -20,7 +21,7 @@ interface ToolCall { id: string; name: string; arguments: string }
 const str = (value: unknown, fallback = ''): string => typeof value === 'string' ? value : fallback
 const strList = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 
-export function toProposal(call: ToolCall): ProposedAction {
+export function toProposal(call: ToolCall, t: Translator = createT('ko')): ProposedAction {
   let parsed: unknown
   try {
     parsed = JSON.parse(call.arguments || '{}') as unknown
@@ -33,7 +34,7 @@ export function toProposal(call: ToolCall): ProposedAction {
   const tags = strList(args.tags)
   const summaries: Record<string, () => string> = {
     start_conversation: () => `대화 시작: ${str(args.assistantName)}${args.title ? ` — "${str(args.title)}"` : ''}${tags.length ? ` · 태그 ${tags.join(', ')}` : ''}${args.priority ? ` · 우선순위 ${str(args.priority)}` : ''}`,
-    create_assistant: () => `에이전트 등록: ${str(args.name)} (${str(args.id)}) — ${str(args.level1)} › ${str(args.level2)}${args.summary ? ` · 설명 ${str(args.summary)}` : ''}${args.ownerName ? ` · 담당자 ${str(args.ownerName)}` : ''}${args.modelId ? ` · 모델 ${str(args.modelId)}` : ''}`,
+    create_assistant: () => `${t('admin.createAssistantProposal', { name: str(args.name), level1: str(args.level1), level2: str(args.level2) })}${args.summary ? ` · 설명 ${str(args.summary)}` : ''}${args.ownerName ? ` · 담당자 ${str(args.ownerName)}` : ''}${args.modelId ? ` · 모델 ${str(args.modelId)}` : ''}`,
     add_tag: () => `태그 추가: ${str(args.taskCode)} ← ${normalizeTag(str(args.tag))}`,
   }
   return { id: call.id, name: call.name, args, summary: summaries[call.name]?.() ?? call.name }
@@ -66,7 +67,7 @@ export async function applyProposal(actor: Actor, proposal: ProposedAction): Pro
         if (!level1 || !level2) return { ok: false, message: '분류 코드를 찾을 수 없습니다. 관리에서 분류를 확인하세요.' }
         const owner = users.find((row) => row.name === str(args.ownerName))
         const created = await createAssistant({
-          id: str(args.id), name: str(args.name, '새 에이전트'), level1CodeId: level1.id, level2CodeId: level2.id,
+          ...(typeof args.id === 'string' && { id: args.id }), name: str(args.name, '새 에이전트'), level1CodeId: level1.id, level2CodeId: level2.id,
           summary: str(args.summary), ownerId: owner?.id ?? actor.userId, status: 'developing', usageExample: '',
           expectedInputs: [], expectedOutputs: [], checklistTemplate: [['입력 자료 선택', true], ['결과 검토', true], ['산출물 저장', false]].map(([label, required]) => ({ id: newId(), label: String(label), required: Boolean(required) })), modelId: str(args.modelId) || undefined,
         })

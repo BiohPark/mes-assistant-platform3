@@ -54,6 +54,7 @@ export const CARD_CLASS = 'group relative flex aspect-square flex-col gap-3 roun
  */
 export function AssistantCard({ row, owner, baseUrl, link1Rule }: AssistantCardProps) {
   const a = row.assistant
+  const link1 = assistantLink1(baseUrl, a, link1Rule)
   const retired = a.status === 'retired'
   return (
     <div className={cn(CARD_CLASS, 'hover:-translate-y-0.5 hover:shadow-md')} style={{ borderTopColor: a.color, borderTopWidth: 3 }}>
@@ -72,8 +73,8 @@ export function AssistantCard({ row, owner, baseUrl, link1Rule }: AssistantCardP
             </Link>
           </Button>
         )}
-        {(a.link1 || link1Rule || baseUrl) && <Button size="xs" variant="ghost" asChild>
-          <a href={assistantLink1(baseUrl, a, link1Rule)} target="_blank" rel="noreferrer" title="OpenWebUI에서 열기">
+        {link1 && <Button size="xs" variant="ghost" asChild>
+          <a href={link1} target="_blank" rel="noreferrer" title="OpenWebUI에서 열기">
             <ExternalLink data-icon="inline-start" />
             OpenWebUI
           </a>

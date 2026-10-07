@@ -2,7 +2,7 @@ import { newId } from '@/lib/ids'
 import { useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, Info } from 'lucide-react'
+import { ArrowRight, ExternalLink } from 'lucide-react'
 import { normalizeTag, tagKey } from '@mes/domain'
 import { TopBar } from '@/app/TopBar'
 import { useActor, useUserMap } from '@/app/hooks'
@@ -15,7 +15,10 @@ import { listAssistants } from '@/lib/catalog'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { AssistantStatusBadge } from '@/components/StatusBadges'
 import { TagInput } from '@/components/TagInput'
-import { Markdown } from '@/components/Markdown'
+import { Chip } from '@/components/Chip'
+import { useT } from '@/i18n'
+import { assistantLink1 } from '@/lib/links'
+import { getSettings } from '@/api/admin'
 import { UserAvatar } from '@/components/UserAvatar'
 import { Composer, type PendingAttachment } from '@/features/chat/Composer'
 import { suggestionsFrom } from '@/features/chat/suggestions'
@@ -23,6 +26,8 @@ import { toast } from 'sonner'
 
 /** 카드 클릭은 초안만 연다. 첫 전송 때 대화와 스레드가 생성된다. */
 export function DraftConversationPage() {
+  const t = useT()
+  const link1Rule = useQuery({ queryKey: ['settings'], queryFn: getSettings }).data?.link1Rule
   const { assistantId } = useParams()
   const [params] = useSearchParams()
   const navigate = useNavigate()
@@ -32,8 +37,6 @@ export function DraftConversationPage() {
   const { data: assistants, isPending } = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
   const assistant = assistants?.find((item) => item.id === assistantId)
   const [tags, setTags] = useState(() => params.getAll('tag').map(normalizeTag).filter(Boolean))
-  const [assigneeId, setAssigneeId] = useState('')
-  const [showUsage, setShowUsage] = useState(false)
   const [busy, setBusy] = useState(false)
   const sending = useRef(false)
   const created = useRef<{ id: string; code: string; threadId: string } | null>(null)
@@ -41,6 +44,7 @@ export function DraftConversationPage() {
 
   if (isPending) return <><TopBar title="새 대화" /><div className="p-6 text-sm text-muted-foreground">불러오는 중…</div></>
   if (!assistant) return <Navigate to="/" replace />
+  const link1 = assistantLink1('', assistant, link1Rule)
   const retired = assistant.status === 'retired'
   const owner = users.get(assistant.ownerId)
 
@@ -52,7 +56,7 @@ export function DraftConversationPage() {
       const creationKey = `mes-draft-create:${assistant.id}:${refId ?? ''}`
       const stored = sessionStorage.getItem(creationKey)
       const attempt = stored ? JSON.parse(stored) as { key: string; body: StartConversationInput } : {
-        key: newId(), body: { assistantId: assistant.id, tags, ...(assigneeId && { assigneeIds: [assigneeId] }), ...(refId && { referenceTaskId: refId }), ...(discussion && !attachments.length && text.trim() && { firstMessage: text.trim() }) },
+        key: newId(), body: { assistantId: assistant.id, tags, ...(refId && { referenceTaskId: refId }), ...(discussion && !attachments.length && text.trim() && { firstMessage: text.trim() }) },
       }
       if (!created.current) {
         sessionStorage.setItem(creationKey, JSON.stringify(attempt))
@@ -98,6 +102,11 @@ export function DraftConversationPage() {
             <div className="min-w-0 flex-1">
               <div className="text-xs text-muted-foreground">{assistant.level1} › {assistant.level2}</div>
               <div className="flex flex-wrap items-center gap-2"><h1 className="text-lg font-semibold">{assistant.name}</h1><AssistantStatusBadge status={assistant.status} /></div>
+              {(assistant.modelId || link1 || assistant.docUrl) && <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {assistant.modelId && <Chip label={assistant.modelId} title={t('admin.connectedModel')} className="font-mono" />}
+                {link1 && <Chip label={t('chat.openWebUi')}><a href={link1} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">{t('chat.openWebUi')}<ExternalLink aria-hidden className="size-3" /></a></Chip>}
+                {assistant.docUrl && <Chip label={t('chat.documentation')}><a href={assistant.docUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">{t('chat.documentation')}<ExternalLink aria-hidden className="size-3" /></a></Chip>}
+              </div>}
               <p className="mt-1 text-sm text-muted-foreground">{assistant.summary}</p>
               {owner && <span className="mt-2 inline-flex items-center gap-1 text-xs"><UserAvatar user={owner} size="xs" />{owner.name}</span>}
             </div>
@@ -110,14 +119,7 @@ export function DraftConversationPage() {
           <div className="space-y-1.5"><div className="text-xs font-medium">태그</div>
             <TagInput tags={tags} suggest={suggest} onAdd={(value) => setTags((current) => current.some((item) => tagKey(item) === tagKey(value)) ? current : [...current, value])} onRemove={(value) => setTags((current) => current.filter((item) => item !== value))} placeholder="SR 번호·키워드" />
           </div>
-          {users.size > 0 && <label className="flex items-center gap-2 text-xs font-medium">담당자
-            <select className="h-8 rounded-lg border bg-background px-2" value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}>
-              <option value="">나에게 배정</option>
-              {[...users.values()].map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
-            </select>
-          </label>}
-          {refId && <div className="rounded-xl border border-amber-300 bg-amber-50/40 p-3 text-xs">참조 대화 {refId} · 같은 태그가 있으면 주 입력으로 선택합니다.</div>}
-          {assistant.usageExample && <div className="rounded-xl border"><button type="button" className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-medium" onClick={() => setShowUsage(!showUsage)}><Info className="size-3.5" />사용법 {showUsage ? '접기' : '보기'}</button>{showUsage && <Markdown content={assistant.usageExample} className="border-t px-3 py-2 text-sm" />}</div>}
+          {refId && <div className="rounded-xl border border-amber-300 bg-amber-50/40 p-3 text-xs">{t('chat.referenceConversation')}</div>}
           {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">폐기된 에이전트입니다. <Link to="/" className="underline">다른 에이전트 고르기</Link></div>}
         </div>
       </div>

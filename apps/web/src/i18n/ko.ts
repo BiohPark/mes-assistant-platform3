@@ -45,6 +45,27 @@ export const ko = {
     assistantLabel: '에이전트 선택',
     assistantInvalid: '목록에서 에이전트를 선택하세요',
   },
+  admin: {
+    createAssistantProposal: '에이전트 등록: {name} — {level1} › {level2}',
+    createAssistantExample: '에이전트 등록: 이름 라벨 검증 도우미, Record › 라벨',
+    connectedModel: '연결 모델',
+    openWebUiLink: 'OpenWebUI 링크(비우면 설정 규칙)',
+    documentUrl: '설명 문서 주소',
+    firstQuestionExamples: '첫 질문 예시',
+    agentModel: '{name} 연결 모델',
+    modelSaved: '연결 모델을 저장했습니다',
+  },
+  chat: {
+    openWebUi: 'OpenWebUI에서 열기',
+    documentation: '설명 문서',
+    referenceConversation: '참조 대화 · 같은 태그가 있으면 주 입력으로 선택합니다.',
+  },
+  sr: {
+    requester: '요청자',
+    requesterStatus: '요청자 {name} · 상태 {status}',
+    attachment: '첨부 {number}',
+    sharedFile: '공유 파일 {number}',
+  },
   nav: {
     hub: '에이전트 허브',
     sr: 'SR 접수',

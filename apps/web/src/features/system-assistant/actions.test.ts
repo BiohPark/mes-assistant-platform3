@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { jsonResponse } from '@/test/render'
+import { createT } from '@/i18n'
 import { applyProposal, toProposal } from './actions'
 
 const assistant = { id: 'fds', name: 'FDS 작성 도우미', level1: 'SDLC', level2: 'FDS', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, ownerId: 'u', status: 'open', usageExample: '', expectedInputs: [], expectedOutputs: [], color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-01-01', updatedAt: '2026-01-01', revision: 0 }
@@ -13,7 +14,7 @@ afterEach(() => vi.unstubAllGlobals())
 describe('system assistant proposals', () => {
   it('도구별 요약을 만들고 잘못된 JSON도 안전하게 표시한다', () => {
     expect(toProposal({ id: '1', name: 'start_conversation', arguments: '{"assistantName":"FDS 작성 도우미","title":"테스트","tags":["SR-2026-0001"]}' }).summary).toContain('FDS 작성 도우미 — "테스트" · 태그 SR-2026-0001')
-    expect(toProposal({ id: '2', name: 'create_assistant', arguments: '{"id":"label-check","name":"라벨 검증","level1":"Record","level2":"라벨"}' }).summary).toContain('라벨 검증 (label-check) — Record › 라벨')
+    expect(toProposal({ id: '2', name: 'create_assistant', arguments: '{"id":"label-check","name":"라벨 검증","level1":"Record","level2":"라벨"}' }).summary).toContain('라벨 검증 — Record › 라벨')
     expect(toProposal({ id: '3', name: 'add_tag', arguments: '{"taskCode":"WK-2026-0006","tag":"#release"}' }).summary).toContain('WK-2026-0006 ← release')
     expect(toProposal({ id: '4', name: 'add_tag', arguments: '{bad' }).args).toEqual({})
   })
@@ -77,4 +78,31 @@ describe('system assistant proposals', () => {
     const result = await applyProposal({ userId: 'u' }, toProposal({ id: '2', name: 'create_assistant', arguments: '{"id":"label","name":"라벨","level1":"Record","level2":"라벨"}' }))
     expect(result).toEqual({ ok: false, message: '권한이 없습니다' })
   })
+})
+
+
+it.each([undefined, 'legacy-id'])('에이전트 제안 ID는 선택이며 요약에는 표시하지 않는다: %s', async (id) => {
+  let body: Record<string, unknown> | undefined
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/codes') return jsonResponse(200, codes)
+    if (url === '/api/catalog/users') return jsonResponse(200, [])
+    if (url === '/api/assistants' && init?.method === 'POST') {
+      body = JSON.parse(String(init.body)) as Record<string, unknown>
+      return jsonResponse(201, { ...assistant, id: id ?? 'a-123456789abc', name: '새 도우미' })
+    }
+    return jsonResponse(404)
+  }))
+  const proposal = toProposal({ id: 'create', name: 'create_assistant', arguments: JSON.stringify({ id, name: '새 도우미', level1: 'Record', level2: '라벨' }) })
+  expect(proposal.invalidReason).toBeUndefined()
+  expect(proposal.summary).toBe('에이전트 등록: 새 도우미 — Record › 라벨')
+  expect(await applyProposal({ userId: 'u' }, proposal)).toMatchObject({ ok: true, link: '/assistants/manage' })
+  expect(body).toMatchObject({ name: '새 도우미', ownerId: 'u', level1CodeId: 'l1', level2CodeId: 'l2' })
+  if (id) expect(body?.id).toBe(id)
+  else expect(body).not.toHaveProperty('id')
+})
+
+
+it('에이전트 등록 제안 요약은 영어 번역을 사용할 수 있다', () => {
+  const proposal = toProposal({ id: 'create', name: 'create_assistant', arguments: '{"name":"Helper","level1":"Record","level2":"Label"}' }, createT('en'))
+  expect(proposal.summary).toBe('Register agent: Helper — Record › Label')
 })

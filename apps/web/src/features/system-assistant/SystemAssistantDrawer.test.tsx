@@ -33,3 +33,18 @@ it('서랍을 닫으면 진행 중인 요청의 신호를 중단한다', async (
   fireEvent.click(screen.getByRole('button', { name: '시스템 assistant 닫기' }))
   await waitFor(() => expect(signal?.aborted).toBe(true))
 })
+
+
+it('에이전트 등록 예시와 제안 인자에서 내부 ID를 표시하지 않는다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/system-assistant/model'
+    ? Response.json({ mode: 'mock', model: 'mock' })
+    : Response.json({ text: '확인하세요', toolCalls: [{ id: 'create', name: 'create_assistant', arguments: '{"id":"internal-agent-uuid","name":"새 도우미","level1":"Record","level2":"라벨"}' }] })))
+  useUiStore.getState().setAssistantOpen(true)
+  const { container } = renderWithProviders(<SystemAssistantDrawer />)
+  expect(screen.getByRole('button', { name: /에이전트 등록/ })).not.toHaveTextContent('ID')
+  fireEvent.click(screen.getByRole('button', { name: /에이전트 등록/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '적용' })).toBeInTheDocument())
+  fireEvent.click(screen.getByText('인자 보기'))
+  expect(container).not.toHaveTextContent('internal-agent-uuid')
+  expect(container.querySelector('pre')).toHaveTextContent('새 도우미')
+})

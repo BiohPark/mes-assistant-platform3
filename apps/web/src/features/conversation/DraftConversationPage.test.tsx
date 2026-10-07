@@ -23,7 +23,7 @@ function ReconnectingConversation() {
   return <div>대화로 이동</div>
 }
 
-it('선택한 담당자를 대화 생성 요청에 포함한다', async () => {
+it('담당자 칸 없이 첫 전송하고 서버 소유자 기본 배정을 사용한다', async () => {
   let body: Record<string, unknown> | undefined
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/assistants') return Response.json([assistant])
@@ -32,11 +32,13 @@ it('선택한 담당자를 대화 생성 요청에 포함한다', async () => {
     return Response.json([])
   }))
   mountDraft()
-  fireEvent.change(await screen.findByLabelText('담당자'), { target: { value: 'other' } })
+  await screen.findByText('도우미')
+  expect(screen.queryByLabelText('담당자')).not.toBeInTheDocument()
+  expect(screen.queryByRole('combobox', { name: '담당자' })).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '배정할 업무' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
-  await waitFor(() => expect(body).toMatchObject({ assistantId: 'a', assigneeIds: ['other'] }))
+  await waitFor(() => expect(body).toEqual({ assistantId: 'a', tags: [], firstMessage: '배정할 업무' }))
 })
 
 it('reconnects the first AI request with the same body and key after losing the response', async () => {
@@ -215,4 +217,28 @@ it('retries failed input pinning without uploading the file again', async () => 
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(requests).toBe(1))
   expect({ creations, uploads, pins }).toEqual({ creations: 1, uploads: 1, pins: 2 })
+})
+
+
+it.each([
+  { modelId: 'model A', link1: undefined, docUrl: 'https://docs.test', rule: 'https://owui.test/?model={modelId}&agent={assistantId}', expected: 'https://owui.test/?model=model%20A&agent=a' },
+  { modelId: undefined, link1: 'https://direct.test', docUrl: undefined, rule: undefined, expected: 'https://direct.test' },
+  { modelId: undefined, link1: undefined, docUrl: undefined, rule: 'https://owui.test/?agent={assistantId}', expected: undefined },
+  { modelId: 'model A', link1: undefined, docUrl: undefined, rule: undefined, expected: undefined },
+])('사용법 대신 설정된 링크 칩만 표시한다: $expected', async ({ modelId, link1, docUrl, rule, expected }) => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/assistants') return Response.json([{ ...assistant, modelId, link1, docUrl, usageExample: '- "첫 질문 예시"' }])
+    if (url === '/api/settings') return Response.json({ link1Rule: rule })
+    return Response.json([])
+  }))
+  const { container } = mountDraft('/new/a?ref=internal-reference-uuid')
+  await screen.findByText('도우미')
+  if (expected) expect(await screen.findByRole('link', { name: 'OpenWebUI에서 열기' })).toHaveAttribute('href', expected)
+  else expect(screen.queryByRole('link', { name: 'OpenWebUI에서 열기' })).not.toBeInTheDocument()
+  if (modelId) expect(screen.getByText(modelId).closest('[data-slot="chip"]')).not.toBeNull()
+  if (docUrl) expect(screen.getByRole('link', { name: '설명 문서' })).toHaveAttribute('href', docUrl)
+  else expect(screen.queryByRole('link', { name: '설명 문서' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '사용법 보기' })).not.toBeInTheDocument()
+  expect(container).not.toHaveTextContent('internal-reference-uuid')
+  expect(screen.getByRole('button', { name: '첫 질문 예시' })).toBeInTheDocument()
 })
