@@ -63,7 +63,7 @@ export async function seedCatalog(db: Db, { devUserPassword }: { devUserPassword
     const [intake] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'srIntakeAssistantId')).for('update')
     if (!intake) await insertUnlessDuplicate(() => tx.insert(appSetting).values({ key: 'srIntakeAssistantId', value: SR_INTAKE_ASSISTANT_ID }))
     else if (!intake.value) await tx.update(appSetting).set({ value: SR_INTAKE_ASSISTANT_ID }).where(eq(appSetting.key, 'srIntakeAssistantId'))
-    if (passwordHash) for (const user of [
+    if (passwordHash && process.env.SEED_DEV_ACCOUNTS === 'true') for (const user of [
       { loginId: 'dev-owner', name: '개발 관리자', isSystemOwner: true, isBusinessOwner: false },
       { loginId: 'dev-member', name: '개발 담당자', isSystemOwner: false, isBusinessOwner: false },
       { loginId: 'dev-requester', name: '개발 요청자', isSystemOwner: false, isBusinessOwner: true },

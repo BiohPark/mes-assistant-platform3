@@ -2,9 +2,8 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Link, useSearchParams } from 'react-router'
-import { createSr, deleteSr, getSr, listSr, uploadSrFile } from '@/api/sr'
+import { createSr, deleteSr, getSr, getSrIntakeAssistant, listSr, uploadSrFile } from '@/api/sr'
 import { getMessages } from '@/api/tasks'
-import { getSettings } from '@/api/admin'
 import { useChat } from '@/features/chat/useChat'
 import { TopBar } from '@/app/TopBar'
 import { Button } from '@/components/ui/button'
@@ -19,7 +18,7 @@ export function SrIntakePage() {
   const me = useMe()
   const client = useQueryClient()
   const { data: rows = [] } = useQuery({ queryKey: ['sr'], queryFn: listSr })
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: getSettings })
+  const { data: settings } = useQuery({ queryKey: ['sr-intake-assistant'], queryFn: getSrIntakeAssistant })
   const [params, setParams] = useSearchParams()
   const selectedId = params.get('id') ?? ''
   const setSelectedId = (id: string) => setParams(id ? { id } : {})

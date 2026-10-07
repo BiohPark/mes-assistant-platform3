@@ -46,7 +46,7 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
       <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h1>
       {actions}
       {!requesterOnly && <Button variant="ghost" size="icon-sm" aria-label="시스템 assistant 열기" onClick={() => setAssistantOpen(true)}><Sparkles /></Button>}
-      <NotificationBell />
+      {!requesterOnly && <NotificationBell />}
       {isOwner && llmStatus.data && <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{llmStatus.data.mode === 'mock' ? 'Mock' : 'Live'}</span>}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

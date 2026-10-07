@@ -13,7 +13,7 @@ import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
 import { EventsService } from '../events/events.service.js'
 import { SrService } from './sr.service.js'
-import { assertFileAccess, assertSrAccess, assertTaskAccess } from './access.js'
+import { assertFileAccess, assertSrAccess, assertTaskAccess, assertThreadAccess } from './access.js'
 import { EventsController } from '../events/events.controller.js'
 import { EventEmitter } from 'node:events'
 import type { Response } from 'express'
@@ -46,9 +46,10 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
 
   it('limits requester listing and details to their own SR', async () => {
     const mine = await sr.create('requester')
-    await sr.create('other')
+    const another = await sr.create('other')
     expect((await sr.list('requester')).map((x) => x.id)).toEqual([mine.id])
     await expect(sr.get('other', mine.id)).rejects.toMatchObject({ status: 403 })
+    await expect(assertThreadAccess(db, 'requester', another.threadId)).rejects.toMatchObject({ status: 403 })
     expect(await sr.list('staff')).toHaveLength(2)
   })
 
@@ -89,6 +90,8 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     expect((await sr.get('requester', draft.id)).conversations).toEqual([])
     expect((await sr.get('staff', draft.id)).conversations).toMatchObject([{ id: first.id }])
     await expect(assertTaskAccess(db, 'requester', first.id)).rejects.toMatchObject({ status: 403 })
+    expect(await assertThreadAccess(db, 'requester', draft.threadId)).toBeUndefined()
+    await expect(assertThreadAccess(db, 'requester', first.threadId!)).rejects.toMatchObject({ status: 403 })
     expect(await sr.startTask('staff', draft.id, { assistantId })).toMatchObject({ candidates: [expect.objectContaining({ id: first.id })] })
   })
 
@@ -185,12 +188,12 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     await expect(assertFileAccess(db, 'requester', privateId)).rejects.toMatchObject({ status: 403 })
   })
 
-  it('allows a requester to open an active assistant image', async () => {
+  it('denies a requester an active assistant image outside their SR', async () => {
     const fileId = 'sr-active-image'
     await db.insert(fileObject).values({ id: fileId, kind: 'assistant_image', originalName: 'image.png', mime: 'image/png',
       sizeBytes: 1, sha256: 'c'.repeat(64), storageKey: fileId, source: 'upload', version: 1, uploadedBy: 'staff' })
     await db.update(assistant).set({ imageFileId: fileId, status: 'open' }).where(eq(assistant.id, assistantId))
-    await assertFileAccess(db, 'other', fileId)
+    await expect(assertFileAccess(db, 'other', fileId)).rejects.toMatchObject({ status: 403 })
     await db.update(assistant).set({ imageFileId: null }).where(eq(assistant.id, assistantId))
     await expect(assertFileAccess(db, 'other', fileId)).rejects.toMatchObject({ status: 403 })
   })

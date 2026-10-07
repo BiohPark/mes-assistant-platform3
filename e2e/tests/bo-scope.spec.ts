@@ -18,6 +18,13 @@ test('BO 로그인은 SR 접수로 가고 허브 접근도 SR 접수로 돌린�
   await expect(page).toHaveURL(/\/sr$/)
   await expect(page.getByRole('link', { name: 'SR 접수' })).toBeVisible()
   await expect(page.getByRole('link', { name: '에이전트 허브' })).toHaveCount(0)
+  for (const path of ['/api/assistants', '/api/assistants/stats', '/api/catalog/users', '/api/codes', '/api/settings', '/api/tasks', '/api/reports']) {
+    expect((await page.request.get(path)).status(), path).toBe(403)
+  }
+  expect((await page.request.post('/api/tasks', { data: { assistantId: 'urs-analyst' } })).status()).toBe(403)
+  const intake = await page.request.get('/api/service-requests/intake-assistant')
+  expect(intake.status()).toBe(200)
+  expect(await intake.json()).toHaveProperty('srIntakeAssistantId')
   await page.goto('/')
   await expect(page).toHaveURL(/\/sr$/)
 })

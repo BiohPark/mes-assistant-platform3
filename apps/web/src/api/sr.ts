@@ -12,6 +12,7 @@ async function request<T>(path: string, method = 'GET', body?: unknown): Promise
 }
 const path = (id: string) => `/${encodeURIComponent(id)}`
 export const listSr = () => request<SrDetail[]>('')
+export const getSrIntakeAssistant = () => request<{ srIntakeAssistantId: string | null }>('/intake-assistant')
 export const getSr = (id: string) => request<SrDetail>(path(id))
 export const createSr = () => request<SrDetail>('', 'POST')
 export const deleteSr = (id: string) => request<void>(path(id), 'DELETE')

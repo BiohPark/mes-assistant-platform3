@@ -27,7 +27,7 @@ function AppContent() {
   if (me.mustChangePassword) return <PasswordPage />
   return (
     <>
-      <LiveEvents />
+      {!requesterOnly && <LiveEvents />}
         <div className="flex h-full bg-muted/30">
           <aside className="flex w-14 shrink-0 flex-col items-center border-r bg-sidebar py-3 lg:w-52 lg:items-stretch lg:px-3">
             <div className="mb-4 flex items-center gap-2 px-1 lg:px-1">

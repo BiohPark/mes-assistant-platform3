@@ -36,7 +36,7 @@ export default defineConfig({
       cwd: resolve(import.meta.dirname, '..'),
       // api는 --env-file보다 프로세스 환경이 우선 — live면 테스트 전용 가짜 서버로 향하게 한다
       // 요청 한도는 64 KiB로 낮춘다 — 한도 초과 시나리오(S6·E4)가 270k자 대신 70k자로 충분해져 느린 CI 러너에서 큰 메시지 렌더 비용이 준다
-      env: { REQUEST_BUDGET_BYTES: '65536', DEV_USER_PASSWORD: 'e2e-password-1234', ...(llmMode === 'live' ? { LLM_MODE: 'live', LLM_PRESET: 'openwebui', LLM_BASE_URL: `http://127.0.0.1:${fakePort}`, LLM_API_KEY: 'e2e-fake-key' } : llmMode ? { LLM_MODE: llmMode } : {}) },
+      env: { REQUEST_BUDGET_BYTES: '65536', DEV_USER_PASSWORD: 'e2e-password-1234', SEED_DEV_ACCOUNTS: 'true', ...(llmMode === 'live' ? { LLM_MODE: 'live', LLM_PRESET: 'openwebui', LLM_BASE_URL: `http://127.0.0.1:${fakePort}`, LLM_API_KEY: 'e2e-fake-key' } : llmMode ? { LLM_MODE: llmMode } : {}) },
       url: `http://localhost:${apiPort}/api/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
