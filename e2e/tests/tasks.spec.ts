@@ -6,6 +6,7 @@ async function signUp(page: import('@playwright/test').Page, id: string) {
   await page.goto('/signup')
   await page.getByLabel('ID').fill(id)
   await page.getByLabel('비밀번호', { exact: true }).fill(password)
+  await page.getByLabel('이름').fill('가상 사용자')
   await page.getByLabel('비밀번호 확인').fill(password)
   await page.getByRole('button', { name: '회원가입' }).click()
   await expect(page).toHaveURL(/\/$/) // 세션 쿠키가 잡힌 뒤(허브 도착) 다음 이동 — 곧바로 goto하면 로그인 전에 이동해 /login으로 튕긴다

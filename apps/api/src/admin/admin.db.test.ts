@@ -170,6 +170,11 @@ describe('SR 접수 에이전트 보호 (데모 테스트 4건)', () => {
     expect(await verifyPassword('new-password-1234', changed!.passwordHash!)).toBe(true)
     expect(await db.select().from(appSession).where(eq(appSession.userId, 'member'))).toEqual([])
   })
+  it('사용자 이름을 바꾸면 머리글자도 갱신한다', async () => {
+    const accounts = new AccountsService(db)
+    await accounts.name('member', '김 담당')
+    expect((await db.select().from(appUser).where(eq(appUser.id, 'member')))[0]).toMatchObject({ name: '김 담당', initials: '김' })
+  })
   it('사용자를 비활성화하면 기존 세션을 없애고 새 세션을 인증하지 않는다', async () => {
     const accounts = new AccountsService(db)
     const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })

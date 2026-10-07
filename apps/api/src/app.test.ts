@@ -12,6 +12,7 @@ import { SESSION_STORE, type AuthUser, type SessionStore } from './auth/session.
 import { USER_DIRECTORY, type UserDirectory } from './auth/users.service.js'
 import { CONFIG, loadConfig } from './config/config.js'
 import { HEALTH_PROBE } from './health/health.controller.js'
+import { SrService } from './sr/sr.service.js'
 
 @Controller('test')
 class SoOnlyController {
@@ -34,13 +35,15 @@ const config = loadConfig({
 
 const member: AuthUser = { id: 'u-member', name: '이담당', role: '', isSystemOwner: false }
 const owner: AuthUser = { id: 'u-owner', name: '김운영', role: '', isSystemOwner: true }
+const businessOwner: AuthUser = { id: 'u-bo', name: '요청자', role: '', isSystemOwner: false, isBusinessOwner: true }
+const dualOwner: AuthUser = { ...businessOwner, id: 'u-dual', isSystemOwner: true }
 
 describe('api 골격', () => {
   let app: INestApplication
   let dbUp = true
   const sessions: SessionStore = {
     create: vi.fn(async () => ({ token: 'new-token', expiresAt: new Date(Date.now() + 3600_000) })),
-    resolve: vi.fn(async (token: string) => (token === 'member' ? member : token === 'owner' ? owner : null)),
+    resolve: vi.fn(async (token: string) => (token === 'member' ? member : token === 'owner' ? owner : token === 'bo' ? businessOwner : token === 'dual' ? dualOwner : null)),
     destroy: vi.fn(async () => undefined),
   }
   const oidc: OidcPort = {
@@ -61,6 +64,10 @@ describe('api 골격', () => {
       .overrideProvider(SESSION_STORE).useValue(sessions)
       .overrideProvider(OIDC).useValue(oidc)
       .overrideProvider(USER_DIRECTORY).useValue(users)
+      .overrideProvider(SrService).useValue({
+        intakeAssistant: async () => ({ srIntakeAssistantId: 'intake-1' }),
+        list: async () => [], create: async () => ({ id: 'sr-1', threadId: 'thread-1' }),
+      })
       .compile()
     app = configureApp(moduleRef.createNestApplication(), config)
     await app.init()
@@ -95,6 +102,24 @@ describe('api 골격', () => {
   it('역할 가드 — SO 전용 경로는 담당자에게 403', async () => {
     await request(app.getHttpServer()).get('/api/test/so').set('Cookie', 'mes_session=member').expect(403)
     await request(app.getHttpServer()).get('/api/test/so').set('Cookie', 'mes_session=owner').expect(200)
+  })
+
+  it('BO는 허브·업무·리포트 등 SR 밖 API를 403으로 거부하고 SO 겸임은 허용한다', async () => {
+    for (const [method, path] of [
+      ['get', '/api/assistants'], ['get', '/api/assistants/stats'], ['get', '/api/catalog/users'],
+      ['get', '/api/codes'], ['get', '/api/settings'], ['get', '/api/tasks'],
+      ['post', '/api/tasks'], ['get', '/api/tasks/task-id'], ['get', '/api/reports'],
+      ['get', '/api/tags/suggest'], ['get', '/api/notifications'], ['get', '/api/llm/models'],
+      ['get', '/api/events'], ['get', '/api/test/so'],
+    ] as const) {
+      await request(app.getHttpServer())[method](path).set('Cookie', 'mes_session=bo').expect(403)
+    }
+    await request(app.getHttpServer()).get('/api/llm/models').set('Cookie', 'mes_session=dual').expect(200)
+    await request(app.getHttpServer()).get('/api/me').set('Cookie', 'mes_session=bo').expect(200)
+    await request(app.getHttpServer()).get('/api/service-requests/intake-assistant').set('Cookie', 'mes_session=bo').expect(200, { srIntakeAssistantId: 'intake-1' })
+    await request(app.getHttpServer()).get('/api/service-requests').set('Cookie', 'mes_session=bo').expect(200, [])
+    await request(app.getHttpServer()).post('/api/service-requests').set('Cookie', 'mes_session=bo').expect(201, { id: 'sr-1', threadId: 'thread-1' })
+    await request(app.getHttpServer()).post('/api/auth/logout').set('Cookie', 'mes_session=bo').expect(204)
   })
 
   it('GET /api/auth/login — IdP로 보내고 검증값은 서명된 httpOnly 쿠키에', async () => {

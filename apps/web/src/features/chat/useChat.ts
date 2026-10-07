@@ -1,3 +1,4 @@
+import { newId } from '@/lib/ids'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cancelRequest, streamRequest } from '@/api/requests'
@@ -16,7 +17,7 @@ const save = (attempt: Attempt) => sessionStorage.setItem(storageKey(attempt.thr
 const clear = (attempt: Attempt) => sessionStorage.removeItem(storageKey(attempt.threadId))
 
 export function queueFirstRequest(threadId: string, body: { content: string; attachmentIds: string[]; oneShotFileIds: string[] }) {
-  const attempt = load(threadId) ?? { key: crypto.randomUUID(), threadId, text: body.content, attachmentIds: body.attachmentIds,
+  const attempt = load(threadId) ?? { key: newId(), threadId, text: body.content, attachmentIds: body.attachmentIds,
     path: `/threads/${encodeURIComponent(threadId)}/requests`, body }
   save(attempt)
 }
@@ -79,14 +80,14 @@ export function useChat(threadId?: string) {
     hasPendingAttempt: () => !!(threadId && load(threadId)),
     send: (content: string, attachmentIds: string[] = [], oneShotFileIds: string[] = []) => {
       if (!threadId) throw new Error('스레드가 없습니다')
-      const attempt = load(threadId) ?? { key: crypto.randomUUID(), threadId, text: content, attachmentIds,
+      const attempt = load(threadId) ?? { key: newId(), threadId, text: content, attachmentIds,
         path: `/threads/${encodeURIComponent(threadId)}/requests`, body: { content, attachmentIds, oneShotFileIds } }
       save(attempt)
       return consume(attempt)
     },
     retry: (requestId: string, options: { excludeFileIds?: string[]; forceInlineFileIds?: string[] } = {}) => {
       if (!threadId) throw new Error('스레드가 없습니다')
-      const attempt = load(threadId) ?? { key: crypto.randomUUID(), threadId, requestId, text: '', attachmentIds: [],
+      const attempt = load(threadId) ?? { key: newId(), threadId, requestId, text: '', attachmentIds: [],
         path: `/requests/${encodeURIComponent(requestId)}/retry`, body: options }
       save(attempt)
       return consume(attempt)

@@ -9,6 +9,24 @@ import { SESSION_COOKIE, SESSION_STORE, type AuthUser, type SessionStore } from 
 
 export type AuthedRequest = Request & { user?: AuthUser }
 
+function allowedBusinessOwnerRoute(method: string, path: string): boolean {
+  if (method === 'GET' && (path === '/api/me' || path === '/api/service-requests/intake-assistant')) return true
+  if (method === 'POST' && (path === '/api/auth/logout' || path === '/api/auth/password')) return true
+  if (method === 'PATCH' && path === '/api/users/me') return true
+  if (path === '/api/service-requests') return method === 'GET' || method === 'POST'
+  if (/^\/api\/service-requests\/[^/]+$/.test(path)) return method === 'GET' || method === 'DELETE'
+  if (/^\/api\/service-requests\/[^/]+\/draft$/.test(path)) return method === 'GET'
+  if (/^\/api\/service-requests\/[^/]+\/(?:submit|files)$/.test(path)) return method === 'POST'
+  if (/^\/api\/service-requests\/[^/]+\/(?:title|content)$/.test(path)) return method === 'PATCH'
+  if (/^\/api\/service-requests\/[^/]+\/results$/.test(path)) return method === 'GET'
+  if (/^\/api\/threads\/[^/]+\/messages$/.test(path)) return method === 'GET' || method === 'POST'
+  if (/^\/api\/threads\/[^/]+\/requests$/.test(path)) return method === 'POST'
+  if (/^\/api\/requests\/[^/]+$/.test(path)) return method === 'GET'
+  if (/^\/api\/requests\/[^/]+\/(?:cancel|retry)$/.test(path)) return method === 'POST'
+  if (/^\/api\/files\/[^/]+\/content$/.test(path)) return method === 'GET'
+  return false
+}
+
 /** 모든 경로는 기본으로 로그인 필요. @Public()만 예외. */
 @Injectable()
 export class SessionGuard implements CanActivate {
@@ -26,6 +44,9 @@ export class SessionGuard implements CanActivate {
     req.user = user
     if (user.mustChangePassword && !['/api/me', '/api/auth/password', '/api/auth/logout'].includes(req.path)) {
       throw new ForbiddenException({ code: 'PASSWORD_CHANGE_REQUIRED', message: '비밀번호 변경이 필요합니다' })
+    }
+    if (user.isBusinessOwner && !user.isSystemOwner && !allowedBusinessOwnerRoute(req.method, req.path)) {
+      throw new ForbiddenException('SR 접수 권한만 있습니다')
     }
     return true
   }

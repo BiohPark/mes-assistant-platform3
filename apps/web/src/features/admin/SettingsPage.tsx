@@ -5,7 +5,8 @@ import { TopBar } from '@/app/TopBar'
 import { useAssistants } from '@/app/hooks'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getSettings, listManagedUsers, saveSettings, setUserFlag, temporaryPassword, type Settings } from '@/api/admin'
+import { useMe } from '@/app/auth'
+import { getSettings, listManagedUsers, saveSettings, setUserFlag, setUserName, temporaryPassword, type ManagedUser, type Settings } from '@/api/admin'
 
 function SettingsForm({ initial }: { initial: Settings }) {
   const [form, setForm] = useState<Settings>(initial)
@@ -27,7 +28,16 @@ function SettingsForm({ initial }: { initial: Settings }) {
     <Button type="submit">설정 저장</Button>
   </form>
 }
+function UserNameEditor({ user, onSaved }: { user: ManagedUser; onSaved: () => void }) {
+  const [name, setName] = useState(user.name)
+  return <form onSubmit={(event) => { event.preventDefault(); void setUserName(user.id, name.trim()).then(() => { onSaved(); toast.success('이름을 저장했습니다') }, (error: unknown) => toast.error(error instanceof Error ? error.message : '변경 실패')) }} className="flex gap-1">
+    <Input aria-label={`${user.loginId ?? user.id} 이름`} value={name} onChange={(event) => setName(event.target.value)} required minLength={1} maxLength={40} className="w-36" />
+    <Button size="sm" variant="outline" type="submit">이름 저장</Button>
+  </form>
+}
 function UsersSection() {
+  const me = useMe()
+  const client = useQueryClient()
   const query = useQuery({ queryKey: ['managed-users'], queryFn: listManagedUsers })
   const [issued, setIssued] = useState<{ id: string; password: string } | null>(null)
   const change = (id: string, field: 'system-owner' | 'business-owner' | 'active', enabled: boolean) => {
@@ -35,6 +45,7 @@ function UsersSection() {
   }
   return <section className="space-y-3 rounded border bg-card p-4 text-sm"><h2 className="font-semibold">사용자·역할</h2>
     {query.data?.map((user) => <div key={user.id} className="flex flex-wrap items-center gap-3 border-b py-2"><span className="min-w-36">{user.name}<small className="block text-muted-foreground">{user.loginId ?? 'SSO'}</small></span>
+      <UserNameEditor user={user} onSaved={() => { void query.refetch(); if (user.id === me.id) void client.invalidateQueries({ queryKey: ['me'] }) }} />
       <label className="flex items-center gap-1"><input type="checkbox" checked={user.isSystemOwner} onChange={(event) => change(user.id, 'system-owner', event.target.checked)} />SO</label>
       <label className="flex items-center gap-1"><input type="checkbox" checked={user.isBusinessOwner} onChange={(event) => change(user.id, 'business-owner', event.target.checked)} />BO</label>
       <label className="flex items-center gap-1"><input type="checkbox" checked={user.active} onChange={(event) => change(user.id, 'active', event.target.checked)} />활성</label>

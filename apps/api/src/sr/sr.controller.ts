@@ -17,6 +17,8 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
 @Controller('service-requests')
 export class SrController {
   constructor(@Inject(SrService) private readonly sr: SrService) {}
+  @Get('intake-assistant')
+  intakeAssistant() { return this.sr.intakeAssistant() }
   @Get()
   list(@Req() req: AuthedRequest) { return this.sr.list(req.user!.id) }
   @Post()

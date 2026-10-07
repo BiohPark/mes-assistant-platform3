@@ -1,11 +1,12 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Inject, Param, Post, Put, Req } from '@nestjs/common'
-import { PasswordSchema } from '@mes/contracts'
+import { BadRequestException, Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Put, Req } from '@nestjs/common'
+import { PasswordSchema, UserNameSchema } from '@mes/contracts'
 import { z } from 'zod'
 import type { AuthedRequest } from '../auth/guards.js'
 import { Roles } from '../auth/roles.decorator.js'
 import { AccountsService } from './accounts.service.js'
 
 const booleanBody = z.object({ enabled: z.boolean() }).strict()
+const nameBody = z.object({ name: UserNameSchema }).strict()
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value)
   if (!result.success) throw new BadRequestException('요청 형식이 올바르지 않습니다')
@@ -17,6 +18,11 @@ export class AccountsController {
   @Get()
   @Roles('system_owner')
   users() { return this.accounts.users() }
+  @Patch('me')
+  ownName(@Req() req: AuthedRequest, @Body() body: unknown) { return this.accounts.name(req.user!.id, parse(nameBody, body).name) }
+  @Patch(':id')
+  @Roles('system_owner')
+  name(@Param('id') id: string, @Body() body: unknown) { return this.accounts.name(id, parse(nameBody, body).name) }
   @Put(':id/system-owner')
   @Roles('system_owner')
   @HttpCode(204)

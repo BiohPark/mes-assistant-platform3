@@ -1,3 +1,4 @@
+import { newId } from '@/lib/ids'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
@@ -46,8 +47,8 @@ export function SystemAssistantDrawer() {
 
   async function send(text: string) {
     if (waiting || !text.trim()) return
-    const user: LocalMessage = { id: crypto.randomUUID(), role: 'user', content: text.trim() }
-    const botId = crypto.randomUUID()
+    const user: LocalMessage = { id: newId(), role: 'user', content: text.trim() }
+    const botId = newId()
     setMessages((current) => [...current, user, { id: botId, role: 'assistant', content: '', waiting: true }])
     setWaiting(true)
     const controller = new AbortController()

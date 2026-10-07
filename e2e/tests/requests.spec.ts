@@ -5,6 +5,7 @@ async function setup(page: import('@playwright/test').Page) {
   await page.goto('/signup')
   await page.getByLabel('ID').fill(`e2e-request-${Date.now()}`)
   await page.getByLabel('비밀번호', { exact: true }).fill(password)
+  await page.getByLabel('이름').fill('가상 사용자')
   await page.getByLabel('비밀번호 확인').fill(password)
   await page.getByRole('button', { name: '회원가입' }).click()
   await expect(page).toHaveURL(/\/$/)

@@ -4,6 +4,7 @@ test('체크리스트 점검, 첨부 노트, 완료 리포트와 재개', async 
   await page.goto('/signup')
   await page.getByLabel('ID').fill(`s4-extra-${Date.now()}`)
   await page.getByLabel('비밀번호', { exact: true }).fill('e2e-password-1234')
+  await page.getByLabel('이름').fill('가상 사용자')
   await page.getByLabel('비밀번호 확인').fill('e2e-password-1234')
   await page.getByRole('button', { name: '회원가입' }).click()
   await expect(page).toHaveURL(/\/$/)

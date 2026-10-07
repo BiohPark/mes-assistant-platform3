@@ -100,6 +100,10 @@ export class SrService {
     })
     return this.get(actor, srId)
   }
+  async intakeAssistant() {
+    const [setting] = await this.db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'srIntakeAssistantId'))
+    return { srIntakeAssistantId: typeof setting?.value === 'string' ? setting.value : null }
+  }
   async list(actor: string) {
     const user = await this.user(actor)
     const rows = await this.db.select().from(serviceRequest)
