@@ -1,4 +1,4 @@
-import { resolve } from 'node:path'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { isIP } from 'node:net'
 import { z } from 'zod'
 import { AuthModeSchema, FILE_MAX_PER_REQUEST } from '@mes/contracts'
@@ -89,6 +89,14 @@ export function loadConfig(env: Record<string, string | undefined>) {
   }
   const e = parsed.data
   const appOrigin = e.APP_ORIGIN.replace(/\/+$/, '')
+  const configFile = process.execArgv.find((arg) => arg.startsWith('--env-file='))?.slice('--env-file='.length)
+  const configOutsideApp = configFile && (relative(process.cwd(), resolve(configFile)) === '..' || relative(process.cwd(), resolve(configFile)).startsWith(`..${sep}`))
+  if (env.NODE_ENV === 'production' || configOutsideApp) {
+    const relativeToApp = relative(process.cwd(), resolve(e.FILE_STORAGE_ROOT))
+    if (!isAbsolute(e.FILE_STORAGE_ROOT) || relativeToApp === '' || relativeToApp !== '..' && !relativeToApp.startsWith(`..${sep}`)) {
+      throw new Error('설정 오류 — FILE_STORAGE_ROOT: 운영에서는 app 밖의 절대 경로여야 합니다')
+    }
+  }
   return {
     port: e.API_PORT,
     appOrigin,

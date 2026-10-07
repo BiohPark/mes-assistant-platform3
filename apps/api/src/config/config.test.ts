@@ -72,6 +72,19 @@ describe('loadConfig', () => {
     expect(c.fileStorageRoot).not.toBe('storage')
   })
 
+  it('운영 환경은 app 안이나 상대 경로의 파일 저장소를 거부한다', () => {
+    const app = process.cwd()
+    expect(() => loadConfig({ ...base, NODE_ENV: 'production', FILE_STORAGE_ROOT: './storage' })).toThrow(/FILE_STORAGE_ROOT/)
+    expect(() => loadConfig({ ...base, NODE_ENV: 'production', FILE_STORAGE_ROOT: `${app}/storage` })).toThrow(/FILE_STORAGE_ROOT/)
+    expect(loadConfig({ ...base, NODE_ENV: 'production', FILE_STORAGE_ROOT: '/tmp/mes-hub-storage' }).fileStorageRoot).toBe('/tmp/mes-hub-storage')
+  })
+
+  it('app 밖의 설정 파일을 쓰면 NODE_ENV 없이도 운영 파일 저장소 규칙을 적용한다', () => {
+    process.execArgv.push('--env-file=../config/.env')
+    try { expect(() => loadConfig({ ...base, FILE_STORAGE_ROOT: './storage' })).toThrow(/FILE_STORAGE_ROOT/) }
+    finally { process.execArgv.pop() }
+  })
+
   it('LLM은 기본적으로 mock이며 live에는 URL과 키가 필요하다', () => {
     expect(loadConfig(base).llm).toEqual({ mode: 'mock', preset: 'openwebui', baseUrl: '', apiKey: '', defaultModel: undefined })
     expect(() => loadConfig({ ...base, LLM_MODE: 'live' })).toThrow(/LLM_BASE_URL.*LLM_API_KEY/)

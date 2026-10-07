@@ -4,6 +4,7 @@ import type { Response } from 'express'
 import type { Pool } from 'mysql2/promise'
 import { Public } from '../auth/public.decorator.js'
 import { DB_CLIENT } from '../db/db.module.js'
+import { buildInfo } from './build-info.js'
 
 export const HEALTH_PROBE = Symbol('HEALTH_PROBE')
 export type HealthProbe = () => Promise<boolean>
@@ -17,7 +18,7 @@ export class HealthController {
   async check(@Res({ passthrough: true }) res: Response): Promise<Health> {
     const up = await this.dbUp()
     res.status(up ? 200 : 503)
-    return up ? { status: 'ok', db: 'up' } : { status: 'degraded', db: 'down' }
+    return { status: up ? 'ok' : 'degraded', db: up ? 'up' : 'down', version: buildInfo().version, commit: buildInfo().commit }
   }
 }
 

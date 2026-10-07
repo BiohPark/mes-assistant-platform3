@@ -9,6 +9,7 @@ import { SESSION_COOKIE, SESSION_STORE, type SessionStore } from './auth/session
 import type { AppConfig } from './config/config.js'
 import { DB, type Db } from './db/db.module.js'
 import { appSetting } from './db/schema.js'
+import { recordServerError } from './admin/diagnostics.service.js'
 
 /** main.ts와 테스트가 같은 설정으로 앱을 꾸민다 */
 export function configureApp<T extends INestApplication>(app: T, config: AppConfig): T {
@@ -18,6 +19,10 @@ export function configureApp<T extends INestApplication>(app: T, config: AppConf
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('Referrer-Policy', 'same-origin')
     res.setHeader('X-Frame-Options', 'DENY')
+    next()
+  })
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    res.on('finish', () => recordServerError(typeof req.route?.path === 'string' ? req.route.path : '/api/(unmatched)', res.statusCode))
     next()
   })
   app.use(cookieParser(config.sessionSecret))

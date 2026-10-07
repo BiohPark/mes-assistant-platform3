@@ -79,9 +79,11 @@ describe('api 골격', () => {
   })
 
   it('GET /api/health — 로그인 없이, DB 상태 포함', async () => {
-    await request(app.getHttpServer()).get('/api/health').expect(200, { status: 'ok', db: 'up' })
+    const healthy = await request(app.getHttpServer()).get('/api/health').expect(200)
+    expect(healthy.body).toEqual({ status: 'ok', db: 'up', version: expect.any(String), commit: expect.any(String) })
     dbUp = false
-    await request(app.getHttpServer()).get('/api/health').expect(503, { status: 'degraded', db: 'down' })
+    const degraded = await request(app.getHttpServer()).get('/api/health').expect(503)
+    expect(degraded.body).toEqual({ status: 'degraded', db: 'down', version: expect.any(String), commit: expect.any(String) })
   })
 
   it('GET /api/me — 세션 없으면 401', async () => {
@@ -102,6 +104,14 @@ describe('api 골격', () => {
   it('역할 가드 — SO 전용 경로는 담당자에게 403', async () => {
     await request(app.getHttpServer()).get('/api/test/so').set('Cookie', 'mes_session=member').expect(403)
     await request(app.getHttpServer()).get('/api/test/so').set('Cookie', 'mes_session=owner').expect(200)
+  })
+
+  it('진단 API는 SO에게만 제공하고 세션 비밀을 노출하지 않는다', async () => {
+    await request(app.getHttpServer()).get('/api/admin/diagnostics').expect(401)
+    await request(app.getHttpServer()).get('/api/admin/diagnostics').set('Cookie', 'mes_session=member').expect(403)
+    const res = await request(app.getHttpServer()).get('/api/admin/diagnostics').set('Cookie', 'mes_session=owner').expect(200)
+    expect(res.body.app).toMatchObject({ version: expect.any(String), commit: expect.any(String) })
+    expect(JSON.stringify(res.body)).not.toContain(config.sessionSecret)
   })
 
   it('BO는 허브·업무·리포트 등 SR 밖 API를 403으로 거부하고 SO 겸임은 허용한다', async () => {
