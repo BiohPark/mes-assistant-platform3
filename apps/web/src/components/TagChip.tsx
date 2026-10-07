@@ -1,6 +1,7 @@
-import { X } from 'lucide-react'
 import { isSrTag, srTagColor } from '@mes/domain'
 import { cn } from '@/lib/utils'
+import { useT } from '@/i18n'
+import { Chip } from './Chip'
 
 interface TagChipProps {
   tag: string
@@ -16,6 +17,7 @@ interface TagChipProps {
  * 무지개색을 피하려고 배경은 항상 중립이다.
  */
 export function TagChip({ tag, onClick, onRemove, size = 'sm', className }: TagChipProps) {
+  const t = useT()
   const color = srTagColor(tag)
   const sr = isSrTag(tag)
   const body = (
@@ -25,26 +27,18 @@ export function TagChip({ tag, onClick, onRemove, size = 'sm', className }: TagC
     </>
   )
   return (
-    <span
-      className={cn(
-        'inline-flex max-w-full items-center gap-1 rounded-full border bg-muted/40 text-foreground/80',
-        size === 'xs' ? 'h-5 px-1.5 text-xs' : 'h-6 px-2 text-xs',
-        className,
-      )}
+    <Chip
+      label={tag}
+      variant="tag"
+      size={size}
+      className={className}
       style={color ? { borderColor: color } : undefined}
+      title={t('components.viewTag', { value: tag })}
+      onClick={onClick ? () => onClick(tag) : undefined}
+      onRemove={onRemove ? () => onRemove(tag) : undefined}
+      removeLabel={t('components.removeTag', { value: tag })}
     >
-      {onClick ? (
-        <button type="button" className="inline-flex min-w-0 items-center gap-1 hover:underline" onClick={() => onClick(tag)} title={`${tag} 태그 대화 보기`}>
-          {body}
-        </button>
-      ) : (
-        body
-      )}
-      {onRemove && (
-        <button type="button" aria-label={`${tag} 태그 제거`} className="-mr-0.5 rounded-full text-muted-foreground hover:text-foreground" onClick={() => onRemove(tag)}>
-          <X className="size-3" />
-        </button>
-      )}
-    </span>
+      {body}
+    </Chip>
   )
 }
