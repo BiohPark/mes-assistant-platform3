@@ -21,25 +21,57 @@ test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유',
     expect((await (await owner.request.get('/api/me')).json() as { roles: string[] }).roles).toContain('system_owner')
     const settings = await (await owner.request.get('/api/settings')).json() as { srIntakeAssistantId?: string | null }
     originalIntake = settings.srIntakeAssistantId ?? null
-    const assistants = await (await owner.request.get('/api/assistants')).json() as Array<{ id: string }>
+    const assistants = await (await owner.request.get('/api/assistants')).json() as Array<{ id: string; name: string; status: string }>
     expect(assistants.length).toBeGreaterThan(0)
-    expect((await owner.request.patch('/api/settings', { data: { srIntakeAssistantId: assistants[0]!.id } })).ok()).toBe(true)
+    const intakeAssistant = assistants.find(item => item.status === 'open')!
+    expect(intakeAssistant).toBeTruthy()
+    expect((await owner.request.patch('/api/settings', { data: { srIntakeAssistantId: intakeAssistant.id } })).ok()).toBe(true)
     expect((await owner.request.put(`/api/users/${requesterId}/business-owner`, { data: { enabled: true } })).status()).toBe(204)
     await page.request.post('/api/auth/logout')
     expect((await page.request.post('/api/auth/login', { data: { loginId, password } })).ok()).toBe(true)
 
+    let createCount = 0, intakeCount = 0, createKey = ''
+    page.on('request', request => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/service-requests') {
+        createCount++; createKey = request.headers()['idempotency-key'] ?? ''
+      }
+    })
+    // 이 흐름은 접수 UI/저장 경계를 검증한다. LLM 스트리밍 자체는 requests-live에서 검증한다.
+    await page.route('**/api/threads/*/requests', async route => {
+      intakeCount++
+      const threadId = new URL(route.request().url()).pathname.split('/')[3]!
+      const body = route.request().postDataJSON() as { content: string; attachmentIds: string[] }
+      expect(route.request().headers()['idempotency-key']).toBeTruthy()
+      const sent = await page.request.post(`/api/threads/${threadId}/messages`, { data: { content: body.content, kind: 'discussion', attachmentIds: body.attachmentIds } })
+      expect(sent.ok()).toBe(true)
+      await route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: started\ndata: {"requestId":"e2e-intake","replyMessageId":"e2e-reply"}\n\nevent: completed\ndata: {}\n\n' })
+    })
     await page.goto('/sr')
-    await page.getByRole('button', { name: '접수 대화 시작' }).click()
-    let rows: Array<{ id: string; threadId: string }> = []
-    await expect.poll(async () => { rows = await (await page.request.get('/api/service-requests')).json() as typeof rows; return rows.length }).toBeGreaterThan(0) // 생성이 끝날 때까지 — 클릭 직후 조회하면 비어 있다
-    srId = rows[0]!.id
-    await expect.poll(() => new URL(page.url()).searchParams.get('id')).toBe(srId)
-    const attachment = await page.request.post(`/api/service-requests/${srId}/files`, { multipart: { file: { name: 'sr-e2e.txt', mimeType: 'text/plain', buffer: Buffer.from('현장 알람') } } })
-    expect(attachment.ok()).toBe(true)
-    const fileId = ((await attachment.json()) as { id: string }).id
-    const sent = await page.request.post(`/api/threads/${rows[0]!.threadId}/messages`, { data: { content: '알람 필터 요청', kind: 'discussion', attachmentIds: [fileId] } })
-    expect(sent.ok()).toBe(true)
-    await expect.poll(async () => (await (await page.request.get(`/api/threads/${rows[0]!.threadId}/messages`)).json() as Array<{ attachmentIds: string[] }>)[0]?.attachmentIds).toEqual([fileId])
+    const before = await (await page.request.get('/api/service-requests?scope=mine')).json() as Array<{ id: string }>
+    await page.getByRole('button', { name: '새 요청' }).click()
+    expect(await (await page.request.get('/api/service-requests?scope=mine')).json()).toEqual(before)
+    expect(createCount).toBe(0)
+    await expect(page.getByRole('button', { name: '접수로 전환' })).toHaveCount(0)
+    await page.locator('input[type=file]').setInputFiles({ name: 'sr-e2e.txt', mimeType: 'text/plain', buffer: Buffer.from('현장 알람') })
+    await page.getByRole('textbox', { name: '접수 메시지' }).fill('알람 필터 요청')
+    await page.getByRole('textbox', { name: '접수 메시지' }).press('Enter')
+    await expect.poll(() => new URL(page.url()).searchParams.get('id')).toBeTruthy()
+    srId = new URL(page.url()).searchParams.get('id')!
+    await expect.poll(() => intakeCount).toBe(1)
+    expect(createCount).toBe(1)
+    expect(createKey).toBeTruthy()
+    const replay = await page.request.post('/api/service-requests', { headers: { 'Idempotency-Key': createKey } })
+    expect(replay.ok()).toBe(true)
+    expect(((await replay.json()) as { id: string }).id).toBe(srId)
+    const rows = await (await page.request.get('/api/service-requests?scope=mine')).json() as Array<{ id: string; threadId: string }>
+    expect(rows).toHaveLength(before.length + 1)
+    const row = rows.find(item => item.id === srId)!
+    await expect.poll(async () => (await (await page.request.get(`/api/threads/${row.threadId}/messages`)).json() as Array<unknown>).length).toBe(1)
+    const sentMessages = await (await page.request.get(`/api/threads/${row.threadId}/messages`)).json() as Array<{ attachmentIds: string[] }>
+    expect(sentMessages[0]!.attachmentIds).toHaveLength(1)
+    const fileId = sentMessages[0]!.attachmentIds[0]!
+    expect((await page.request.get(`/api/files/${fileId}`)).ok()).toBe(true)
+    await page.unroute('**/api/threads/*/requests')
     await page.reload()
     await expect(page.getByRole('region', { name: '접수 대화' })).toContainText('알람 필터 요청')
     await page.getByRole('button', { name: '접수로 전환' }).click()
@@ -51,10 +83,19 @@ test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유',
     srCode = submitted.code
     expect(submitted.code).toMatch(/^SR-\d{4}-\d{4}$/)
 
-    const started = await owner.request.post(`/api/service-requests/${srId}/tasks`, { data: { assistantId: assistants[0]!.id } })
-    expect(started.ok()).toBe(true)
-    const task = await started.json() as { id: string; threadId: string; tags: string[] }
-    taskId = task.id
+    await owner.goto('/sr/manage')
+    await owner.getByRole('textbox', { name: 'SR 검색' }).fill(srCode)
+    await owner.getByRole('button', { name: new RegExp(srCode) }).click()
+    const sheet = owner.getByRole('dialog')
+    await expect(sheet.getByRole('region', { name: '접수 대화' })).toContainText('알람 필터 요청')
+    await expect(sheet.getByText('sr-e2e.txt v1')).toBeVisible()
+    const picker = sheet.getByRole('combobox', { name: '연결 업무 에이전트' })
+    await picker.fill(intakeAssistant.name)
+    await owner.getByRole('option', { name: intakeAssistant.name, exact: true }).click() // 추천 목록은 포털로 시트 밖에 렌더링된다
+    await sheet.getByRole('button', { name: '연결 업무 시작' }).click()
+    await expect(owner).toHaveURL(/\/c\/[^/]+$/)
+    taskId = new URL(owner.url()).pathname.split('/')[2]!
+    const task = await (await owner.request.get(`/api/tasks/${taskId}`)).json() as { id: string; threadId: string; tags: string[] }
     expect(task.tags).toContain(submitted.code)
     const shared = await owner.request.post(`/api/tasks/${taskId}/outputs`, { data: { name: 'shared.md', content: '# 완료' } })
     const hidden = await owner.request.post(`/api/tasks/${taskId}/outputs`, { data: { name: 'internal.md', content: '# 내부' } })
