@@ -238,3 +238,15 @@ describe('SuggestInput', () => {
     expect(screen.getByRole('button', { name: 'Remove New' })).toBeInTheDocument()
   })
 })
+
+
+it('uses no plus on single selection/re-edit suggestions and plus Add only for multi input', async () => {
+  const { rerender } = render(<Single quickPicks={[choices[0]]} />)
+  expect(screen.getByRole('button', { name: 'Beta Alpha' }).querySelector('.lucide-plus')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Beta Alpha' }))
+  expect(screen.getByRole('button', { name: 'Beta Alpha 수정' }).querySelector('.lucide-plus')).toBeNull()
+  rerender(<Multi />)
+  expect(screen.getByRole('combobox')).toHaveAttribute('placeholder', '추가')
+  expect(screen.getByRole('combobox').parentElement?.querySelector('.lucide-plus')).not.toBeNull()
+  expect(screen.getByRole('button', { name: 'Alpha 제거' })).toBeInTheDocument()
+})

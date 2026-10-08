@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Plus } from 'lucide-react'
 import { useT } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { Chip } from './Chip'
@@ -149,6 +150,7 @@ export function SuggestInput(props: SuggestInputProps) {
             {selected.map(option => <Chip key={option.value} label={option.label} disabled={disabled} onRemove={() => remove(option)} onClick={props.mode === 'single' ? () => { setText(option.label); setActive(0); setInvalid(false); inputRef.current?.focus(); setOpen(true) } : undefined} actionLabel={props.mode === 'single' ? t('components.editValue', { value: option.label }) : undefined}>
               {option.avatar}<span className="truncate">{option.label}</span>
             </Chip>)}
+            {props.mode === 'multi' && <Plus aria-hidden className="size-3 shrink-0 text-muted-foreground" />}
             <input
               ref={inputRef}
               id={props.id}
@@ -163,7 +165,7 @@ export function SuggestInput(props: SuggestInputProps) {
               aria-invalid={!!error || props['aria-invalid']}
               aria-required={props['aria-required']}
               aria-describedby={[props['aria-describedby'], error ? errorId : undefined].filter(Boolean).join(' ') || undefined}
-              placeholder={props.placeholder ?? t('components.suggestPlaceholder')}
+              placeholder={props.placeholder ?? t(props.mode === 'multi' ? 'hub.addValue' : 'components.suggestPlaceholder')}
               onChange={event => { setText(event.target.value); setOpen(true); setActive(0); setInvalid(false) }}
               onFocus={() => setOpen(true)}
               onBlur={() => setOpen(false)}
@@ -196,7 +198,7 @@ export function SuggestInput(props: SuggestInputProps) {
           {ready && !options.length && <p className="px-2 py-1 text-xs text-muted-foreground">{t('components.noResults')}</p>}
         </PopoverContent>
       </Popover>
-      {!!picks.length && <div className="mt-1.5 flex flex-wrap gap-1">{picks.map(option => <Chip key={option.value} label={option.label} variant="suggestion" disabled={disabled} onClick={() => commit(option)}>{option.avatar}<span>{option.label}</span>{option.hint && <span className="text-muted-foreground">{option.hint}</span>}</Chip>)}</div>}
+      {!!picks.length && <div className="mt-1.5 flex flex-wrap gap-1">{picks.map(option => <Chip key={option.value} label={option.label} variant="suggestion" showAddIcon={props.mode === 'multi'} disabled={disabled} onClick={() => commit(option)}>{option.avatar}<span>{option.label}</span>{option.hint && <span className="text-muted-foreground">{option.hint}</span>}</Chip>)}</div>}
       {error && <p id={errorId} role="alert" className="mt-1.5 text-[13px] leading-5 text-destructive">{error}</p>}
     </div>
   )
