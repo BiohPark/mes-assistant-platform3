@@ -5,7 +5,7 @@ import type { LlmPorts } from '@mes/llm'
 import { remoteKey } from '@mes/llm'
 import type { AppConfig } from '../config/config.js'
 import type { Db } from '../db/db.module.js'
-import { appSetting, appUser, checklistItem, fileObject, fileRemoteRef, serviceRequest, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { appSetting, appUser, checklistItem, fileObject, fileRemoteRef, serviceRequest, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { toLlmSettings } from './presets.js'
 import { DbCatalogReader } from '../catalog/catalog.service.js'
@@ -58,7 +58,8 @@ export class DbLlmPorts implements LlmPorts {
     const [rows, assignees, tags, inputs, checks, threads, outputs] = await Promise.all([
       this.db.select().from(task).where(and(inArray(task.id, ids), isNull(task.deletedAt))),
       this.db.select().from(taskAssignee).where(inArray(taskAssignee.taskId, ids)),
-      this.db.select().from(taskTag).where(inArray(taskTag.taskId, ids)),
+      // 태그는 표기(label)로 — 키(소문자)로 주면 SR 코드가 binary 정렬의 service_request.code와 맞지 않아 연결 SR을 못 찾는다
+      this.db.select({ taskId: taskTag.taskId, label: tag.label }).from(taskTag).innerJoin(tag, eq(tag.key, taskTag.tagKey)).where(inArray(taskTag.taskId, ids)).orderBy(taskTag.addedAt),
       this.db.select().from(taskInput).where(inArray(taskInput.taskId, ids)),
       this.db.select().from(checklistItem).where(inArray(checklistItem.taskId, ids)),
       this.db.select().from(thread).where(inArray(thread.taskId, ids)),
@@ -70,7 +71,7 @@ export class DbLlmPorts implements LlmPorts {
       status: row.status as Task['status'], ownerId: row.ownerId,
       assigneeIds: assignees.filter((item) => item.taskId === row.id).map((item) => item.userId),
       priority: row.priority as Task['priority'], ...(row.dueDate ? { dueDate: row.dueDate } : {}),
-      tags: tags.filter((item) => item.taskId === row.id).map((item) => item.tagKey),
+      tags: tags.filter((item) => item.taskId === row.id).map((item) => item.label),
       checklist: checks.filter((item) => item.taskId === row.id).sort((a, b) => a.sortOrder - b.sortOrder).map((item) => ({
         id: item.id, label: item.label, required: item.required, checked: item.checked,
         ...(item.checkedBy ? { checkedBy: item.checkedBy } : {}), ...(item.checkedAt ? { checkedAt: iso(item.checkedAt) } : {}),
