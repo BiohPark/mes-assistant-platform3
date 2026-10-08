@@ -296,6 +296,10 @@ WHERE p.assistant_id IS NULL
 
 IIS를 TLS 앞단으로 둘 때만 ARR 리버스 프록시가 전체 요청을 이 서비스로 넘기게 한다. `/api/events`의 SSE 응답 버퍼링을 끄고 프록시 유휴 시간을 스트림 유지 시간보다 길게 설정한다. 이벤트 브로드캐스트는 **단일 api 인스턴스** 전제다. IIS 없이도 api 포트로 직접 접속할 수 있다.
 
+### 기본 모델 이전 (S7)
+
+S7부터 기본 모델은 서버 환경 파일의 `LLM_DEFAULT_MODEL`만 쓴다(전역 설정 화면은 읽기 전용 표시). 이전에 설정 화면에서 기본 모델을 저장해 썼다면, 업그레이드 전에 그 값을 확인해 환경 파일(운영은 `config\.env`)의 `LLM_DEFAULT_MODEL`에 옮긴다. 옮기지 않으면 플랫폼 기본값으로 바뀌며, 서버 기동 로그에 DB 값이 무시된다는 경고가 한 줄 남는다. DB의 옛 값은 지우지 않는다.
+
 ### 운영 값과 기록 보관 (S5 ②, D43)
 
 비기능 기본값은 PRD §6 제안값이며 모두 `.env`로 조정한다: 파일당 `FILE_MAX_BYTES`(50 MB)·요청당 첨부 `FILE_MAX_PER_REQUEST`(20)·동시 응답 `REQUEST_MAX_ACTIVE`(20, 넘으면 "잠시 후 다시" 429)·세션 `SESSION_TTL_HOURS`·`SESSION_IDLE_HOURS`(12)·로그인/가입 시도 제한 `AUTH_ATTEMPT_MAX`/`AUTH_ATTEMPT_WINDOW_MS`(실패 10회/10분, 인스턴스 메모리). IIS를 앞단에 두면 모든 요청이 프록시 주소로 보이므로 `TRUST_PROXY`에 **IIS 주소**(같은 서버면 `127.0.0.1`)를 지정해 사용자 IP를 쓰게 하고, IIS가 클라이언트가 보낸 `X-Forwarded-For`를 덮어쓰게 설정한다. 이때 API 포트(`API_PORT`)는 Windows 방화벽으로 외부 접근을 막는다 — 직접 접속이 열려 있으면 위조한 헤더로 시도 제한을 우회할 수 있다. 홉 수(`1`) 지정은 직접 접속이 막힌 경우에만 쓴다. `true`(모두 신뢰)는 거부되며 직접 노출 시에는 `false` 유지.
