@@ -15,11 +15,13 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { PriorityBadge, TaskStatusBadge } from '@/components/StatusBadges'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useT } from '@/i18n'
 import { RelatedStrip } from './RelatedStrip'
 import { TaskCompleteDialog } from './TaskCompleteDialog'
 
 export function TaskHeader({ task, assistant }: { task: Task; assistant: Assistant }) {
   const actor = useActor()
+  const t = useT()
   const query = useQueryClient()
   const suggest = useTagSuggest()
   const navigate = useNavigate()
@@ -38,13 +40,13 @@ export function TaskHeader({ task, assistant }: { task: Task; assistant: Assista
     const next = title.trim()
     if (next && next !== task.title) {
       try { await setTaskTitle(task.id, next, 'manual'); refresh() }
-      catch (error) { toast.error(error instanceof Error ? error.message : '제목을 저장하지 못했습니다') }
+      catch (error) { toast.error(error instanceof Error ? error.message : t('task.header.titleSaveFailed')) }
     } else setTitle(task.title)
     saving.current = false
   }
   async function changeStatus(status: TaskStatus, reason?: string) {
     try { await setTaskStatus(actor, task.id, status, reason ? { reason } : {}); refresh(); return true }
-    catch (error) { toast.error(error instanceof Error ? error.message : '상태를 바꾸지 못했습니다'); return false }
+    catch (error) { toast.error(error instanceof Error ? error.message : t('task.header.statusFailed')); return false }
   }
   async function remove() {
     const result = await deleteTask(task.id)
@@ -59,20 +61,20 @@ export function TaskHeader({ task, assistant }: { task: Task; assistant: Assista
       <TaskStatusBadge status={task.status} />
       <PriorityBadge priority={task.priority} />
       <div className="ml-auto flex items-center gap-1">
-        {task.status === 'done' ? <Button size="sm" variant="outline" onClick={() => setReopen(true)}><PlayCircle data-icon="inline-start" />다시 열기</Button> : <>
-          {task.status === 'on_hold' ? <Button size="sm" variant="outline" onClick={() => void changeStatus('in_progress')}><PlayCircle data-icon="inline-start" />재개</Button> : <Button size="sm" variant="outline" onClick={() => void changeStatus('on_hold')}><PauseCircle data-icon="inline-start" />보류</Button>}
-          <Button size="sm" onClick={() => setComplete(true)}><CheckCircle2 data-icon="inline-start" />업무 완료</Button>
+        {task.status === 'done' ? <Button size="sm" variant="outline" onClick={() => setReopen(true)}><PlayCircle data-icon="inline-start" />{t('task.header.reopen')}</Button> : <>
+          {task.status === 'on_hold' ? <Button size="sm" variant="outline" onClick={() => void changeStatus('in_progress')}><PlayCircle data-icon="inline-start" />{t('task.header.resume')}</Button> : <Button size="sm" variant="outline" onClick={() => void changeStatus('on_hold')}><PauseCircle data-icon="inline-start" />{t('task.header.hold')}</Button>}
+          <Button size="sm" onClick={() => setComplete(true)}><CheckCircle2 data-icon="inline-start" />{t('task.header.complete')}</Button>
         </>}
-        <Button variant="ghost" size="icon-sm" aria-label="대화 삭제" onClick={() => setConfirmDelete(true)}><Trash2 /></Button>
+        <Button variant="ghost" size="icon-sm" aria-label={t('task.header.deleteConversation')} onClick={() => setConfirmDelete(true)}><Trash2 /></Button>
       </div>
     </div>
-    <div className="mt-2">{editingTitle ? <Input aria-label="대화 제목" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => void commitTitle()} onKeyDown={(event) => { if (event.key === 'Enter') void commitTitle(); if (event.key === 'Escape') { setTitle(task.title); setEditingTitle(false) } }} autoFocus className="h-8 text-base font-semibold" /> : <button type="button" className="text-left text-base font-semibold hover:underline" disabled={task.status === 'done'} onClick={() => { setTitle(task.title); setEditingTitle(true) }}>{task.title}</button>}
+    <div className="mt-2">{editingTitle ? <Input aria-label={t('task.header.titleLabel')} value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => void commitTitle()} onKeyDown={(event) => { if (event.key === 'Enter') void commitTitle(); if (event.key === 'Escape') { setTitle(task.title); setEditingTitle(false) } }} autoFocus className="h-8 text-base font-semibold" /> : <button type="button" className="text-left text-base font-semibold hover:underline" disabled={task.status === 'done'} onClick={() => { setTitle(task.title); setEditingTitle(true) }}>{task.title}</button>}
       {task.summary && <p className="mt-0.5 text-xs text-muted-foreground">{task.summary}</p>}
     </div>
     <div className="mt-2"><TagInput tags={task.tags} suggest={suggest} readOnly={task.status === 'done'} onAdd={async (value) => { await addTag(actor, task.id, value); refresh() }} onRemove={async (value) => { await removeTag(actor, task.id, value); refresh() }} onChipClick={(value) => navigate(`/?view=kanban&tag=${encodeURIComponent(value)}`)} /></div>
     <div className="mt-2"><RelatedStrip task={task} /></div>
-    <ReasonDialog open={reopen} onOpenChange={setReopen} title="완료된 업무를 다시 열까요?" description="재개 사유를 이력에 기록합니다." confirmLabel="재개 확인" onConfirm={(reason) => changeStatus('in_progress', reason)} />
-    <ConfirmDialog open={confirmDelete} onOpenChange={setConfirmDelete} title="대화를 삭제할까요?" description="메시지와 이 대화에서 만든 자료가 삭제됩니다." onConfirm={remove} />
+    <ReasonDialog open={reopen} onOpenChange={setReopen} title={t('task.header.reopenTitle')} description={t('task.header.reopenDescription')} confirmLabel={t('task.header.reopenConfirm')} onConfirm={(reason) => changeStatus('in_progress', reason)} />
+    <ConfirmDialog open={confirmDelete} onOpenChange={setConfirmDelete} title={t('task.header.deleteTitle')} description={t('task.header.deleteDescription')} onConfirm={remove} />
     <TaskCompleteDialog task={task} open={complete} onOpenChange={setComplete} />
   </div>
 }

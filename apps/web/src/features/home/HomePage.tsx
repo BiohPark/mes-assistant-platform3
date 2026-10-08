@@ -11,6 +11,7 @@ import { ConversationKanban } from './ConversationKanban'
 import { useAssistantRows, type AssistantRow } from './useAssistantStats'
 import { useQuery } from '@tanstack/react-query'
 import { getSettings } from '@/api/admin'
+import { useT } from '@/i18n'
 
 function matches(row: AssistantRow, q: string, level1CodeId: string | null, level2CodeId: string | null, showRetired: boolean): boolean {
   const assistant = row.assistant
@@ -22,6 +23,7 @@ function matches(row: AssistantRow, q: string, level1CodeId: string | null, leve
 }
 
 export function HomePage() {
+  const t = useT()
   const link1Rule = useQuery({ queryKey: ['settings'], queryFn: getSettings }).data?.link1Rule
   const [params, setParams] = useSearchParams()
   const view = params.get('view') === 'kanban' ? 'kanban' : 'cards'
@@ -36,24 +38,24 @@ export function HomePage() {
   const filtered = all.filter((row) => matches(row, q, level1CodeId, level2CodeId, showRetired))
 
   return <>
-    <TopBar title="에이전트 허브" />
+    <TopBar title={t('nav.hub')} />
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 lg:p-6">
-      <div role="tablist" aria-label="보기 전환" className="inline-flex self-start rounded-xl border bg-muted p-1 shadow-xs">
-        <button type="button" role="tab" aria-selected={view === 'cards'} onClick={() => setParams(new URLSearchParams())} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><LayoutGrid className="size-4" />에이전트 카드</button>
-        <button type="button" role="tab" aria-selected={view === 'kanban'} onClick={() => { const next = new URLSearchParams(params); next.set('view', 'kanban'); setParams(next) }} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'kanban' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><KanbanSquare className="size-4" />전체 대화 칸반</button>
+      <div role="tablist" aria-label={t('hub.viewSwitch')} className="inline-flex self-start rounded-xl border bg-muted p-1 shadow-xs">
+        <button type="button" role="tab" aria-selected={view === 'cards'} onClick={() => setParams(new URLSearchParams())} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><LayoutGrid className="size-4" />{t('hub.assistantCards')}</button>
+        <button type="button" role="tab" aria-selected={view === 'kanban'} onClick={() => { const next = new URLSearchParams(params); next.set('view', 'kanban'); setParams(next) }} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'kanban' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><KanbanSquare className="size-4" />{t('hub.conversationKanban')}</button>
       </div>
       {view === 'kanban' ? <ConversationKanban /> : <>
       <CardMapFilterBar level1Options={level1Options} level2Options={level2Options} level1CodeId={level1CodeId} level2CodeId={level2CodeId} />
-      {isPending && <div className="text-sm text-muted-foreground">불러오는 중…</div>}
+      {isPending && <div className="text-sm text-muted-foreground">{t('common.loading')}</div>}
       {isError && <div role="alert" className="text-sm">
-        <h2 className="mb-2 text-lg font-semibold">서버에 연결할 수 없습니다</h2>
-        <p className="mb-3 text-muted-foreground">잠시 뒤 다시 시도하세요. 계속되면 관리자에게 알려 주세요.</p>
-        <Button size="sm" variant="outline" disabled={isFetching} onClick={() => void refetch()}>다시 시도</Button>
+        <h2 className="mb-2 text-lg font-semibold">{t('common.serverUnavailable')}</h2>
+        <p className="mb-3 text-muted-foreground">{t('common.serverUnavailableHelp')}</p>
+        <Button size="sm" variant="outline" disabled={isFetching} onClick={() => void refetch()}>{t('common.retry')}</Button>
       </div>}
       {rows && filtered.length === 0 && <EmptyState
         icon={Bot}
-        title={all.length === 0 ? '등록된 에이전트가 없습니다' : '조건에 맞는 에이전트가 없습니다'}
-        description={all.length === 0 ? 'System Owner가 에이전트를 등록하면 여기에 카드로 보입니다.' : '검색어나 필터를 바꿔 보세요.'}
+        title={all.length === 0 ? t('hub.noAssistants') : t('hub.noMatchingAssistants')}
+        description={all.length === 0 ? t('hub.noAssistantsHelp') : t('hub.noMatchingHelp')}
       />}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {filtered.map((row) => <AssistantCard key={row.assistant.id} row={row} owner={users.get(row.assistant.ownerId)} baseUrl="" link1Rule={link1Rule} />)}

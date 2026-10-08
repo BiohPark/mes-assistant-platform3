@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
 import { useQuery } from '@tanstack/react-query'
 import { getSettings } from '@/api/admin'
+import { useT } from '@/i18n'
 
 /** 보낼 첨부 1건. once=true면 이번 메시지에만 쓰고 대화 입력으로 고정하지 않는다 */
 export interface PendingAttachment {
@@ -38,6 +39,7 @@ interface ComposerProps {
 }
 
 export function Composer({ disabled, streaming, placeholder, onSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange, clearOnSubmit = false }: ComposerProps) {
+  const t = useT()
   const [discussion, setDiscussion] = useState(false)
   const [text, setTextState] = useState('')
   const [pending, setPending] = useState<PendingAttachment[]>([])
@@ -54,15 +56,15 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
 
   async function submit() {
     if (!canSend) return
-    const t = text
+    const content = text
     const f = pending
     if (clearOnSubmit) { setText(''); setPending([]) }
     try {
-      await onSend(t, f, discussion)
+      await onSend(content, f, discussion)
       if (!clearOnSubmit) { setText(''); setPending([]) }
     } catch (e) {
-      if (clearOnSubmit) { setTextState((current) => current || t); setPending((current) => current.length ? current : f) }
-      toast.error('전송하지 못했습니다.', { description: e instanceof Error ? e.message : String(e) })
+      if (clearOnSubmit) { setTextState((current) => current || content); setPending((current) => current.length ? current : f) }
+      toast.error(t('chat.sendFailed'), { description: e instanceof Error ? e.message : String(e) })
     }
   }
 
@@ -94,13 +96,13 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
                   className={cn('inline-flex items-center gap-0.5 rounded-lg px-1', p.once ? 'text-muted-foreground' : 'text-primary')}
                   aria-pressed={!p.once}
                   onClick={() => setPending((cur) => cur.map((x, j) => (j === i ? { ...x, once: !x.once } : x)))}
-                  title={p.once ? '이번 메시지에만 씁니다. 누르면 대화 입력으로 고정합니다' : '대화 입력(☑ 참고)으로 고정 — 다음 턴에도 AI에 갑니다. 누르면 이번 메시지만'}
+                  title={p.once ? t('chat.attachOnceTitle') : t('chat.attachPinnedTitle')}
                 >
                   {p.once ? <PinOff className="size-3" /> : <Pin className="size-3" />}
-                  {p.once ? '이번 메시지만' : '입력으로 고정'}
+                  {p.once ? t('chat.attachOnce') : t('chat.attachPinned')}
                 </button>
               )}
-              <button type="button" aria-label="첨부 제거" onClick={() => setPending((cur) => cur.filter((_, j) => j !== i))}>
+              <button type="button" aria-label={t('chat.removeAttachment')} onClick={() => setPending((cur) => cur.filter((_, j) => j !== i))}>
                 <X className="size-3" />
               </button>
             </span>
@@ -110,7 +112,7 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
       {attachmentError && <div role="alert" className="mb-1 text-xs text-destructive">{attachmentError}</div>}
       <div className={cn('flex items-end gap-2 rounded-xl border bg-background p-1.5 focus-within:ring-2 focus-within:ring-ring/40', discussion && 'border-amber-300 bg-amber-50/40 dark:bg-amber-950/20')}>
         {allowAttachments && (
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="파일 첨부" onClick={() => inputRef.current?.click()} disabled={disabled}>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label={t('chat.attachFile')} onClick={() => inputRef.current?.click()} disabled={disabled}>
             <Paperclip />
           </Button>
         )}
@@ -121,19 +123,19 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
           className="hidden"
           onChange={(e) => {
             const picked = Array.from(e.target.files ?? []).map((file) => ({ file, once: false }))
-            if (pending.length + picked.length > attachmentLimit) setAttachmentError(`첨부 파일은 최대 ${attachmentLimit}개까지 선택할 수 있습니다.`)
+            if (pending.length + picked.length > attachmentLimit) setAttachmentError(t('chat.attachmentLimit', { limit: String(attachmentLimit) }))
             else { setPending((p) => [...p, ...picked]); setAttachmentError('') }
             e.target.value = ''
           }}
         />
         <Textarea
-          aria-label="팀 의견 입력"
+          aria-label={t('chat.composerLabel')}
           value={text}
           onChange={(e) => {
             setText(e.target.value)
             if (e.target.value) onTyping?.()
           }}
-          placeholder={discussion ? '팀 의견을 남기세요 (AI에게 전송되지 않음)' : (placeholder ?? 'assistant에게 요청하세요. Enter 전송, Shift+Enter 줄바꿈')}
+          placeholder={discussion ? t('chat.discussionPlaceholder') : (placeholder ?? t('chat.composerPlaceholder'))}
           rows={1}
           disabled={disabled}
           className="max-h-40 min-h-8 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-sm shadow-none focus-visible:ring-0"
@@ -149,9 +151,9 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
             type="button"
             variant={discussion ? 'secondary' : 'ghost'}
             size="icon-sm"
-            aria-label="팀 의견 (AI 미전송)"
+            aria-label={t('chat.discussionToggle')}
             aria-pressed={discussion}
-            title="팀 의견: 스레드에 남지만 assistant에게는 보내지 않음"
+            title={t('chat.discussionToggleTitle')}
             className={cn(discussion && 'text-amber-700')}
             onClick={() => setDiscussion((v) => !v)}
           >
@@ -159,11 +161,11 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
           </Button>
         )}
         {streaming && !discussion ? (
-          <Button type="button" variant="outline" size="icon-sm" aria-label="중지" onClick={onStop}>
+          <Button type="button" variant="outline" size="icon-sm" aria-label={t('chat.stop')} onClick={onStop}>
             <Square className="size-3.5" />
           </Button>
         ) : (
-          <Button type="button" size="icon-sm" aria-label="전송" onClick={() => void submit()} disabled={!canSend} title={blocked ? blockedReason : undefined}>
+          <Button type="button" size="icon-sm" aria-label={t('chat.send')} onClick={() => void submit()} disabled={!canSend} title={blocked ? blockedReason : undefined}>
             <Send />
           </Button>
         )}

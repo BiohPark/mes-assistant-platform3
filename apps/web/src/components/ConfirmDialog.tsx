@@ -15,7 +15,7 @@ interface ConfirmDialogProps {
 }
 
 /** 파괴적 액션 확인. window.confirm 대신 항상 이것을 쓴다. */
-export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel = '삭제', destructive = true, onConfirm, onCloseAutoFocus }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel, destructive = true, onConfirm, onCloseAutoFocus }: ConfirmDialogProps) {
   const t = useT()
   const [busy, setBusy] = useState(false)
 
@@ -41,7 +41,7 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
             {t('common.cancel')}
           </Button>
           <Button variant={destructive ? 'destructive' : 'default'} onClick={handleConfirm} disabled={busy}>
-            {confirmLabel}
+            {confirmLabel ?? t('components.delete')}
           </Button>
         </DialogFooter>
       </DialogContent>

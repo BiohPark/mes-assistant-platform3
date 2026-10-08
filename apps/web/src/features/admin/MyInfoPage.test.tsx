@@ -35,7 +35,7 @@ describe('내 정보 프로필 세그먼트', () => {
     expect(document.documentElement.lang).toBe('en')
     expect(localStorage.getItem('mes-locale')).toBe('en')
     expect(localStorage.getItem('mes-theme')).toBe('light')
-    expect(screen.getByRole('radio', { name: '라이트' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Light' })).toBeChecked()
   })
   it.each([
     { input: { theme: 'dark' as const }, label: '다크', theme: 'dark', locale: 'ko' },
@@ -113,9 +113,9 @@ describe('내 정보 프로필 세그먼트', () => {
     await waitFor(() => expect(document.documentElement.lang).toBe('en'))
     expect(fetchMock).toHaveBeenCalledWith('/api/users/me', expect.objectContaining({ body: JSON.stringify({ locale: 'en' }) }))
     await waitFor(() => expect(screen.getByRole('radio', { name: 'English' })).toBeEnabled())
-    await userEvent.clear(screen.getByLabelText('이름'))
-    await userEvent.type(screen.getByLabelText('이름'), '새 이름')
-    await userEvent.click(screen.getByRole('button', { name: '저장' }))
+    await userEvent.clear(screen.getByLabelText('Name'))
+    await userEvent.type(screen.getByLabelText('Name'), '새 이름')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(screen.getByRole('button', { name: /새 이름/ })).toBeInTheDocument())
     expect(document.documentElement).toHaveClass('dark')
     expect(document.documentElement.lang).toBe('en')
