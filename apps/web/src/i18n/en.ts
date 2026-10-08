@@ -351,7 +351,7 @@ export const en = {
     mockMode: 'Mock (rule-based)',
     intro: 'Ask to start a conversation, register an agent, or link tags. Review each proposal before applying it.',
     examples: 'Examples:',
-    exampleStart: 'Start an "Alarm filter FDS" conversation with the FDS writing helper SR-2026-0002',
+    exampleStart: 'FDS 작성 도우미로 "알람 필터 FDS" 대화 시작해줘 SR-2026-0002', // 에이전트 이름·mock 규칙이 한국어라 원문 유지
     exampleTagRelease: 'Add the #release-2026-10 tag to WK-2026-0009',
     exampleTagSr: 'Add the SR-2026-0001 tag to WK-2026-0006',
     thinking: 'Thinking…',
