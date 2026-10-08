@@ -2,7 +2,7 @@ import type { Message, ServiceRequest, SharedResult, SrStatusChange } from '@mes
 import type { FileMeta } from './files'
 import { queryClient } from './queryClient'
 
-export type SrDetail = ServiceRequest & { intakeMessages?: Message[]; firstMessage?: string; requesterName?: string; /** 상세 응답: 접수 대화에 요청 기록이 있어 초안을 삭제할 수 없음 */ hasRequests?: boolean; /** 상세 응답: 상태 이력(activity_log sr.status_changed) */ statusHistory?: SrStatusChange[]; conversations: Array<{ id: string; code: string; title: string; status: string; threadId: string | null }> }
+export type SrDetail = ServiceRequest & { /** 첨부 후보: 이 SR에 올라간 파일 전체. 정본(attachmentIds)은 전환·수정에서 사람이 고른 것만 */ candidateAttachmentIds: string[]; intakeMessages?: Message[]; firstMessage?: string; requesterName?: string; /** 상세 응답: 접수 대화에 요청 기록이 있어 초안을 삭제할 수 없음 */ hasRequests?: boolean; /** 상세 응답: 상태 이력(activity_log sr.status_changed) */ statusHistory?: SrStatusChange[]; conversations: Array<{ id: string; code: string; title: string; status: string; threadId: string | null }> }
 async function request<T>(path: string, method = 'GET', body?: unknown, key?: string): Promise<T> {
   const response = await fetch(`/api/service-requests${path}`, { method, credentials: 'same-origin',
     headers: { ...(body !== undefined && { 'content-type': 'application/json' }), ...(key && { 'Idempotency-Key': key }) },

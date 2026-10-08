@@ -9,7 +9,7 @@ import { useLocation } from 'react-router'
 import { SrDetailSheet } from './SrDetailSheet'
 
 const sr: SrDetail = { id: 'internal-sr-uuid', code: 'SR-2026-0001', requesterId: 'internal-requester-uuid', title: '요청', titleSource: 'manual',
-  body: '내용', status: 'submitted', attachmentIds: [], threadId: 'thread-uuid', results: [], conversations: [
+  body: '내용', status: 'submitted', attachmentIds: [], candidateAttachmentIds: [], threadId: 'thread-uuid', results: [], conversations: [
     { id: 'internal-task-uuid', code: 'WK-2026-0001', title: '연결 대화', status: 'in_progress', threadId: 'thread' },
   ], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
 afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })

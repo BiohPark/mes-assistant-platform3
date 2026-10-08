@@ -6,7 +6,8 @@ import type { SrDetail } from '@/api/sr'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { SrConvertSheet } from './SrConvertSheet'
 
-const draft: SrDetail = { id: 'sr', code: '', requesterId: 'u', title: '', titleSource: 'default', body: '', status: 'draft', attachmentIds: ['f1', 'f2'],
+// 초안: 접수 첨부(정본)는 아직 없고, 이 SR에 올라간 파일 전체가 후보다.
+const draft: SrDetail = { id: 'sr', code: '', requesterId: 'u', title: '', titleSource: 'default', body: '', status: 'draft', attachmentIds: [], candidateAttachmentIds: ['f1', 'f2'],
   threadId: 'thread', results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
 const files: Record<string, unknown> = { f1: { id: 'f1', name: '알람.txt', version: 1, size: 10, source: 'upload' }, f2: { id: 'f2', name: '화면.png', version: 1, size: 10, source: 'upload' } }
 afterEach(() => vi.unstubAllGlobals())
@@ -80,6 +81,25 @@ it('AI로 다듬기는 제안만 보여 주고, 사람이 적용을 눌러야 �
   expect(within(sheet).queryByRole('region', { name: 'AI 제안 (적용 전)' })).not.toBeInTheDocument()
 })
 
+it('접수 내용 수정은 후보 전체를 나열하되 저장된 선택만 체크하고, 다시 선택한 파일을 저장에 보낸다', async () => {
+  const bodies: unknown[] = []
+  mount({ ...draft, code: 'SR-2026-0001', title: '접수 제목', titleSource: 'manual', body: '접수 본문', status: 'submitted', attachmentIds: ['f1'] }, async (url, init) => {
+    if (url.startsWith('/api/files/')) return jsonResponse(200, files[url.split('/')[3]!])
+    if (url === '/api/service-requests/sr/content') { bodies.push(JSON.parse(String(init?.body))); return jsonResponse(200, { ...draft, status: 'submitted' }) }
+    return jsonResponse(200, [])
+  })
+  const sheet = await screen.findByRole('dialog')
+  expect(within(sheet).getByRole('heading', { name: '접수 내용 수정' })).toBeInTheDocument()
+  const first = await within(sheet).findByRole('checkbox', { name: '알람.txt' })
+  const second = within(sheet).getByRole('checkbox', { name: '화면.png' })
+  expect(first).toBeChecked(); expect(second).not.toBeChecked()
+  await userEvent.click(second)
+  expect(second).toBeChecked()
+  await userEvent.click(within(sheet).getByRole('button', { name: '저장' }))
+  await waitFor(() => expect(bodies).toEqual([{ title: '접수 제목', titleSource: 'manual', body: '접수 본문', attachmentIds: ['f1', 'f2'] }]))
+  expect(fetch).not.toHaveBeenCalledWith('/api/service-requests/sr/draft', expect.anything())
+})
+
 it('검토가 시작된 접수 내용은 읽기 전용으로 보여 주고 제출·다듬기 버튼이 없다', async () => {
   mount({ ...draft, code: 'SR-2026-0001', title: '접수 제목', titleSource: 'manual', body: '접수 본문', status: 'reviewing', attachmentIds: ['f1'] }, async (url) => {
     if (url.startsWith('/api/files/')) return jsonResponse(200, files[url.split('/')[3]!])
@@ -89,7 +109,10 @@ it('검토가 시작된 접수 내용은 읽기 전용으로 보여 주고 제�
   expect(within(sheet).getByRole('heading', { name: '접수 내용 보기' })).toBeInTheDocument()
   expect(within(sheet).getByRole('textbox', { name: 'SR 제목' })).toHaveValue('접수 제목')
   expect(within(sheet).getByRole('textbox', { name: 'SR 제목' })).toHaveAttribute('readonly')
-  expect(await within(sheet).findByRole('checkbox', { name: '알람.txt' })).toBeDisabled()
+  const first = await within(sheet).findByRole('checkbox', { name: '알람.txt' })
+  expect(first).toBeDisabled(); expect(first).toBeChecked()
+  const second = within(sheet).getByRole('checkbox', { name: '화면.png' })
+  expect(second).toBeDisabled(); expect(second).not.toBeChecked()
   expect(within(sheet).queryByRole('button', { name: '접수 제출' })).not.toBeInTheDocument()
   expect(within(sheet).queryByRole('button', { name: '저장' })).not.toBeInTheDocument()
   expect(within(sheet).queryByRole('button', { name: 'AI로 다듬기' })).not.toBeInTheDocument()

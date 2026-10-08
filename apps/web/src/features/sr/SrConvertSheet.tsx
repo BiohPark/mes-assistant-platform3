@@ -31,11 +31,13 @@ export function SrConvertSheet({ sr, open, onOpenChange, onSaved }: { sr: SrDeta
   const [proposal, setProposal] = useState<{ title: string; body: string } | null>(null)
   // 사람이 고친 칸은 늦게 도착한 AI 초안이 덮어쓰지 않는다(데모 manualRef).
   const manualTitle = useRef(false), manualBody = useRef(false)
-  const files = useSrFiles(sr.attachmentIds)
+  // 후보(이 SR의 파일 전체)를 나열하고 선택만 보낸다. 초안은 전부 선택이 기본, 수정·보기는 저장된 선택(attachmentIds)을 복원한다(데모 SrConvertDialog).
+  const candidates = sr.candidateAttachmentIds
+  const files = useSrFiles(candidates)
   useEffect(() => {
     if (!open) return
     manualTitle.current = false; manualBody.current = false
-    setProposal(null); setSelected(sr.attachmentIds)
+    setProposal(null); setSelected(sr.status === 'draft' ? candidates : sr.attachmentIds)
     if (sr.status !== 'draft') { setTitle(sr.title); setBody(sr.body); setSource(sr.titleSource === 'manual' ? 'manual' : 'ai'); return }
     setTitle(''); setBody(''); setSource('ai'); setLoading(true)
     let cancelled = false
@@ -45,7 +47,7 @@ export function SrConvertSheet({ sr, open, onOpenChange, onSaved }: { sr: SrDeta
       if (!manualBody.current) setBody(draft.body)
     }).catch((error) => { if (!cancelled) toast.error(String(error)) }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [open, sr.id, sr.status, sr.title, sr.body, sr.titleSource, sr.attachmentIds])
+  }, [open, sr.id, sr.status, sr.title, sr.body, sr.titleSource, sr.attachmentIds, candidates])
   async function refine() {
     setRefining(true)
     try { setProposal(await refineSr(sr.id, { title, body })) }
@@ -67,7 +69,7 @@ export function SrConvertSheet({ sr, open, onOpenChange, onSaved }: { sr: SrDeta
       onSaved()
     } catch (error) { toast.error(String(error)) } finally { setBusy(false) }
   }
-  const fileName = (id: string) => files.find((file) => file.id === id)?.name ?? t('sr.attachment', { number: sr.attachmentIds.indexOf(id) + 1 })
+  const fileName = (id: string) => files.find((file) => file.id === id)?.name ?? t('sr.attachment', { number: candidates.indexOf(id) + 1 })
   return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent className="w-full sm:max-w-xl">
     <SheetHeader><SheetTitle>{t(mode === 'convert' ? 'sr.convert' : mode === 'edit' ? 'sr.editContent' : 'sr.viewContent')}</SheetTitle>
       <SheetDescription>{t(mode === 'convert' ? 'sr.convertDescription' : mode === 'edit' ? 'sr.editDescription' : 'srFlow.readOnlyDescription')}</SheetDescription></SheetHeader>
@@ -91,7 +93,7 @@ export function SrConvertSheet({ sr, open, onOpenChange, onSaved }: { sr: SrDeta
       <div className="flex gap-2"><Button type="button" size="sm" onClick={applyProposal}>{t('srFlow.applyProposal')}</Button><Button type="button" size="sm" variant="outline" onClick={() => setProposal(null)}>{t('srFlow.dismissProposal')}</Button></div>
     </section>}
     <section className="space-y-1.5"><h3 className="text-sm font-medium">{t('sr.attachments')}</h3>
-      {sr.attachmentIds.length ? <><p className="text-xs text-muted-foreground">{t('srFlow.attachmentsHint')}</p><ul className="space-y-1">{sr.attachmentIds.map((id) => <li key={id} className="flex items-center gap-2 rounded-lg border px-2 py-1 text-xs">
+      {candidates.length ? <><p className="text-xs text-muted-foreground">{t('srFlow.attachmentsHint')}</p><ul className="space-y-1">{candidates.map((id) => <li key={id} className="flex items-center gap-2 rounded-lg border px-2 py-1 text-xs">
         <Checkbox id={`sr-attachment-${id}`} aria-label={fileName(id)} checked={selected.includes(id)} disabled={readOnly} onCheckedChange={() => setSelected((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id])} />
         <label htmlFor={`sr-attachment-${id}`} className="min-w-0 flex-1 cursor-pointer truncate">{fileName(id)}</label>
       </li>)}</ul></> : <p className="text-xs text-muted-foreground">{t('srFlow.noAttachments')}</p>}
