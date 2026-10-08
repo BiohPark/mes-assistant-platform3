@@ -19,6 +19,7 @@ import { SrStatusBadge } from '@/components/StatusBadges'
 import { newId } from '@/lib/ids'
 import { SrList } from './SrList'
 import { SrLoadError, SrSkeleton } from './SrStates'
+import { exampleQuestionsFrom } from './srExamples'
 import { SrTitleEditor } from './SrTitleEditor'
 import { SrConvertSheet } from './SrConvertSheet'
 import { SrStatusHistory } from './SrStatusHistory'
@@ -89,8 +90,8 @@ export function SrIntakePage() {
   const canEdit = selected && (selected.requesterId === me.id || me.roles.includes('system_owner'))
   const hasDetail = !!selectedId || isNew
   const visible = rows.filter(sr => filter === 'complete' ? sr.status === 'done' || sr.status === 'rejected' : sr.status !== 'done' && sr.status !== 'rejected')
-  // 첫 질문 예시는 SO가 에이전트에 적은 usageExample 줄 단위 — 플랫폼이 지은 예시는 없다.
-  const examples = (settings?.usageExample ?? '').split('\n').map(line => line.trim()).filter(Boolean)
+  // 첫 질문 예시는 SO가 에이전트 usageExample에 인용한 목록 항목만 — 플랫폼이 지은 예시는 없다. 카드 칩과 Composer 제안이 같은 결과를 쓴다.
+  const examples = exampleQuestionsFrom(settings?.usageExample)
   const loaded = !!list.data && !!settings
   const failed = list.isError || intake.isError
   const retry = () => { if (list.isError) void list.refetch(); if (intake.isError) void intake.refetch() }

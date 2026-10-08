@@ -1,10 +1,10 @@
 import { useT } from '@/i18n'
 import { Button } from '@/components/ui/button'
 
-/** 목록 로딩 뼈대. role=status를 쓰지 않는다 — 같은 화면의 안내(status)와 겹친다. */
+/** 목록 로딩 뼈대. role=status를 쓰지 않는다 — 같은 화면의 안내(status)와 겹친다. 읽어 주기는 sr-only 텍스트로(일반 div의 aria-label은 무시됨). */
 export function SrSkeleton({ rows = 3, className = 'h-14' }: { rows?: number; className?: string }) {
   const t = useT()
-  return <div aria-busy="true" aria-label={t('common.loading')} className="space-y-2">{Array.from({ length: rows }, (_, index) => <div key={index} className={`${className} animate-pulse rounded-lg bg-muted`} />)}</div>
+  return <div aria-busy="true" className="space-y-2"><span className="sr-only">{t('common.loading')}</span>{Array.from({ length: rows }, (_, index) => <div key={index} aria-hidden className={`${className} animate-pulse rounded-lg bg-muted`} />)}</div>
 }
 
 export function SrLoadError({ error, retrying, onRetry }: { error: unknown; retrying?: boolean; onRetry: () => void }) {

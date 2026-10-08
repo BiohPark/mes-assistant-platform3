@@ -58,11 +58,11 @@ it('불러오는 동안 뼈대를 보이고 끝나면 표를 그린다', async (
     return jsonResponse(200, [])
   }))
   renderWithProviders(<TooltipProvider><MeContext value={me}><SrManagePage /></MeContext></TooltipProvider>)
-  expect(await screen.findByLabelText('불러오는 중…')).toHaveAttribute('aria-busy', 'true')
+  expect((await screen.findByText('불러오는 중…')).closest('[aria-busy="true"]')).not.toBeNull()
   expect(screen.queryByRole('table')).not.toBeInTheDocument()
   release()
   expect(await screen.findByRole('table')).toHaveTextContent('요청 x')
-  expect(screen.queryByLabelText('불러오는 중…')).not.toBeInTheDocument()
+  expect(screen.queryByText('불러오는 중…')).not.toBeInTheDocument()
 })
 
 it('조회 실패는 경고와 다시 시도를 보이고 재시도 성공 시 표를 그린다', async () => {

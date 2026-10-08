@@ -209,7 +209,7 @@ it('접수자 화면에서 상태 이력을 펼치면 시각·처리자·변경�
 })
 
 const me = { id: 'u', name: '사용자', role: '', roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
-const intake = { srIntakeAssistantId: 'a', name: '접수 도우미', summary: '요청을 정리합니다', usageExample: '설비 알람 확인\n리포트 요청' }
+const intake = { srIntakeAssistantId: 'a', name: '접수 도우미', summary: '요청을 정리합니다', usageExample: '### 사용법\n- 시작\n- "설비 알람 확인"\n- 첨부 파일을 올리세요\n- "리포트 요청"' }
 const row = (id: string, status: string) => ({ id, requesterId: 'u', code: `SR-${id}`, title: `요청 ${id}`, titleSource: 'manual', body: '', status, threadId: `thread-${id}`, attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' })
 
 it('목록·접수 에이전트를 불러오는 동안 뼈대를 보이고 끝나면 치운다', async () => {
@@ -220,11 +220,11 @@ it('목록·접수 에이전트를 불러오는 동안 뼈대를 보이고 끝�
     return jsonResponse(200, [])
   }))
   renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
-  expect(await screen.findByLabelText('불러오는 중…')).toHaveAttribute('aria-busy', 'true')
+  expect((await screen.findByText('불러오는 중…')).closest('[aria-busy="true"]')).not.toBeNull()
   expect(screen.queryByRole('button', { name: '새 요청' })).not.toBeInTheDocument()
   release()
   expect(await screen.findByRole('button', { name: /요청 x/ })).toBeInTheDocument()
-  expect(screen.queryByLabelText('불러오는 중…')).not.toBeInTheDocument()
+  expect(screen.queryByText('불러오는 중…')).not.toBeInTheDocument()
 })
 
 it('목록 조회 실패는 경고와 다시 시도를 보이고 재시도 성공 시 목록을 그린다', async () => {
@@ -251,22 +251,33 @@ it('요청이 하나도 없으면 접수 에이전트 카드(이름·설명·예
   expect(screen.getByText('요청을 정리합니다')).toBeInTheDocument()
   const examples = screen.getByRole('list', { name: '첫 질문 예시' })
   expect(within(examples).getAllByRole('listitem').map(item => item.textContent)).toEqual(['설비 알람 확인', '리포트 요청'])
+  expect(container).not.toHaveTextContent('사용법')
+  expect(container).not.toHaveTextContent('첨부 파일을 올리세요')
   expect(screen.getByRole('button', { name: '새 요청' })).toBeEnabled()
   expect(screen.queryByRole('button', { name: '진행 중' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '완료' })).not.toBeInTheDocument()
   expect(container).not.toHaveTextContent('SR이 없습니다')
   expect(container).not.toHaveTextContent('요청 내용을 대화로 정리해 접수합니다')
+  await userEvent.click(screen.getByRole('button', { name: '새 요청' }))
+  // Composer 제안도 같은 추출 결과만 — 머리글·비인용 줄이 AI로 전송되지 않는다.
+  expect(screen.getByRole('button', { name: '설비 알람 확인' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '리포트 요청' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '시작' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '첨부 파일을 올리세요' })).not.toBeInTheDocument()
+  expect(container).not.toHaveTextContent('사용법')
   expect(container).not.toHaveTextContent(/\d+건/)
 })
 
 it('에이전트 설명·예시가 비어 있으면 이름만 보이고 플랫폼이 지은 예시는 넣지 않는다', async () => {
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/intake-assistant' ? jsonResponse(200, { srIntakeAssistantId: 'a', name: '접수 도우미', summary: '', usageExample: '' }) : jsonResponse(200, [])))
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/intake-assistant' ? jsonResponse(200, { srIntakeAssistantId: 'a', name: '접수 도우미', summary: '', usageExample: '### 사용법\n- 시작\n- 첨부를 올리세요' }) : jsonResponse(200, [])))
   const { container } = renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
   expect(await screen.findByText('접수 도우미')).toBeInTheDocument()
   expect(screen.queryByRole('list', { name: '첫 질문 예시' })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: '새 요청' }))
   expect(screen.getByRole('textbox', { name: '접수 메시지' })).toBeInTheDocument()
   expect(container).not.toHaveTextContent('설비 알람 원인을 확인하고 싶어요')
+  expect(screen.queryByRole('button', { name: '시작' })).not.toBeInTheDocument()
+  expect(container).not.toHaveTextContent('사용법')
 })
 
 it('필터에 맞는 요청이 없으면 안내와 필터 초기화를 보이고 기본 필터에서는 초기화 버튼을 숨긴다', async () => {
