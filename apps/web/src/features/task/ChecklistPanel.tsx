@@ -4,6 +4,7 @@ import type { Task } from '@mes/domain'
 import { addChecklistItem, applyChecklistReview, removeChecklistItem, reviewChecklist, toggleChecklist } from '@/api/tasks'
 import { useUserMap } from '@/app/hooks'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { useDates } from '@/lib/dates'
 import { useT } from '@/i18n'
@@ -26,7 +27,7 @@ export function ChecklistPanel({ task }: { task: Task }) {
     <div className="font-semibold">{t('task.checklist.title', { done, total: task.checklist.length })}{missing > 0 && <span className="ml-2 font-normal text-amber-700">{t('task.checklist.missingRequired', { count: missing })}</span>}</div>
     <div className="h-1 rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{ width: task.checklist.length ? `${done / task.checklist.length * 100}%` : '0%' }} /></div>
     <ul className="space-y-1">{task.checklist.map((item) => <li key={item.id} className="flex items-start gap-2 rounded-xl border p-2">
-      <input type="checkbox" aria-label={item.label} checked={item.checked} disabled={readOnly || busy} onChange={() => void run(() => toggleChecklist(task.id, item.id))} />
+      <Checkbox className="mt-0.5" aria-label={item.label} checked={item.checked} disabled={readOnly || busy} onCheckedChange={() => void run(() => toggleChecklist(task.id, item.id))} />
       <div className="min-w-0 flex-1"><div className={item.checked ? 'text-muted-foreground line-through' : ''}>{item.label}{item.required && <span className="ml-1 text-amber-700">{t('task.checklist.required')}</span>}</div>
         {item.checkedAt && <div className="text-xs text-muted-foreground">{users.get(item.checkedBy ?? '')?.name ?? item.checkedBy} · {formatDateTime(item.checkedAt)}</div>}
       </div>

@@ -13,16 +13,16 @@ export function BarsChart({ data, xKey, series, unit = '', highlightMax, stacked
   return <div className="space-y-2" role="img" aria-label={series.map((item) => item.name).join(', ')}>
     {rows.map((row, index) => <div key={index} className="flex items-center gap-2 text-xs">
       <span className="w-20 shrink-0 truncate text-muted-foreground" title={String(row[xKey])}>{String(row[xKey])}</span>
-      {stacked ? <><div className="flex h-3 min-w-0 flex-1 overflow-hidden rounded-sm bg-muted/40">{series.map((item, i) => <div key={item.key} title={`${item.name}: ${String(row[item.key] ?? 0)}`} style={{ width: `${Number(row[item.key] ?? 0) / max * 100}%`, backgroundColor: SERIES[i % SERIES.length] }} />)}</div><span className="w-6 text-right tabular-nums">{series.reduce((total, item) => total + Number(row[item.key] ?? 0), 0)}</span></> :
+      {stacked ? <><div className="flex h-3 min-w-0 flex-1 overflow-hidden rounded-full bg-muted/40">{series.map((item, i) => <div key={item.key} title={`${item.name}: ${String(row[item.key] ?? 0)}`} style={{ width: `${Number(row[item.key] ?? 0) / max * 100}%`, backgroundColor: SERIES[i % SERIES.length] }} />)}</div><span className="w-6 text-right tabular-nums">{series.reduce((total, item) => total + Number(row[item.key] ?? 0), 0)}</span></> :
       <div className="flex min-w-0 flex-1 gap-0.5">
         {series.map((item, i) => <div key={item.key} className="flex items-center gap-1" style={{ width: `${Math.max(1, Number(row[item.key] ?? 0) / max * 100)}%` }}>
-          <div className="h-3 min-w-0 flex-1 rounded-sm" style={{ backgroundColor: highlightMax && Number(row[item.key] ?? 0) === max ? SERIES[1] : SERIES[i % SERIES.length] }} />
+          <div className="h-3 min-w-0 flex-1 rounded-full" style={{ backgroundColor: highlightMax && Number(row[item.key] ?? 0) === max ? SERIES[1] : SERIES[i % SERIES.length] }} />
           <span className="tabular-nums">{String(row[item.key] ?? 0)}{unit}</span>
         </div>)}
       </div>
       }
     </div>)}
     {rows.length === 0 && <p className="text-xs text-muted-foreground">{t('reports.noChartData')}</p>}
-    {series.length > 1 && <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">{series.map((item, i) => <span key={item.key} className="flex items-center gap-1"><span className="size-2 rounded-sm" style={{ backgroundColor: SERIES[i % SERIES.length] }} />{item.name}</span>)}</div>}
+    {series.length > 1 && <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">{series.map((item, i) => <span key={item.key} className="flex items-center gap-1"><span className="size-2 rounded-full" style={{ backgroundColor: SERIES[i % SERIES.length] }} />{item.name}</span>)}</div>}
   </div>
 }

@@ -8,6 +8,9 @@ import { draftConversationSummary, selectConversation, type LoadedConversationIn
 import type { ConversationCandidate } from '@/api/files'
 import { formatSize } from '@/api/files'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 export function ConversationPickerDialog({ taskId, candidate, current, initialMode, onClose }: { taskId: string; candidate: ConversationCandidate;
@@ -74,12 +77,12 @@ export function ConversationPickerDialog({ taskId, candidate, current, initialMo
     {mode === 'messages' && <div className="space-y-2"><div className="flex items-center gap-2 text-xs"><span>{t('task.picker.selection', { chosen: chosen.length, total: messages.length })}</span>
       <button type="button" className="ml-auto underline" onClick={() => setPicked(messages.map((item) => item.id))}>{t('common.all')}</button><button type="button" className="underline" onClick={() => setPicked([])}>{t('task.picker.clear')}</button></div>
       <ul className="max-h-72 overflow-y-auto rounded-xl border p-2">{messages.map((item, index) => <li key={item.id} className="flex gap-2 border-b py-1 last:border-0">
-        <input type="checkbox" aria-label={t('task.picker.selectMessage', { number: index + 1 })} checked={selected.includes(item.id)} onClick={(event) => { event.preventDefault(); toggle(index, event.shiftKey) }} readOnly />
+        <Checkbox className="mt-0.5" aria-label={t('task.picker.selectMessage', { number: index + 1 })} checked={selected.includes(item.id)} onClick={(event) => toggle(index, event.shiftKey)} />
         <MessageLine message={item} /></li>)}</ul></div>}
     {mode === 'summary' && <div className="space-y-2"><p className="text-xs text-muted-foreground">{t('task.picker.summaryHelp', { count: chosen.length })}</p>
       <Button type="button" variant="outline" size="sm" disabled={busy || !chosen.length} onClick={() => void draft()}>{summary ? t('task.picker.resummarize') : t('task.picker.makeSummary')}</Button>
       <textarea aria-label={t('task.picker.summaryLabel')} rows={8} className="w-full rounded-lg border p-2 text-sm" value={summary} onChange={(event) => setSummary(event.target.value)} placeholder={t('task.picker.summaryPlaceholder')} /></div>}
-    <DialogFooter className="items-center sm:justify-between"><div className="flex items-center gap-3 text-xs"><label><input type="checkbox" checked={weight === 'main'} onChange={(event) => setWeight(event.target.checked ? 'main' : 'reference')} /> {t('task.picker.mainInput')}</label><span>{t('task.picker.size', { size: formatSize(size) })}</span></div>
+    <DialogFooter className="items-center sm:justify-between"><div className="flex items-center gap-3 text-xs"><Label className="gap-1.5 text-xs font-normal"><Switch size="sm" checked={weight === 'main'} onCheckedChange={(checked) => setWeight(checked ? 'main' : 'reference')} />{t('task.picker.mainInput')}</Label><span>{t('task.picker.size', { size: formatSize(size) })}</span></div>
       <div className="flex gap-2"><Button type="button" variant="outline" onClick={onClose}>{t('common.cancel')}</Button><Button type="button" disabled={busy || history.isPending || (mode === 'messages' && !chosen.length) || (mode === 'summary' && !summary.trim())} onClick={() => void apply()}>{t('task.picker.apply')}</Button></div></DialogFooter>
   </DialogContent></Dialog>
 }
