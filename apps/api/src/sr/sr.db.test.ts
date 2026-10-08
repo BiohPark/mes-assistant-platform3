@@ -1,12 +1,19 @@
+import 'reflect-metadata'
+import { Test } from '@nestjs/testing'
+import request from 'supertest'
 import { drizzle } from 'drizzle-orm/mysql2'
-import type { Db } from '../db/db.module.js'
+import { DB, DB_CLIENT, type Db } from '../db/db.module.js'
 import { eq } from 'drizzle-orm'
+import { AppModule } from '../app.module.js'
+import { configureApp } from '../app.factory.js'
+import { CONFIG } from '../config/config.js'
+import { SESSION_STORE, type AuthUser } from '../auth/session.service.js'
 import type { Pool } from 'mysql2/promise'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createPool } from '../db/connection.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
-import { activityLog, appSetting, appUser, assistant, chatRequest, fileObject, notification, serviceRequest, sharedResult, task } from '../db/schema.js'
+import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileObject, notification, serviceRequest, sharedResult, task } from '../db/schema.js'
 import { loadConfig } from '../config/config.js'
 import { RequestsService } from '../requests/requests.service.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -58,8 +65,10 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     const provider = { kind: 'mock' as const, ping: async () => ({ ok: true, detail: '' }), listModels: async () => ['glm-5.2'],
       async *stream() { yield { type: 'delta' as const, text: '응답' }; yield { type: 'done' as const } } }
     const requests = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' }), provider)
+    expect((await sr.get('requester', draft.id)).hasRequests).toBe(false)
     const started = await requests.start('requester', draft.threadId, { content: '접수 전 대화' }, `keep-${draft.id}`)
     await started.done
+    expect((await sr.get('requester', draft.id)).hasRequests).toBe(true)
     await expect(sr.delete('requester', draft.id)).rejects.toMatchObject({ status: 409 })
     expect((await db.select({ id: chatRequest.id }).from(chatRequest).where(eq(chatRequest.id, started.id)))).toHaveLength(1)
   })
@@ -218,4 +227,104 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     expect((await sr.content('requester', draft.id, { title: '첨부', body: '수정 본문', attachmentIds: [`selected-b-${draft.id}`] })).attachmentIds)
       .toEqual([`selected-b-${draft.id}`])
   })
+  it('forces BO mine even for inbox; staff mine filters requester and inbox excludes drafts', async () => {
+    await db.insert(appUser).values([
+      { id: 'scope-bo', name: 'BO', initials: 'B', color: '#123456', isBusinessOwner: true },
+      { id: 'scope-staff', name: 'Staff', initials: 'S', color: '#123456' },
+    ])
+    const before = (await sr.list('owner', 'inbox')).map(row => row.id)
+    const mine = await sr.create('scope-bo')
+    const staffDraft = await sr.create('scope-staff')
+    const other = await sr.create('other')
+    await sr.submit('other', other.id, { title: '다른 요청', body: '' })
+    expect((await sr.list('scope-bo', 'inbox')).map(row => row.id)).toEqual([mine.id])
+    expect((await sr.list('scope-staff', 'mine')).map(row => row.id)).toEqual([staffDraft.id])
+    expect((await sr.list('owner', 'inbox')).map(row => row.id)).toEqual([other.id, ...before])
+    expect((await sr.list('owner', 'mine')).map(row => row.id)).toEqual([])
+    await sr.delete('scope-bo', mine.id)
+    await sr.delete('scope-staff', staffDraft.id)
+  })
+
+  it('serializes repeated first-send creation and separates keys by actor', async () => {
+    const [first, retry] = await Promise.all([sr.create('requester', 'same-first-send'), sr.create('requester', 'same-first-send')])
+    expect(retry.id).toBe(first.id)
+    expect(retry.threadId).toBe(first.threadId)
+    expect((await sr.list('requester', 'mine')).filter(row => row.id === first.id)).toHaveLength(1)
+    expect(await db.select().from(dbLock).where(eq(dbLock.lockKey, `sr-create:${first.id}`))).toEqual([])
+    const another = await sr.create('other', 'same-first-send')
+    expect(another.id).not.toBe(first.id)
+    await sr.delete('requester', first.id)
+    await sr.delete('other', another.id)
+  })
+
+
+  it('allows inbox staff to read the intake transcript through SR detail without granting chat mutation access', async () => {
+    const draft = await sr.create('requester')
+    await new DbTasksService(db).appendMessage('requester', draft.threadId, { content: '접수 원문', kind: 'discussion' })
+    // 초안 원문은 요청자 본인·SO만 — 접수 전 상담 내용은 담당자에게 보이지 않는다.
+    expect((await sr.get('staff', draft.id)).intakeMessages).toEqual([])
+    expect((await sr.get('requester', draft.id)).intakeMessages).toMatchObject([{ content: '접수 원문' }])
+    expect((await sr.get('owner', draft.id)).intakeMessages).toMatchObject([{ content: '접수 원문' }])
+    await sr.submit('requester', draft.id, { title: '원문', body: '' })
+    expect((await sr.get('staff', draft.id)).intakeMessages).toMatchObject([{ content: '접수 원문' }])
+    await expect(assertThreadAccess(db, 'staff', draft.threadId)).rejects.toMatchObject({ status: 403 })
+    await expect(sr.get('other', draft.id)).rejects.toMatchObject({ status: 403 })
+  })
+
+  it('returns intake display metadata and attachment limit without exposing the staff catalog', async () => {
+    await db.insert(appSetting).values({ key: 'fileMaxPerRequest', value: 3 }).onDuplicateKeyUpdate({ set: { value: 3 } })
+    const [intake] = await db.select().from(assistant).where(eq(assistant.id, assistantId))
+    expect(await sr.intakeAssistant()).toEqual({ srIntakeAssistantId: assistantId, name: intake!.name, summary: intake!.summary, usageExample: intake!.usageExample, fileMaxPerRequest: 3 })
+    await db.delete(appSetting).where(eq(appSetting.key, 'fileMaxPerRequest'))
+  })
+
+  it('serves file metadata to the requester over HTTP with the same scope as download, without widening other file routes', async () => {
+    const draft = await sr.create('requester')
+    const foreign = await sr.create('other')
+    type FileInsert = typeof fileObject.$inferInsert
+    const file = (id: string, extra: Pick<FileInsert, 'kind' | 'uploadedBy'> & Partial<FileInsert>) => ({ id, originalName: `${id}.txt`, mime: 'text/plain', sizeBytes: 1,
+      sha256: 'd'.repeat(64), storageKey: id, source: 'upload' as const, version: 1, ...extra })
+    await db.insert(fileObject).values([
+      file('http-own-attachment', { kind: 'sr_attachment', originSrId: draft.id, uploadedBy: 'requester' }),
+      file('http-foreign-attachment', { kind: 'sr_attachment', originSrId: foreign.id, uploadedBy: 'other' }),
+    ])
+    await sr.submit('requester', draft.id, { title: '메타', titleSource: 'manual', body: '', attachmentIds: ['http-own-attachment'] })
+    const linked = await sr.startTask('staff', draft.id, { assistantId })
+    if ('candidates' in linked) throw new Error('첫 연결 업무는 생성되어야 합니다')
+    await db.insert(fileObject).values([
+      file('http-shared-output', { kind: 'task_file', originTaskId: linked.id, source: 'assistant', isOutput: true, uploadedBy: 'staff' }),
+      file('http-internal-output', { kind: 'task_file', originTaskId: linked.id, source: 'assistant', isOutput: true, uploadedBy: 'staff' }),
+    ])
+    await sr.share('staff', draft.id, { taskId: linked.id, text: '', fileIds: ['http-shared-output'] })
+
+    const config = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' })
+    const apiClient = createPool(temp.url, 2)
+    const users: Record<string, AuthUser> = {
+      requester: { id: 'requester', name: 'Requester', role: '', theme: 'system', locale: 'ko', isSystemOwner: false, isBusinessOwner: true },
+      staff: { id: 'staff', name: 'Staff', role: '', theme: 'system', locale: 'ko', isSystemOwner: false },
+    }
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(CONFIG).useValue(config)
+      .overrideProvider(DB_CLIENT).useValue(apiClient)
+      .overrideProvider(DB).useValue(drizzle(apiClient))
+      .overrideProvider(SESSION_STORE).useValue({ resolve: async (token: string) => users[token] ?? null })
+      .compile()
+    const app = configureApp(moduleRef.createNestApplication(), config)
+    try {
+      await app.init()
+      const get = (actor: keyof typeof users, path: string) => request(app.getHttpServer()).get(path).set('Cookie', `mes_session=${actor}`)
+      const own = await get('requester', '/api/files/http-own-attachment').expect(200)
+      expect(own.body).toMatchObject({ id: 'http-own-attachment', name: 'http-own-attachment.txt', originSrId: draft.id })
+      const shared = await get('requester', '/api/files/http-shared-output').expect(200)
+      expect(shared.body).toMatchObject({ id: 'http-shared-output', name: 'http-shared-output.txt' })
+      await get('requester', '/api/files/http-foreign-attachment').expect(403)
+      await get('requester', '/api/files/http-internal-output').expect(403)
+      await get('requester', '/api/files/http-own-attachment/versions').expect(403)
+      await request(app.getHttpServer()).patch('/api/files/http-own-attachment').set('Cookie', 'mes_session=requester').send({ isOutput: true }).expect(403)
+      await get('staff', '/api/files/http-internal-output').expect(200)
+    } finally {
+      await app.close()
+    }
+  })
+
 })

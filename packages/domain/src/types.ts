@@ -323,6 +323,7 @@ export interface SharedResult {
   text: string
   fileIds: ID[]
   by: ID
+  byName?: string
   at: ISODate
 }
 

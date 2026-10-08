@@ -23,7 +23,7 @@ afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
 it('/me locale renders the sidebar in English', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/me' ? jsonResponse(200, { ...me, locale: 'en' }) : jsonResponse(200, [])))
   renderWithProviders(<AppShell />)
-  for (const name of ['Agent Hub', 'Submit SR', 'Reports', 'Manage SR', 'Manage agents', 'Settings', 'Diagnostics']) {
+  for (const name of ['Agent Hub', 'My SR requests', 'Reports', 'SR inbox', 'Manage agents', 'Settings', 'Diagnostics']) {
     expect(await screen.findByRole('link', { name })).toBeInTheDocument()
   }
   expect(screen.queryByRole('link', { name: '에이전트 허브' })).not.toBeInTheDocument()
