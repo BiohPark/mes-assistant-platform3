@@ -10,12 +10,16 @@ import { queueFirstRequest, useChat } from '@/features/chat/useChat'
 import { ChatMessages } from '@/features/chat/ChatMessages'
 import { Composer, type PendingAttachment } from '@/features/chat/Composer'
 import { TopBar } from '@/app/TopBar'
+import { Bot, Inbox, SearchX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/Chip'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { EmptyState } from '@/components/EmptyState'
 import { SrStatusBadge } from '@/components/StatusBadges'
 import { newId } from '@/lib/ids'
 import { SrList } from './SrList'
+import { SrLoadError, SrSkeleton } from './SrStates'
+import { exampleQuestionsFrom } from './srExamples'
 import { SrTitleEditor } from './SrTitleEditor'
 import { SrConvertSheet } from './SrConvertSheet'
 import { SrStatusHistory } from './SrStatusHistory'
@@ -29,8 +33,10 @@ export function SrIntakePage() {
   const t = useT()
   const me = useMe()
   const client = useQueryClient()
-  const { data: rows = [] } = useQuery({ queryKey: ['sr', 'mine'], queryFn: () => listSr('mine') })
-  const { data: settings } = useQuery({ queryKey: ['sr-intake-assistant'], queryFn: getSrIntakeAssistant })
+  const list = useQuery({ queryKey: ['sr', 'mine'], queryFn: () => listSr('mine') })
+  const intake = useQuery({ queryKey: ['sr-intake-assistant'], queryFn: getSrIntakeAssistant })
+  const rows = list.data ?? []
+  const settings = intake.data
   const [params, setParams] = useSearchParams()
   const selectedId = params.get('id') ?? ''
   const isNew = params.has('new')
@@ -84,13 +90,25 @@ export function SrIntakePage() {
   const canEdit = selected && (selected.requesterId === me.id || me.roles.includes('system_owner'))
   const hasDetail = !!selectedId || isNew
   const visible = rows.filter(sr => filter === 'complete' ? sr.status === 'done' || sr.status === 'rejected' : sr.status !== 'done' && sr.status !== 'rejected')
+  // 첫 질문 예시는 SO가 에이전트 usageExample에 인용한 목록 항목만 — 플랫폼이 지은 예시는 없다. 카드 칩과 Composer 제안이 같은 결과를 쓴다.
+  const examples = exampleQuestionsFrom(settings?.usageExample)
+  const loaded = !!list.data && !!settings
+  const failed = list.isError || intake.isError
+  const retry = () => { if (list.isError) void list.refetch(); if (intake.isError) void intake.refetch() }
   const empty = <div className="mx-auto max-w-md space-y-2 py-8 text-center"><h2 className="font-semibold">{settings?.name || t('sr.intakeAgent')}</h2><p className="text-sm text-muted-foreground">{settings?.summary || t('sr.intakeSummary')}</p></div>
   return <><TopBar title={t('nav.sr')} /><p className="px-4 pt-3 text-sm text-muted-foreground">{t('sr.intakeDescription')}</p>
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[18rem_1fr]">
       <aside className={`${hasDetail ? 'hidden lg:block' : ''} space-y-3 overflow-y-auto`}>
-        {settings && (settings.srIntakeAssistantId ? <Button onClick={newRequest} disabled={locked}>{t('sr.newRequest')}</Button> : <p role="status" className="text-sm">{t('sr.noIntake')}{me.roles.includes('system_owner') && <> · <Link to="/settings" className="underline">{t('sr.settingsLink')}</Link></>}</p>)}
-        <div className="flex gap-2">{(['active', 'complete'] as const).map(value => <Chip key={value} variant="filter" label={t(`sr.${value}`)} selected={filter === value} onClick={() => setFilter(value)} />)}</div>
-        <SrList rows={visible} selectedId={selectedId} disabled={locked} onSelect={setSelectedId} />
+        {failed ? <SrLoadError error={list.error ?? intake.error} retrying={list.isFetching || intake.isFetching} onRetry={retry} /> : !loaded ? <SrSkeleton /> : <>
+          {settings.srIntakeAssistantId ? <Button onClick={newRequest} disabled={locked}>{t('sr.newRequest')}</Button> : <p role="status" className="text-sm">{t('sr.noIntake')}{me.roles.includes('system_owner') && <> · <Link to="/settings" className="underline">{t('sr.settingsLink')}</Link></>}</p>}
+          {rows.length === 0 ? (settings.srIntakeAssistantId ? <EmptyState icon={Bot} title={settings.name ?? ''} description={settings.summary || undefined}>
+            {examples.length > 0 && <ul aria-label={t('sr.exampleQuestions')} className="flex flex-wrap justify-center gap-1">{examples.map(example => <li key={example}><Chip label={example} /></li>)}</ul>}
+          </EmptyState> : <EmptyState icon={Inbox} title={t('sr.noRequests')} />) : <>
+            <div className="flex gap-2">{(['active', 'complete'] as const).map(value => <Chip key={value} variant="filter" label={t(`sr.${value}`)} selected={filter === value} onClick={() => setFilter(value)} />)}</div>
+            {visible.length === 0 ? <EmptyState icon={SearchX} title={t('sr.noMatchingStatus')} action={filter !== 'active' && <Button size="sm" variant="outline" onClick={() => setFilter('active')}>{t('sr.resetFilter')}</Button>} />
+              : <SrList rows={visible} selectedId={selectedId} disabled={locked} onSelect={setSelectedId} />}
+          </>}
+        </>}
       </aside>
       <div className={`${hasDetail ? 'flex' : 'hidden lg:flex'} min-h-0 flex-col gap-4 overflow-y-auto`}>
         {hasDetail && <Button variant="ghost" className="self-start lg:hidden" disabled={locked} onClick={() => setSelectedId('')}>{t('sr.back')}</Button>}
@@ -110,7 +128,7 @@ export function SrIntakePage() {
           <section className="min-h-40 flex-1 space-y-4 overflow-y-auto rounded-lg border p-3" aria-label={t('sr.conversation')}>
             <ChatMessages messages={messages} run={chat.run} empty={empty} actions={message => ({ intake: true, assistantName: settings?.name || t('sr.intakeAgent'), onRetry: message.requestId && message.status === 'error' ? () => { void chat.retry(message.requestId!).catch(error => toast.error(String(error))) } : undefined })} />
           </section>
-          {closed ? <p role="status" className="text-sm text-muted-foreground">{t('sr.closed')}</p> : <Composer key={selectedId || 'new'} maxAttachments={settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST} inputLabel={t('sr.message')} placeholder={t('sr.messagePlaceholder')} disabled={busy || awaitingStart || !settings?.srIntakeAssistantId} streaming={!!chat.run} allowAttachments onSend={send} onStop={() => { void chat.stop() }} suggestions={!messages.length ? [settings?.usageExample || t('sr.example')] : undefined} />}
+          {closed ? <p role="status" className="text-sm text-muted-foreground">{t('sr.closed')}</p> : <Composer key={selectedId || 'new'} maxAttachments={settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST} inputLabel={t('sr.message')} placeholder={t('sr.messagePlaceholder')} disabled={busy || awaitingStart || !settings?.srIntakeAssistantId} streaming={!!chat.run} allowAttachments onSend={send} onStop={() => { void chat.stop() }} suggestions={!messages.length && examples.length > 0 ? examples : undefined} />}
           {selected?.status === 'draft' && canEdit && !selected.hasRequests && <Button variant="ghost" className="self-start" onClick={() => setDeleting(true)}>{t('sr.deleteDraft')}</Button>}
         </>}
         {selected && <><SrConvertSheet sr={selected} open={convert} onOpenChange={setConvert} onSaved={refresh} /><ConfirmDialog open={deleting} onOpenChange={setDeleting} title={t('sr.deleteConfirm')} description={t('sr.deleteDescription')} confirmLabel={t('sr.deleteDraft')} onConfirm={async () => { try { await deleteSr(selected.id); setSelectedId(''); refresh() } catch (error) { toast.error(String(error)); throw error } }} /></>}

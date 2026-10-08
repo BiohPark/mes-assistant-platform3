@@ -11,5 +11,5 @@ export function SrList({ rows, selectedId, disabled, onSelect }: { rows: SrDetai
     <div className="flex items-center justify-between gap-2"><span className="font-medium">{sr.code || t('status.sr.draft')}</span><SrStatusBadge status={sr.status} /></div>
     <div className="truncate">{sr.title || sr.firstMessage?.slice(0, 40) || t('sr.untitled')}</div>
     <time className="text-xs text-muted-foreground" dateTime={sr.updatedAt}>{formatRelative(sr.updatedAt)}</time>
-  </button>)}{rows.length === 0 && <p className="text-sm text-muted-foreground">{t('sr.noRequests')}</p>}</div>
+  </button>)}</div>
 }
