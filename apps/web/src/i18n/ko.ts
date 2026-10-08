@@ -472,6 +472,9 @@ export const ko = {
     reasonRequired: '필수 체크 항목이 미완료입니다. 사유를 입력해야 완료할 수 있습니다. (1–500자)',
     reasonPlaceholder: '미완료 상태로 완료하는 사유',
   },
+  u10Admin: {
+    codeActive: '{name} 활성',
+  },
 } as const
 
 type MessageShape<T> = { [K in keyof T]: T[K] extends string ? string : MessageShape<T[K]> }

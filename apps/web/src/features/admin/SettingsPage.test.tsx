@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MeContext } from '@/app/auth'
@@ -103,4 +103,66 @@ it('BO Switch는 키보드로 바로 변경한다', async () => {
   await waitFor(() => expect(toggle).toBeChecked())
   expect(writes).toEqual([{ enabled: true }])
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+
+it('임시 비밀번호는 취소·Escape에는 발급하지 않고 확인 후 결과를 표시한다', async () => {
+  const issued: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') { issued.push(url); return jsonResponse(200, { temporaryPassword: 'temporary-123' }) }
+    return jsonResponse(200, url === '/api/users' ? [{ id: 'other', loginId: 'other', name: '다른 사용자', active: true, isSystemOwner: false, isBusinessOwner: false, mustChangePassword: false }] : url === '/api/settings' ? { defaultModel: 'model' } : [])
+  }))
+  const user = userEvent.setup()
+  renderPage()
+  const trigger = await screen.findByRole('button', { name: '임시 비밀번호' })
+  await user.click(trigger)
+  expect(await screen.findByRole('dialog', { name: '다른 사용자의 임시 비밀번호를 발급할까요?' })).toBeInTheDocument()
+  expect(issued).toEqual([])
+  await user.click(screen.getByRole('button', { name: '취소' }))
+  expect(trigger).toHaveFocus()
+  expect(issued).toEqual([])
+  await user.click(trigger)
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(trigger).toHaveFocus()
+  expect(issued).toEqual([])
+  await user.click(trigger)
+  await user.click(screen.getByRole('button', { name: '확인' }))
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('temporary-123'))
+  expect(issued).toEqual(['/api/users/other/temporary-password'])
+})
+
+it('임시 비밀번호 확인창은 닫기 애니메이션 동안 발급 제목과 버튼을 유지한다', async () => {
+  // jsdom has no CSS animations. Keep Radix Presence mounted until animationend,
+  // using the same live animationName change as the browser's computed style.
+  const getStyle = window.getComputedStyle.bind(window)
+  vi.stubGlobal('getComputedStyle', (element: Element) => {
+    const style = getStyle(element)
+    if (!element.matches('[data-slot="dialog-content"], [data-slot="dialog-overlay"]')) return style
+    Object.defineProperty(style, 'animationName', { get: () => element.getAttribute('data-state') === 'open' ? 'fade-in' : 'fade-out' })
+    return style
+  })
+  vi.stubGlobal('CSS', { escape: (value: string) => value })
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/users/other/temporary-password' && init?.method === 'POST') return jsonResponse(200, { temporaryPassword: 'temporary-123' })
+    return jsonResponse(200, url === '/api/users' ? [{ id: 'other', loginId: 'other', name: '다른 사용자', active: true, isSystemOwner: false, isBusinessOwner: false, mustChangePassword: false }] : url === '/api/settings' ? { defaultModel: 'model' } : [])
+  }))
+  const user = userEvent.setup()
+  renderPage()
+  const trigger = await screen.findByRole('button', { name: '임시 비밀번호' })
+  await user.click(trigger)
+  const dialog = await screen.findByRole('dialog', { name: '다른 사용자의 임시 비밀번호를 발급할까요?' })
+  await user.click(within(dialog).getByRole('button', { name: '확인' }))
+  await waitFor(() => expect(dialog).toHaveAttribute('data-state', 'closed'))
+  expect(dialog).toBeInTheDocument()
+  expect(dialog).toHaveAccessibleName('다른 사용자의 임시 비밀번호를 발급할까요?')
+  expect(screen.queryByText('사용자를 비활성화할까요?')).not.toBeInTheDocument()
+  expect(dialog.querySelector('[data-slot="dialog-description"]')).toBeNull()
+  expect(within(dialog).getByRole('button', { name: '확인' })).toHaveAttribute('data-variant', 'default')
+  for (const element of document.querySelectorAll('[data-state="closed"][data-slot^="dialog-"]')) {
+    fireEvent(element, Object.assign(new Event('animationend', { bubbles: true }), { animationName: 'fade-out' }))
+  }
+  await waitFor(() => expect(dialog).not.toBeInTheDocument())
+  expect(trigger).toHaveFocus()
+  expect(screen.queryByText('사용자를 비활성화할까요?')).not.toBeInTheDocument()
 })

@@ -27,7 +27,7 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
     await page.getByRole('button', { name: '새 에이전트' }).click()
     const editor = page.getByRole('dialog', { name: '에이전트 편집' })
     await expect(editor.getByLabel('ID', { exact: true })).toHaveCount(0)
-    await editor.getByText('이름', { exact: true }).locator('input').fill('E2E 관리 도우미')
+    await editor.getByRole('textbox', { name: '이름', exact: true }).fill('E2E 관리 도우미') // Field: 라벨이 입력을 감싸지 않고 htmlFor로 연결
     for (const [label, name] of [['분류 1', level1], ['분류 2', level2]] as const) {
       const input = editor.getByRole('combobox', { name: label })
       await input.fill(name)
