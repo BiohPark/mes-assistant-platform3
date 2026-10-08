@@ -6,9 +6,9 @@ import { appSetting } from '../db/schema.js'
 
 /**
  * 기본 모델의 단일 정본 — .env `LLM_DEFAULT_MODEL` 유효값(공백·미설정이면 도메인 기본값). S7 C2
- * DB `app_setting.defaultModel`은 어디서도 읽지 않는다. 요청 시작·SR 보조·요약·프롬프트 설정·시스템 assistant·진단·시험 API가 모두 이 함수를 쓴다.
+ * DB `app_setting.defaultModel`은 어디서도 읽지 않는다. 요청 시작·SR 보조·요약·프롬프트 설정·시스템 assistant·진단·시험 API·체크리스트 점검이 모두 이 함수를 쓴다.
  */
-export function effectiveDefaultModel(config: Pick<AppConfig, 'llm'>): string {
+export function effectiveDefaultModel(config: { llm: Pick<AppConfig['llm'], 'defaultModel'> }): string {
   return config.llm.defaultModel?.trim() || DEFAULT_LLM_SETTINGS.model
 }
 
