@@ -17,10 +17,11 @@ export function PasswordPage() {
   const [currentPassword, setCurrent] = useState('')
   const [newPassword, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [mismatch, setMismatch] = useState(false)
   const [error, setError] = useState('')
   async function submit(event: FormEvent) {
-    event.preventDefault(); setError('')
-    if (newPassword !== confirm) { setError(t('admin.password.mismatch')); return }
+    event.preventDefault(); setError(''); setMismatch(false)
+    if (newPassword !== confirm) { setMismatch(true); return }
     try {
       await adminRequest('auth/password', 'POST', { currentPassword, newPassword })
       client.clear()
@@ -30,7 +31,8 @@ export function PasswordPage() {
   return <><TopBar title={t('common.changePassword')} /><div className="flex-1 p-6"><form onSubmit={(event) => void submit(event)} className="mx-auto max-w-sm space-y-3 rounded-xl border bg-card p-5 text-sm"><h2 className="font-semibold">{me.mustChangePassword ? t('admin.password.mustChange') : t('common.changePassword')}</h2>
     <Field label={t('admin.password.current')}><Input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrent(event.target.value)} required minLength={8} /></Field>
     <Field label={t('admin.password.next')}><Input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNext(event.target.value)} required minLength={8} maxLength={128} /></Field>
-    <Field label={t('admin.password.confirm')} error={error}><Input type="password" autoComplete="new-password" value={confirm} onChange={(event) => setConfirm(event.target.value)} required /></Field>
+    <Field label={t('admin.password.confirm')} error={mismatch ? t('admin.password.mismatch') : undefined}><Input type="password" autoComplete="new-password" value={confirm} onChange={(event) => setConfirm(event.target.value)} required /></Field>
     <Button type="submit">{t('admin.password.change')}</Button>
+    {error && <p role="alert" className="text-destructive">{error}</p>}
   </form></div></>
 }

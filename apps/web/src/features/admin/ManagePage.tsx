@@ -46,7 +46,7 @@ function ImageDropzone({ assistant, onSaved }: { assistant: Assistant; onSaved: 
   </div>
 }
 
-function AssistantEditorSheet({ assistant, onClose, onSaved, onCloseAutoFocus }: { assistant?: Assistant; onClose: () => void; onSaved: () => void; onCloseAutoFocus: (event: Event) => void }) {
+function AssistantEditorSheet({ assistant, onClose, onDeleted, onSaved, onCloseAutoFocus }: { assistant?: Assistant; onClose: () => void; onDeleted: () => void; onSaved: () => void; onCloseAutoFocus: (event: Event) => void }) {
   const t = useT()
   const { models } = useModelList()
   const users = useUsers()
@@ -122,7 +122,7 @@ function AssistantEditorSheet({ assistant, onClose, onSaved, onCloseAutoFocus }:
         confirmLabel={t('admin.manage.delete')} onCloseAutoFocus={event => { event.preventDefault(); deleteTrigger.current?.focus() }}
         onConfirm={async () => {
           if (!assistant) return
-          try { await deleteAssistant(assistant.id); onSaved(); onClose() }
+          try { await deleteAssistant(assistant.id); onSaved(); onDeleted() }
           catch (error) { toast.error(error instanceof Error ? error.message : t('admin.manage.deleteFailed')) }
         }} />
     </SheetContent>
@@ -173,6 +173,7 @@ export function ManagePage() {
   const [editor, setEditor] = useState<Assistant | 'new' | null>(null)
   const [search, setSearch] = useState('')
   const editorTrigger = useRef<HTMLElement | null>(null)
+  const newAssistantTrigger = useRef<HTMLButtonElement>(null)
   function openEditor(value: Assistant | 'new') {
     editorTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setEditor(value)
@@ -181,5 +182,5 @@ export function ManagePage() {
   const filtered = sorted.filter((row) => `${row.name} ${row.level1} ${row.level2}`.toLowerCase().includes(search.toLowerCase()))
   const refresh = () => { void client.invalidateQueries({ queryKey: ['assistants'] }); void client.invalidateQueries({ queryKey: ['managed-codes'] }) }
   useEffect(() => { if (editor === 'new' && users.length === 0) void client.invalidateQueries({ queryKey: ['users'] }) }, [editor, users.length, client])
-  return <><TopBar title={t('nav.assistants')} actions={<Button size="sm" onClick={() => openEditor('new')}>{t('admin.manage.newAssistant')}</Button>} /><div className="flex-1 space-y-4 overflow-auto p-4 lg:p-6"><div className="flex gap-2"><Button variant={tab === 'assistants' ? 'default' : 'outline'} onClick={() => setTab('assistants')}>{t('admin.manage.assistant')}</Button><Button variant={tab === 'codes' ? 'default' : 'outline'} onClick={() => setTab('codes')}>{t('admin.manage.codesTab')}</Button></div>{tab === 'codes' ? <CodesPanel /> : <><Field label={t('admin.manage.searchPlaceholder')} className="max-w-xs [&>label]:sr-only"><Input placeholder={t('admin.manage.searchPlaceholder')} value={search} onChange={(event) => setSearch(event.target.value)} /></Field><AssistantTable rows={filtered} onEdit={openEditor} onSaved={refresh} />{!search && <SortableAssistantGrid rows={sorted} onSaved={refresh} />}</>}</div>{editor && <AssistantEditorSheet key={editor === 'new' ? 'new' : editor.id} assistant={editor === 'new' ? undefined : editor} onClose={() => setEditor(null)} onSaved={refresh} onCloseAutoFocus={event => { event.preventDefault(); editorTrigger.current?.focus() }} />}</>
+  return <><TopBar title={t('nav.assistants')} actions={<Button ref={newAssistantTrigger} size="sm" onClick={() => openEditor('new')}>{t('admin.manage.newAssistant')}</Button>} /><div className="flex-1 space-y-4 overflow-auto p-4 lg:p-6"><div className="flex gap-2"><Button variant={tab === 'assistants' ? 'default' : 'outline'} onClick={() => setTab('assistants')}>{t('admin.manage.assistant')}</Button><Button variant={tab === 'codes' ? 'default' : 'outline'} onClick={() => setTab('codes')}>{t('admin.manage.codesTab')}</Button></div>{tab === 'codes' ? <CodesPanel /> : <><Field label={t('admin.manage.searchPlaceholder')} className="max-w-xs [&>label]:sr-only"><Input placeholder={t('admin.manage.searchPlaceholder')} value={search} onChange={(event) => setSearch(event.target.value)} /></Field><AssistantTable rows={filtered} onEdit={openEditor} onSaved={refresh} />{!search && <SortableAssistantGrid rows={sorted} onSaved={refresh} />}</>}</div>{editor && <AssistantEditorSheet key={editor === 'new' ? 'new' : editor.id} assistant={editor === 'new' ? undefined : editor} onClose={() => setEditor(null)} onDeleted={() => { editorTrigger.current = null; setEditor(null) }} onSaved={refresh} onCloseAutoFocus={event => { event.preventDefault(); (editorTrigger.current?.isConnected ? editorTrigger.current : newAssistantTrigger.current)?.focus() }} />}</>
 }

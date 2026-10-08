@@ -258,15 +258,20 @@ it('편집 Sheet는 포커스를 가두고 Escape로 닫은 뒤 편집 버튼에
   expect(trigger).toHaveFocus()
 })
 
-it('에이전트 삭제는 취소·Escape에는 유지하고 확인할 때만 삭제한다', async () => {
+it.each(['즉시', '지연'])('에이전트 목록이 %s 갱신되어도 삭제 확인 후 새 에이전트 버튼으로 복귀한다', async timing => {
   const deleted: string[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
-    if (init?.method === 'DELETE') { deleted.push(url); return jsonResponse(200, {}) }
+    if (url === '/api/assistants/a' && init?.method === 'DELETE') {
+      deleted.push(url)
+      if (timing === '즉시') assistantRows = []
+      return jsonResponse(200, {})
+    }
     return jsonResponse(200, url === '/api/llm/models' ? { models: [] } : [])
   }))
   const user = userEvent.setup()
   renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
-  await user.click(screen.getByRole('button', { name: '편집' }))
+  const editTrigger = screen.getByRole('button', { name: '편집' })
+  await user.click(editTrigger)
   const trigger = screen.getByRole('button', { name: '삭제' })
   await user.click(trigger)
   const confirm = await screen.findByRole('dialog', { name: '에이전트를 삭제할까요?' })
@@ -284,4 +289,13 @@ it('에이전트 삭제는 취소·Escape에는 유지하고 확인할 때만 �
   await user.click(within(screen.getByRole('dialog', { name: '에이전트를 삭제할까요?' })).getByRole('button', { name: '삭제' }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '에이전트 편집' })).not.toBeInTheDocument())
   expect(deleted).toEqual(['/api/assistants/a'])
+  await waitFor(() => expect(screen.getByRole('button', { name: '새 에이전트' })).toHaveFocus())
+  if (timing === '지연') {
+    expect(editTrigger).toBeInTheDocument()
+    assistantRows = []
+    // Simulate the later query result on the next parent render.
+    fireEvent.change(screen.getByPlaceholderText('에이전트 검색'), { target: { value: '도우미' } })
+  }
+  expect(editTrigger).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '새 에이전트' })).toHaveFocus()
 })

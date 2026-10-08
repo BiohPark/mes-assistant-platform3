@@ -52,6 +52,7 @@ function UserNameEditor({ user, onSaved }: { user: ManagedUser; onSaved: () => v
     <Button size="sm" variant="outline" type="submit">{t('admin.settings.saveName')}</Button>
   </form>
 }
+type PendingUserChange = { user: ManagedUser; field: 'system-owner' | 'active' | 'temporary-password' }
 function UsersSection() {
   const t = useT()
   const me = useMe()
@@ -59,10 +60,12 @@ function UsersSection() {
   const query = useQuery({ queryKey: ['managed-users'], queryFn: listManagedUsers })
   const [issued, setIssued] = useState<{ id: string; password: string } | null>(null)
   const confirmTrigger = useRef<HTMLElement | null>(null)
-  const [pending, setPending] = useState<{ user: ManagedUser; field: 'system-owner' | 'active' | 'temporary-password' } | null>(null)
+  const [pending, setPending] = useState<PendingUserChange | null>(null)
+  const [displayed, setDisplayed] = useState<PendingUserChange | null>(null)
   function confirmChange(user: ManagedUser, field: 'system-owner' | 'active' | 'temporary-password') {
     confirmTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setPending({ user, field })
+    setDisplayed({ user, field })
   }
   const change = (id: string, field: 'system-owner' | 'business-owner' | 'active', enabled: boolean) => {
     return setUserFlag(id, field, enabled).then(() => void query.refetch(), (error: unknown) => toast.error(error instanceof Error ? error.message : t('admin.changeFailed')))
@@ -76,10 +79,10 @@ function UsersSection() {
       {user.loginId && <Button size="sm" variant="outline" onClick={() => confirmChange(user, 'temporary-password')}>{t('admin.settings.temporaryPassword')}</Button>}
       {user.mustChangePassword && <span className="text-muted-foreground">{t('admin.settings.pendingChange')}</span>}
     </div>)}
-    <ConfirmDialog onCloseAutoFocus={event => { event.preventDefault(); confirmTrigger.current?.focus() }} open={!!pending} onOpenChange={open => { if (!open) setPending(null) }}
-      title={pending?.field === 'temporary-password' ? t('admin.settings.issueConfirm', { name: pending.user.name }) : t(pending?.field === 'system-owner' ? 'admin.removeSoTitle' : 'admin.deactivateTitle')}
-      description={pending?.field === 'temporary-password' ? undefined : t(pending?.field === 'system-owner' ? 'admin.removeSoDescription' : 'admin.deactivateDescription', { name: pending?.user.name ?? '' })}
-      confirmLabel={t('common.confirm')} destructive={pending?.field !== 'temporary-password'} onConfirm={async () => {
+    <ConfirmDialog onCloseAutoFocus={event => { event.preventDefault(); setDisplayed(null); confirmTrigger.current?.focus() }} open={!!pending} onOpenChange={open => { if (!open) setPending(null) }}
+      title={displayed?.field === 'temporary-password' ? t('admin.settings.issueConfirm', { name: displayed.user.name }) : t(displayed?.field === 'system-owner' ? 'admin.removeSoTitle' : 'admin.deactivateTitle')}
+      description={displayed?.field === 'temporary-password' ? undefined : t(displayed?.field === 'system-owner' ? 'admin.removeSoDescription' : 'admin.deactivateDescription', { name: displayed?.user.name ?? '' })}
+      confirmLabel={t('common.confirm')} destructive={displayed?.field !== 'temporary-password'} onConfirm={async () => {
         if (!pending) return
         if (pending.field === 'temporary-password') {
           try { const result = await temporaryPassword(pending.user.id); setIssued({ id: pending.user.id, password: result.temporaryPassword }) }
