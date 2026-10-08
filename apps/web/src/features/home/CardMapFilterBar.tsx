@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { HomeFilters } from '@/app/uiStore'
+import { useSearchText } from './useSearchText'
 
 export const FILTER_TOGGLE_CLASS = 'border-muted-foreground/30 hover:border-foreground data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:font-semibold data-[state=on]:hover:bg-primary data-[state=on]:hover:text-primary-foreground aria-pressed:bg-primary disabled:opacity-50'
 interface CardMapFilterBarProps {
@@ -17,11 +18,12 @@ interface CardMapFilterBarProps {
 }
 export function CardMapFilterBar({ level1Options, level2Options, filters, onChange, onReset }: CardMapFilterBarProps) {
   const t = useT()
+  const search = useSearchText(filters.q, q => onChange({ q }))
   const count = filters.level1CodeIds.length + filters.level2CodeIds.length + Number(filters.showRetired)
   return <div className="flex flex-wrap items-center gap-2">
     <div className="relative w-full sm:w-64">
       <Search aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-      <Input value={filters.q} aria-label={t('hub.searchAssistants')} onChange={event => onChange({ q: event.target.value })} placeholder={t('hub.searchAssistants')} className="h-8 pl-8" />
+      <Input {...search} aria-label={t('hub.searchAssistants')} placeholder={t('hub.searchAssistants')} className="h-8 pl-8" />
     </div>
     {(['level1', 'level2'] as const).map(level => {
       const options = level === 'level1' ? level1Options : level2Options

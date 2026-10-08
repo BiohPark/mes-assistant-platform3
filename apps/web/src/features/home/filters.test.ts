@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
 import type { Assistant } from '@mes/contracts'
+import { EMPTY_FILTER, filterFromParams, filterToParams } from '@mes/domain'
 import { emptyHomeFilters } from '@/app/uiStore'
 import { homeFiltersFromParams, homeFiltersToParams, matchesAssistant, classificationOptions, validHomeFilters } from './filters'
 
@@ -25,4 +26,14 @@ it('offers all Lv2 paths without Lv1 selection and removes invalid IDs only usin
   expect(classificationOptions([assistant], []).level2.map(p => p.id)).toEqual(['s1', 's2'])
   expect(classificationOptions([assistant], ['l2']).level2.map(p => p.id)).toEqual(['s2'])
   expect(validHomeFilters({ ...emptyHomeFilters(), level1CodeIds: ['l2', 'gone'], level2CodeIds: ['s1', 's2'] }, [assistant])).toMatchObject({ level1CodeIds: ['l2'], level2CodeIds: ['s1', 's2'] })
+})
+
+it('keeps card and conversation searches independent in both serialization directions', () => {
+  const params = homeFiltersToParams({ ...emptyHomeFilters(), q: 'agent' }, new URLSearchParams('q=conversation&tag=keep'))
+  expect(params.get('aq')).toBe('agent')
+  expect(filterFromParams(params).q).toBe('conversation')
+  const next = filterToParams({ ...EMPTY_FILTER, q: 'changed' }, params)
+  expect(homeFiltersFromParams(next).q).toBe('agent')
+  expect(homeFiltersToParams(emptyHomeFilters(), next).get('q')).toBe('changed')
+  expect(homeFiltersFromParams(new URLSearchParams('q=conversation')).q).toBe('')
 })

@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { expect, it } from 'vitest'
@@ -26,4 +26,53 @@ it('supports keyboard multiple selection, checked visual states, and reset', asy
   expect(first.querySelector('svg')).not.toBeNull()
   await user.click(screen.getByRole('button', { name: '초기화' }))
   expect(first).toHaveAttribute('aria-pressed', 'false')
+})
+
+it('keeps edits and caret local while earlier URL values arrive asynchronously', () => {
+  function DelayedUrl() {
+    const [q, setQ] = useState('abcd')
+    return <><CardMapFilterBar level1Options={[]} level2Options={[]} filters={{ ...emptyHomeFilters(), q }} onChange={() => {}} onReset={() => setQ('')} />
+      <button onClick={() => setQ('abXcd')}>Earlier URL</button>
+      <button onClick={() => setQ('abXYcd')}>Latest URL</button>
+      <button onClick={() => setQ('external')}>External URL</button>
+    </>
+  }
+  renderWithProviders(<DelayedUrl />)
+  const input = screen.getByRole('textbox') as HTMLInputElement
+  input.focus()
+  fireEvent.change(input, { target: { value: 'abXcd', selectionStart: 3, selectionEnd: 3 } })
+  expect(input).toHaveValue('abXcd')
+  fireEvent.change(input, { target: { value: 'abXYcd', selectionStart: 4, selectionEnd: 4 } })
+  expect(input).toHaveValue('abXYcd')
+  expect(input.selectionStart).toBe(4)
+  fireEvent.click(screen.getByRole('button', { name: 'Earlier URL' }))
+  expect(input).toHaveValue('abXYcd')
+  expect(input.selectionStart).toBe(4)
+  fireEvent.click(screen.getByRole('button', { name: 'Latest URL' }))
+  expect(input).toHaveValue('abXYcd')
+  expect(input.selectionStart).toBe(4)
+  fireEvent.click(screen.getByRole('button', { name: 'External URL' }))
+  expect(input).toHaveValue('external')
+})
+
+it('does not replace a Korean composition draft when a delayed URL update arrives', () => {
+  function DelayedUrl() {
+    const [q, setQ] = useState('old')
+    const [submitted, setSubmitted] = useState('')
+    return <><CardMapFilterBar level1Options={[]} level2Options={[]} filters={{ ...emptyHomeFilters(), q }} onChange={patch => setSubmitted(patch.q ?? '')} onReset={() => setQ('')} />
+      <button onClick={() => setQ('older response')}>Delayed URL</button>
+      <output data-testid="submitted">{submitted}</output>
+    </>
+  }
+  renderWithProviders(<DelayedUrl />)
+  const input = screen.getByRole('textbox')
+  fireEvent.compositionStart(input)
+  fireEvent.change(input, { target: { value: 'old한' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Delayed URL' }))
+  expect(input).toHaveValue('old한')
+  expect(screen.getByTestId('submitted')).toBeEmptyDOMElement()
+  fireEvent.change(input, { target: { value: 'old한글' } })
+  fireEvent.compositionEnd(input, { data: '한글' })
+  expect(input).toHaveValue('old한글')
+  expect(screen.getByTestId('submitted')).toHaveTextContent('old한글')
 })

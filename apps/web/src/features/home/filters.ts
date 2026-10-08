@@ -2,12 +2,12 @@ import type { Assistant } from '@mes/contracts'
 import type { HomeFilters } from '@/app/uiStore'
 
 export function homeFiltersFromParams(params: URLSearchParams): HomeFilters {
-  return { q: params.get('q') ?? '', level1CodeIds: [...new Set(params.getAll('l1'))], level2CodeIds: [...new Set(params.getAll('l2'))], showRetired: params.get('retired') === '1' }
+  return { q: params.get('aq') ?? '', level1CodeIds: [...new Set(params.getAll('l1'))], level2CodeIds: [...new Set(params.getAll('l2'))], showRetired: params.get('retired') === '1' }
 }
 export function homeFiltersToParams(filters: HomeFilters, base: URLSearchParams): URLSearchParams {
   const next = new URLSearchParams(base)
-  for (const key of ['q', 'l1', 'l2', 'retired']) next.delete(key)
-  if (filters.q) next.set('q', filters.q)
+  for (const key of ['aq', 'l1', 'l2', 'retired']) next.delete(key)
+  if (filters.q) next.set('aq', filters.q)
   filters.level1CodeIds.forEach(id => next.append('l1', id))
   filters.level2CodeIds.forEach(id => next.append('l2', id))
   if (filters.showRetired) next.set('retired', '1')

@@ -22,6 +22,7 @@ import { listAssistants } from '@/lib/catalog'
 import { EmptyState } from '@/components/EmptyState'
 import { FILTER_TOGGLE_CLASS } from './CardMapFilterBar'
 import { ConversationCard } from './ConversationCard'
+import { useSearchText } from './useSearchText'
 
 const colId = (assistantId: string) => `kanban-col-${assistantId}`
 
@@ -46,7 +47,8 @@ export function ConversationKanban() {
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => listTasks() })
   const collapseEmpty = useUiStore((s) => s.kanbanCollapseEmpty)
   const setCollapseEmpty = useUiStore((s) => s.setKanbanCollapseEmpty)
-  const update = (patch: Partial<KanbanFilter>) => setParams(filterToParams({ ...filter, ...patch }, params))
+  const update = (patch: Partial<KanbanFilter>) => setParams(filterToParams({ ...filter, ...patch }, params), { replace: patch.q !== undefined })
+  const search = useSearchText(filter.q, q => update({ q }), value => value.trim())
   const reset = () => setParams(filterToParams({ stages: [], statuses: [], tags: [], mine: false, q: '' }, params))
   const columns = kanbanColumns(assistants, tasks.data ?? [], filter, actor.userId)
   const stages = stageOptions(assistants)
@@ -62,7 +64,7 @@ export function ConversationKanban() {
 
   return <div className="flex min-h-0 flex-1 flex-col gap-3">
     <div className="flex flex-wrap items-center gap-2">
-      <div className="relative w-full sm:w-56"><Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" /><Input value={filter.q} onChange={(event) => update({ q: event.target.value })} placeholder={t('hub.searchConversations')} className="h-8 pl-8" /></div>
+      <div className="relative w-full sm:w-56"><Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" /><Input {...search} placeholder={t('hub.searchConversations')} className="h-8 pl-8" /></div>
       <details className="relative"><summary className={cn('flex h-8 cursor-pointer items-center gap-1 rounded-lg border px-2 text-xs', filter.stages.length > 0 && 'border-primary text-primary')}><Filter className="size-3.5" />{t('hub.stage')}{filter.stages.length > 0 && ` ${filter.stages.length}`}</summary><div className="absolute z-20 mt-1 w-72 space-y-2 rounded-xl border bg-popover p-3 shadow-md"><div className="text-xs font-medium">{t('hub.stagesTitle')}</div>{stages.map((group) => <div key={group.level1} className="space-y-1"><div className="text-xs text-muted-foreground">{group.level1}</div><div className="flex flex-wrap gap-1">{group.stages.map((stage) => <button key={stage.key} type="button" aria-pressed={filter.stages.includes(stage.key)} onClick={() => toggleStage(stage.key)} className={cn('rounded-full border px-2 py-0.5 text-xs border-muted-foreground/30 hover:border-foreground disabled:opacity-50', filter.stages.includes(stage.key) && 'bg-primary text-primary-foreground font-semibold')}>{filter.stages.includes(stage.key) && <Check aria-hidden className="mr-1 inline size-3" />}{stage.level2}</button>)}</div></div>)}</div></details>
       <ToggleGroup type="multiple" variant="outline" size="sm" value={filter.statuses} onValueChange={(values) => update({ statuses: values as TaskStatus[] })} aria-label={t('hub.statusFilter')} className="flex-wrap">{TASK_STATUSES.map((status) => <ToggleGroupItem key={status} value={status} className={`${FILTER_TOGGLE_CLASS} text-xs`}>{filter.statuses.includes(status) && <Check aria-hidden className="size-3" />}{t(TASK_STATUS_KEY[status])}</ToggleGroupItem>)}</ToggleGroup>
       <Label className="flex items-center gap-1.5 text-xs"><Switch checked={filter.mine} onCheckedChange={(mine) => update({ mine })} />{t('hub.mine')}</Label>

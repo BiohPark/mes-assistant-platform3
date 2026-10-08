@@ -29,8 +29,8 @@ export function HomePage() {
   const view = params.get('view') === 'kanban' ? 'kanban' : 'cards'
   const { rows, isPending, isError, isFetching, refetch } = useAssistantRows()
   const users = useUserMap()
-  // Only a parameter-free first entry restores persisted choices. Every later navigation reads the URL.
-  const [initial] = useState(() => params.size === 0 ? homeFiltersToParams(useUiStore.getState().homeFilters, params) : new URLSearchParams(params))
+  // Entry links without card keys restore saved choices while preserving kanban filters. Later navigation follows the URL.
+  const [initial] = useState(() => !['aq', 'l1', 'l2', 'retired'].some(key => params.has(key)) ? homeFiltersToParams(useUiStore.getState().homeFilters, params) : new URLSearchParams(params))
   const started = useRef(false)
   const activeParams = started.current ? params : initial
   const rawFilters = homeFiltersFromParams(activeParams)
@@ -48,7 +48,7 @@ export function HomePage() {
     if (canonical !== currentUrl) setParams(new URLSearchParams(canonical), { replace: true })
     useUiStore.getState().setHomeFilters(homeFiltersFromParams(new URLSearchParams(canonical)))
   }, [canonical, currentUrl, setParams])
-  const update = (patch: Partial<HomeFilters>) => setParams(homeFiltersToParams({ ...filters, ...patch }, params))
+  const update = (patch: Partial<HomeFilters>) => setParams(homeFiltersToParams({ ...filters, ...patch }, params), { replace: patch.q !== undefined })
   const reset = () => {
     useUiStore.getState().setHomeFilters(emptyHomeFilters())
     setParams(homeFiltersToParams(emptyHomeFilters(), params))

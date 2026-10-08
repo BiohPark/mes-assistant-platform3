@@ -32,7 +32,7 @@ beforeEach(() => {
 })
 it('URL wins over persisted state, matches secondary paths, and rejects cross-path matches', async () => {
   useUiStore.getState().setHomeFilters({ q: 'wrong', level1CodeIds: ['one'] })
-  renderHome('/?l1=two&l2=beta&q=Multi')
+  renderHome('/?l1=two&l2=beta&aq=Multi')
   expect(await screen.findByText('Multi agent')).toBeInTheDocument()
   expect(screen.queryByText('Other agent')).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Two' })).toHaveAttribute('aria-pressed', 'true')
@@ -42,7 +42,7 @@ it('URL wins over persisted state, matches secondary paths, and rejects cross-pa
   expect(screen.queryByText('Multi agent')).not.toBeInTheDocument()
   expect(screen.getByText('조건에 맞는 에이전트가 없습니다')).toBeInTheDocument()
 })
-it('restores saved filters only on parameter-free entry and preserves choices before catalog loading', async () => {
+it('restores saved filters before catalog loading and prunes only invalid IDs afterwards', async () => {
   useUiStore.getState().setHomeFilters({ level1CodeIds: ['two', 'removed'], level2CodeIds: ['beta'] })
   let resolve!: (value: Response) => void
   catalog = new Promise<Response>(done => { resolve = done })
@@ -76,7 +76,7 @@ it('back/forward follows URL, reset clears storage, and both view switches keep 
   expect(screen.getByTestId('url')).not.toHaveTextContent('l1=')
 })
 it('separates search clear from filter reset in an empty result', async () => {
-  renderHome('/?q=missing&l1=one')
+  renderHome('/?aq=missing&l1=one')
   await screen.findByText('조건에 맞는 에이전트가 없습니다')
   const user = userEvent.setup()
   await user.click(screen.getByRole('button', { name: '필터 1개 초기화' }))
@@ -123,4 +123,97 @@ it('kanban filter changes participate in back/forward history', async () => {
   await waitFor(() => expect(screen.getByTestId('url')).not.toHaveTextContent('status='))
   await user.click(screen.getByRole('button', { name: 'Forward' }))
   await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('status=in_progress'))
+})
+
+it.each(['/?view=kanban&q=conversation&tag=keep', '/?view=kanban&q=conversation&tag=keep&stage=Two%2FBeta', '/?tag=keep'])('restores saved card filters on entry without card keys: %s', async route => {
+  useUiStore.getState().setHomeFilters({ q: 'Multi', level1CodeIds: ['two'], level2CodeIds: ['beta'], showRetired: true })
+  renderHome(route)
+  await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('aq=Multi'))
+  expect(useUiStore.getState().homeFilters).toEqual({ q: 'Multi', level1CodeIds: ['two'], level2CodeIds: ['beta'], showRetired: true })
+  expect(screen.getByTestId('url')).toHaveTextContent('tag=keep')
+  if (route.includes('kanban')) {
+    expect(screen.getByPlaceholderText('코드 · 제목 · 태그 검색')).toHaveValue('conversation')
+    if (route.includes('stage=')) await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('stage=two%2Fbeta'))
+    fireEvent.click(screen.getByRole('tab', { name: '에이전트 카드' }))
+  }
+  expect(await screen.findByText('Multi agent')).toBeInTheDocument()
+  expect(screen.queryByText('Other agent')).not.toBeInTheDocument()
+})
+
+it('treats an explicit empty card search as a URL override of saved filters', async () => {
+  useUiStore.getState().setHomeFilters({ q: 'Multi', level1CodeIds: ['one'] })
+  renderHome('/?aq=&q=conversation')
+  expect(await screen.findByText('Other agent')).toBeInTheDocument()
+  expect(useUiStore.getState().homeFilters).toEqual(emptyHomeFilters())
+  expect(screen.getByTestId('url')).toHaveTextContent('q=conversation')
+})
+
+it('replaces card search edits while chip toggles and reset push history', async () => {
+  renderHome('/?q=conversation')
+  await screen.findByText('Multi agent')
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'One' }))
+  const input = screen.getByPlaceholderText('이름 · 요약 · 업무 분류 검색')
+  await user.type(input, 'Multi')
+  expect(input).toHaveValue('Multi')
+  expect(screen.getByTestId('url')).toHaveTextContent('aq=Multi')
+  await user.click(screen.getByRole('button', { name: 'Back' }))
+  await waitFor(() => expect(screen.getByTestId('url')).not.toHaveTextContent('l1='))
+  expect(input).toHaveValue('')
+  expect(screen.getByTestId('url')).toHaveTextContent('q=conversation')
+  await user.click(screen.getByRole('button', { name: 'Forward' }))
+  await waitFor(() => expect(input).toHaveValue('Multi'))
+  await user.click(screen.getByRole('button', { name: '초기화' }))
+  expect(input).toHaveValue('')
+  await user.click(screen.getByRole('button', { name: 'Back' }))
+  await waitFor(() => expect(input).toHaveValue('Multi'))
+  expect(screen.getByRole('button', { name: 'One' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+it('replaces kanban search edits while status chips and view switches push history', async () => {
+  renderHome('/?view=kanban&aq=Multi')
+  await screen.findByRole('region', { name: 'Multi agent 열' })
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: '진행 중' }))
+  const input = screen.getByPlaceholderText('코드 · 제목 · 태그 검색')
+  await user.type(input, 'hello')
+  await user.click(screen.getByRole('button', { name: 'Back' }))
+  await waitFor(() => expect(screen.getByTestId('url')).not.toHaveTextContent('status='))
+  expect(input).toHaveValue('')
+  expect(screen.getByTestId('url')).toHaveTextContent('aq=Multi')
+  await user.click(screen.getByRole('button', { name: 'Forward' }))
+  await waitFor(() => expect(input).toHaveValue('hello'))
+  await user.click(screen.getByRole('tab', { name: '에이전트 카드' }))
+  expect(screen.getByPlaceholderText('이름 · 요약 · 업무 분류 검색')).toHaveValue('Multi')
+  await user.click(screen.getByRole('button', { name: 'Back' }))
+  expect(await screen.findByPlaceholderText('코드 · 제목 · 태그 검색')).toHaveValue('hello')
+})
+
+it.each([
+  ['/', '이름 · 요약 · 업무 분류 검색', 'aq'],
+  ['/?view=kanban', '코드 · 제목 · 태그 검색', 'q'],
+])('keeps Korean composition local until completion: %s', async (route, placeholder, key) => {
+  renderHome(route)
+  await screen.findByText(route.includes('kanban') ? 'Multi agent' : 'Other agent')
+  const input = screen.getByPlaceholderText(placeholder)
+  fireEvent.compositionStart(input)
+  fireEvent.change(input, { target: { value: 'ㅎ' } })
+  expect(input).toHaveValue('ㅎ')
+  expect(screen.getByTestId('url')).not.toHaveTextContent(`${key}=`)
+  fireEvent.change(input, { target: { value: '한글' } })
+  expect(input).toHaveValue('한글')
+  fireEvent.compositionEnd(input, { data: '한글' })
+  await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent(`${key}=%ED%95%9C%EA%B8%80`))
+})
+
+it('clears a local whitespace draft when kanban reset leaves the URL search empty', async () => {
+  renderHome('/?view=kanban&status=in_progress')
+  await screen.findByRole('region', { name: 'Multi agent 열' })
+  const user = userEvent.setup()
+  const input = screen.getByPlaceholderText('코드 · 제목 · 태그 검색')
+  await user.type(input, ' ')
+  expect(input).toHaveValue(' ')
+  await user.click(screen.getByRole('button', { name: '초기화' }))
+  expect(input).toHaveValue('')
+  expect(screen.getByTestId('url')).not.toHaveTextContent('status=')
 })
