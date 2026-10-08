@@ -57,6 +57,12 @@ export const en = {
     unknownUser: 'Unknown',
   },
   hub: {
+    noMatchingConversations: 'No conversations match your filters',
+    level1Filter: 'Category 1', selectedCount: '{count} selected', clearSearch: 'Clear search', clearFilters: 'Reset {count} filters',
+    manageAgents: 'Manage agents', editAgent: 'Edit', editAgentLabel: 'Edit {name}',
+    myActiveConversations: 'My ongoing conversations', noMyActiveConversations: 'No ongoing conversations',
+    inputs: 'Input', outputs: 'Output', noIo: 'Not set', addValue: 'Add',
+
     level2Filter: 'Category 2',
     viewSwitch: 'Switch view', assistantCards: 'Agent cards', conversationKanban: 'All conversations (Kanban)',
     noAssistants: 'No agents registered', noMatchingAssistants: 'No agents match your filters',
@@ -112,10 +118,15 @@ export const en = {
     name: 'Name', save: 'Save', saveFailed: 'Save failed', changeFailed: 'Update failed', nameSaved: 'Name saved',
     defaultModel: 'Default model', fileMaxPerRequest: 'Max attachments per request',
     manage: {
+      settingsTab: 'Settings', testTab: 'Test chat', paths: 'Classification paths', primaryPath: 'Primary', addPath: 'Add path',
+      pathLabel: 'Path {number}', pathUp: 'Move path {number} up', pathDown: 'Move path {number} down', removePath: 'Remove path {number}',
+      duplicatePaths: 'Duplicate classification paths are not allowed',
+      linkOverride: 'Existing link override', clearLink: 'Clear', io: 'Input / output', defaultModelText: 'Default model',
+
       defaultChecklist: { selectInputs: 'Select input files', reviewResult: 'Review result', saveOutput: 'Save output' },
       imageSaved: 'Image saved', imageSaveFailed: 'Failed to save image', imageDrop: 'Choose an image or drop it here', imageRemove: 'Remove image',
       assistantSaved: 'Agent saved', editorLabel: 'Edit agent', editTitle: 'Edit agent', newAssistant: 'New agent',
-      summary: 'Description', expectedInputs: 'Expected inputs (one per line)', expectedOutputs: 'Expected outputs (one per line)',
+      summary: 'Description', expectedInputs: 'Expected inputs', expectedOutputs: 'Expected outputs',
       checklistDefaults: 'Default checklist', checklistItem: 'Checklist {number}', delete: 'Delete', addItem: 'Add item',
       deleteConfirm: 'Delete this agent?', deleteFailed: 'Delete failed',
       assistant: 'Agent', category: 'Category', actions: 'Actions', edit: 'Edit',

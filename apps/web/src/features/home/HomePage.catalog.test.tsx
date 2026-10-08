@@ -15,7 +15,7 @@ const items = [
 ]
 
 beforeEach(() => {
-  useUiStore.setState({ homeFilters: { q: '', level1CodeId: null, level2CodeId: null, showRetired: false } })
+  useUiStore.setState({ homeFilters: { q: '', level1CodeIds: [], level2CodeIds: [], showRetired: false } })
   vi.stubGlobal('fetch', vi.fn(async (input: string) => {
     if (input === '/api/assistants') return jsonResponse(200, items)
     if (input === '/api/assistants/stats') return jsonResponse(200, items.map((item) => ({ assistantId: item.id, open: 0, inProgress: 0, onHold: 0, done: 0 })))
@@ -44,9 +44,9 @@ describe('HomePage catalog', () => {
     expect(screen.getByText('기록 도우미')).toBeInTheDocument()
     expect(screen.queryByText('분석 도우미')).not.toBeInTheDocument()
     await user.clear(screen.getByPlaceholderText('이름 · 요약 · 업무 분류 검색'))
-    await user.click(screen.getByRole('radio', { name: 'SDLC' }))
-    expect(useUiStore.getState().homeFilters.level1CodeId).toBe('assistant_level1:SDLC')
-    expect(JSON.parse(localStorage.getItem('mes-hub-ui') ?? '{}').state.homeFilters.level1CodeId).toBe('assistant_level1:SDLC')
+    await user.click(screen.getByRole('button', { name: 'SDLC' }))
+    expect(useUiStore.getState().homeFilters.level1CodeIds).toEqual(['assistant_level1:SDLC'])
+    expect(JSON.parse(localStorage.getItem('mes-hub-ui') ?? '{}').state.homeFilters.level1CodeIds).toEqual(['assistant_level1:SDLC'])
     expect(screen.getByText('분석 도우미')).toBeInTheDocument()
     expect(screen.queryByText('기록 도우미')).not.toBeInTheDocument()
     await user.click(screen.getByRole('switch', { name: '폐기 표시' }))
@@ -54,7 +54,7 @@ describe('HomePage catalog', () => {
   })
 
   it('keeps a stored code ID filter when its display name changes', async () => {
-    useUiStore.setState({ homeFilters: { q: '', level1CodeId: 'assistant_level1:SDLC', level2CodeId: 'assistant_level2:분석', showRetired: false } })
+    useUiStore.setState({ homeFilters: { q: '', level1CodeIds: ['assistant_level1:SDLC'], level2CodeIds: ['assistant_level2:분석'], showRetired: false } })
     vi.stubGlobal('fetch', vi.fn(async (input: string) => {
       if (input === '/api/assistants') return jsonResponse(200, items.map((item) => item.level1CodeId === 'assistant_level1:SDLC' ? { ...item, level1: '개발 생명주기', level2: '자료 분석' } : item))
       if (input === '/api/assistants/stats') return jsonResponse(200, [])
@@ -63,12 +63,12 @@ describe('HomePage catalog', () => {
     }))
     renderHome()
     expect(await screen.findByText('분석 도우미')).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: '개발 생명주기' })).toHaveAttribute('data-state', 'on')
+    expect(screen.getByRole('button', { name: '개발 생명주기' })).toHaveAttribute('data-state', 'on')
     expect(screen.queryByText('기록 도우미')).not.toBeInTheDocument()
   })
 
   it('ignores unknown stored filter values', async () => {
-    useUiStore.setState({ homeFilters: { q: '', level1CodeId: 'SDLC', level2CodeId: '분석', showRetired: false } })
+    useUiStore.setState({ homeFilters: { q: '', level1CodeIds: ['SDLC'], level2CodeIds: ['분석'], showRetired: false } })
     renderHome()
     await waitFor(() => expect(screen.getAllByRole('link', { name: /새 대화/ })).toHaveLength(2))
     expect(screen.getByText('분석 도우미')).toBeInTheDocument()
@@ -102,7 +102,7 @@ describe('HomePage catalog', () => {
   it('shows loading while the catalog is pending', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string) => input === '/api/assistants' ? new Promise<Response>(() => undefined) : jsonResponse(200, [])))
     renderHome()
-    expect(screen.getByText('불러오는 중…')).toBeInTheDocument()
+    expect(screen.getAllByText('불러오는 중…').length).toBeGreaterThan(0)
     expect(screen.queryByText('등록된 에이전트가 없습니다')).not.toBeInTheDocument()
   })
 

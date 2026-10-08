@@ -1,3 +1,9 @@
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router'
+import { useMe } from '@/app/auth'
+import { listTasks } from '@/api/tasks'
+import { emptyHomeFilters, type HomeFilters } from '@/app/uiStore'
+import { classificationOptions, homeFiltersFromParams, homeFiltersToParams, matchesAssistant, validHomeFilters } from './filters'
 import { Bot, KanbanSquare, LayoutGrid } from 'lucide-react'
 import { useSearchParams } from 'react-router'
 import { TopBar } from '@/app/TopBar'
@@ -8,44 +14,60 @@ import { Button } from '@/components/ui/button'
 import { AssistantCard } from './AssistantCard'
 import { CardMapFilterBar } from './CardMapFilterBar'
 import { ConversationKanban } from './ConversationKanban'
-import { useAssistantRows, type AssistantRow } from './useAssistantStats'
+import { useAssistantRows } from './useAssistantStats'
 import { useQuery } from '@tanstack/react-query'
 import { getSettings } from '@/api/admin'
 import { useT } from '@/i18n'
 
-function matches(row: AssistantRow, q: string, level1CodeId: string | null, level2CodeId: string | null, showRetired: boolean): boolean {
-  const assistant = row.assistant
-  if (!showRetired && assistant.status === 'retired') return false
-  if (level1CodeId && assistant.level1CodeId !== level1CodeId) return false
-  if (level2CodeId && assistant.level2CodeId !== level2CodeId) return false
-  if (!q) return true
-  return `${assistant.name} ${assistant.summary} ${assistant.level1} ${assistant.level2}`.toLowerCase().includes(q.toLowerCase())
-}
-
 export function HomePage() {
   const t = useT()
+  const me = useMe()
+  const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => listTasks() })
+  const myActive = (tasks.data ?? []).filter(task => task.status === 'in_progress' && (task.ownerId === me.id || task.assigneeIds.includes(me.id))).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)).slice(0, 6)
   const link1Rule = useQuery({ queryKey: ['settings'], queryFn: getSettings }).data?.link1Rule
   const [params, setParams] = useSearchParams()
   const view = params.get('view') === 'kanban' ? 'kanban' : 'cards'
   const { rows, isPending, isError, isFetching, refetch } = useAssistantRows()
   const users = useUserMap()
-  const { q, level1CodeId: savedLevel1CodeId, level2CodeId: savedLevel2CodeId, showRetired } = useUiStore((state) => state.homeFilters)
+  // Only a parameter-free first entry restores persisted choices. Every later navigation reads the URL.
+  const [initial] = useState(() => params.size === 0 ? homeFiltersToParams(useUiStore.getState().homeFilters, params) : new URLSearchParams(params))
+  const started = useRef(false)
+  const activeParams = started.current ? params : initial
+  const rawFilters = homeFiltersFromParams(activeParams)
   const all = rows ?? []
-  const level1Options = [...new Map(all.map((row) => [row.assistant.level1CodeId, { id: row.assistant.level1CodeId, label: row.assistant.level1 }])).values()]
-  const level1CodeId = level1Options.some((option) => option.id === savedLevel1CodeId) ? savedLevel1CodeId : null
-  const level2Options = level1CodeId ? [...new Map(all.filter((row) => row.assistant.level1CodeId === level1CodeId).map((row) => [row.assistant.level2CodeId, { id: row.assistant.level2CodeId, label: row.assistant.level2 }])).values()] : []
-  const level2CodeId = level2Options.some((option) => option.id === savedLevel2CodeId) ? savedLevel2CodeId : null
-  const filtered = all.filter((row) => matches(row, q, level1CodeId, level2CodeId, showRetired))
+  const filters = rows ? validHomeFilters(rawFilters, all.map(row => row.assistant)) : rawFilters
+  const options = classificationOptions(all.map(row => row.assistant), filters.level1CodeIds)
+  // Keep selected Lv2 chips visible even when they belong to another Lv1, so conflicting selections can be cleared explicitly.
+  const allLevel2 = classificationOptions(all.map(row => row.assistant), []).level2
+  options.level2 = [...options.level2, ...allLevel2.filter(option => filters.level2CodeIds.includes(option.id) && !options.level2.some(current => current.id === option.id))]
+  const filtered = all.filter(row => matchesAssistant(row.assistant, filters))
+  const canonical = homeFiltersToParams(filters, activeParams).toString()
+  const currentUrl = params.toString()
+  useEffect(() => {
+    started.current = true
+    if (canonical !== currentUrl) setParams(new URLSearchParams(canonical), { replace: true })
+    useUiStore.getState().setHomeFilters(homeFiltersFromParams(new URLSearchParams(canonical)))
+  }, [canonical, currentUrl, setParams])
+  const update = (patch: Partial<HomeFilters>) => setParams(homeFiltersToParams({ ...filters, ...patch }, params))
+  const reset = () => {
+    useUiStore.getState().setHomeFilters(emptyHomeFilters())
+    setParams(homeFiltersToParams(emptyHomeFilters(), params))
+  }
+  const filterCount = filters.level1CodeIds.length + filters.level2CodeIds.length + Number(filters.showRetired)
 
   return <>
-    <TopBar title={t('nav.hub')} />
+    <TopBar title={t('nav.hub')} actions={me.roles.includes('system_owner') && <Button size="sm" variant="outline" asChild><Link to="/assistants/manage">{t('hub.manageAgents')}</Link></Button>} />
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 lg:p-6">
       <div role="tablist" aria-label={t('hub.viewSwitch')} className="inline-flex self-start rounded-xl border bg-muted p-1 shadow-xs">
-        <button type="button" role="tab" aria-selected={view === 'cards'} onClick={() => setParams(new URLSearchParams())} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><LayoutGrid className="size-4" />{t('hub.assistantCards')}</button>
+        <button type="button" role="tab" aria-selected={view === 'cards'} onClick={() => { const next = new URLSearchParams(params); next.delete('view'); setParams(next) }} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><LayoutGrid className="size-4" />{t('hub.assistantCards')}</button>
         <button type="button" role="tab" aria-selected={view === 'kanban'} onClick={() => { const next = new URLSearchParams(params); next.set('view', 'kanban'); setParams(next) }} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'kanban' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><KanbanSquare className="size-4" />{t('hub.conversationKanban')}</button>
       </div>
       {view === 'kanban' ? <ConversationKanban /> : <>
-      <CardMapFilterBar level1Options={level1Options} level2Options={level2Options} level1CodeId={level1CodeId} level2CodeId={level2CodeId} />
+      <section aria-label={t('hub.myActiveConversations')} className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="font-medium">{t('hub.myActiveConversations')}</span>
+        {tasks.isPending ? <span className="text-muted-foreground">{t('common.loading')}</span> : tasks.isError ? <Button size="xs" variant="ghost" onClick={() => void tasks.refetch()}>{t('common.retry')}</Button> : myActive.length ? myActive.map(task => <Link key={task.id} to={`/c/${encodeURIComponent(task.id)}`} className="max-w-48 truncate rounded-full border px-2 py-1 hover:bg-muted" title={`${task.code} ${task.title}`}>{task.title || task.code}</Link>) : <span className="text-muted-foreground">{t('hub.noMyActiveConversations')}</span>}
+      </section>
+      <CardMapFilterBar level1Options={options.level1} level2Options={options.level2} filters={filters} onChange={update} onReset={reset} />
       {isPending && <div className="text-sm text-muted-foreground">{t('common.loading')}</div>}
       {isError && <div role="alert" className="text-sm">
         <h2 className="mb-2 text-lg font-semibold">{t('common.serverUnavailable')}</h2>
@@ -56,8 +78,12 @@ export function HomePage() {
         icon={Bot}
         title={all.length === 0 ? t('hub.noAssistants') : t('hub.noMatchingAssistants')}
         description={all.length === 0 ? t('hub.noAssistantsHelp') : t('hub.noMatchingHelp')}
+        action={all.length > 0 && <div className="flex gap-2">
+          {filters.q && <Button size="sm" variant="outline" onClick={() => update({ q: '' })}>{t('hub.clearSearch')}</Button>}
+          {filterCount > 0 && <Button size="sm" variant="outline" onClick={() => update({ level1CodeIds: [], level2CodeIds: [], showRetired: false })}>{t('hub.clearFilters', { count: filterCount })}</Button>}
+        </div>}
       />}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filtered.map((row) => <AssistantCard key={row.assistant.id} row={row} owner={users.get(row.assistant.ownerId)} baseUrl="" link1Rule={link1Rule} />)}
       </div>
       </>}

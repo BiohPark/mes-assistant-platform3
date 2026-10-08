@@ -1,30 +1,29 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { expect, it } from 'vitest'
-import { useUiStore } from '@/app/uiStore'
+import { emptyHomeFilters } from '@/app/uiStore'
 import { renderWithProviders } from '@/test/render'
 import { CardMapFilterBar } from './CardMapFilterBar'
 
-it('Lv2 칩의 키보드·전체 선택을 필터에 반영하고 Lv1 변경은 Lv2를 초기화한다', async () => {
-  useUiStore.getState().setHomeFilters({ level1CodeId: 'l1', level2CodeId: null })
+it('supports keyboard multiple selection, checked visual states, and reset', async () => {
   function Filter() {
-    const filters = useUiStore(s => s.homeFilters)
-    return <CardMapFilterBar level1Options={[{ id: 'l1', label: '분류' }, { id: 'other', label: '다른 분류' }]} level2Options={[{ id: 'sub1', label: '하위 하나' }, { id: 'sub2', label: '하위 둘' }]} level1CodeId={filters.level1CodeId} level2CodeId={filters.level2CodeId} />
+    const [filters, setFilters] = useState(emptyHomeFilters())
+    return <CardMapFilterBar level1Options={[{ id: 'l1', label: '분류' }, { id: 'other', label: '다른 분류' }]} level2Options={[{ id: 'sub1', label: '하위 하나' }, { id: 'sub2', label: '하위 둘' }]} filters={filters} onChange={patch => setFilters(current => ({ ...current, ...patch }))} onReset={() => setFilters(emptyHomeFilters())} />
   }
   const user = userEvent.setup()
   renderWithProviders(<Filter />)
-  const all = screen.getByRole('radio', { name: '전체' })
-  expect(all).toBeChecked()
-  all.focus()
-  await user.keyboard('{ArrowRight}')
-  expect(screen.getByRole('radio', { name: '하위 하나' })).toHaveFocus()
-  await user.keyboard(' ')
-  expect(useUiStore.getState().homeFilters.level2CodeId).toBe('sub1')
-  await user.click(screen.getByRole('radio', { name: '하위 둘' }))
-  expect(useUiStore.getState().homeFilters.level2CodeId).toBe('sub2')
-  await user.click(all)
-  expect(useUiStore.getState().homeFilters.level2CodeId).toBeNull()
-  await user.click(screen.getByRole('radio', { name: '하위 하나' }))
-  await user.click(screen.getByRole('radio', { name: '다른 분류' }))
-  expect(useUiStore.getState().homeFilters).toMatchObject({ level1CodeId: 'other', level2CodeId: null })
+  const first = screen.getByRole('button', { name: '분류' })
+  expect(first).toHaveAttribute('aria-pressed', 'false')
+  first.focus()
+  await user.keyboard(' {ArrowRight} ')
+  expect(first).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: '다른 분류' })).toHaveAttribute('aria-pressed', 'true')
+  await user.click(screen.getByRole('button', { name: '하위 하나' }))
+  await user.click(screen.getByRole('button', { name: '하위 둘' }))
+  expect(screen.getByText('선택됨 4')).toBeInTheDocument()
+  expect(first).toHaveClass('data-[state=on]:bg-primary', 'data-[state=on]:text-primary-foreground', 'hover:border-foreground')
+  expect(first.querySelector('svg')).not.toBeNull()
+  await user.click(screen.getByRole('button', { name: '초기화' }))
+  expect(first).toHaveAttribute('aria-pressed', 'false')
 })
