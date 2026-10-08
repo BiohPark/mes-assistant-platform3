@@ -163,6 +163,7 @@ export const en = {
     },
     settings: {
       saved: 'Settings saved', global: 'Global settings', requestBudget: 'Max request size (bytes)',
+      defaultModelEnvHint: 'Value of LLM_DEFAULT_MODEL in the server .env. It cannot be changed here; restart the service after changing it.',
       link1Rule: 'Default Link 1 rule (use {modelId} in the URL)', saveSettings: 'Save settings',
       userName: '{name} name', saveName: 'Save name', usersRoles: 'Users & roles',
       issueConfirm: 'Issue a temporary password for {name}?', issueFailed: 'Failed to issue password', temporaryPassword: 'Temporary password', pendingChange: 'Change pending',

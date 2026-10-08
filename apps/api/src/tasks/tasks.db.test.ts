@@ -8,6 +8,7 @@ import { appUser, assistant, assistantChecklistTemplate, checklistItem, checklis
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
+import { loadConfig } from '../config/config.js'
 import { DbTasksService } from './tasks.service.js'
 import { TaskExtrasService } from './task-extras.service.js'
 import { DbFilesService } from '../files/files.service.js'
@@ -87,6 +88,28 @@ describe('tasks DB', () => {
       expect(await extras.checklist('member', created.id)).toHaveLength(created.checklist.length + 1)
       expect((await service.get(created.id)).checklistReview).toBeUndefined()
       expect(await db.select().from(checklistReview).where(eq(checklistReview.taskId, created.id))).toHaveLength(0)
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
+  it('체크리스트 점검 모델은 대화·에이전트에 지정이 없으면 .env 유효값(effectiveDefaultModel)이다 (S7 C2)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mes-checklist-model-'))
+    try {
+      const models: string[] = []
+      const capturing = { kind: 'live', ping: async () => ({ ok: true, detail: '' }), listModels: async () => [],
+        async *stream(req: { model: string }) { models.push(req.model); yield { type: 'delta', text: '{}' }; yield { type: 'done' } } }
+      const requests = { runAuxiliary: async (_actor: string, _kind: string, operation: (signal: AbortSignal) => Promise<unknown>) => operation(new AbortController().signal) }
+      const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', LLM_DEFAULT_MODEL: 'env-model' })
+      const extras = new TaskExtrasService(db, capturing as never, requests as never, new FileStorageService(root), { publish: () => undefined } as never, config)
+      const created = (await service.create('member', { assistantId })).task
+      expect(created.modelId).toBeUndefined()
+      expect((await db.select({ modelId: assistant.modelId }).from(assistant).where(eq(assistant.id, assistantId)))[0]?.modelId).toBeNull()
+      await extras.addChecklist('member', created.id, '점검 항목')
+      await extras.review('member', created.id)
+      expect(models).toEqual(['env-model'])
+      // 대화에 모델이 지정되면 그 값이 우선한다
+      await service.update('member', created.id, { modelId: 'task-model' })
+      await extras.review('member', created.id)
+      expect(models).toEqual(['env-model', 'task-model'])
     } finally { await rm(root, { recursive: true, force: true }) }
   })
 

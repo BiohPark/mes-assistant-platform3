@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { buildTaskReport, type Message, type Note } from '@mes/domain'
 import { reviewChecklist, type ChatProvider } from '@mes/llm'
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
@@ -7,8 +7,10 @@ import { DB, type Db } from '../db/db.module.js'
 import { classificationView } from '../db/classifications.js'
 import { activityLog, appUser, assistant, assistantClassification, chatRequest, checklistItem, checklistReview, checklistReviewItem, code, conversationInput, fileObject, message, note, noteAttachment, task, taskFeedback, taskInput, thread } from '../db/schema.js'
 import { EventsService } from '../events/events.service.js'
+import { CONFIG, type AppConfig } from '../config/config.js'
 import { FILE_STORAGE } from '../files/files.service.js'
 import { createStorageKey, FileStorageService, sha256 } from '../files/fileStorage.service.js'
+import { effectiveDefaultModel } from '../llm/effectiveDefaultModel.js'
 import { LLM_PROVIDER } from '../llm/provider.token.js'
 import { RequestsService } from '../requests/requests.service.js'
 import { assertFileAccess, assertTaskAccess } from '../sr/access.js'
@@ -21,7 +23,8 @@ const id = () => randomUUID()
 export class TaskExtrasService {
   constructor(@Inject(DB) private readonly db: Db, @Inject(LLM_PROVIDER) private readonly provider: ChatProvider,
     @Inject(RequestsService) private readonly requests: RequestsService, @Inject(FILE_STORAGE) private readonly storage: FileStorageService,
-    @Inject(EventsService) private readonly events: EventsService) {}
+    @Inject(EventsService) private readonly events: EventsService,
+    @Optional() @Inject(CONFIG) private readonly config?: AppConfig) {}
 
   private async editable(tx: Tx, taskId: string) {
     const [row] = await tx.select().from(task).where(and(eq(task.id, taskId), isNull(task.deletedAt))).for('update')
@@ -86,7 +89,7 @@ export class TaskExtrasService {
       role: row.role as Message['role'], kind: row.kind as Message['kind'], content: row.content, status: row.status as Message['status'],
       createdAt: row.createdAt.toISOString(), attachmentIds: [], ...(row.authorId && { authorId: row.authorId }) }))
     const result = await this.requests.runAuxiliary(actor, 'checklist', (signal) => reviewChecklist(this.provider,
-      current.modelId ?? agent?.modelId ?? 'glm-5.2', current.checklist, history, actor, signal))
+      current.modelId ?? agent?.modelId ?? effectiveDefaultModel(this.config ?? { llm: { defaultModel: undefined } }), current.checklist, history, actor, signal)) // 기본 모델은 .env 유효값 (S7 C2)
     await this.db.transaction(async (tx) => {
       await this.editable(tx, taskId)
       const latest = await tx.select({ id: checklistItem.id }).from(checklistItem).where(eq(checklistItem.taskId, taskId))

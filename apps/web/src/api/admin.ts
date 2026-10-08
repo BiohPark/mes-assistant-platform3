@@ -24,13 +24,15 @@ export async function uploadImage(id: string, file: File | null) {
   if (!response.ok) throw new Error(`이미지 저장 실패 (HTTP ${response.status})`)
   return response.json() as Promise<unknown>
 }
+/** 읽기 DTO — defaultModel은 서버 .env 유효값(읽기 전용). 쓰기 DTO(SettingsPatch)에는 없다 — 보내면 400 (S7 C2) */
 export type Settings = { defaultModel?: string; fileDelivery?: 'inline' | 'openwebui'; requestBudgetBytes?: number; srIntakeAssistantId?: string | null; link1Rule?: string; fileMaxPerRequest?: number }
+export type SettingsPatch = Omit<Settings, 'defaultModel'>
 export const getSettings = async (): Promise<Settings> => {
   const response = await fetch('/api/settings', { credentials: 'same-origin' })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   return response.json() as Promise<Settings>
 }
-export const saveSettings = (patch: Settings) => adminRequest('settings', 'PATCH', patch)
+export const saveSettings = (patch: SettingsPatch) => adminRequest('settings', 'PATCH', patch)
 export const listManagedCodes = async () => CodeSchema.array().parse(await adminRequest('codes?includeInactive=true', 'GET'))
 export const createCode = (input: { groupKey: string; code: string; name: string; sortOrder?: number }) => adminRequest('codes', 'POST', input)
 export const updateCode = (id: string, patch: { name?: string; sortOrder?: number; active?: boolean }) => adminRequest(`codes/${encodeURIComponent(id)}`, 'PATCH', patch)

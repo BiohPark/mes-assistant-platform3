@@ -161,6 +161,7 @@ export const ko = {
     },
     settings: {
       saved: '설정을 저장했습니다', global: '전역 설정', requestBudget: '요청 크기 한도 (바이트)',
+      defaultModelEnvHint: '서버 .env의 LLM_DEFAULT_MODEL 값입니다. 여기서는 바꿀 수 없고, 바꾸면 서비스를 재시작합니다.',
       link1Rule: '링크1 기본 규칙 (주소에서 {modelId} 사용)', saveSettings: '설정 저장',
       userName: '{name} 이름', saveName: '이름 저장', usersRoles: '사용자·역할',
       issueConfirm: '{name}의 임시 비밀번호를 발급할까요?', issueFailed: '발급 실패', temporaryPassword: '임시 비밀번호', pendingChange: '변경 대기',

@@ -6,6 +6,7 @@ import type { Pool } from 'mysql2/promise'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB_CLIENT } from '../db/db.module.js'
 import { buildInfo } from '../health/build-info.js'
+import { effectiveDefaultModel } from '../llm/effectiveDefaultModel.js'
 import { RequestsService } from '../requests/requests.service.js'
 
 type ServerError = { at: string; path: string; status: number; message: string }
@@ -71,7 +72,7 @@ export class DiagnosticsService {
       db,
       llm: { mode: this.config.llm.mode, preset: this.config.llm.preset,
         baseUrlHost: URL.canParse(this.config.llm.baseUrl) ? new URL(this.config.llm.baseUrl).hostname : '',
-        defaultModel: this.config.llm.defaultModel ?? '', ok, detail, ms: Math.round(performance.now() - started) },
+        defaultModel: effectiveDefaultModel(this.config), ok, detail, ms: Math.round(performance.now() - started) },
       storage: { path: this.config.fileStorageRoot, writable, freeBytes },
       trustProxy: this.config.trustProxy,
       settings: { authMode: this.config.authMode, apiPort: this.config.port, fileMaxBytes: this.config.fileMaxBytes,

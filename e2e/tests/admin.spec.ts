@@ -15,16 +15,16 @@ async function member(page: Page) {
   return { loginId, id: (await response.json()).id as string }
 }
 
-type ManagedAgent = { api: APIRequestContext; id: string; level1: string; level2: string; orderChanged: boolean; settingsChanged: boolean }
+type ManagedAgent = { api: APIRequestContext; id: string; level1: string; level2: string; orderChanged: boolean; settingsChanged: boolean; defaultModel: string }
 const test = base.extend<{ managedAgent: ManagedAgent }>({
   managedAgent: [async ({ playwright, baseURL }, use) => {
     // 페이지나 본문 timeout에 묶이지 않는 API 컨텍스트와 fixture teardown 예산을 쓴다.
     const api = await playwright.request.newContext({ baseURL, timeout: 5_000 })
     try {
       await owner(api)
-      const previous = (await (await api.get('/api/settings')).json()) as { defaultModel?: string }
+      const previous = (await (await api.get('/api/settings')).json()) as { defaultModel: string; fileMaxPerRequest?: number }
       const originalOrder = ((await (await api.get('/api/assistants')).json()) as Assistant[]).map(row => row.id)
-      const state = { api, id: '', level1: `E2E 분류 ${Date.now()}`, level2: `E2E 하위 ${Date.now()}`, orderChanged: false, settingsChanged: false }
+      const state = { api, id: '', level1: `E2E 분류 ${Date.now()}`, level2: `E2E 하위 ${Date.now()}`, orderChanged: false, settingsChanged: false, defaultModel: previous.defaultModel }
       const errors: unknown[] = []
       try { await use(state) }
       finally {
@@ -57,12 +57,12 @@ const test = base.extend<{ managedAgent: ManagedAgent }>({
           expect(restored.ok(), await restored.text()).toBe(true)
         })
         if (state.settingsChanged) await attempt(async () => {
-          if (previous.defaultModel !== undefined) {
-            const restored = await api.patch('/api/settings', { data: { defaultModel: previous.defaultModel } })
+          if (previous.fileMaxPerRequest !== undefined) {
+            const restored = await api.patch('/api/settings', { data: { fileMaxPerRequest: previous.fileMaxPerRequest } })
             expect(restored.ok()).toBe(true)
           } else {
             const pool = createPool(process.env.DATABASE_URL!, 1)
-            try { await pool.execute("delete from app_setting where `key` = 'defaultModel'") }
+            try { await pool.execute("delete from app_setting where `key` = 'fileMaxPerRequest'") }
             finally { await pool.end() }
           }
         })
@@ -163,10 +163,15 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
   await page.getByRole('button', { name: '저장', exact: true }).last().click()
   await expect(page.getByText('순서를 저장했습니다')).toBeVisible()
   await page.goto('/settings')
-  await page.getByLabel('기본 모델').fill('e2e-model')
+  // 기본 모델은 .env 정본 — 읽기 전용이며 쓰기 DTO에서는 거부한다 (S7 C2).
+  await expect(page.locator('form').getByText(managedAgent.defaultModel, { exact: true })).toBeVisible()
+  await expect(page.getByLabel('기본 모델')).toHaveCount(0)
+  expect((await page.request.patch('/api/settings', { data: { defaultModel: 'e2e-model' } })).status()).toBe(400)
+  await page.getByLabel('첨부 개수 한도').fill('7')
   managedAgent.settingsChanged = true
   await page.getByRole('button', { name: '설정 저장' }).click()
-  await expect.poll(async () => (await (await page.request.get('/api/settings')).json()).defaultModel).toBe('e2e-model')
+  await expect.poll(async () => (await (await page.request.get('/api/settings')).json()).fileMaxPerRequest).toBe(7)
+  expect((await (await page.request.get('/api/settings')).json()).defaultModel).toBe(managedAgent.defaultModel)
 })
 
 test('담당자는 관리 화면과 쓰기 API에 접근할 수 없다', async ({ page }) => {
@@ -175,7 +180,7 @@ test('담당자는 관리 화면과 쓰기 API에 접근할 수 없다', async (
   await expect(page).toHaveURL(/\/$/)
   await page.goto('/settings')
   await expect(page).toHaveURL(/\/$/)
-  expect((await page.request.patch('/api/settings', { data: { defaultModel: 'denied' } })).status()).toBe(403)
+  expect((await page.request.patch('/api/settings', { data: { fileDelivery: 'inline' } })).status()).toBe(403)
   expect((await page.request.post('/api/assistants', { data: {} })).status()).toBe(403)
 })
 

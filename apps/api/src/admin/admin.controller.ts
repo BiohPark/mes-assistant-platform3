@@ -4,6 +4,8 @@ import { z } from 'zod'
 import { ClassificationsInputSchema } from '@mes/contracts'
 import type { AuthedRequest } from '../auth/guards.js'
 import { Roles } from '../auth/roles.decorator.js'
+import { CONFIG, type AppConfig } from '../config/config.js'
+import { effectiveDefaultModel } from '../llm/effectiveDefaultModel.js'
 import { AdminService, defaultChecklist } from './admin.service.js'
 import { DbCatalogReader } from '../catalog/catalog.service.js'
 
@@ -25,8 +27,9 @@ const createAssistant = assistantFields.extend({ id: key.optional() }).refine(cl
   input.classifications !== undefined || ((input.level1 !== undefined || input.level1CodeId !== undefined) && (input.level2 !== undefined || input.level2CodeId !== undefined)))
 const patchAssistant = assistantFields.partial().refine(input => !input.classifications ||
   [input.level1, input.level2, input.level1CodeId, input.level2CodeId].every(value => value === undefined))
+/** 쓰기 DTO — defaultModel은 .env 정본이라 없다(strict → 보내면 400). S7 C2 */
 const settings = z.object({
-  defaultModel: label.optional(), fileDelivery: z.enum(['inline', 'openwebui']).optional(),
+  fileDelivery: z.enum(['inline', 'openwebui']).optional(),
   requestBudgetBytes: z.number().int().min(1024).max(100_000_000).optional(),
   srIntakeAssistantId: key.nullable().optional(), link1Rule: z.string().max(4000).refine((value) => {
     if (!value) return true
@@ -82,12 +85,14 @@ export class AdminAssistantsController {
 
 @Controller('settings')
 export class AdminSettingsController {
-  constructor(@Inject(AdminService) private readonly admin: AdminService) {}
+  constructor(@Inject(AdminService) private readonly admin: AdminService, @Inject(CONFIG) private readonly config: AppConfig) {}
+  /** 읽기 DTO — defaultModel은 항상 .env 유효값(DB 행은 서비스가 숨긴다). S7 C2 */
+  private view(rows: Record<string, unknown>) { return { ...rows, defaultModel: effectiveDefaultModel(this.config) } }
   @Get()
-  get() { return this.admin.getSettings() }
+  async get() { return this.view(await this.admin.getSettings()) }
   @Patch()
   @Roles('system_owner')
-  patch(@Body() body: unknown) { return this.admin.settings(parse(settings, body)) }
+  async patch(@Body() body: unknown) { return this.view(await this.admin.settings(parse(settings, body))) }
 }
 
 @Controller('codes')

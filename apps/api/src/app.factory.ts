@@ -89,10 +89,13 @@ export function configureApp<T extends INestApplication>(app: T, config: AppConf
   app.use('/api/tasks/:id/outputs', jsonBody(config.fileMaxBytes + 1024 * 1024))
   app.use(/^\/api\/threads\/[^/]+\/requests\/?$/, jsonBody(2 * 1024 * 1024))
   app.use(/^\/api\/threads\/[^/]+\/requests\/estimate\/?$/, jsonBody(2 * 1024 * 1024))
-  app.use('/api/system-assistant/messages', jsonBody(async () => {
+  const requestBudgetBytes = async () => {
     const [setting] = await app.get<Db>(DB).select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
     return typeof setting?.value === 'number' ? setting.value : config.request.budgetBytes
-  }))
+  }
+  app.use('/api/system-assistant/messages', jsonBody(requestBudgetBytes))
+  // 시험 대화(S7 C1)의 본문 한도도 requestBudgetBytes — 전역 100 kB JSON 파서가 먼저 413을 내지 않게 (S7 C2)
+  app.use(/^\/api\/admin\/llm\/test\/?$/, jsonBody(requestBudgetBytes))
   app.enableShutdownHooks()
   return app
 }

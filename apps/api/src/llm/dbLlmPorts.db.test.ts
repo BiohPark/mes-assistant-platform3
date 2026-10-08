@@ -40,6 +40,15 @@ describe('DbLlmPorts', () => {
     expect((await ports.getAssistants())[0]).toMatchObject({ id: 'a1', expectedInputs: [], checklistTemplate: [], classifications: [{ level1: '업무', level2: '일반', level1CodeId: 'assistant_level1:업무', level2CodeId: 'assistant_level2:일반' }] })
   })
 
+  it('구형 app_setting.defaultModel 행은 무시하고 llm.model은 .env 유효값이다 (S7 C2)', async () => {
+    await db.insert(appSetting).values({ key: 'defaultModel', value: 'db-model' }).onDuplicateKeyUpdate({ set: { value: 'db-model' } })
+    try {
+      const envConfig = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', LLM_DEFAULT_MODEL: 'env-model' })
+      expect((await new DbLlmPorts(db, envConfig, 'u1').getSettings()).llm.model).toBe('env-model')
+      expect((await new DbLlmPorts(db, config, 'u1').getSettings()).llm.model).toBe('glm-5.2')
+    } finally { await db.delete(appSetting).where(eq(appSetting.key, 'defaultModel')) }
+  })
+
   it('업무와 파일을 입력 순서대로 조회하고 없는 ID는 undefined로 둔다', async () => {
     await db.insert(task).values({ id: 't1', code: 'WK-2026-0001', assistantId: 'a1', title: '작업', titleSource: 'manual', status: 'todo', ownerId: 'u1', priority: 'normal', createdBy: 'u1' })
     await db.insert(fileObject).values({ id: 'f1', kind: 'task_file', originTaskId: 't1', originalName: 'result.txt', mime: 'text/plain', sizeBytes: 5, sha256: 'a'.repeat(64), storageKey: '2026/09/f1.txt', source: 'assistant', isOutput: true, version: 1, uploadedBy: 'u1' })
