@@ -32,4 +32,5 @@ it('mock 모드의 잘못된 LLM URL도 진단 화면을 깨뜨리지 않는다'
   const result = await new DiagnosticsService(config, { query: async () => [[{ version: '11.8', charset: 'utf8mb4', collation: 'utf8mb4_nopad_bin', count: 1 }]] } as never,
     { ping: async () => ({ ok: true, detail: '연결 성공' }) } as never).get()
   expect(result.llm.baseUrlHost).toBe('')
+  expect(result.llm.defaultModel).toBe('glm-5.2') // .env 미설정이면 유효값(도메인 기본) — 진단도 같은 함수 (S7 C2)
 })

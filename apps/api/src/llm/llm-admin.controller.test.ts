@@ -40,19 +40,29 @@ const userMessage = (content = '안녕') => ({ messages: [{ role: 'user', conten
 describe('LLM admin test API', () => {
   let app: INestApplication
   let provider: ChatProvider
-  async function boot(custom: ChatProvider) {
+  async function boot(custom: ChatProvider, bootConfig = config) {
     provider = custom
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(CONFIG).useValue(config)
+      .overrideProvider(CONFIG).useValue(bootConfig)
       .overrideProvider(SESSION_STORE).useValue(sessions)
       .overrideProvider(DB).useValue(db)
       .overrideProvider(LLM_PROVIDER).useValue({ kind: 'live', ping: () => provider.ping(), listModels: () => provider.listModels(), stream: (req: ChatRequest) => provider.stream(req) })
       .compile()
-    app = configureApp(moduleRef.createNestApplication(), config)
+    app = configureApp(moduleRef.createNestApplication(), bootConfig)
     await app.init()
   }
   beforeEach(async () => { activeRows = 0; await boot(new MockProvider()) })
   afterEach(async () => { await app.close(); vi.clearAllMocks(); vi.unstubAllGlobals() })
+
+  it('시험 본문 한도는 전역 100 kB 파서가 아니라 requestBudgetBytes — 그 아래면 통과하고 넘으면 413 (S7 C2)', async () => {
+    await app.close()
+    await boot(new MockProvider(), loadConfig({ ...env, REQUEST_BUDGET_BYTES: String(200 * 1024) }))
+    const big = (count: number) => ({ messages: Array.from({ length: count }, (_, i) => ({ role: (count - 1 - i) % 2 === 0 ? 'user' : 'assistant', content: 'x'.repeat(60_000) })) })
+    await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send(big(3)).expect(200) // 180 kB > 100 kB, < 200 kB
+    await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send(big(4)).expect(413) // 240 kB > 200 kB
+    await request(app.getHttpServer()).post(TEST).send(big(3)).expect(401)
+    expect(writes).not.toHaveBeenCalled()
+  })
 
   it('SO만 호출할 수 있다 (401·403)', async () => {
     await request(app.getHttpServer()).post(TEST).send(userMessage()).expect(401)
@@ -78,7 +88,10 @@ describe('LLM admin test API', () => {
   })
 
   it('메시지 하나는 응답 상한(64 KB)만큼 길어도 형식은 통과하고 그 이상만 400', async () => {
-    await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send(userMessage('x'.repeat(65_536))).expect(413) // 형식 OK → 총 바이트 한도에서 거부
+    await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send(userMessage('x'.repeat(65_536))).expect(413) // 본문 수집 단계에서 총 바이트 한도(4096)로 거부
+    await app.close()
+    await boot(new MockProvider(), loadConfig({ ...env, REQUEST_BUDGET_BYTES: String(200 * 1024) })) // 한도 안이면 형식 검사가 보인다
+    await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send(userMessage('x'.repeat(65_536))).expect(200)
     await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send(userMessage('x'.repeat(65_537))).expect(400)
   })
 

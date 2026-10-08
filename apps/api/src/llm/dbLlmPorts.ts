@@ -28,8 +28,8 @@ export class DbLlmPorts implements LlmPorts {
     const budget = values.get('requestBudgetBytes')
     return {
       id: 'app', currentUserId: this.currentUserId,
+      // 기본 모델은 .env 유효값(toLlmSettings → effectiveDefaultModel). DB defaultModel 행은 읽지 않는다 (S7 C2)
       llm: { ...toLlmSettings(this.config.llm),
-        ...(typeof values.get('defaultModel') === 'string' ? { model: values.get('defaultModel') as string } : {}),
         ...(values.get('fileDelivery') === 'inline' || values.get('fileDelivery') === 'openwebui' ? { fileDelivery: values.get('fileDelivery') as 'inline' | 'openwebui' } : {}) },
       ...(typeof sr === 'string' ? { srIntakeAssistantId: sr } : {}),
       requestBudgetBytes: typeof budget === 'number' ? budget : this.config.request.budgetBytes,

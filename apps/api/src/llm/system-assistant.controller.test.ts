@@ -43,6 +43,16 @@ describe('system assistant HTTP', () => {
     expect(response.body.toolCalls).toEqual([expect.objectContaining({ id: expect.any(String), name, arguments: expect.any(String) })])
   })
 
+  it('기본 모델은 .env 유효값 — 구형 app_setting.defaultModel 행이 있어도 model 조회와 메시지 호출 모두 무시한다 (S7 C2)', async () => {
+    settings = [{ value: 'db-model' }]
+    const model = await request(app.getHttpServer()).get('/api/system-assistant/model').set('Cookie', 'mes_session=member').expect(200)
+    expect(model.body).toEqual({ mode: 'mock', model: 'glm-5.2' })
+    const seen: string[] = []
+    provider = { kind: 'live', ping: async () => ({ ok: true, detail: '' }), listModels: async () => [], async *stream(req) { seen.push(req.model); yield { type: 'delta', text: '응답' }; yield { type: 'done' } } }
+    await request(app.getHttpServer()).post('/api/system-assistant/messages').set('Cookie', 'mes_session=member').send({ messages: [{ role: 'user', content: '안녕' }] }).expect(201)
+    expect(seen).toEqual(['glm-5.2'])
+  })
+
   it('인증, 형식, 설정된 요청 크기 한도를 강제한다', async () => {
     const url = '/api/system-assistant/messages'
     const model = await request(app.getHttpServer()).get('/api/system-assistant/model').set('Cookie', 'mes_session=member').expect(200)

@@ -3,7 +3,7 @@ import type { Pool } from 'mysql2/promise'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createPool } from '../db/connection.js'
 import type { Db } from '../db/db.module.js'
-import { appUser } from '../db/schema.js'
+import { appSetting, appUser } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -81,14 +81,17 @@ describe('SR 접수 에이전트 보호 (데모 테스트 4건)', () => {
     expect(await admin.getSettings()).not.toHaveProperty('srIntakeAssistantId')
     expect(await admin.settings({ srIntakeAssistantId: 'urs-analyst-basic' })).toMatchObject({ srIntakeAssistantId: 'urs-analyst-basic' })
   })
-  it('전역 모델·전달 방식·요청 한도를 LLM 포트에 반영한다', async () => {
-    await admin.settings({ defaultModel: 'admin-model', fileDelivery: 'inline', requestBudgetBytes: 8192, fileMaxPerRequest: 3, link1Rule: 'https://example.test/?model={modelId}' })
-    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
+  it('전달 방식·요청 한도를 LLM 포트에 반영하고, 기본 모델은 .env 유효값이며 구형 DB 행은 읽기 DTO에서도 숨긴다 (S7 C2)', async () => {
+    await admin.settings({ fileDelivery: 'inline', requestBudgetBytes: 8192, fileMaxPerRequest: 3, link1Rule: 'https://example.test/?model={modelId}' })
+    await db.insert(appSetting).values({ key: 'defaultModel', value: 'db-model' }).onDuplicateKeyUpdate({ set: { value: 'db-model' } })
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local', LLM_DEFAULT_MODEL: 'env-model' })
     const settings = await new DbLlmPorts(db, config, 'owner').getSettings()
-    expect(settings.llm.model).toBe('admin-model')
+    expect(settings.llm.model).toBe('env-model')
     expect(settings.llm.fileDelivery).toBe('inline')
     expect(settings.requestBudgetBytes).toBe(8192)
     expect(await admin.getSettings()).toMatchObject({ fileMaxPerRequest: 3, link1Rule: 'https://example.test/?model={modelId}' })
+    expect(await admin.getSettings()).not.toHaveProperty('defaultModel')
+    expect(await db.select().from(appSetting).where(eq(appSetting.key, 'defaultModel'))).toHaveLength(1) // 행은 지우지 않고 무시만 한다
   })
   it('새 에이전트의 입출력·체크리스트를 저장하고 순서 revision 충돌을 거부한다', async () => {
     const input = { id: 'admin-test', name: '관리 테스트', level1CodeId: 'assistant_level1:SDLC', level2CodeId: 'assistant_level2:분석',
