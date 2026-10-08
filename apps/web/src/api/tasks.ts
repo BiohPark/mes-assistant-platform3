@@ -78,9 +78,10 @@ export async function deleteNote(taskId: string, noteId: string): Promise<void> 
   refresh(taskId)
 }
 export interface CompletionFeedback { rating: number; comment: string }
-export const previewTaskReport = (taskId: string, feedback?: CompletionFeedback) => request<{ content: string }>(`/tasks/${encodeURIComponent(taskId)}/complete/preview`, 'POST', { ...(feedback && { feedback }) })
-export async function completeTask(taskId: string, feedback?: CompletionFeedback): Promise<Task> {
-  const result = await request<Task>(`/tasks/${encodeURIComponent(taskId)}/complete`, 'POST', { ...(feedback && { feedback }) })
+export const previewTaskReport = (taskId: string, feedback?: CompletionFeedback, reason?: string) => request<{ content: string }>(`/tasks/${encodeURIComponent(taskId)}/complete/preview`, 'POST', { ...(feedback && { feedback }), ...(reason && { reason }) })
+/** 완료. 필수 체크 항목이 미완료면 서버가 reason을 요구한다(400). */
+export async function completeTask(taskId: string, feedback?: CompletionFeedback, reason?: string): Promise<Task> {
+  const result = await request<Task>(`/tasks/${encodeURIComponent(taskId)}/complete`, 'POST', { ...(feedback && { feedback }), ...(reason && { reason }) })
   refresh(taskId)
   void queryClient.invalidateQueries({ queryKey: ['files', taskId] })
   return result

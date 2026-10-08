@@ -194,3 +194,16 @@ it('요청자(BO) 화면의 접수 첨부는 내려받기만 보이고 버전 �
   expect(screen.getByRole('button', { name: '다운로드' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '버전 기록' })).not.toBeInTheDocument()
 })
+
+it('접수자 화면에서 상태 이력을 펼치면 시각·처리자·변경·사유가 보인다', async () => {
+  const sr = { id: 'sr', requesterId: 'u', code: 'SR-2026-0001', title: '이력 요청', titleSource: 'manual', body: '본문', status: 'rejected', threadId: 'thread', attachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01',
+    statusHistory: [{ id: 'h1', at: '2026-10-01T01:00:00.000Z', by: 'u', byName: '사용자', from: 'draft', to: 'submitted' }, { id: 'h2', at: '2026-10-02T02:00:00.000Z', by: 's', byName: '담당자', from: 'submitted', to: 'rejected', reason: '범위 밖 요청' }] }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/sr' ? jsonResponse(200, sr) : url === '/api/service-requests/intake-assistant' ? jsonResponse(200, { srIntakeAssistantId: 'a' }) : jsonResponse(200, [])))
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['requester'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=sr' })
+  await userEvent.click(await screen.findByRole('button', { name: '상태 이력' }))
+  const list = screen.getByRole('list', { name: '상태 이력' })
+  expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+  expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('담당자')
+  expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('접수됨 → 반려')
+  expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('사유: 범위 밖 요청')
+})

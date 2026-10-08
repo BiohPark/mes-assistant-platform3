@@ -43,7 +43,7 @@ it('inbox 표는 초안을 제외하고 코드·제목·본문 검색 및 상태
   await userEvent.click(within(table).getByRole('button', { name: /SR-2026-0001/ }))
   const sheet = await screen.findByRole('dialog')
   expect(within(sheet).getByText('설비 오류')).toBeInTheDocument()
-  expect(within(sheet).getByRole('combobox', { name: 'SR 상태' })).toHaveValue('submitted')
+  expect(within(sheet).getByRole('button', { name: '다음 단계: 검토 중' })).toBeInTheDocument()
   await userEvent.click(within(sheet).getByRole('button', { name: '닫기' }))
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })

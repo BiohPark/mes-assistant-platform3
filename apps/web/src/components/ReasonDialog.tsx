@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useT } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
@@ -14,7 +15,8 @@ interface ReasonDialogProps {
 }
 
 /** 사유 입력이 필요한 액션(재개, 필수 미완료 완료 등) */
-export function ReasonDialog({ open, onOpenChange, title, description, confirmLabel = '확인', placeholder = '사유를 입력하세요', onConfirm }: ReasonDialogProps) {
+export function ReasonDialog({ open, onOpenChange, title, description, confirmLabel, placeholder, onConfirm }: ReasonDialogProps) {
+  const t = useT()
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -36,13 +38,13 @@ export function ReasonDialog({ open, onOpenChange, title, description, confirmLa
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
-        <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder={placeholder} autoFocus className="text-xs" />
+        <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={500} placeholder={placeholder ?? t('reasonDialog.placeholder')} autoFocus className="text-xs" />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-            취소
+            {t('common.cancel')}
           </Button>
           <Button onClick={confirm} disabled={busy || !reason.trim()}>
-            {confirmLabel}
+            {confirmLabel ?? t('common.confirm')}
           </Button>
         </DialogFooter>
       </DialogContent>
