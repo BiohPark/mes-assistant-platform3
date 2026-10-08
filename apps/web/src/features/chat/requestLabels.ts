@@ -1,6 +1,12 @@
-export const deliveryLabel: Record<string, string> = {
-  attached: '파일 첨부', inline: '본문 포함', metadata_only: '이름만 전달', failed: '전달 실패',
+import type { ko } from '@/i18n/ko'
+
+type DeliveryKey = `chat.delivery.${keyof typeof ko.chat.delivery}`
+type StatusKey = `chat.requestStatus.${keyof typeof ko.chat.requestStatus}`
+
+export const deliveryLabel: Record<string, DeliveryKey> = {
+  attached: 'chat.delivery.attached', inline: 'chat.delivery.inline', metadata_only: 'chat.delivery.metadata_only', failed: 'chat.delivery.failed',
 }
-export const statusLabel: Record<string, string> = {
-  pending: '준비 중', streaming: '응답 중', succeeded: '완료', failed: '실패', cancelled: '중지됨', interrupted: '중단됨',
+export const statusLabel: Record<string, StatusKey> = {
+  pending: 'chat.requestStatus.pending', streaming: 'chat.requestStatus.streaming', succeeded: 'chat.requestStatus.succeeded',
+  failed: 'chat.requestStatus.failed', cancelled: 'chat.requestStatus.cancelled', interrupted: 'chat.requestStatus.interrupted',
 }

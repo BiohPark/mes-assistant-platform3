@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { getCandidates, filesForTask, fileVersions, setInput, setOutputTag, switchInputVersion, uploadFile, type FileCandidate, type FileMeta } from '@/api/files'
 import { useActor } from '@/app/hooks'
 import { listAssistants } from '@/lib/catalog'
+import { useT } from '@/i18n'
 import { FileList } from './FileList'
 import { FilePreviewDialog } from './FilePreviewDialog'
 import { InputToggle } from './InputToggle'
@@ -14,6 +15,7 @@ import { ConversationInputs } from './ConversationInputs'
 type Tab = 'inputs' | 'shared' | 'conversations' | 'own'
 export function MaterialsPanel({ task }: { task: Task }) {
   const actor = useActor()
+  const t = useT()
   const uploadRef = useRef<HTMLInputElement>(null)
   const [tab, setTab] = useState<Tab>('inputs')
   const [preview, setPreview] = useState<FileMeta | null>(null)
@@ -38,45 +40,45 @@ export function MaterialsPanel({ task }: { task: Task }) {
     if (!list?.length) return
     try {
       for (const file of Array.from(list)) await uploadFile(actor, { taskId: task.id }, file)
-      toast.success(`${list.length}개 파일을 업로드했습니다.`)
+      toast.success(t('task.materials.uploaded', { count: list.length }))
     } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
   }
   return <div className="space-y-3 text-xs" data-testid="materials-panel">
-    <div role="tablist" aria-label="자료 탭" className="flex gap-1 border-b pb-2">
-      {([['inputs', 'AI 입력'], ['shared', '공유 자료함'], ['conversations', '대화'], ['own', '이 대화 파일']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`rounded-lg px-2 py-1 ${tab === value ? 'bg-muted font-medium' : ''}`}>{label}</button>)}
+    <div role="tablist" aria-label={t('task.materials.tabs')} className="flex gap-1 border-b pb-2">
+      {([['inputs', t('task.materials.tabInputs')], ['shared', t('task.materials.tabShared')], ['conversations', t('task.conversation')], ['own', t('task.materials.tabOwn')]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`rounded-lg px-2 py-1 ${tab === value ? 'bg-muted font-medium' : ''}`}>{label}</button>)}
     </div>
-    {(candidates.isError || own.isError) && <div role="alert">자료를 불러오지 못했습니다. <button type="button" className="underline" onClick={() => { void candidates.refetch(); void own.refetch() }}>다시 시도</button></div>}
+    {(candidates.isError || own.isError) && <div role="alert">{t('task.materials.loadFailed')} <button type="button" className="underline" onClick={() => { void candidates.refetch(); void own.refetch() }}>{t('common.retry')}</button></div>}
     {tab === 'inputs' && <div data-testid="materials-inputs" className="space-y-2">
-      <p className="text-muted-foreground">선택한 파일만 AI 입력에 남습니다. ★ 주 입력 · ☑ 참고</p>
-      {!selection.length && <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">선택한 파일이 없습니다.</div>}
+      <p className="text-muted-foreground">{t('task.materials.inputsHelp')}</p>
+      {!selection.length && <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">{t('task.materials.noSelection')}</div>}
       {selection.map((input) => {
         const file = byId.get(input.fileId)
         if (!file) return null
         const newerVersionId = candidates.data?.files.find((item) => item.file.id === file.id)?.newerVersionId
         return <div key={file.id} className="rounded-xl border p-2" data-testid={`selected-file-${file.id}`}>
           <div className="flex items-center gap-2"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(file)}>{file.name} v{file.version}</button><InputToggle weight={input.weight} label={file.name} disabled={disabled} onChange={(weight) => void change(file.id, weight)} /></div>
-          <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground"><span>{input.weight === 'main' ? '주 입력' : '참고'} · {file.originTaskId === task.id ? '이 대화' : file.originTaskId}</span>
-            {newerVersionId && !disabled && <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-sky-300 px-1 text-sky-700" onClick={() => void switchInputVersion(actor, task.id, file.id, newerVersionId).catch((error: unknown) => toast.error(String(error)))}><ArrowUpCircle className="size-3" />새 버전 있음 · 바꾸기</button>}
+          <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground"><span>{input.weight === 'main' ? t('task.mainInput') : t('task.reference')} · {file.originTaskId === task.id ? t('task.thisConversation') : file.originTaskId}</span>
+            {newerVersionId && !disabled && <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-sky-300 px-1 text-sky-700" onClick={() => void switchInputVersion(actor, task.id, file.id, newerVersionId).catch((error: unknown) => toast.error(String(error)))}><ArrowUpCircle className="size-3" />{t('task.materials.newVersion')}</button>}
           </div>
         </div>
       })}
     </div>}
-    {tab === 'inputs' && <><div className="border-t pt-2 text-xs font-medium">참조 대화</div><ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} selectedOnly /></>}
+    {tab === 'inputs' && <><div className="border-t pt-2 text-xs font-medium">{t('task.materials.referenceConversations')}</div><ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} selectedOnly /></>}
     {tab === 'conversations' && <ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} />}
     {tab === 'shared' && <div data-testid="materials-shared" className="space-y-2">
-      <input aria-label="공유 자료함 검색" placeholder="파일 이름으로 찾기" value={search} onChange={(event) => setSearch(event.target.value)} className="w-full rounded-lg border px-2 py-1" />
-      {!shared.length && <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">같은 태그 대화의 파일이 없습니다.</div>}
+      <input aria-label={t('task.materials.searchShared')} placeholder={t('task.materials.searchPlaceholder')} value={search} onChange={(event) => setSearch(event.target.value)} className="w-full rounded-lg border px-2 py-1" />
+      {!shared.length && <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">{t('task.materials.noShared')}</div>}
       {sortedGroups.flatMap(([assistantId, items]) => [<div key={`group-${assistantId}`} className="pt-1 font-medium" data-testid={`shared-group-${assistantId}`}>{assistantById.get(assistantId)?.name ?? assistantId}</div>, ...items.sort((a, b) => a.file.name.localeCompare(b.file.name) || a.file.version - b.file.version).map((item) => <div key={item.file.id} className="rounded-xl border p-2" data-testid={`candidate-file-${item.file.id}`}>
         <div className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(item.file)}>{item.file.name} v{item.file.version}</button><InputToggle weight={task.inputs.find((input) => input.fileId === item.file.id)?.weight} label={item.file.name} disabled={disabled} onChange={(weight) => void change(item.file.id, weight)} /></div>
-        <div className="mt-1 text-xs text-muted-foreground">{item.role === 'output' ? '산출물' : '업로드'} · <a href={`/c/${item.sourceTaskId}`} className="underline">{item.sourceTaskId}</a> · {item.viaTags.join(', ')}
-          {!!item.olderVersionIds?.length && <button type="button" className="ml-2 underline" onClick={() => setExpanded(expanded === item.file.id ? null : item.file.id)}>이전 버전 {item.olderVersionIds.length}</button>}
+        <div className="mt-1 text-xs text-muted-foreground">{item.role === 'output' ? t('task.materials.roleOutput') : t('task.materials.roleUpload')} · <a href={`/c/${item.sourceTaskId}`} className="underline">{item.sourceTaskId}</a> · {item.viaTags.join(', ')}
+          {!!item.olderVersionIds?.length && <button type="button" className="ml-2 underline" onClick={() => setExpanded(expanded === item.file.id ? null : item.file.id)}>{t('task.materials.olderVersions', { count: item.olderVersionIds.length })}</button>}
         </div>
         {expanded === item.file.id && <OlderVersions file={item.file} task={task} disabled={disabled} onPreview={setPreview} onChange={change} />}
       </div>)])}
     </div>}
     {tab === 'own' && <div data-testid="materials-own" className="space-y-2">
       <FileList files={own.data ?? []} taskId={task.id} onPreview={setPreview} onToggleOutput={disabled ? undefined : (fileId, isOutput) => void setOutputTag(actor, task.id, fileId, isOutput).catch((error: unknown) => toast.error(String(error)))} canDelete={!disabled} renderActions={(file) => <InputToggle weight={task.inputs.find((input) => input.fileId === file.id)?.weight} label={file.name} disabled={disabled} onChange={(weight) => void change(file.id, weight)} />} />
-      {!disabled && <><button type="button" className="flex w-full items-center justify-center gap-1 rounded-lg border p-1.5" onClick={() => uploadRef.current?.click()}><Upload className="size-3.5" />파일 업로드</button><input ref={uploadRef} type="file" multiple className="hidden" onChange={(event) => { void upload(event.target.files); event.target.value = '' }} /></>}
+      {!disabled && <><button type="button" className="flex w-full items-center justify-center gap-1 rounded-lg border p-1.5" onClick={() => uploadRef.current?.click()}><Upload className="size-3.5" />{t('task.materials.upload')}</button><input ref={uploadRef} type="file" multiple className="hidden" onChange={(event) => { void upload(event.target.files); event.target.value = '' }} /></>}
     </div>}
     <FilePreviewDialog file={preview} onClose={() => setPreview(null)} />
   </div>

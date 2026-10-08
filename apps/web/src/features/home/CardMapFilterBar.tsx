@@ -25,7 +25,7 @@ export function CardMapFilterBar({ level1Options, level2Options, level1CodeId, l
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative w-full sm:w-64">
         <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input value={filters.q} onChange={(e) => setFilters({ q: e.target.value })} placeholder="이름 · 요약 · 업무 분류 검색" className="h-8 pl-8" />
+        <Input value={filters.q} onChange={(e) => setFilters({ q: e.target.value })} placeholder={t('hub.searchAssistants')} className="h-8 pl-8" />
       </div>
       <ToggleGroup type="single" variant="outline" size="sm" value={level1CodeId ?? ''} onValueChange={(v) => setFilters({ level1CodeId: v || null })} className="flex-wrap">
         {level1Options.map((lv) => (
@@ -42,7 +42,7 @@ export function CardMapFilterBar({ level1Options, level2Options, level1CodeId, l
       )}
       <Label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
         <Switch checked={filters.showRetired} onCheckedChange={(v) => setFilters({ showRetired: v })} />
-        폐기 표시
+        {t('hub.showRetired')}
       </Label>
     </div>
   )

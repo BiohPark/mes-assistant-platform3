@@ -1,4 +1,3 @@
-import { useT } from '@/i18n'
 import { useRef, useState } from 'react'
 import { MessagesSquare, Paperclip, Pin, PinOff, Send, Square, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -8,6 +7,7 @@ import { toast } from 'sonner'
 import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
 import { useQuery } from '@tanstack/react-query'
 import { getSettings } from '@/api/admin'
+import { useT } from '@/i18n'
 
 /** 보낼 첨부 1건. once=true면 이번 메시지에만 쓰고 대화 입력으로 고정하지 않는다 */
 export interface PendingAttachment {
@@ -99,10 +99,10 @@ export function Composer({ disabled, streaming, placeholder, inputLabel, maxAtta
                   className={cn('inline-flex items-center gap-0.5 rounded-lg px-1', p.once ? 'text-muted-foreground' : 'text-primary')}
                   aria-pressed={!p.once}
                   onClick={() => setPending((cur) => cur.map((x, j) => (j === i ? { ...x, once: !x.once } : x)))}
-                  title={p.once ? '이번 메시지에만 씁니다. 누르면 대화 입력으로 고정합니다' : '대화 입력(☑ 참고)으로 고정 — 다음 턴에도 AI에 갑니다. 누르면 이번 메시지만'}
+                  title={p.once ? t('chat.attachOnceTitle') : t('chat.attachPinnedTitle')}
                 >
                   {p.once ? <PinOff className="size-3" /> : <Pin className="size-3" />}
-                  {p.once ? '이번 메시지만' : '입력으로 고정'}
+                  {p.once ? t('chat.attachOnce') : t('chat.attachPinned')}
                 </button>
               )}
               <button type="button" aria-label={t('chat.removeAttachment')} onClick={() => setPending((cur) => cur.filter((_, j) => j !== i))}>
@@ -115,7 +115,7 @@ export function Composer({ disabled, streaming, placeholder, inputLabel, maxAtta
       {attachmentError && <div role="alert" className="mb-1 text-xs text-destructive">{attachmentError}</div>}
       <div className={cn('flex items-end gap-2 rounded-xl border bg-background p-1.5 focus-within:ring-2 focus-within:ring-ring/40', discussion && 'border-amber-300 bg-amber-50/40 dark:bg-amber-950/20')}>
         {allowAttachments && (
-          <Button type="button" variant="ghost" size="icon-sm" aria-label={t('chat.attach')} onClick={() => inputRef.current?.click()} disabled={disabled}>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label={t('chat.attachFile')} onClick={() => inputRef.current?.click()} disabled={disabled}>
             <Paperclip />
           </Button>
         )}
@@ -126,19 +126,19 @@ export function Composer({ disabled, streaming, placeholder, inputLabel, maxAtta
           className="hidden"
           onChange={(e) => {
             const picked = Array.from(e.target.files ?? []).map((file) => ({ file, once: false }))
-            if (pending.length + picked.length > attachmentLimit) setAttachmentError(t('chat.attachmentLimit', { count: attachmentLimit }))
+            if (pending.length + picked.length > attachmentLimit) setAttachmentError(t('chat.attachmentLimit', { limit: String(attachmentLimit) }))
             else { setPending((p) => [...p, ...picked]); setAttachmentError('') }
             e.target.value = ''
           }}
         />
         <Textarea
-          aria-label={inputLabel ?? '팀 의견 입력'}
+          aria-label={inputLabel ?? t('chat.composerLabel')}
           value={text}
           onChange={(e) => {
             setText(e.target.value)
             if (e.target.value) onTyping?.()
           }}
-          placeholder={discussion ? '팀 의견을 남기세요 (AI에게 전송되지 않음)' : (placeholder ?? 'assistant에게 요청하세요. Enter 전송, Shift+Enter 줄바꿈')}
+          placeholder={discussion ? t('chat.discussionPlaceholder') : (placeholder ?? t('chat.composerPlaceholder'))}
           rows={1}
           disabled={disabled}
           className="max-h-40 min-h-8 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-sm shadow-none focus-visible:ring-0"
@@ -154,9 +154,9 @@ export function Composer({ disabled, streaming, placeholder, inputLabel, maxAtta
             type="button"
             variant={discussion ? 'secondary' : 'ghost'}
             size="icon-sm"
-            aria-label="팀 의견 (AI 미전송)"
+            aria-label={t('chat.discussionToggle')}
             aria-pressed={discussion}
-            title="팀 의견: 스레드에 남지만 assistant에게는 보내지 않음"
+            title={t('chat.discussionToggleTitle')}
             className={cn(discussion && 'text-amber-700')}
             onClick={() => setDiscussion((v) => !v)}
           >

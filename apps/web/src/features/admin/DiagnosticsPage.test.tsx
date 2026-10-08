@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/test/render'
+import { createT } from '@/i18n'
 import { DiagnosticsPage, formatDiagnostics } from './DiagnosticsPage'
 vi.mock('@/app/TopBar', () => ({ TopBar: ({ title }: { title: string }) => <h1>{title}</h1> }))
 
@@ -31,7 +32,7 @@ it('진단을 다시 조회하고 허용된 값만 평문 복사한다', async (
 
 it('진단 평문은 비밀 설정의 존재 여부만 담는다', () => {
   const response = { ...data, trustProxy: false as const, leakedSecret: 'hidden-key' }
-  const text = formatDiagnostics(response)
+  const text = formatDiagnostics(response, createT('ko'))
   expect(text).toContain('SESSION_SECRET: 설정됨')
   expect(text).not.toContain('hidden-key')
 })

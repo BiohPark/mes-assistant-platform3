@@ -1,3 +1,4 @@
+import { useT } from '@/i18n'
 import { useId, useState, type KeyboardEvent } from 'react'
 import { Plus } from 'lucide-react'
 import { normalizeTag, tagKey, type TagSuggestion } from '@mes/domain'
@@ -22,7 +23,8 @@ interface TagInputProps {
  * Obsidian frontmatter tags 같은 입력: 칩 + 인라인 입력.
  * Enter·쉼표·Tab으로 추가, Backspace(빈 입력)로 마지막 칩 삭제, ↑↓로 후보 이동.
  */
-export function TagInput({ tags, onAdd, onRemove, suggest, onChipClick, readOnly, placeholder = '태그 추가', className }: TagInputProps) {
+export function TagInput({ tags, onAdd, onRemove, suggest, onChipClick, readOnly, placeholder, className }: TagInputProps) {
+  const translate = useT()
   const [text, setText] = useState('')
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
@@ -31,7 +33,7 @@ export function TagInput({ tags, onAdd, onRemove, suggest, onChipClick, readOnly
   const candidates = open ? suggest(text, tags).slice(0, MAX_SUGGESTIONS) : []
   const typed = normalizeTag(text)
   const typedIsNew = !!typed && !candidates.some((c) => tagKey(c.tag) === tagKey(typed)) && !tags.some((t) => tagKey(t) === tagKey(typed))
-  const options = [...candidates.map((c) => ({ tag: c.tag, hint: c.isSr ? 'SR' : `${c.count}` })), ...(typedIsNew ? [{ tag: typed, hint: '새 태그' }] : [])]
+  const options = [...candidates.map((c) => ({ tag: c.tag, hint: c.isSr ? 'SR' : `${c.count}` })), ...(typedIsNew ? [{ tag: typed, hint: translate('components.newTag') }] : [])]
   const activeIndex = Math.min(active, Math.max(0, options.length - 1))
 
   function commit(tag: string) {
@@ -83,9 +85,9 @@ export function TagInput({ tags, onAdd, onRemove, suggest, onChipClick, readOnly
             onFocus={() => setOpen(true)}
             onBlur={() => setOpen(false)}
             onKeyDown={onKeyDown}
-            placeholder={placeholder}
-            aria-label="태그 입력"
-            title="SR 번호나 키워드. Enter·쉼표로 추가"
+            placeholder={placeholder ?? translate('components.addTag')}
+            aria-label={translate('components.tagInput')}
+            title={translate('components.tagInputHint')}
             role="combobox"
             aria-expanded={open && options.length > 0}
             aria-controls={listId}

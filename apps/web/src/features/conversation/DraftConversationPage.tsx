@@ -42,7 +42,7 @@ export function DraftConversationPage() {
   const created = useRef<{ id: string; code: string; threadId: string } | null>(null)
   const refId = params.get('ref')
 
-  if (isPending) return <><TopBar title="새 대화" /><div className="p-6 text-sm text-muted-foreground">불러오는 중…</div></>
+  if (isPending) return <><TopBar title={t('hub.newConversation')} /><div className="p-6 text-sm text-muted-foreground">{t('common.loading')}</div></>
   if (!assistant) return <Navigate to="/" replace />
   const link1 = assistantLink1('', assistant, link1Rule)
   const retired = assistant.status === 'retired'
@@ -85,7 +85,7 @@ export function DraftConversationPage() {
       }
       navigate(`/c/${task.id}`, { replace: true })
     } catch (error) {
-      if (created.current) toast.error(`대화 ${created.current.code}가 남았습니다. 첨부를 다시 전송할 수 있습니다.`)
+      if (created.current) toast.error(t('hub.draftLeft', { code: created.current.code }))
       sending.current = false
       setBusy(false)
       throw error
@@ -93,7 +93,7 @@ export function DraftConversationPage() {
   }
 
   return <>
-    <TopBar title={`새 대화 · ${assistant.name}`} />
+    <TopBar title={t('hub.newConversationTitle', { name: assistant.name })} />
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-2xl space-y-4 px-4 py-6">
@@ -116,11 +116,11 @@ export function DraftConversationPage() {
             {assistant.expectedInputs.length > 0 && assistant.expectedOutputs.length > 0 && <ArrowRight className="size-3.5 text-muted-foreground" />}
             {assistant.expectedOutputs.map((item) => <span key={item} className="rounded-full border bg-violet-50 px-2 py-0.5 text-violet-800">{item}</span>)}
           </div>}
-          <div className="space-y-1.5"><div className="text-xs font-medium">태그</div>
-            <TagInput tags={tags} suggest={suggest} onAdd={(value) => setTags((current) => current.some((item) => tagKey(item) === tagKey(value)) ? current : [...current, value])} onRemove={(value) => setTags((current) => current.filter((item) => item !== value))} placeholder="SR 번호·키워드" />
+          <div className="space-y-1.5"><div className="text-xs font-medium">{t('hub.tags')}</div>
+            <TagInput tags={tags} suggest={suggest} onAdd={(value) => setTags((current) => current.some((item) => tagKey(item) === tagKey(value)) ? current : [...current, value])} onRemove={(value) => setTags((current) => current.filter((item) => item !== value))} placeholder={t('hub.tagPlaceholder')} />
           </div>
           {refId && <div className="rounded-xl border border-amber-300 bg-amber-50/40 p-3 text-xs">{t('chat.referenceConversation')}</div>}
-          {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">폐기된 에이전트입니다. <Link to="/" className="underline">다른 에이전트 고르기</Link></div>}
+          {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">{t('hub.retiredAssistant')} <Link to="/" className="underline">{t('hub.pickAnotherAssistant')}</Link></div>}
         </div>
       </div>
       {!retired && <div className="mx-auto w-full max-w-2xl"><Composer disabled={busy} streaming={false} allowAttachments allowPin allowDiscussion onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
