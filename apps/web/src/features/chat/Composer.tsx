@@ -1,3 +1,4 @@
+import { useT } from '@/i18n'
 import { useRef, useState } from 'react'
 import { MessagesSquare, Paperclip, Pin, PinOff, Send, Square, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -20,6 +21,8 @@ interface ComposerProps {
   disabled?: boolean
   streaming: boolean
   placeholder?: string
+  inputLabel?: string
+  maxAttachments?: number
   /** discussion=true 이면 팀 의견(AI 미전송) */
   onSend: (text: string, attachments: PendingAttachment[], discussion: boolean) => Promise<void>
   onStop: () => void
@@ -37,12 +40,14 @@ interface ComposerProps {
   clearOnSubmit?: boolean
 }
 
-export function Composer({ disabled, streaming, placeholder, onSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange, clearOnSubmit = false }: ComposerProps) {
+export function Composer({ disabled, streaming, placeholder, inputLabel, maxAttachments, onSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange, clearOnSubmit = false }: ComposerProps) {
+  const t = useT()
   const [discussion, setDiscussion] = useState(false)
   const [text, setTextState] = useState('')
   const [pending, setPending] = useState<PendingAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState('')
-  const attachmentLimit = useQuery({ queryKey: ['settings'], queryFn: getSettings }).data?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST
+  const settings = useQuery({ queryKey: ['settings'], queryFn: getSettings, enabled: maxAttachments === undefined }).data
+  const attachmentLimit = maxAttachments ?? settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST
   const inputRef = useRef<HTMLInputElement>(null)
   const blocked = !discussion && !!blockedReason
   const canSend = !disabled && !blocked && (discussion || !streaming) && (text.trim().length > 0 || pending.length > 0)
@@ -54,15 +59,15 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
 
   async function submit() {
     if (!canSend) return
-    const t = text
+    const submittedText = text
     const f = pending
     if (clearOnSubmit) { setText(''); setPending([]) }
     try {
-      await onSend(t, f, discussion)
+      await onSend(submittedText, f, discussion)
       if (!clearOnSubmit) { setText(''); setPending([]) }
     } catch (e) {
-      if (clearOnSubmit) { setTextState((current) => current || t); setPending((current) => current.length ? current : f) }
-      toast.error('전송하지 못했습니다.', { description: e instanceof Error ? e.message : String(e) })
+      if (clearOnSubmit) { setTextState((current) => current || submittedText); setPending((current) => current.length ? current : f) }
+      toast.error(t('chat.sendFailed'), { description: e instanceof Error ? e.message : String(e) })
     }
   }
 
@@ -100,7 +105,7 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
                   {p.once ? '이번 메시지만' : '입력으로 고정'}
                 </button>
               )}
-              <button type="button" aria-label="첨부 제거" onClick={() => setPending((cur) => cur.filter((_, j) => j !== i))}>
+              <button type="button" aria-label={t('chat.removeAttachment')} onClick={() => setPending((cur) => cur.filter((_, j) => j !== i))}>
                 <X className="size-3" />
               </button>
             </span>
@@ -110,7 +115,7 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
       {attachmentError && <div role="alert" className="mb-1 text-xs text-destructive">{attachmentError}</div>}
       <div className={cn('flex items-end gap-2 rounded-xl border bg-background p-1.5 focus-within:ring-2 focus-within:ring-ring/40', discussion && 'border-amber-300 bg-amber-50/40 dark:bg-amber-950/20')}>
         {allowAttachments && (
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="파일 첨부" onClick={() => inputRef.current?.click()} disabled={disabled}>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label={t('chat.attach')} onClick={() => inputRef.current?.click()} disabled={disabled}>
             <Paperclip />
           </Button>
         )}
@@ -121,13 +126,13 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
           className="hidden"
           onChange={(e) => {
             const picked = Array.from(e.target.files ?? []).map((file) => ({ file, once: false }))
-            if (pending.length + picked.length > attachmentLimit) setAttachmentError(`첨부 파일은 최대 ${attachmentLimit}개까지 선택할 수 있습니다.`)
+            if (pending.length + picked.length > attachmentLimit) setAttachmentError(t('chat.attachmentLimit', { count: attachmentLimit }))
             else { setPending((p) => [...p, ...picked]); setAttachmentError('') }
             e.target.value = ''
           }}
         />
         <Textarea
-          aria-label="팀 의견 입력"
+          aria-label={inputLabel ?? '팀 의견 입력'}
           value={text}
           onChange={(e) => {
             setText(e.target.value)
@@ -159,11 +164,11 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
           </Button>
         )}
         {streaming && !discussion ? (
-          <Button type="button" variant="outline" size="icon-sm" aria-label="중지" onClick={onStop}>
+          <Button type="button" variant="outline" size="icon-sm" aria-label={t('chat.stop')} onClick={onStop}>
             <Square className="size-3.5" />
           </Button>
         ) : (
-          <Button type="button" size="icon-sm" aria-label="전송" onClick={() => void submit()} disabled={!canSend} title={blocked ? blockedReason : undefined}>
+          <Button type="button" size="icon-sm" aria-label={t('chat.send')} onClick={() => void submit()} disabled={!canSend} title={blocked ? blockedReason : undefined}>
             <Send />
           </Button>
         )}
