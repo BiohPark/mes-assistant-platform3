@@ -290,7 +290,7 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 
 ### 진행 방식
 - 스프린트 = architecture §9의 S0–S5. 태스크 폴더는 `tasks/s<N>-<주제>/`. 각 스프린트의 **완료 기준**이 Verification의 기준이다.
-- 현재 위치: **S0–S5 완료**(`main` 병합, 태그 `s0-done`…`s5-done`), DB 엔진 MariaDB(D40) — **기능 개발 단계 종료, 대응표 ⬜ 0**. 다음은 사용자 사내 실기(WinSW 서비스 설치·데모 백업 이관·사내 OpenWebUI 연동·function calling) 결과에 따른 보정. 기록: `tasks/s*-*/`·`tasks/db-mariadb/`, `docs/HANDOFF.md` 6장, S5 계획 `docs/next-project/S5-kickoff.md`(D43).
+- 현재 위치: **S0–S5 완료 + S6 UI/UX(D44·D45, U1–U11) 완료**(`main` 병합, 태그 `s0-done`…`s6-done`), DB 엔진 MariaDB(D40) — **대응표 ⬜ 0**. 다음은 사용자 사내 실기(WinSW 서비스 설치·데모 백업 이관·사내 OpenWebUI 연동·function calling) 결과에 따른 보정. 기록: `tasks/s*-*/`·`tasks/db-mariadb/`, `docs/HANDOFF.md` 6장, S5 계획 `docs/next-project/S5-kickoff.md`(D43).
 - S1의 실환경 확인(`docs/evaluation/real-env-verification.md`)은 **이 환경에서 불가(D31)** — 사용자가 사내에서 수행. 개발은 가짜 OpenWebUI + OpenAI 호환 API 전환 프리셋으로 진행하고, 사내 연동 결과가 오면 어댑터를 맞춘다.
 - 확정: 배포 Windows 서버(D32) + **MariaDB 단독 설치(D40)**, 이번 페이즈 SSO 미연계 → **앱 자체 로그인**(D34), 병렬 단계·상태는 **코드 데이터로 관리**(D35). 남은 확인: OpenWebUI 버전, 비기능 제안값(PRD §6).
 - 스프린트가 끝나면 이 블록의 "현재 위치"와 아래 "명령"을 갱신한다.

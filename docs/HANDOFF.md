@@ -109,6 +109,18 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 
 ## 6. 진행 현황
 
+### 완료 — S6 UI/UX (2026-10-08, `main` 병합 · 태그 `s6-done`, D44·D45)
+
+- ② 환경 분리·진단(`s6-env`)·배포 안전(`s6-deploy-safety`)·현장 수정(`s6-hotfix`: 요청자 이름, BO 허브 차단, `crypto.randomUUID` 대체, API 키 위치)
+- U1 토큰(oklch 라이트·다크) → U2 테마·언어(사용자별 서버 저장, 0004) → U3 i18n 기반 → U4 부품(Sheet·Popover·Checkbox·RadioGroup·Tabs·Badge·Chip·Field·SuggestInput·Picker) → U5–U7(분류 코드 자동 추가·자동분만 제거 0005, 에이전트 ID 서버 생성·비노출, 모델 링크 칩, select 제거)
+- U8 SR 분리: "내 SR 요청"(2열·공용 채팅·첫 전송 지연 생성 멱등) / "SR 처리"(표·필터·Sheet). BO는 SR만, 초안 접수 원문은 요청자·SO만
+- U9 SR 흐름: 단계 전이·반려/완료 사유 필수(activity_log)·상태 이력·한글 알림, 전환 Sheet(첨부 선택=접수 본문 메시지 정본·후보 분리, AI 다듬기는 제안만, 수동 편집 보존), 필수 체크 미완료 업무 완료 사유 필수
+- U10 마감: 편집·서랍 Sheet, ConfirmDialog, Checkbox/Switch/Field, NAV 통일, 칸반 배지·WK 줄바꿈, `HEAD /`
+- U11 한/영: features 한국어 리터럴 0(상한 테스트), ko·en 키 693 일치
+- 워커: Codex 한도 이후 Fable·Opus 병행(worktree 병렬), 매 단위 Opus 리뷰 → 수정 → CI 녹색 → D42 병합. 대응표 ⬜ 0
+- **사용자 확인 필요**: ① 사내에서 이전 코드로 데모 백업을 이미 이관했다면 SR 접수 첨부가 비어 보임 → 새 DB에 재이관(보정 스크립트 없음) ② 필수 체크 미완료 업무 완료는 이제 사유 필수 ③ 요청 기록 있는 SR 초안은 삭제 불가(감사 보호, 버튼 숨김) ④ 영문에서 만든 새 에이전트의 기본 체크리스트는 영어로 저장
+- **남은 것**: 로컬 개발 DB 비대로 E2E 간헐 실패(S3·S8·tray) — E2E 전용 DB 분리 결정 대기, api 단위 테스트 간헐 실패 2회(원인 미확인), React "script tag" 콘솔 경고(next-themes, 무해)
+
 ### 완료 — S5 (2026-10-02, `main` 병합 · 태그 `s5-done`)
 
 - ① 배포(`s5-deploy`): api 단일 포트 정적 제공·`pnpm release` 묶음(링크 0)·WinSW v2.12·Windows 운영 절차(중지 → 백업 → 교체), CI가 Windows에서 묶음 복사본 기동 검증. Windows 전용 결함 2건(심볼릭 링크, 8.3 짧은 이름 realpath)
@@ -213,6 +225,12 @@ D1–D21은 데모에서 내려진 결정으로, 이 저장소에서도 유효�
 - **Windows에서만 깨지는 것(S5 ①)**: ① `pnpm deploy` 기본 결과물은 심볼릭 링크 구조라 복사하면 `ERR_MODULE_NOT_FOUND` — 배포 묶음은 hoisted 링커로 링크 0개(`verify-release`가 검사). ② `fs.realpathSync`(JS 구현)는 8.3 짧은 이름(`RUNNER~1`)을 유지하고 `fs.promises.realpath`·`realpathSync.native`는 긴 이름으로 푼다 — 경로 포함 판정은 **같은 구현**으로 구한 경로끼리. 둘 다 macOS에서는 재현되지 않아 CI windows 잡이 유일한 관문이다.
 - **이관 도구는 "실제 백업 × 시드된 서버"로 먼저 시험(S5 ③)**: 가상 최소 fixture로는 통과해도 실제 데모 백업은 서버 시드와 같은 에이전트 ID·같은 업무 번호(`WK-2026-0001`)·빈 소유자·대문자 태그를 가진다. 규칙: 카탈로그는 서버 값 유지(참조), 콘텐츠는 하위까지 대조해 다르면 중단, 번호는 재발급, 태그 키는 `tagKey`. fixture는 `apps/api/src/db/fixtures/demo-v3.json`(데모 시드에서 만들고 이름을 가상화 — 공개 저장소).
 
+
+- **시간대 의존 테스트(S6)**: `Z` 붙은 시각을 로컬 형식으로 단언하면 KST에선 통과하고 CI(UTC)에서 깨진다 — 테스트 값은 시간대 없는 로컬 시각으로, 로컬 검증은 `TZ=UTC pnpm test`.
+- **Field는 라벨이 입력을 감싸지 않는다(S6)**: `getByText('이름').locator('input')` 같은 DOM 구조 의존 셀렉터 금지 — `getByRole('textbox', { name })`.
+- **Radix Sheet/Dialog를 트리거 없이 열면**(상태로 open) 닫을 때 포커스가 body로 간다 — `onOpenAutoFocus`에서 연 요소를 기억하고 `onCloseAutoFocus`에서 돌려준다.
+- **SR 접수 첨부 정본(S6 U9)**: 접수 본문 메시지(role user·kind discussion·authorId null)의 첨부만 `attachmentIds`, 이 SR에 올라간 파일 전체는 `candidateAttachmentIds`. 이관 도구·새 경로도 같은 메시지에 붙여야 한다.
+- **worktree 병렬 작업**: E2E는 포트·DB를 공유하므로 한 번에 하나만. 워커는 E2E를 돌리지 않고 오케스트레이터가 실행. 동시에 돌면 부하 플레이크 — 실패 spec은 `--workers=1`로 재확인.
 
 ## 8. 다음 세션 시작 체크리스트
 
