@@ -1032,7 +1032,8 @@ components:
         id: { type: string }
         firstMessage: { type: string, description: 제목이 없는 목록의 첫 사용자 메시지 40자 }
         requesterName: { type: string }
-        intakeMessages: { type: array, description: 상세 응답의 읽기 전용 접수 원문, items: { $ref: '#/components/schemas/Message' } }
+        intakeMessages: { type: array, description: 상세 응답의 읽기 전용 접수 원문. 초안은 요청자 본인·SO에게만(그 외 빈 배열), items: { $ref: '#/components/schemas/Message' } }
+        hasRequests: { type: boolean, description: 상세 응답. 접수 대화에 요청 기록이 있음 — 이 초안은 감사 보호로 삭제 불가(DELETE 409) }
         code: { type: string }
         requesterId: { type: string }
         title: { type: string }

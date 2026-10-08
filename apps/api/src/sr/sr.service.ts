@@ -105,6 +105,8 @@ export class SrService {
         const lockKey = `sr-create:${srId}`
         await tx.insert(dbLock).values({ lockKey }).onDuplicateKeyUpdate({ set: { lockKey } })
         await tx.select().from(dbLock).where(eq(dbLock.lockKey, lockKey)).for('update')
+        // 행 잠금은 커밋까지 유지되므로 같은 트랜잭션에서 지워도 직렬화는 그대로다. 생성마다 행이 남지 않게 한다.
+        await tx.delete(dbLock).where(eq(dbLock.lockKey, lockKey))
         const [existing] = await tx.select().from(serviceRequest).where(eq(serviceRequest.id, srId))
         if (existing) return
       }
@@ -132,7 +134,14 @@ export class SrService {
     const [row, user] = await Promise.all([this.view(actor, srId), this.user(actor)])
     const detail = await this.assemble(row, !user.isBusinessOwner || user.isSystemOwner)
     // 상세의 읽기 권한은 view에서 검증했다. 접수 원문만 제공하며 스레드 쓰기 권한은 부여하지 않는다.
-    return { ...detail, intakeMessages: detail.threadId ? await this.tasks.messages(detail.threadId, row.requesterId) : [] }
+    // 초안(접수 전 상담)의 원문은 요청자 본인·SO만 본다.
+    const canReadIntake = row.status !== 'draft' || row.requesterId === actor || user.isSystemOwner
+    const [intakeMessages, requests] = await Promise.all([
+      detail.threadId && canReadIntake ? this.tasks.messages(detail.threadId, row.requesterId) : Promise.resolve([]),
+      detail.threadId ? this.db.select({ id: chatRequest.id }).from(chatRequest).where(eq(chatRequest.threadId, detail.threadId)).limit(1) : Promise.resolve([]),
+    ])
+    // hasRequests: 요청 기록이 있는 초안은 감사 보호로 삭제할 수 없다(delete 409) — 화면이 삭제 버튼을 숨기는 근거.
+    return { ...detail, intakeMessages, hasRequests: requests.length > 0 }
   }
   async draft(actor: string, srId: string) {
     await this.view(actor, srId)

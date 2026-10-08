@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createPool } from '../db/connection.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
-import { activityLog, appSetting, appUser, assistant, chatRequest, fileObject, notification, serviceRequest, sharedResult, task } from '../db/schema.js'
+import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileObject, notification, serviceRequest, sharedResult, task } from '../db/schema.js'
 import { loadConfig } from '../config/config.js'
 import { RequestsService } from '../requests/requests.service.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -65,8 +65,10 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     const provider = { kind: 'mock' as const, ping: async () => ({ ok: true, detail: '' }), listModels: async () => ['glm-5.2'],
       async *stream() { yield { type: 'delta' as const, text: '응답' }; yield { type: 'done' as const } } }
     const requests = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' }), provider)
+    expect((await sr.get('requester', draft.id)).hasRequests).toBe(false)
     const started = await requests.start('requester', draft.threadId, { content: '접수 전 대화' }, `keep-${draft.id}`)
     await started.done
+    expect((await sr.get('requester', draft.id)).hasRequests).toBe(true)
     await expect(sr.delete('requester', draft.id)).rejects.toMatchObject({ status: 409 })
     expect((await db.select({ id: chatRequest.id }).from(chatRequest).where(eq(chatRequest.id, started.id)))).toHaveLength(1)
   })
@@ -248,6 +250,7 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     expect(retry.id).toBe(first.id)
     expect(retry.threadId).toBe(first.threadId)
     expect((await sr.list('requester', 'mine')).filter(row => row.id === first.id)).toHaveLength(1)
+    expect(await db.select().from(dbLock).where(eq(dbLock.lockKey, `sr-create:${first.id}`))).toEqual([])
     const another = await sr.create('other', 'same-first-send')
     expect(another.id).not.toBe(first.id)
     await sr.delete('requester', first.id)
@@ -258,6 +261,10 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
   it('allows inbox staff to read the intake transcript through SR detail without granting chat mutation access', async () => {
     const draft = await sr.create('requester')
     await new DbTasksService(db).appendMessage('requester', draft.threadId, { content: '접수 원문', kind: 'discussion' })
+    // 초안 원문은 요청자 본인·SO만 — 접수 전 상담 내용은 담당자에게 보이지 않는다.
+    expect((await sr.get('staff', draft.id)).intakeMessages).toEqual([])
+    expect((await sr.get('requester', draft.id)).intakeMessages).toMatchObject([{ content: '접수 원문' }])
+    expect((await sr.get('owner', draft.id)).intakeMessages).toMatchObject([{ content: '접수 원문' }])
     await sr.submit('requester', draft.id, { title: '원문', body: '' })
     expect((await sr.get('staff', draft.id)).intakeMessages).toMatchObject([{ content: '접수 원문' }])
     await expect(assertThreadAccess(db, 'staff', draft.threadId)).rejects.toMatchObject({ status: 403 })
