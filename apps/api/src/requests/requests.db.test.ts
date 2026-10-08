@@ -812,4 +812,33 @@ describe('RequestService DB', () => {
       await new Promise<void>((resolve) => fake.close(() => resolve()))
     }
   })
+
+  it('admit은 DB 진행 중 요청과 메모리 슬롯을 합쳐 전역 상한을 적용하고 행을 쓰지 않는다', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const holding: ChatProvider = { ...provider, async *stream() { await held; yield { type: 'delta', text: '응답' }; yield { type: 'done' } } }
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root, REQUEST_MAX_ACTIVE: '2' })
+    const runner = new RequestsService(db, config, holding)
+    const countRows = async () => Number((await db.select({ count: sql<number>`count(*)` }).from(chatRequest))[0]?.count ?? 0)
+    const before = await countRows()
+    try {
+      const freeOne = await runner.admit('test')
+      const freeTwo = await runner.admit('test')
+      await expect(runner.admit('test')).rejects.toMatchObject({ status: 429 })
+      const threadId = (await tasks.create('member', { assistantId })).thread.id
+      await expect(runner.start('member', threadId, { content: '막힘' }, 'admit-blocked')).rejects.toMatchObject({ status: 429 })
+      freeOne(); freeOne()
+      const freeThree = await runner.admit('test')
+      await expect(runner.admit('test')).rejects.toMatchObject({ status: 429 })
+      freeTwo(); freeThree()
+      expect(await countRows()).toBe(before)
+      const started = await runner.start('member', threadId, { content: '하나' }, 'admit-one')
+      const freeFour = await runner.admit('test')
+      await expect(runner.admit('test')).rejects.toMatchObject({ status: 429 })
+      release()
+      await started.done
+      const freeFive = await runner.admit('test')
+      freeFour(); freeFive()
+    } finally { release(); runner.onModuleDestroy() }
+  })
 })

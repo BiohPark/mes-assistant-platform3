@@ -66,4 +66,28 @@ describe('LLM API', () => {
     expect(res.body.message).toMatch(/모델 목록/)
     expect(JSON.stringify(res.body)).not.toMatch(/top-secret|localhost:3101|Authorization|Bearer/)
   })
+
+  it('동시 모델 목록 요청은 상위 호출 하나로 합친다', async () => {
+    let release!: (ids: string[]) => void
+    listModels.mockImplementationOnce(() => new Promise<string[]>((resolve) => { release = resolve }))
+    const first = request(app.getHttpServer()).get('/api/llm/models').set('Cookie', 'mes_session=member').then((r) => r)
+    const second = request(app.getHttpServer()).get('/api/llm/models').set('Cookie', 'mes_session=owner').then((r) => r)
+    await vi.waitFor(() => expect(listModels).toHaveBeenCalledTimes(1))
+    release(['fake-general'])
+    const [a, b] = await Promise.all([first, second])
+    expect(a.body).toEqual({ models: ['fake-general'] })
+    expect(b.body).toEqual({ models: ['fake-general'] })
+    expect(listModels).toHaveBeenCalledTimes(1)
+  })
+  it('모델 ID는 검증·정규화하고 중복을 제거한다', async () => {
+    listModels.mockResolvedValueOnce(['fake-general', ' fake-general ', '', '   ', 'bad\u0000id', 'line\nbreak', 'x'.repeat(192), 'fake-writer', 'fake-general'])
+    const res = await request(app.getHttpServer()).get('/api/llm/models').set('Cookie', 'mes_session=member').expect(200)
+    expect(res.body).toEqual({ models: ['fake-general', 'fake-writer'] })
+  })
+  it('상위 실패는 캐시하지 않고 다음 요청에서 다시 조회한다', async () => {
+    listModels.mockRejectedValueOnce(new Error('HTTP 500'))
+    await request(app.getHttpServer()).get('/api/llm/models').set('Cookie', 'mes_session=member').expect(502)
+    await request(app.getHttpServer()).get('/api/llm/models').set('Cookie', 'mes_session=member').expect(200, { models: ['fake-general'] })
+    expect(listModels).toHaveBeenCalledTimes(2)
+  })
 })
