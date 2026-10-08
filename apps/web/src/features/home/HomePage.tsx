@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useLocation, useNavigationType } from 'react-router'
 import { useMe } from '@/app/auth'
 import { listTasks } from '@/api/tasks'
 import { emptyHomeFilters, type HomeFilters } from '@/app/uiStore'
@@ -26,6 +26,8 @@ export function HomePage() {
   const myActive = (tasks.data ?? []).filter(task => task.status === 'in_progress' && (task.ownerId === me.id || task.assigneeIds.includes(me.id))).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)).slice(0, 6)
   const link1Rule = useQuery({ queryKey: ['settings'], queryFn: getSettings }).data?.link1Rule
   const [params, setParams] = useSearchParams()
+  const { key: navigationKey } = useLocation()
+  const navigationType = useNavigationType()
   const view = params.get('view') === 'kanban' ? 'kanban' : 'cards'
   const { rows, isPending, isError, isFetching, refetch } = useAssistantRows()
   const users = useUserMap()
@@ -36,6 +38,28 @@ export function HomePage() {
   const rawFilters = homeFiltersFromParams(activeParams)
   const all = rows ?? []
   const filters = rows ? validHomeFilters(rawFilters, all.map(row => row.assistant)) : rawFilters
+  // The updater can still receive the URL preceding an in-flight search replace.
+  const pendingSearch = useRef<string | undefined>(undefined)
+  // Keep the kanban draft alive when a view switch supersedes its search replace.
+  const pendingKanbanSearch = useRef<string | undefined>(undefined)
+  const kanbanQuery = params.get('q') ?? ''
+  useEffect(() => {
+    if (navigationType === 'POP' || pendingSearch.current === rawFilters.q) pendingSearch.current = undefined
+    if (navigationType === 'POP' || pendingKanbanSearch.current === kanbanQuery) pendingKanbanSearch.current = undefined
+  }, [rawFilters.q, kanbanQuery, navigationKey, navigationType])
+  const withPendingKanbanSearch = (prev: URLSearchParams) => {
+    const next = new URLSearchParams(prev)
+    if (pendingKanbanSearch.current !== undefined) {
+      next.delete('q')
+      if (pendingKanbanSearch.current) next.set('q', pendingKanbanSearch.current)
+    }
+    return next
+  }
+  const latestFilters = (prev: URLSearchParams) => {
+    const latest = homeFiltersFromParams(prev)
+    const next = { ...latest, q: pendingSearch.current ?? latest.q }
+    return rows ? validHomeFilters(next, all.map(row => row.assistant)) : next
+  }
   const options = classificationOptions(all.map(row => row.assistant), filters.level1CodeIds)
   // Keep selected Lv2 chips visible even when they belong to another Lv1, so conflicting selections can be cleared explicitly.
   const allLevel2 = classificationOptions(all.map(row => row.assistant), []).level2
@@ -44,25 +68,41 @@ export function HomePage() {
   const canonical = homeFiltersToParams(filters, activeParams).toString()
   const currentUrl = params.toString()
   useEffect(() => {
+    const restore = !started.current
     started.current = true
-    if (canonical !== currentUrl) setParams(new URLSearchParams(canonical), { replace: true })
+    if (canonical !== currentUrl) setParams(prev => {
+      const base = withPendingKanbanSearch(restore ? homeFiltersToParams(homeFiltersFromParams(initial), prev) : prev)
+      const latest = homeFiltersFromParams(base)
+      const next = { ...latest, q: pendingSearch.current ?? latest.q }
+      return homeFiltersToParams(rows ? validHomeFilters(next, rows.map(row => row.assistant)) : next, base)
+    }, { replace: true })
     useUiStore.getState().setHomeFilters(homeFiltersFromParams(new URLSearchParams(canonical)))
-  }, [canonical, currentUrl, setParams])
-  const update = (patch: Partial<HomeFilters>) => setParams(homeFiltersToParams({ ...filters, ...patch }, params), { replace: patch.q !== undefined })
-  const reset = () => {
-    useUiStore.getState().setHomeFilters(emptyHomeFilters())
-    setParams(homeFiltersToParams(emptyHomeFilters(), params))
+  }, [canonical, currentUrl, initial, rows, setParams])
+  const update = (patch: Partial<HomeFilters>) => {
+    if (patch.q !== undefined) pendingSearch.current = patch.q
+    setParams(prev => homeFiltersToParams({ ...latestFilters(prev), ...patch }, withPendingKanbanSearch(prev)), { replace: patch.q !== undefined })
   }
+  const reset = () => {
+    pendingSearch.current = ''
+    useUiStore.getState().setHomeFilters(emptyHomeFilters())
+    setParams(prev => homeFiltersToParams(emptyHomeFilters(), withPendingKanbanSearch(prev)))
+  }
+  const switchView = (nextView: 'cards' | 'kanban') => setParams(prev => {
+    const next = homeFiltersToParams(latestFilters(prev), withPendingKanbanSearch(prev))
+    if (nextView === 'kanban') next.set('view', 'kanban')
+    else next.delete('view')
+    return next
+  })
   const filterCount = filters.level1CodeIds.length + filters.level2CodeIds.length + Number(filters.showRetired)
 
   return <>
     <TopBar title={t('nav.hub')} actions={me.roles.includes('system_owner') && <Button size="sm" variant="outline" asChild><Link to="/assistants/manage">{t('hub.manageAgents')}</Link></Button>} />
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 lg:p-6">
       <div role="tablist" aria-label={t('hub.viewSwitch')} className="inline-flex self-start rounded-xl border bg-muted p-1 shadow-xs">
-        <button type="button" role="tab" aria-selected={view === 'cards'} onClick={() => { const next = new URLSearchParams(params); next.delete('view'); setParams(next) }} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><LayoutGrid className="size-4" />{t('hub.assistantCards')}</button>
-        <button type="button" role="tab" aria-selected={view === 'kanban'} onClick={() => { const next = new URLSearchParams(params); next.set('view', 'kanban'); setParams(next) }} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'kanban' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><KanbanSquare className="size-4" />{t('hub.conversationKanban')}</button>
+        <button type="button" role="tab" aria-selected={view === 'cards'} onClick={() => switchView('cards')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><LayoutGrid className="size-4" />{t('hub.assistantCards')}</button>
+        <button type="button" role="tab" aria-selected={view === 'kanban'} onClick={() => switchView('kanban')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'kanban' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><KanbanSquare className="size-4" />{t('hub.conversationKanban')}</button>
       </div>
-      {view === 'kanban' ? <ConversationKanban /> : <>
+      {view === 'kanban' ? <ConversationKanban pendingSearch={pendingKanbanSearch} /> : <>
       <section aria-label={t('hub.myActiveConversations')} className="flex flex-wrap items-center gap-2 text-xs">
         <span className="font-medium">{t('hub.myActiveConversations')}</span>
         {tasks.isPending ? <span className="text-muted-foreground">{t('common.loading')}</span> : tasks.isError ? <Button size="xs" variant="ghost" onClick={() => void tasks.refetch()}>{t('common.retry')}</Button> : myActive.length ? myActive.map(task => <Link key={task.id} to={`/c/${encodeURIComponent(task.id)}`} className="max-w-48 truncate rounded-full border px-2 py-1 hover:bg-muted" title={`${task.code} ${task.title}`}>{task.title || task.code}</Link>) : <span className="text-muted-foreground">{t('hub.noMyActiveConversations')}</span>}

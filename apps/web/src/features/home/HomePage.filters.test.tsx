@@ -1,8 +1,10 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
-import { useLocation, useNavigate } from 'react-router'
+import { createMemoryRouter, RouterProvider, useLocation, useNavigate } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { MeContext } from '@/app/auth'
+import { ProfileProvider } from '@/app/profile'
 import { emptyHomeFilters, useUiStore } from '@/app/uiStore'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { jsonResponse, renderWithProviders } from '@/test/render'
@@ -216,4 +218,72 @@ it('clears a local whitespace draft when kanban reset leaves the URL search empt
   await user.click(screen.getByRole('button', { name: '초기화' }))
   expect(input).toHaveValue('')
   expect(screen.getByTestId('url')).not.toHaveTextContent('status=')
+})
+
+it.each([
+  ['/?aq=Multi', '이름 · 요약 · 업무 분류 검색', 'One', 'aq', 'Multi'],
+  ['/?view=kanban&q=conversation', '코드 · 제목 · 태그 검색', '진행 중', 'q', 'conversation'],
+])('releases an empty-search reset before history restores another query: %s', async (route, placeholder, chip, key, query) => {
+  renderHome(route)
+  await screen.findByRole('button', { name: route.includes('kanban') ? 'Alpha' : 'One', hidden: true })
+  const user = userEvent.setup()
+  const input = screen.getByPlaceholderText(placeholder)
+  await user.click(screen.getByRole('button', { name: chip }))
+  await user.clear(input)
+  await user.click(screen.getByRole('button', { name: '초기화' }))
+  await user.click(screen.getByRole('button', { name: 'Back' }))
+  await user.click(screen.getByRole('button', { name: 'Back' }))
+  expect(input).toHaveValue(query)
+  await user.click(screen.getByRole('button', { name: chip }))
+  expect(new URLSearchParams(screen.getByTestId('url').textContent!).get(key)).toBe(query)
+  expect(input).toHaveValue(query)
+})
+
+it.each([
+  ['/?aq=프로토콜&tag=keep', '이름 · 요약 · 업무 분류 검색', 'aq', 'button', 'One', 'l1', 'one'],
+  ['/?view=kanban&q=프로토콜&aq=Multi', '코드 · 제목 · 태그 검색', 'q', 'button', '진행 중', 'status', 'in_progress'],
+  ['/?aq=프로토콜&tag=keep', '이름 · 요약 · 업무 분류 검색', 'aq', 'tab', '전체 대화 칸반', 'view', 'kanban'],
+  ['/?view=kanban&q=프로토콜&aq=Multi', '코드 · 제목 · 태그 검색', 'q', 'tab', '에이전트 카드', 'view', ''],
+] as const)('keeps a cleared search when another action supersedes its pending replace: %s (%s, %s, %s, %s)', async (route, placeholder, searchKey, role, action, filterKey, filterValue) => {
+  let acknowledge!: () => void
+  const pendingReplace = new Promise<void>(resolve => { acknowledge = resolve })
+  const router = createMemoryRouter([{
+    path: '/',
+    hydrateFallbackElement: null,
+    loader: async ({ request }) => {
+      const params = new URL(request.url).searchParams
+      if (!params.has(searchKey) && params.get(filterKey) === new URLSearchParams(route.split('?')[1]).get(filterKey)) await pendingReplace
+      return null
+    },
+    element: <MeContext value={{ id: 'u', name: 'User', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><Navigation /><HomePage /></TooltipProvider></MeContext>,
+  }], { initialEntries: [route] })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><ProfileProvider><RouterProvider router={router} /></ProfileProvider></QueryClientProvider>)
+  try {
+    await screen.findByRole(role, { name: action })
+    // Wait for catalog loading before the edit, so normalization is not part of this race.
+    await screen.findByRole('button', { name: route.includes('kanban') ? 'Alpha' : 'One', hidden: true })
+    const input = screen.getByPlaceholderText(placeholder)
+    fireEvent.change(input, { target: { value: '' } })
+    expect(input).toHaveValue('')
+    expect(new URLSearchParams(router.state.location.search).get(searchKey)).toBe('프로토콜')
+    expect(router.state.navigation.state).toBe('loading')
+    fireEvent.click(screen.getByRole(role, { name: action }))
+    await waitFor(() => expect(router.state.navigation.state).toBe('idle'))
+    const params = new URLSearchParams(screen.getByTestId('url').textContent!)
+    expect(params.has(searchKey)).toBe(false)
+    expect(params.get(filterKey) ?? '').toBe(filterValue)
+    expect(input).toHaveValue('')
+    expect(params.get(route.includes('kanban') ? 'aq' : 'tag')).toBe(route.includes('kanban') ? 'Multi' : 'keep')
+    await act(async () => { acknowledge(); await pendingReplace })
+    expect(input).toHaveValue('')
+    expect(new URLSearchParams(router.state.location.search).get(filterKey) ?? '').toBe(filterValue)
+    if (role === 'tab') {
+      fireEvent.click(screen.getByRole('tab', { name: route.includes('kanban') ? '전체 대화 칸반' : '에이전트 카드' }))
+      expect(await screen.findByPlaceholderText(placeholder)).toHaveValue('')
+    }
+  } finally {
+    acknowledge()
+    router.dispose()
+  }
 })

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type RefObject } from 'react'
 import { useT } from '@/i18n'
 import { useQuery } from '@tanstack/react-query'
 import { Check, Filter, MessageSquarePlus, RotateCcw, Search, X } from 'lucide-react'
@@ -27,7 +27,7 @@ import { useSearchText } from './useSearchText'
 const colId = (assistantId: string) => `kanban-col-${assistantId}`
 
 /** 에이전트 순서의 대화 열. 필터 상태는 URL에 두어 같은 주소를 공유할 수 있다. */
-export function ConversationKanban() {
+export function ConversationKanban({ pendingSearch }: { pendingSearch: RefObject<string | undefined> }) {
   const t = useT()
   const [params, setParams] = useSearchParams()
   const actor = useActor()
@@ -35,21 +35,38 @@ export function ConversationKanban() {
   const catalog = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
   const assistants = catalog.data ?? []
   const filter = filterFromParams(params, catalog.data)
+  const latestFilter = (prev: URLSearchParams) => {
+    const latest = filterFromParams(prev, catalog.data)
+    return { ...latest, q: pendingSearch.current ?? latest.q }
+  }
   const rawStages = params.getAll('stage').join('\u0000')
   const stagesKey = filter.stages.join('\u0000')
   useEffect(() => {
     if (!catalog.data || rawStages === stagesKey) return
-    const next = new URLSearchParams(params)
-    next.delete('stage')
-    filter.stages.forEach(stage => next.append('stage', stage))
-    setParams(next, { replace: true })
-  }, [catalog.data, rawStages, stagesKey, params, setParams, filter.stages])
+    setParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('stage')
+      filterFromParams(prev, catalog.data).stages.forEach(stage => next.append('stage', stage))
+      if (pendingSearch.current !== undefined) {
+        next.delete('q')
+        if (pendingSearch.current) next.set('q', pendingSearch.current)
+      }
+      return next
+    }, { replace: true })
+  }, [catalog.data, rawStages, stagesKey, setParams])
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => listTasks() })
   const collapseEmpty = useUiStore((s) => s.kanbanCollapseEmpty)
   const setCollapseEmpty = useUiStore((s) => s.setKanbanCollapseEmpty)
-  const update = (patch: Partial<KanbanFilter>) => setParams(filterToParams({ ...filter, ...patch }, params), { replace: patch.q !== undefined })
+  const update = (patch: Partial<KanbanFilter>) => {
+    if (patch.q !== undefined) pendingSearch.current = patch.q.trim()
+    setParams(prev => filterToParams({ ...latestFilter(prev), ...patch }, prev), { replace: patch.q !== undefined })
+  }
   const search = useSearchText(filter.q, q => update({ q }), value => value.trim())
-  const reset = () => setParams(filterToParams({ stages: [], statuses: [], tags: [], mine: false, q: '' }, params))
+  const clearFilters = () => setParams(prev => filterToParams({ stages: [], statuses: [], tags: [], mine: false, q: latestFilter(prev).q }, prev))
+  const reset = () => {
+    pendingSearch.current = ''
+    setParams(prev => filterToParams({ stages: [], statuses: [], tags: [], mine: false, q: '' }, prev))
+  }
   const columns = kanbanColumns(assistants, tasks.data ?? [], filter, actor.userId)
   const stages = stageOptions(assistants)
   const focused = filter.assistantId ? assistants.find((a) => a.id === filter.assistantId) : undefined
@@ -77,7 +94,7 @@ export function ConversationKanban() {
     {!tasks.isError && <>
       {tasks.data && total === 0 && isFiltering(filter) && <EmptyState icon={Filter} title={t('hub.noMatchingConversations')} action={<div className="flex gap-2">
         {!!filter.q && <Button size="sm" variant="outline" onClick={() => update({ q: '' })}>{t('hub.clearSearch')}</Button>}
-        {selectedCount > 0 && <Button size="sm" variant="outline" onClick={() => setParams(filterToParams({ stages: [], statuses: [], tags: [], mine: false, q: filter.q }, params))}>{t('hub.clearFilters', { count: selectedCount })}</Button>}
+        {selectedCount > 0 && <Button size="sm" variant="outline" onClick={clearFilters}>{t('hub.clearFilters', { count: selectedCount })}</Button>}
       </div>} />}
       <div className="flex items-center gap-1 overflow-x-auto pb-1" aria-label={t('hub.jumpToColumn')}><span className="shrink-0 text-xs text-muted-foreground">{t('hub.conversationCount', { count: total })}</span>{columns.map((column) => <button key={column.assistant.id} type="button" title={`${column.assistant.name} (${column.tasks.length})`} onClick={() => document.getElementById(colId(column.assistant.id))?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' })} className={cn('flex shrink-0 items-center gap-1 rounded-full border bg-card p-0.5 pr-1.5 hover:bg-muted', column.tasks.length === 0 && 'opacity-40')}><AssistantAvatar assistant={column.assistant} size="xs" className="size-5 text-[11px]" /><span className="text-[11px] leading-4 tabular-nums text-muted-foreground">{column.tasks.length}</span></button>)}</div>
       <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto pb-2">{columns.map(({ assistant, tasks: columnTasks }) => collapseEmpty && columnTasks.length === 0 ? <div key={assistant.id} id={colId(assistant.id)} className="flex w-10 shrink-0 flex-col items-center gap-2 rounded-xl border border-dashed py-2" title={t('hub.emptyColumnTitle', { name: assistant.name })}><AssistantAvatar assistant={assistant} size="xs" /><span className="text-xs text-muted-foreground [writing-mode:vertical-rl]">{assistant.name}</span></div> : <section key={assistant.id} id={colId(assistant.id)} className="flex w-72 shrink-0 flex-col rounded-xl bg-muted/40" aria-label={t('hub.columnLabel', { name: assistant.name })}><header className="flex items-center gap-2 border-b px-2.5 py-2" style={{ borderTop: `3px solid ${assistant.color}`, borderRadius: '0.75rem 0.75rem 0 0' }}><AssistantAvatar assistant={assistant} size="xs" /><div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold">{assistant.name}</div><div className="text-xs text-muted-foreground">{assistant.level1} › {assistant.level2}{(assistant.classifications?.length ?? 1) > 1 && ` +${assistant.classifications!.length - 1}`}</div></div><span className="text-xs text-muted-foreground">{columnTasks.length}</span>{assistant.status !== 'retired' && <Button size="icon-xs" variant="ghost" asChild><Link to={`/new/${encodeURIComponent(assistant.id)}${filter.tags.length ? `?${filter.tags.map((tag) => `tag=${encodeURIComponent(tag)}`).join('&')}` : ''}`} aria-label={t('hub.newConversationIn', { name: assistant.name })}><MessageSquarePlus /></Link></Button>}</header><div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">{columnTasks.length === 0 ? <div className="py-6 text-center text-xs text-muted-foreground">{t('hub.noConversations')}</div> : columnTasks.map((task) => <ConversationCard key={task.id} task={task} onTagClick={addFilterTag} onStatusChange={(status) => void changeStatus(task.id, status)} />)}</div></section>)}</div>
