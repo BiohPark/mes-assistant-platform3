@@ -78,7 +78,7 @@ describe('files DB', () => {
     await files.switchInputVersion('member', a.id, direct.id, newer.id)
     expect((await tasks.get(a.id)).inputs).toMatchObject([{ fileId: newer.id, weight: 'reference' }])
     await expect(files.setInput('member', a.id, indirect.id, 'main')).rejects.toMatchObject({ status: 400 })
-    await tasks.setStatus('member', a.id, 'done')
+    await tasks.setStatus('member', a.id, 'done', '필수 항목 미확인')
     await expect(files.setInput('member', a.id, direct.id, 'main')).rejects.toMatchObject({ status: 409 })
   })
 

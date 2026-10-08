@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common'
 import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
-import { buildChatRequest, createProvider, suggestTitle, summarizeConversation, SummaryBudgetError, type ChatProvider, type ChatScope } from '@mes/llm'
+import { buildChatRequest, createProvider, refineSrDraft, suggestTitle, summarizeConversation, SummaryBudgetError, type ChatProvider, type ChatScope, type SrDraftText } from '@mes/llm'
 import type { LlmSettings, Message, RequestInfo, RequestInput, ServiceRequest, Thread } from '@mes/domain'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
@@ -76,10 +76,19 @@ export class RequestsService implements OnModuleDestroy {
       seq: row.seq, role: row.role as Message['role'], kind: row.kind as Message['kind'], content: row.content,
       authorId: row.authorId ?? undefined, status: row.status as Message['status'], createdAt: row.createdAt.toISOString(), attachmentIds: [] }))
     if (!history.some((row) => row.role === 'user')) return undefined
+    return this.runAuxiliary(actor, 'title', async (signal) => suggestTitle(this.provider, await this.srModel(owner.modelId), history, signal))
+  }
+  /** SR 제목·본문 다듬기 제안(보조 호출, 저장 없음). 적용은 사람이 한다. */
+  async refineSrDraft(actor: string, threadId: string, draft: SrDraftText): Promise<SrDraftText> {
+    await assertThreadAccess(this.db, actor, threadId)
+    const [owner] = await this.db.select().from(thread).where(eq(thread.id, threadId))
+    if (!owner?.srId) throw new BadRequestException('접수 대화가 아닙니다')
+    return this.runAuxiliary(actor, 'refine', async (signal) => refineSrDraft(this.provider, await this.srModel(owner.modelId), draft, signal))
+  }
+  private async srModel(threadModelId: string | null) {
     const [setting] = await this.db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'srIntakeAssistantId'))
     const [intake] = typeof setting?.value === 'string' ? await this.db.select().from(assistant).where(eq(assistant.id, setting.value)) : []
-    const model = owner.modelId ?? intake?.modelId ?? this.config.llm.defaultModel ?? 'glm-5.2'
-    return this.runAuxiliary(actor, 'title', (signal) => suggestTitle(this.provider, model, history, signal))
+    return threadModelId ?? intake?.modelId ?? this.config.llm.defaultModel ?? 'glm-5.2'
   }
   async draftConversationSummary(actor: string, taskId: string, messages: Message[], signal?: AbortSignal) {
     const ports = new DbLlmPorts(this.db, this.config, actor)
@@ -92,7 +101,7 @@ export class RequestsService implements OnModuleDestroy {
     try { return await this.runAuxiliary(actor, 'summary', (auxSignal) => summarizeConversation(this.provider, model, messages, userMap, { limitBytes, signal: auxSignal }), { signal }) }
     catch (error) { if (error instanceof SummaryBudgetError) throw new HttpException(error.message, 413); throw error }
   }
-  async runAuxiliary<T>(actor: string, _kind: 'title' | 'summary' | 'checklist', operation: (signal: AbortSignal) => Promise<T>,
+  async runAuxiliary<T>(actor: string, _kind: 'title' | 'summary' | 'checklist' | 'refine', operation: (signal: AbortSignal) => Promise<T>,
     options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<T> {
     if (this.auxiliaryUsers.has(actor)) throw new HttpException('보조 요청이 이미 진행 중입니다', 429)
     this.auxiliaryUsers.add(actor)

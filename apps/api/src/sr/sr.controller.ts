@@ -5,7 +5,8 @@ import { SrService } from './sr.service.js'
 
 const submitSchema = z.object({ title: z.string(), titleSource: z.enum(['ai', 'manual']).optional(), body: z.string(), attachmentIds: z.array(z.string()).optional() }).strict()
 const titleSchema = z.object({ title: z.string() }).strict()
-const statusSchema = z.object({ status: z.enum(['submitted', 'reviewing', 'in_progress', 'responded', 'done', 'rejected']) }).strict()
+const statusSchema = z.object({ status: z.enum(['submitted', 'reviewing', 'in_progress', 'responded', 'done', 'rejected']), reason: z.string().max(500).optional() }).strict()
+const refineSchema = z.object({ title: z.string(), body: z.string() }).strict()
 const taskSchema = z.object({ assistantId: z.string().min(1), forceNew: z.boolean().optional() }).strict()
 const resultSchema = z.object({ taskId: z.string().optional(), text: z.string().optional(), fileIds: z.array(z.string()).optional() }).strict()
 const contentSchema = z.object({ title: z.string(), body: z.string(), attachmentIds: z.array(z.string()), titleSource: z.enum(['ai', 'manual']).optional() }).strict()
@@ -40,7 +41,9 @@ export class SrController {
   @Patch(':id/content')
   content(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) { return this.sr.content(req.user!.id, id, parse(contentSchema, body)) }
   @Patch(':id/status')
-  status(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) { return this.sr.status(req.user!.id, id, parse(statusSchema, body).status) }
+  status(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) { const input = parse(statusSchema, body); return this.sr.status(req.user!.id, id, input.status, input.reason) }
+  @Post(':id/refine')
+  refine(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) { return this.sr.refine(req.user!.id, id, parse(refineSchema, body)) }
   @Delete(':id')
   @HttpCode(204)
   delete(@Req() req: AuthedRequest, @Param('id') id: string) { return this.sr.delete(req.user!.id, id) }

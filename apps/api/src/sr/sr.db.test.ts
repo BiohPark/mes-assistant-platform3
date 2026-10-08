@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing'
 import request from 'supertest'
 import { drizzle } from 'drizzle-orm/mysql2'
 import { DB, DB_CLIENT, type Db } from '../db/db.module.js'
-import { eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import { AppModule } from '../app.module.js'
 import { configureApp } from '../app.factory.js'
 import { CONFIG } from '../config/config.js'
@@ -165,6 +165,41 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     expect((await db.select().from(notification).where(eq(notification.userId, 'requester')))).toHaveLength(before + 1)
   })
 
+  it('requires a reason for rejected and done, stores it in activity_log, labels notifications in Korean and returns status history', async () => {
+    const draft = await sr.create('requester')
+    await sr.submit('requester', draft.id, { title: '사유', body: '' })
+    await sr.startTask('staff', draft.id, { assistantId })
+    await expect(sr.status('staff', draft.id, 'done')).rejects.toMatchObject({ status: 400 })
+    await expect(sr.status('staff', draft.id, 'rejected', '   ')).rejects.toMatchObject({ status: 400 })
+    await expect(sr.status('staff', draft.id, 'rejected', 'x'.repeat(501))).rejects.toMatchObject({ status: 400 })
+    expect((await sr.get('staff', draft.id)).status).toBe('in_progress')
+    await sr.status('staff', draft.id, 'done', ' 요청 범위 모두 처리 ')
+    expect(await db.select({ type: activityLog.type, payload: activityLog.payload }).from(activityLog).where(eq(activityLog.srId, draft.id)))
+      .toContainEqual({ type: 'sr.status_changed', payload: { from: 'in_progress', to: 'done', reason: '요청 범위 모두 처리' } })
+    const notified = await db.select().from(notification).where(eq(notification.userId, 'requester')).orderBy(desc(notification.at)).limit(1)
+    expect(notified[0]!.title).toContain('완료')
+    expect(notified[0]!.title).not.toContain('done')
+    expect(notified[0]!.body).toContain('요청 범위 모두 처리')
+    const history = (await sr.get('requester', draft.id)).statusHistory
+    expect(history.map((item) => [item.from, item.to, item.byName, item.reason])).toEqual([
+      ['draft', 'submitted', 'Requester', undefined], ['submitted', 'in_progress', 'Staff', undefined], ['in_progress', 'done', 'Staff', '요청 범위 모두 처리'],
+    ])
+    expect(history.every((item) => typeof item.at === 'string' && item.id)).toBe(true)
+    // 다른 상태는 사유 없이도 바꿀 수 있다(진행 중 복귀).
+    expect((await sr.status('owner', draft.id, 'in_progress')).status).toBe('in_progress')
+  })
+
+  it('refines the current title and body as a proposal without saving', async () => {
+    const draft = await sr.create('requester')
+    const provider = { kind: 'mock' as const, ping: async () => ({ ok: true, detail: '' }), listModels: async () => ['glm-5.2'], async *stream() { yield { type: 'done' as const } } }
+    const requests = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' }), provider)
+    const withRequests = new SrService(db, new DbTasksService(db), new EventsService(), undefined, requests)
+    await expect(withRequests.refine('other', draft.id, { title: '  알람   필터 ', body: '본문\n\n\n\n끝  ' })).rejects.toMatchObject({ status: 403 })
+    expect(await withRequests.refine('requester', draft.id, { title: '  알람   필터 ', body: '본문\n\n\n\n끝  ' })).toEqual({ title: '알람 필터', body: '본문\n\n끝' })
+    await expect(withRequests.refine('requester', draft.id, { title: '', body: '' })).rejects.toMatchObject({ status: 400 })
+    expect((await sr.get('requester', draft.id)).title).toBe('')
+  })
+
   it('binds SR attachments to their message and restricts the intake thread', async () => {
     const draft = await sr.create('requester')
     const fileId = 'sr-file-for-thread-test'
@@ -211,7 +246,7 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     const draft = await sr.create('requester')
     await sr.submit('requester', draft.id, { title: '종료', body: '', attachmentIds: [] })
     await sr.startTask('staff', draft.id, { assistantId })
-    await sr.status('staff', draft.id, closed)
+    await sr.status('staff', draft.id, closed, '종료 사유')
     await sr.share('staff', draft.id, { text: '추가 결과' })
     expect((await sr.get('requester', draft.id)).status).toBe(closed)
   })

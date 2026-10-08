@@ -136,7 +136,7 @@ describe('RequestService DB', () => {
     expect({ provider: estimate.provider, transport: estimate.transport, model: estimate.model, limitBytes: estimate.limitBytes,
       bytes: estimate.bytes, srCodes: estimate.srCodes, inputs: estimate.inputs }).toEqual({ provider: actual.provider, transport: actual.transport,
       model: actual.model, limitBytes: actual.limitBytes, bytes: actual.bytes, srCodes: actual.srCodes, inputs: actual.inputs })
-    await tasks.setStatus('member', owner.id, 'done')
+    await tasks.setStatus('member', owner.id, 'done', '필수 항목 미확인')
     await expect(service.estimate('member', thread.id, { draft: '조회만' })).resolves.toMatchObject({ overLimit: false })
   })
 
@@ -640,7 +640,7 @@ describe('RequestService DB', () => {
     await expect(tasks.setStatus('member', task.id, 'done')).rejects.toMatchObject({ status: 409 })
     release()
     await run.done
-    await tasks.setStatus('member', task.id, 'done')
+    await tasks.setStatus('member', task.id, 'done', '필수 항목 미확인')
     await expect(runner.start('member', thread.id, { content: '다시' }, 'after-done')).rejects.toMatchObject({ status: 409 })
   })
 

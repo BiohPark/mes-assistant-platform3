@@ -106,7 +106,7 @@ describe('tasks DB', () => {
       const preview = await extras.preview('member', created.id, { rating: 4, comment: '좋음' })
       expect(preview.content).toContain('근거.txt v1')
       expect(preview.content).toContain('근거.txt v1 ← 이 대화')
-      await extras.complete('member', created.id, { rating: 4, comment: '좋음' })
+      await extras.complete('member', created.id, { rating: 4, comment: '좋음' }, '필수 항목 미확인')
       const done = await service.get(created.id)
       expect(done).toMatchObject({ status: 'done', feedback: { rating: 4, comment: '좋음' } })
       const [report] = await db.select().from(fileObject).where(and(eq(fileObject.originTaskId, created.id), eq(fileObject.isOutput, true)))
@@ -119,11 +119,34 @@ describe('tasks DB', () => {
       await service.setStatus('member', created.id, 'in_progress', '추가 작업')
       await extras.deleteNote('member', created.id, added.id)
       expect(await extras.notes('member', created.id)).toEqual([])
-      await extras.complete('member', created.id)
+      await extras.complete('member', created.id, undefined, '필수 항목 미확인')
       const reports = await db.select().from(fileObject).where(and(eq(fileObject.originTaskId, created.id), eq(fileObject.originalName, `완료리포트_${created.code}.md`)))
       expect(reports).toEqual(expect.arrayContaining([expect.objectContaining({ version: 2, previousId: report!.id, isOutput: true })]))
       expect(reports.find((file) => file.id === report!.id)?.isOutput).toBe(false)
     } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
+  it('requires a completion reason while required checklist items are unchecked and records it in the report and activity', async () => {
+    const created = (await service.create('member', { assistantId })).task
+    await extras.addChecklist('member', created.id, '승인 확인', true)
+    await expect(extras.complete('member', created.id)).rejects.toMatchObject({ status: 400 })
+    await expect(extras.complete('member', created.id, undefined, '  ')).rejects.toMatchObject({ status: 400 })
+    await expect(service.setStatus('member', created.id, 'done')).rejects.toMatchObject({ status: 400 })
+    expect((await service.get(created.id)).status).toBe('in_progress')
+    expect((await extras.preview('member', created.id, undefined, '담당자 구두 승인')).content).toContain('담당자 구두 승인')
+    await extras.complete('member', created.id, undefined, ' 담당자 구두 승인 ')
+    expect((await service.get(created.id)).status).toBe('done')
+    // 시드 템플릿의 필수 항목도 미완료라 건수는 1 이상이다.
+    expect((await service.activity(created.id))[0]).toMatchObject({ type: 'task.completed', payload: { reason: '담당자 구두 승인' } })
+    expect(Number(((await service.activity(created.id))[0]!.payload as { missingRequired?: number }).missingRequired)).toBeGreaterThanOrEqual(1)
+    const [report] = await db.select().from(fileObject).where(and(eq(fileObject.originTaskId, created.id), eq(fileObject.isOutput, true)))
+    expect(Buffer.from(await new FileStorageService(reportRoot).read(report!.storageKey)).toString('utf8')).toContain('담당자 구두 승인')
+    // 필수 항목이 모두 체크되면 사유 없이 완료할 수 있다.
+    const clean = (await service.create('member', { assistantId })).task
+    await extras.addChecklist('member', clean.id, '승인 확인', true)
+    for (const item of (await extras.checklist('member', clean.id)).filter((entry) => entry.required && !entry.checked)) await extras.toggleChecklist('member', clean.id, item.id)
+    expect((await extras.complete('member', clean.id)).status).toBe('done')
+    expect((await service.activity(clean.id))[0]).toMatchObject({ type: 'task.completed', payload: { missingRequired: 0 } })
   })
 
   it('uses an optional idempotency key to return one draft under retries', async () => {
@@ -147,7 +170,7 @@ describe('tasks DB', () => {
     const { task: created } = await service.create('member', { assistantId })
     await service.update('member', created.id, { title: '내 제목' })
     expect(await service.get(created.id)).toMatchObject({ title: '내 제목', titleSource: 'manual' })
-    await service.setStatus('member', created.id, 'done')
+    await service.setStatus('member', created.id, 'done', '필수 항목 미확인')
     const [report] = await db.select().from(fileObject).where(and(eq(fileObject.originTaskId, created.id), eq(fileObject.isOutput, true)))
     expect(report).toMatchObject({ originalName: `완료리포트_${created.code}.md`, version: 1 })
     expect(Buffer.from(await new FileStorageService(reportRoot).read(report!.storageKey)).toString('utf8')).toContain(created.code)
@@ -239,7 +262,7 @@ describe('tasks DB', () => {
 
   it('rejects completed edits and serializes completion with tag changes', async () => {
     const { task: created, thread: createdThread } = await service.create('member', { assistantId })
-    await service.setStatus('member', created.id, 'done')
+    await service.setStatus('member', created.id, 'done', '필수 항목 미확인')
     await expect(service.update('member', created.id, { summary: 'late' })).rejects.toMatchObject({ status: 409 })
     await expect(service.addTag('member', created.id, 'late')).rejects.toMatchObject({ status: 409 })
     await expect(service.removeTag('member', created.id, 'late')).rejects.toMatchObject({ status: 409 })
@@ -247,7 +270,7 @@ describe('tasks DB', () => {
 
     for (let index = 0; index < 5; index++) {
       const { task: racing } = await service.create('member', { assistantId })
-      const outcomes = await Promise.allSettled([service.setStatus('member', racing.id, 'done'), service.addTag('member', racing.id, `race-${index}`)])
+      const outcomes = await Promise.allSettled([service.setStatus('member', racing.id, 'done', '필수 항목 미확인'), service.addTag('member', racing.id, `race-${index}`)])
       expect(outcomes[0]?.status).toBe('fulfilled')
       if (outcomes[1]?.status === 'rejected') expect(outcomes[1].reason).toMatchObject({ status: 409 })
       expect((await service.get(racing.id)).status).toBe('done')
@@ -261,7 +284,7 @@ describe('tasks DB', () => {
     const second = (await service.create('member', { assistantId, tags: ['filter-two'] })).task
     await db.insert(appUser).values({ id: 'assignee', name: 'Assignee', initials: 'A', color: '#123456' }).onDuplicateKeyUpdate({ set: { id: 'assignee' } })
     await service.update('member', first.id, { assigneeIds: ['assignee'] })
-    await service.setStatus('member', second.id, 'done')
+    await service.setStatus('member', second.id, 'done', '필수 항목 미확인')
     expect((await service.list({ assistantId, status: ['in_progress'], tags: ['filter-one'], mine: 'member' })).find((item) => item.id === first.id)).toEqual(await service.get(first.id))
     expect((await service.list({ mine: 'assignee', tags: ['filter-one'] })).map((item) => item.id)).toContain(first.id)
     expect((await service.list({ mine: 'assignee', tags: ['filter-two'] })).map((item) => item.id)).not.toContain(second.id)

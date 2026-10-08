@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common'
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common'
 import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
 import { draftFromConversation } from '@mes/domain'
 import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
@@ -15,6 +15,9 @@ import { assertSrAccess } from './access.js'
 
 const id = () => randomUUID()
 type SrStatus = 'submitted' | 'reviewing' | 'in_progress' | 'responded' | 'done' | 'rejected'
+/** 알림 본문용 한글 상태 라벨(화면 사전 status.sr과 같은 뜻). */
+const SR_STATUS_LABEL: Record<SrStatus, string> = { submitted: '접수됨', reviewing: '검토 중', in_progress: '진행 중', responded: '답변 공유', done: '완료', rejected: '반려' }
+const REASON_MAX = 500
 
 @Injectable()
 export class SrService {
@@ -141,7 +144,18 @@ export class SrService {
       detail.threadId ? this.db.select({ id: chatRequest.id }).from(chatRequest).where(eq(chatRequest.threadId, detail.threadId)).limit(1) : Promise.resolve([]),
     ])
     // hasRequests: 요청 기록이 있는 초안은 감사 보호로 삭제할 수 없다(delete 409) — 화면이 삭제 버튼을 숨기는 근거.
-    return { ...detail, intakeMessages, hasRequests: requests.length > 0 }
+    return { ...detail, intakeMessages, hasRequests: requests.length > 0, statusHistory: await this.statusHistory(srId) }
+  }
+  /** 상태 이력 — activity_log(sr.status_changed)의 시각·처리자·변경·사유. 별도 테이블 없음. */
+  private async statusHistory(srId: string) {
+    const rows = await this.db.select({ id: activityLog.id, at: activityLog.at, by: activityLog.userId, byName: appUser.name, payload: activityLog.payload })
+      .from(activityLog).leftJoin(appUser, eq(appUser.id, activityLog.userId))
+      .where(and(eq(activityLog.srId, srId), eq(activityLog.type, 'sr.status_changed'))).orderBy(activityLog.at, activityLog.id)
+    return rows.map((row) => {
+      const payload = row.payload as { from?: string; to?: string; reason?: string }
+      return { id: row.id, at: row.at.toISOString(), by: row.by, byName: row.byName ?? undefined, from: String(payload.from ?? ''), to: String(payload.to ?? ''),
+        ...(typeof payload.reason === 'string' && payload.reason && { reason: payload.reason }) }
+    })
   }
   async draft(actor: string, srId: string) {
     await this.view(actor, srId)
@@ -210,19 +224,33 @@ export class SrService {
     })
     return this.get(actor, srId)
   }
-  async status(actor: string, srId: string, status: SrStatus) {
+  async status(actor: string, srId: string, status: SrStatus, reason?: string) {
     await this.manager(actor, srId)
+    // 반려·완료는 사유 필수(1–500자). 사유는 activity_log.payload.reason에만 남긴다(DDL 없음).
+    const clean = reason?.trim() ?? ''
+    if ((status === 'done' || status === 'rejected') && !clean) throw new BadRequestException('반려·완료 사유를 입력하세요')
+    if (clean.length > REASON_MAX) throw new BadRequestException(`사유는 ${REASON_MAX}자 이내여야 합니다`)
     const changed = await this.db.transaction(async (tx) => {
       const [row] = await tx.select().from(serviceRequest).where(eq(serviceRequest.id, srId)).for('update')
       if (!row) throw new NotFoundException('SR을 찾을 수 없습니다')
       if (row.status === 'draft') throw new ConflictException('접수된 SR만 변경할 수 있습니다')
       if (row.status === status) return null
       await tx.update(serviceRequest).set({ status, updatedAt: new Date() }).where(eq(serviceRequest.id, srId))
-      await tx.insert(activityLog).values({ id: id(), type: 'sr.status_changed', userId: actor, srId, payload: { from: row.status, to: status } })
+      await tx.insert(activityLog).values({ id: id(), type: 'sr.status_changed', userId: actor, srId, payload: { from: row.status, to: status, ...(clean && { reason: clean }) } })
       return row
     })
-    if (changed) await this.notifications.send([changed.requesterId], actor, `SR 상태가 변경되었습니다: ${status}`, `${changed.code} ${changed.title}`, '/sr')
+    if (changed) await this.notifications.send([changed.requesterId], actor, `SR 상태가 변경되었습니다: ${SR_STATUS_LABEL[status]}`, `${changed.code} ${changed.title}${clean ? ` — 사유: ${clean}` : ''}`, '/sr')
     return this.get(actor, srId)
+  }
+  /** 현재 제목·본문을 다듬은 제안만 돌려준다. 저장하지 않으며 적용·제출은 사람이 한다. */
+  async refine(actor: string, srId: string, input: { title: string; body: string }) {
+    const row = await this.view(actor, srId), user = await this.user(actor)
+    if (row.requesterId !== actor && !user.isSystemOwner) throw new ForbiddenException('요청자 또는 SO만 다듬을 수 있습니다')
+    if (!input.title.trim() && !input.body.trim()) throw new BadRequestException('다듬을 제목이나 본문을 입력하세요')
+    if (!this.requests) throw new ServiceUnavailableException('AI 다듬기를 사용할 수 없습니다')
+    const [owner] = await this.db.select({ id: thread.id }).from(thread).where(eq(thread.srId, srId))
+    if (!owner) throw new NotFoundException('접수 대화를 찾을 수 없습니다')
+    return this.requests.refineSrDraft(actor, owner.id, { title: input.title, body: input.body })
   }
   async delete(actor: string, srId: string) {
     const row = await this.view(actor, srId)

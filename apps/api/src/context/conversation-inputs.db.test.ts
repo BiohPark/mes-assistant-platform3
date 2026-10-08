@@ -104,7 +104,7 @@ describe('conversation inputs DB', () => {
     const chosen = await service.select(actor, mine.task.id, source.task.id, { mode: 'messages', messageIds: [`${source.task.id}-2`, `${source.task.id}-0`] })
     expect(chosen.snapshot.messageIds).toEqual([`${source.task.id}-0`, `${source.task.id}-2`])
     await expect(service.refresh(actor, mine.task.id, source.task.id)).rejects.toMatchObject({ status: 400 })
-    await tasks.setStatus(actor, mine.task.id, 'done')
+    await tasks.setStatus(actor, mine.task.id, 'done', '필수 항목 미확인')
     await expect(service.remove(actor, mine.task.id, source.task.id)).rejects.toMatchObject({ status: 409, response: { code: 'TASK_DONE' } })
   })
 
@@ -112,7 +112,7 @@ describe('conversation inputs DB', () => {
     const source = await make(['context-completed'], ['q', 'a'])
     const mine = await make(['context-completed'])
     await service.select(actor, mine.task.id, source.task.id, { mode: 'full' })
-    await tasks.setStatus(actor, mine.task.id, 'done')
+    await tasks.setStatus(actor, mine.task.id, 'done', '필수 항목 미확인')
     const done = { status: 409, response: { code: 'TASK_DONE' } }
     await expect(service.select(actor, mine.task.id, source.task.id, { mode: 'full' })).rejects.toMatchObject(done)
     await expect(service.setWeight(actor, mine.task.id, source.task.id, 'main')).rejects.toMatchObject(done)

@@ -341,16 +341,17 @@ paths:
   /tasks/{taskId}/complete/preview:
     post:
       tags: [tasks]
-      summary: 완료 리포트 미리보기 (데모 buildTaskReport 형식 — 입력 출처·참조 대화·산출물·피드백)
+      summary: 완료 리포트 미리보기 (데모 buildTaskReport 형식 — 입력 출처·참조 대화·산출물·피드백·완료 사유)
       parameters: [{ $ref: '#/components/parameters/taskId' }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { feedback: { type: object, properties: { rating: { type: integer, minimum: 1, maximum: 5 }, comment: { type: string } } }, reason: { type: string, maxLength: 500 } } } } } }
       responses: { '200': { description: 'markdown' } }
   /tasks/{taskId}/complete:
     post:
       tags: [tasks]
-      summary: 완료 — 피드백 저장 · 리포트를 산출물 파일(`완료리포트_<코드>.md`, 버전 체인)로 저장 · 상태 done, 한 트랜잭션. status API의 done도 같은 경로. S4 ③
+      summary: 완료 — 피드백 저장 · 리포트를 산출물 파일(`완료리포트_<코드>.md`, 버전 체인)로 저장 · 상태 done, 한 트랜잭션. status API의 done도 같은 경로. 필수 체크 항목이 미완료면 reason 필수(400)이고 리포트·task.completed 이력(payload.reason)에 기록 (S4 ③, U9)
       parameters: [{ $ref: '#/components/parameters/taskId' }]
-      requestBody: { content: { application/json: { schema: { type: object, properties: { rating: { type: integer, minimum: 1, maximum: 5 }, comment: { type: string } } } } } }
-      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }, '409': { $ref: '#/components/responses/Problem' } }
+      requestBody: { content: { application/json: { schema: { type: object, properties: { feedback: { type: object, properties: { rating: { type: integer, minimum: 1, maximum: 5 }, comment: { type: string } } }, reason: { type: string, maxLength: 500, description: '필수 체크 미완료 시 필수' } } } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }, '400': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' } }
   /tasks/{taskId}/status:
     post:
       tags: [tasks]
@@ -655,10 +656,17 @@ paths:
   /service-requests/{srId}/status:
     patch:
       tags: [service-requests]
-      summary: 상태 변경 (담당자·SO) — 요청자에게 알림
+      summary: 상태 변경 (담당자·SO) — 요청자에게 한글 라벨 알림. done·rejected는 reason 필수(400), 사유는 activity_log.payload.reason(sr.status_changed)에만 저장 (U9)
       parameters: [{ $ref: '#/components/parameters/srId' }]
-      requestBody: { content: { application/json: { schema: { type: object, required: [status], properties: { status: { enum: [submitted, reviewing, in_progress, responded, done, rejected] } } } } } }
-      responses: { '204': { description: 변경 } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [status], properties: { status: { enum: [submitted, reviewing, in_progress, responded, done, rejected] }, reason: { type: string, minLength: 1, maxLength: 500, description: 'done·rejected 필수, 그 외 선택' } } } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }, '400': { $ref: '#/components/responses/Problem' } }
+  /service-requests/{srId}/refine:
+    post:
+      tags: [service-requests]
+      summary: 현재 제목·본문을 보조 호출로 다듬은 **제안**만 반환 (요청자·SO, 저장 없음, 기록 없음). 적용·제출은 사람이 한다 (U9)
+      parameters: [{ $ref: '#/components/parameters/srId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [title, body], properties: { title: { type: string }, body: { type: string } } } } } }
+      responses: { '201': { description: 제안, content: { application/json: { schema: { type: object, properties: { title: { type: string }, body: { type: string } } } } } }, '429': { description: 보조 요청 진행 중 } }
   /service-requests/{srId}/submit:
     post:
       tags: [service-requests]
@@ -1034,6 +1042,7 @@ components:
         requesterName: { type: string }
         intakeMessages: { type: array, description: 상세 응답의 읽기 전용 접수 원문. 초안은 요청자 본인·SO에게만(그 외 빈 배열), items: { $ref: '#/components/schemas/Message' } }
         hasRequests: { type: boolean, description: 상세 응답. 접수 대화에 요청 기록이 있음 — 이 초안은 감사 보호로 삭제 불가(DELETE 409) }
+        statusHistory: { type: array, description: 상세 응답. activity_log(sr.status_changed) 기준 시각순 상태 이력 — 반려·완료는 reason 포함 (U9), items: { type: object, properties: { id: { type: string }, at: { type: string, format: date-time }, by: { type: string }, byName: { type: string }, from: { type: string }, to: { type: string }, reason: { type: string } } } }
         code: { type: string }
         requesterId: { type: string }
         title: { type: string }
