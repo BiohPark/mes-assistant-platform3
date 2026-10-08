@@ -52,6 +52,8 @@ export class RequestsService implements OnModuleDestroy {
   private readonly truncated = new Set<string>()
   private readonly streamText = new Map<string, string>()
   private readonly auxiliaryUsers = new Set<string>()
+  /** DB 행이 없는 모델 호출(시험 대화·연결 시험)이 쥔 전역 슬롯 — 단일 인스턴스 전제(D43) */
+  private extraActive = 0
   private sweepTimer?: ReturnType<typeof setInterval>
 
   constructor(@Inject(DB) private readonly db: Db, @Inject(CONFIG) private readonly config: AppConfig,
@@ -67,6 +69,20 @@ export class RequestsService implements OnModuleDestroy {
   onModuleDestroy() { if (this.sweepTimer) clearInterval(this.sweepTimer) }
   listModels() { return this.provider.listModels() }
   ping() { return this.provider.ping() }
+  /**
+   * 전역 동시 상한(maxActive) 입장 — 채팅 시작과 같은 전역 용량 잠금 아래에서 DB 진행 중 chat_request + 메모리 슬롯을 세고,
+   * 상한이면 429. 잠금을 쥔 채 슬롯을 늘려 채팅 시작 트랜잭션과 어느 순서로 겹쳐도 상한을 넘지 않는다.
+   * 돌려주는 함수로 슬롯을 반환한다(여러 번 불러도 한 번만).
+   */
+  async admit(_kind: 'test'): Promise<() => void> {
+    await this.db.transaction(async (tx) => {
+      await this.lockGlobalCapacity(tx)
+      await this.assertGlobalCapacity(tx)
+      this.extraActive++
+    })
+    let released = false
+    return () => { if (!released) { released = true; this.extraActive-- } }
+  }
   async suggestSrTitle(actor: string, threadId: string): Promise<string | undefined> {
     await assertThreadAccess(this.db, actor, threadId)
     const [owner] = await this.db.select().from(thread).where(eq(thread.id, threadId))
@@ -101,7 +117,7 @@ export class RequestsService implements OnModuleDestroy {
     try { return await this.runAuxiliary(actor, 'summary', (auxSignal) => summarizeConversation(this.provider, model, messages, userMap, { limitBytes, signal: auxSignal }), { signal }) }
     catch (error) { if (error instanceof SummaryBudgetError) throw new HttpException(error.message, 413); throw error }
   }
-  async runAuxiliary<T>(actor: string, _kind: 'title' | 'summary' | 'checklist' | 'refine', operation: (signal: AbortSignal) => Promise<T>,
+  async runAuxiliary<T>(actor: string, _kind: 'title' | 'summary' | 'checklist' | 'refine' | 'test', operation: (signal: AbortSignal) => Promise<T>,
     options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<T> {
     if (this.auxiliaryUsers.has(actor)) throw new HttpException('보조 요청이 이미 진행 중입니다', 429)
     this.auxiliaryUsers.add(actor)
@@ -177,7 +193,7 @@ export class RequestsService implements OnModuleDestroy {
 
   private async assertGlobalCapacity(tx: Tx) {
     const [row] = await tx.select({ count: sql<number>`count(*)` }).from(chatRequest).where(inArray(chatRequest.status, ACTIVE))
-    if (Number(row?.count ?? 0) >= this.config.request.maxActive) throw new HttpException('동시 응답이 많아 잠시 후 다시 시도해 주세요.', 429)
+    if (Number(row?.count ?? 0) + this.extraActive >= this.config.request.maxActive) throw new HttpException('동시 응답이 많아 잠시 후 다시 시도해 주세요.', 429)
   }
 
   private async scope(owner: typeof thread.$inferSelect, ports: DbLlmPorts): Promise<ChatScope> {

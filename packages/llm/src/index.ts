@@ -7,10 +7,11 @@ export function createProvider(settings: LlmSettings): ChatProvider {
   return settings.mode === 'live' ? new OpenAICompatibleProvider(settings) : new MockProvider()
 }
 
-export type { ChatChunk, ChatProvider, ChatRequest, ChatMessageInput, ToolCall, ChatMeta } from './provider.js'
+export type { ChatChunk, ChatLimits, ChatProvider, ChatRequest, ChatMessageInput, ToolCall, ChatMeta } from './provider.js'
 export * from './checklistReview.js'
 export * from './context.js'
 export * from './conversationSummary.js'
+export * from './limitedFetch.js'
 export * from './mockProvider.js'
 export * from './mockScenarios.js'
 export * from './mockSystemAssistant.js'

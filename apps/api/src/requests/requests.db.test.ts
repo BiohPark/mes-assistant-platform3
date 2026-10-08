@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { OpenAICompatibleProvider, type ChatProvider } from '@mes/llm'
 import { loadConfig } from '../config/config.js'
 import { runMigrations } from '../db/migrate.js'
-import { appSetting, chatRequest, fileObject, message, task, taskInput } from '../db/schema.js'
+import { appSetting, chatRequest, dbLock, fileObject, message, task, taskInput } from '../db/schema.js'
 import { seedCatalog } from '../db/seed.js'
 import { appUser, assistant } from '../db/schema.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -811,5 +811,103 @@ describe('RequestService DB', () => {
       await db.delete(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
       await new Promise<void>((resolve) => fake.close(() => resolve()))
     }
+  })
+
+  it('admit은 DB 진행 중 요청과 메모리 슬롯을 합쳐 전역 상한을 적용하고 행을 쓰지 않는다', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const holding: ChatProvider = { ...provider, async *stream() { await held; yield { type: 'delta', text: '응답' }; yield { type: 'done' } } }
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root, REQUEST_MAX_ACTIVE: '2' })
+    const runner = new RequestsService(db, config, holding)
+    const countRows = async () => Number((await db.select({ count: sql<number>`count(*)` }).from(chatRequest))[0]?.count ?? 0)
+    const before = await countRows()
+    try {
+      const freeOne = await runner.admit('test')
+      const freeTwo = await runner.admit('test')
+      await expect(runner.admit('test')).rejects.toMatchObject({ status: 429 })
+      const threadId = (await tasks.create('member', { assistantId })).thread.id
+      await expect(runner.start('member', threadId, { content: '막힘' }, 'admit-blocked')).rejects.toMatchObject({ status: 429 })
+      freeOne(); freeOne()
+      const freeThree = await runner.admit('test')
+      await expect(runner.admit('test')).rejects.toMatchObject({ status: 429 })
+      freeTwo(); freeThree()
+      expect(await countRows()).toBe(before)
+      const started = await runner.start('member', threadId, { content: '하나' }, 'admit-one')
+      const freeFour = await runner.admit('test')
+      await expect(runner.admit('test')).rejects.toMatchObject({ status: 429 })
+      release()
+      await started.done
+      const freeFive = await runner.admit('test')
+      freeFour(); freeFive()
+    } finally { release(); runner.onModuleDestroy() }
+  })
+
+  it('admit은 전역 용량 잠금 아래에서 세어 채팅 시작 트랜잭션과 경쟁해도 상한을 넘지 않는다', async () => {
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root, REQUEST_MAX_ACTIVE: '1' })
+    const runner = new RequestsService(db, config, provider)
+    const threadId = (await tasks.create('member', { assistantId })).thread.id
+    const lockKey = 'chat-request:global-capacity'
+    let lockTaken!: () => void
+    let releaseLock!: () => void
+    const taken = new Promise<void>((resolve) => { lockTaken = resolve })
+    const released = new Promise<void>((resolve) => { releaseLock = resolve })
+    const userMessageId = `race-user-${Date.now()}`, replyMessageId = `race-reply-${Date.now()}`, requestId = `race-request-${Date.now()}`
+    // 채팅 시작과 같은 순서: 잠금 → (대기) → 진행 중 행 삽입 → 커밋
+    const chatTx = db.transaction(async (tx) => {
+      await tx.insert(dbLock).values({ lockKey }).onDuplicateKeyUpdate({ set: { lockKey } })
+      await tx.select({ key: dbLock.lockKey }).from(dbLock).where(eq(dbLock.lockKey, lockKey)).for('update')
+      lockTaken()
+      await released
+      const [max] = await tx.select({ seq: sql<number>`coalesce(max(${message.seq}), 0)` }).from(message).where(eq(message.threadId, threadId))
+      const seq = Number(max?.seq ?? 0)
+      await tx.insert(message).values([{ id: userMessageId, threadId, seq: seq + 1, role: 'user', content: '경쟁', authorId: 'member', status: 'done' },
+        { id: replyMessageId, threadId, seq: seq + 2, role: 'assistant', content: '', status: 'streaming' }])
+      await tx.insert(chatRequest).values({ id: requestId, threadId, userMessageId, replyMessageId, requestedBy: 'member', idempotencyKey: 'race-key', status: 'pending',
+        provider: 'mock', transport: 'inline', model: 'glm-5.2', bytes: 0, limitBytes: 1, leaseUntil: sql`timestampadd(second, 60, current_timestamp(6))` })
+    })
+    try {
+      await taken
+      const admitting = runner.admit('test')
+      let settled = false
+      void admitting.then(() => { settled = true }, () => { settled = true })
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      expect(settled).toBe(false) // 잠금을 기다린다 — 자동 커밋으로 0을 세어 들어가지 않는다
+      releaseLock()
+      await chatTx
+      await expect(admitting).rejects.toMatchObject({ status: 429 }) // 커밋된 진행 중 행을 본다
+      await db.update(chatRequest).set({ status: 'failed', leaseUntil: null }).where(eq(chatRequest.id, requestId))
+      // 반대 순서: admit이 먼저 슬롯을 쥐면 채팅 시작이 429
+      const free = await runner.admit('test')
+      await expect(runner.start('member', threadId, { content: '막힘' }, 'race-blocked')).rejects.toMatchObject({ status: 429 })
+      free()
+    } finally { releaseLock(); await chatTx.catch(() => undefined); runner.onModuleDestroy() }
+  })
+
+  it('admit과 채팅 시작을 동시에 섞어 던져도 정확히 상한만큼만 들어간다', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const holding: ChatProvider = { ...provider, async *stream() { await held; yield { type: 'done' } } }
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root, REQUEST_MAX_ACTIVE: '3' })
+    const runner = new RequestsService(db, config, holding)
+    const threads = await Promise.all([0, 1, 2, 3].map(async () => (await tasks.create('member', { assistantId })).thread.id))
+    try {
+      const attempts = await Promise.allSettled([
+        ...threads.map((threadId, index) => runner.start('member', threadId, { content: '동시' }, `mixed-${index}`)),
+        ...[0, 1, 2, 3].map(() => runner.admit('test')),
+      ])
+      const fulfilled = attempts.filter((item) => item.status === 'fulfilled')
+      const rejected = attempts.filter((item): item is PromiseRejectedResult => item.status === 'rejected')
+      expect(fulfilled).toHaveLength(3)
+      expect(rejected).toHaveLength(5)
+      for (const item of rejected) expect(item.reason).toMatchObject({ status: 429 })
+      release()
+      for (const item of fulfilled) {
+        const value = item.value
+        if (typeof value === 'function') value()
+        else await value.done
+      }
+      const free = await runner.admit('test')
+      free()
+    } finally { release(); runner.onModuleDestroy() }
   })
 })

@@ -20,6 +20,16 @@ export interface ToolCall {
   arguments: string
 }
 
+/** 호출별 상한 — 넘으면 절단하지 않고 명시적으로 실패한다 (limitedFetch) */
+export interface ChatLimits {
+  /** 응답 본문을 다 읽을 때까지의 총 시간 */
+  timeoutMs?: number
+  /** 응답 본문 누적 바이트 상한 */
+  maxResponseBytes?: number
+  /** SSE 프레임 하나의 바이트 상한 */
+  maxFrameBytes?: number
+}
+
 export interface ChatRequest {
   model: string
   messages: ChatMessageInput[]
@@ -29,6 +39,7 @@ export interface ChatRequest {
   meta?: ChatMeta
   /** OpenWebUI Files API로 올린 첨부 (OpenWebUI 확장 파라미터) */
   files?: Array<{ type: 'file'; id: string }>
+  limits?: ChatLimits
 }
 
 export interface ChatMeta {

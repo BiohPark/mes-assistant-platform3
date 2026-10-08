@@ -20,6 +20,7 @@ tags:
   - name: files
   - name: service-requests
   - name: misc
+  - name: llm
 
 paths:
   /auth/mode:
@@ -741,6 +742,42 @@ paths:
         '200': { description: '{ text, toolCalls: [{ id, name, arguments }] }' }
         '413': { $ref: '#/components/responses/Problem' }
         '502': { description: 모델 응답 실패 }
+
+  /llm/models:
+    get:
+      tags: [llm]
+      summary: 사용 가능한 모델 ID 목록 (로그인 사용자 전원). 서버가 상위(OpenWebUI 등)를 대리 호출하고 60초 캐시한다. 캐시가 비어 있을 때 동시에 온 요청은 상위 호출 하나를 나눠 쓰고, ID는 공백 제거·빈 값/제어 문자/191자 초과 제외·순서 유지 중복 제거. 상위 실패는 캐시하지 않는다. S7 C1
+      responses:
+        '200': { description: '{ models: string[] }' }
+        '502': { description: 상위 연결·응답 오류 (키·주소 비노출) }
+  /llm/status:
+    get:
+      tags: [llm]
+      summary: AI 연결 상태 (SO 전용) — mode·preset·baseUrlHost·ok·detail. 키와 전체 주소는 응답하지 않는다.
+      responses:
+        '200': { description: '{ mode: mock|live, preset: openwebui|openai-compatible, baseUrlHost, ok, detail }' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /admin/llm/test-connection:
+    post:
+      tags: [llm]
+      summary: AI 연결 시험 (SO 전용). 모델 목록 조회와 짧은 응답 호출(user "ping" 1회, .env 기본 모델)을 각각 보고한다. 응답 호출은 전역 동시 상한(RequestsService.admit — DB 진행 중 chat_request + 메모리 슬롯)과 사용자별 보조 요청 단일 진행 아래에서 돌고, limitedFetch 상한(총 60 s · 응답 64 KB · SSE 프레임 64 KB · 리다이렉트 차단)을 넘으면 절단 없이 실패로 보고한다. DB 쓰기 없음, 로그는 상태·소요 시간만. 오류 문구는 고정 허용 문구뿐(키·주소·상위 본문 비노출). S7 C1
+      responses:
+        '200': { description: '{ models: { ok, count, ms, error? }, completion: { ok, ms, model, error? } }' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '429': { description: 전역 동시 상한 포화 또는 같은 사용자의 보조 요청 진행 중 }
+  /admin/llm/test:
+    post:
+      tags: [llm]
+      summary: 시험 대화 (SO 전용). 업무 맥락 없이 messages를 모델에 직접 보낸다(시스템 프롬프트·도구·파일 없음). model 생략 시 .env 기본 모델(LLM_DEFAULT_MODEL 유효값). 요청 JSON 전체 바이트 ≤ requestBudgetBytes(초과 413). 연결 시험과 같은 admit·runAuxiliary·limitedFetch 상한. 클라이언트가 연결을 끊으면 모델 호출을 중단하고 슬롯을 돌려준다. 저장·요청 기록 없음. S7 C1
+      requestBody: { content: { application/json: { schema: { type: object, required: [messages], additionalProperties: false, properties: { model: { type: string, minLength: 1, maxLength: 191, description: '생략 시 .env 기본 모델. 제어 문자 불가' }, messages: { type: array, minItems: 1, maxItems: 20, description: 마지막은 user, items: { type: object, required: [role, content], additionalProperties: false, properties: { role: { type: string, enum: [user, assistant] }, content: { type: string, minLength: 1, maxLength: 32768 } } } } } } } } }
+      responses:
+        '200': { description: '{ text, model, ms }' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '413': { description: 요청 크기 한도 초과 }
+        '429': { description: 전역 동시 상한 포화 또는 같은 사용자의 보조 요청 진행 중 }
+        '502': { description: '{ message, code: RESPONSE_TOO_LARGE | MODEL_NOT_FOUND | PROVIDER_ERROR } — 상위 404는 MODEL_NOT_FOUND, 응답/프레임 상한·리다이렉트·연결 오류 포함' }
+        '504': { description: '{ message, code: TIMEOUT } — 총 60 s 초과' }
 
   /events:
     get:
