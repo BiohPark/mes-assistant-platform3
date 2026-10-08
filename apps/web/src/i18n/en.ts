@@ -474,4 +474,7 @@ export const en = {
     reasonRequired: 'Required checklist items are incomplete. Enter a reason to complete anyway. (1–500 characters)',
     reasonPlaceholder: 'Why the task is completed with items unchecked',
   },
+  u10Admin: {
+    codeActive: '{name} Active',
+  },
 } as const satisfies Messages

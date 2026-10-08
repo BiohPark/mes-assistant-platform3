@@ -5,6 +5,7 @@ import { SuggestInput } from '@/components/SuggestInput'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { shareSr, type SrDetail } from '@/api/sr'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
@@ -36,7 +37,7 @@ export function ShareResultDialog({ sr, open, onOpenChange, onSaved }: { sr: SrD
         {options.length <= 6 && options.map(option => <Chip key={option.value} label={option.label} selected={taskId === option.value} onClick={() => selectTask(option.value)} />)}
       </div>
     </div>
-    {files.filter((file) => file.isOutput).map((file) => <label key={file.id} className="flex gap-2 text-sm"><input type="checkbox" checked={fileIds.includes(file.id)} onChange={() => setFileIds((ids) => ids.includes(file.id) ? ids.filter((id) => id !== file.id) : [...ids, file.id])} />{file.name}</label>)}
+    {files.filter((file) => file.isOutput).map((file) => <label key={file.id} className="flex gap-2 text-sm"><Checkbox aria-label={file.name} checked={fileIds.includes(file.id)} onCheckedChange={() => setFileIds((ids) => ids.includes(file.id) ? ids.filter((id) => id !== file.id) : [...ids, file.id])} />{file.name}</label>)}
     <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button><Button onClick={share} disabled={busy || (!text.trim() && !fileIds.length)}>{t('sr.share')}</Button></DialogFooter>
   </DialogContent></Dialog>
 }

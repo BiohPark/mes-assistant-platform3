@@ -13,6 +13,9 @@ interface CodeInputProps {
   level1?: string
   value: string
   onChange: (value: string) => void
+  id?: string
+  'aria-describedby'?: string
+  'aria-invalid'?: boolean | 'true' | 'false'
   'aria-label': string
   disabled?: boolean
 }

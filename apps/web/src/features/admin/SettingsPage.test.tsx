@@ -104,3 +104,30 @@ it('BO Switch는 키보드로 바로 변경한다', async () => {
   expect(writes).toEqual([{ enabled: true }])
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })
+
+
+it('임시 비밀번호는 취소·Escape에는 발급하지 않고 확인 후 결과를 표시한다', async () => {
+  const issued: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') { issued.push(url); return jsonResponse(200, { temporaryPassword: 'temporary-123' }) }
+    return jsonResponse(200, url === '/api/users' ? [{ id: 'other', loginId: 'other', name: '다른 사용자', active: true, isSystemOwner: false, isBusinessOwner: false, mustChangePassword: false }] : url === '/api/settings' ? { defaultModel: 'model' } : [])
+  }))
+  const user = userEvent.setup()
+  renderPage()
+  const trigger = await screen.findByRole('button', { name: '임시 비밀번호' })
+  await user.click(trigger)
+  expect(await screen.findByRole('dialog', { name: '다른 사용자의 임시 비밀번호를 발급할까요?' })).toBeInTheDocument()
+  expect(issued).toEqual([])
+  await user.click(screen.getByRole('button', { name: '취소' }))
+  expect(trigger).toHaveFocus()
+  expect(issued).toEqual([])
+  await user.click(trigger)
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(trigger).toHaveFocus()
+  expect(issued).toEqual([])
+  await user.click(trigger)
+  await user.click(screen.getByRole('button', { name: '확인' }))
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('temporary-123'))
+  expect(issued).toEqual(['/api/users/other/temporary-password'])
+})

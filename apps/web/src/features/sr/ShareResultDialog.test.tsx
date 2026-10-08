@@ -34,6 +34,7 @@ it.each([6, 7])('%i개 연결 대화는 칩/검색으로 선택하고 변경 시
   await choose(0)
   await user.click(await screen.findByRole('checkbox', { name: '산출물.txt' }))
   expect(screen.getByRole('checkbox', { name: '산출물.txt' })).toBeChecked()
+  expect(screen.getByRole('checkbox', { name: '산출물.txt' })).toHaveAttribute('data-state', 'checked')
   await choose(1)
   expect(await screen.findByRole('checkbox', { name: '산출물.txt' })).not.toBeChecked()
   await user.type(screen.getByRole('textbox', { name: '공유 내용' }), '공유 내용')
