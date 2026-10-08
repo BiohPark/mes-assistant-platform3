@@ -22,11 +22,11 @@ test('사용자 메뉴의 다크·언어 전환은 서버에 저장되고 새 �
   try {
     const next = await context.newPage()
     expect((await context.request.post('/api/auth/login', { data: { loginId, password } })).ok()).toBe(true)
-    await next.goto('/my-info')
-    await expect(next.getByRole('radio', { name: '다크' })).toBeChecked()
+    await next.goto('/my-info') // 언어가 en으로 저장돼 내 정보 화면도 영문
+    await expect(next.getByRole('radio', { name: 'Dark' })).toBeChecked()
     await expect(next.locator('html')).toHaveClass(/dark/)
     await expect(next.locator('html')).toHaveAttribute('lang', 'en')
-    await next.locator('label').filter({ has: next.getByRole('radio', { name: '라이트' }) }).click() // 입력은 시각적으로 숨겨지고 label이 누름 영역
+    await next.locator('label').filter({ has: next.getByRole('radio', { name: 'Light' }) }).click() // 입력은 시각적으로 숨겨지고 label이 누름 영역
     await expect(next.locator('html')).not.toHaveClass(/dark/)
     await expect.poll(async () => (await (await context.request.get('/api/me')).json()).theme).toBe('light')
   } finally { await context.close() }
