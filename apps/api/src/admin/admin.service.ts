@@ -3,7 +3,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { and, asc, eq, or, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appSetting, appUser, assistant, assistantChecklistTemplate, assistantClassification, assistantExpectedIo, checklistItem, code, codeGroup, fileObject, task } from '../db/schema.js'
-import { lockAssistantCodes, resolveCode, resolveClassifications, writeClassifications } from '../db/classifications.js'
+import { lockAssistantCodes, resolveCode, resolveClassifications, writeClassifications, type ClassificationIds } from '../db/classifications.js'
 import type { ClassificationInput } from '@mes/contracts'
 import { isDuplicateKey } from '../db/errors.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
@@ -35,7 +35,7 @@ export class AdminService {
   private async lockCodes(tx: Db) {
     await lockAssistantCodes(tx)
   }
-  private async legacyPath(tx: Db, input: AssistantPatch, current?: { level1CodeId: string; level2CodeId: string }): Promise<ClassificationInput> {
+  private async legacyPath(tx: Db, input: AssistantPatch, current?: ClassificationIds): Promise<ClassificationIds> {
     const level1CodeId = input.level1CodeId ?? (input.level1 !== undefined ? await resolveCode(tx, 'assistant_level1', input.level1) : current?.level1CodeId)
     const level2CodeId = input.level2CodeId ?? (input.level2 !== undefined ? await resolveCode(tx, 'assistant_level2', input.level2) : current?.level2CodeId)
     if (!level1CodeId || !level2CodeId) throw new BadRequestException('분류 이름 또는 코드를 입력하세요')
@@ -122,8 +122,14 @@ export class AdminService {
       const oldPaths = await tx.select().from(assistantClassification).where(eq(assistantClassification.assistantId, id)).orderBy(asc(assistantClassification.sortOrder))
       const hasLegacyPath = ['level1', 'level2', 'level1CodeId', 'level2CodeId'].some(key => key in patch)
       if (patch.classifications && hasLegacyPath) throw new BadRequestException('분류 경로와 대표 필드를 함께 수정할 수 없습니다')
-      const paths = patch.classifications ?? (hasLegacyPath ? [await this.legacyPath(tx as Db, patch, current), ...oldPaths.slice(1).map(({ level1CodeId, level2CodeId }) => ({ level1CodeId, level2CodeId }))] : undefined)
-      if (paths !== undefined) await writeClassifications(tx as Db, id, paths)
+      let paths = patch.classifications
+      if (hasLegacyPath) {
+        const representative = await this.legacyPath(tx as Db, patch, current)
+        paths = [representative, ...oldPaths.slice(1)
+          .filter(path => path.level1CodeId !== representative.level1CodeId || path.level2CodeId !== representative.level2CodeId)
+          .map(({ level1CodeId, level2CodeId }) => ({ level1CodeId, level2CodeId }))]
+      }
+      if (paths !== undefined) await writeClassifications(tx as Db, id, paths, hasLegacyPath ? current : undefined)
       if (patch.ownerId && patch.ownerId !== current.ownerId) await this.ownerValid(tx as Db, patch.ownerId)
       if (patch.status === 'retired' && await this.isIntake(id, tx as Db)) throw new ConflictException('접수 에이전트는 중단할 수 없습니다')
       const { expectedInputs, expectedOutputs, checklistTemplate, classifications, level1, level2, level1CodeId, level2CodeId, ...fields } = patch

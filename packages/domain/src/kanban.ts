@@ -7,6 +7,19 @@ export function stageKey(a: Pick<Assistant, 'level1' | 'level2' | 'level1CodeId'
   return `${encodeURIComponent(a.level1CodeId ?? a.level1)}/${encodeURIComponent(a.level2CodeId ?? a.level2)}`
 }
 
+/** 구형 이름 키는 카탈로그의 유일한 코드 쌍에만 대응한다. 같은 쌍을 공유하는 에이전트는 중복이 아니다. */
+export function resolveStageKey(key: string, assistants: Assistant[]): string | undefined {
+  const matches = new Set<string>()
+  for (const assistant of assistants) {
+    for (const path of assistant.classifications ?? [assistant]) {
+      const canonical = stageKey(path)
+      if (canonical === key) return key
+      if (`${path.level1}/${path.level2}` === key) matches.add(canonical)
+    }
+  }
+  return matches.size === 1 ? [...matches][0] : undefined
+}
+
 export interface StageGroup {
   level1: string
   stages: Array<{ key: string; level2: string }>
@@ -43,9 +56,12 @@ export function isFiltering(f: KanbanFilter): boolean {
 }
 
 /** URL ↔ 필터. `/?view=kanban&tag=SR-2026-0002&status=in_progress` 처럼 북마크·공유할 수 있다. */
-export function filterFromParams(p: URLSearchParams): KanbanFilter {
+export function filterFromParams(p: URLSearchParams, assistants?: Assistant[]): KanbanFilter {
   return {
-    stages: p.getAll('stage'),
+    stages: assistants === undefined ? p.getAll('stage') : p.getAll('stage').flatMap(key => {
+      const resolved = resolveStageKey(key, assistants)
+      return resolved === undefined ? [] : [resolved]
+    }),
     statuses: p.getAll('status').filter((s): s is TaskStatus => (TASK_STATUSES as string[]).includes(s)),
     tags: p.getAll('tag'),
     mine: p.get('mine') === '1',
@@ -88,6 +104,7 @@ function matchesTask(t: Task, f: KanbanFilter, userId?: ID): boolean {
  * 폐기된 에이전트 열은 대화가 남아 있을 때만 보인다.
  */
 export function kanbanColumns(assistants: Assistant[], tasks: Task[], f: KanbanFilter, userId?: ID): KanbanColumn[] {
+  const stages = f.stages.map(key => resolveStageKey(key, assistants) ?? key)
   const byAssistant = new Map<ID, Task[]>()
   for (const t of tasks) {
     if (!matchesTask(t, f, userId)) continue
@@ -96,7 +113,7 @@ export function kanbanColumns(assistants: Assistant[], tasks: Task[], f: KanbanF
   const hasAny = new Set(tasks.map((t) => t.assistantId))
   return [...assistants]
     .sort((a, b) => a.order - b.order)
-    .filter((a) => (f.stages.length ? (a.classifications ?? [a]).some(path => f.stages.includes(stageKey(path))) : true))
+    .filter((a) => (stages.length ? (a.classifications ?? [a]).some(path => stages.includes(stageKey(path))) : true))
     .filter((a) => (f.assistantId ? a.id === f.assistantId : true))
     .filter((a) => a.status !== 'retired' || hasAny.has(a.id))
     .map((assistant) => ({

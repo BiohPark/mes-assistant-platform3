@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { EMPTY_FILTER, filterFromParams, filterToParams, isFiltering, kanbanColumns, stageOptions, stageKey } from './kanban.js'
+import { EMPTY_FILTER, filterFromParams, filterToParams, isFiltering, kanbanColumns, stageOptions, stageKey, resolveStageKey } from './kanban.js'
 import type { Assistant, Task } from './types.js'
 
 const asst = (id: string, order: number, level1: string, level2: string, status: Assistant['status'] = 'open') => ({ id, order, level1, level2, status }) as Assistant
@@ -62,4 +62,35 @@ it('uses escaped code IDs and matches non-primary paths once without cross-path 
   expect(kanbanColumns([a], [], { ...EMPTY_FILTER, stages: ['other/child'] })).toHaveLength(1)
   expect(kanbanColumns([a], [], { ...EMPTY_FILTER, stages: ['l%2F1/child'] })).toHaveLength(0)
   expect(stageOptions([a])[1]).toEqual({ level1: 'SDLC', stages: [{ key: 'other/child', level2: '설계' }] })
+})
+
+describe('legacy stage keys', () => {
+  const catalog = [{ ...assistants[0], level1CodeId: 'l/1', level2CodeId: 'l%2', classifications: [
+    { level1: 'Record', level2: 'CCA', level1CodeId: 'l/1', level2CodeId: 'l%2' },
+    { level1: 'SDLC', level2: '설계', level1CodeId: 'other', level2CodeId: 'child' },
+  ] }]
+
+  it('converts a unique legacy name pair, including a secondary path shared by assistants', () => {
+    const shared = [...catalog, { ...catalog[0], id: 'shared' }]
+    expect(resolveStageKey('Record/CCA', shared)).toBe('l%2F1/l%252')
+    expect(resolveStageKey('SDLC/설계', shared)).toBe('other/child')
+    expect(resolveStageKey('l%2F1/l%252', shared)).toBe('l%2F1/l%252')
+    const params = new URLSearchParams('stage=SDLC%2F설계&stage=l%252F1%2Fl%25252')
+    expect(filterFromParams(params, shared).stages).toEqual(['other/child', 'l%2F1/l%252'])
+    expect(kanbanColumns(catalog, [], filterFromParams(new URLSearchParams('stage=SDLC%2F설계'))).map(c => c.assistant.id)).toEqual(['cca'])
+  })
+
+  it('ignores an ambiguous name pair while accepting an explicit code pair', () => {
+    const ambiguous = [...catalog, { ...catalog[0], id: 'ambiguous', classifications: [
+      { level1: 'Record', level2: 'CCA', level1CodeId: 'different', level2CodeId: 'code' },
+    ] }]
+    expect(resolveStageKey('Record/CCA', ambiguous)).toBeUndefined()
+    expect(filterFromParams(new URLSearchParams('stage=Record%2FCCA&stage=different%2Fcode'), ambiguous).stages).toEqual(['different/code'])
+  })
+
+  it('ignores unknown names and cross-path pairs when parsing against the catalog', () => {
+    expect(resolveStageKey('Unknown/CCA', catalog)).toBeUndefined()
+    expect(resolveStageKey('Record/설계', catalog)).toBeUndefined()
+    expect(filterFromParams(new URLSearchParams('stage=Unknown%2FCCA&stage=Record%2F설계'), catalog).stages).toEqual([])
+  })
 })

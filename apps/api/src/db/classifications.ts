@@ -47,7 +47,7 @@ export async function resolveCode(tx: Db, group: string, value: string, options:
 }
 
 /** Caller holds assistant-codes for the full transaction, including parent insertion. */
-export async function resolveClassifications(tx: Db, paths: ClassificationInput[], existing: ClassificationIds[] = []): Promise<ClassificationIds[]> {
+export async function resolveClassifications(tx: Db, paths: ClassificationInput[], existing: ClassificationIds[] = [], legacyRepresentative?: ClassificationIds): Promise<ClassificationIds[]> {
   const parsed = ClassificationsInputSchema.safeParse(paths)
   if (!parsed.success) throw new BadRequestException('분류 경로를 하나 이상 올바르게 입력하세요')
   const result: ClassificationIds[] = []
@@ -59,7 +59,9 @@ export async function resolveClassifications(tx: Db, paths: ClassificationInput[
     const keep = 'level1CodeId' in path && existing.some(old => old.level1CodeId === ids.level1CodeId && old.level2CodeId === ids.level2CodeId)
     for (const [id, group] of [[ids.level1CodeId, 'assistant_level1'], [ids.level2CodeId, 'assistant_level2']] as const) {
       const [row] = await tx.select().from(code).where(and(eq(code.id, id), eq(code.groupKey, group))).for('update')
-      if (!row || (!keep && !row.active)) throw new BadRequestException('활성 분류 코드를 선택하세요')
+      // Legacy PATCH may replace one level while carrying over the other inactive ID.
+      const keepLegacyId = result.length === 0 && id === (group === 'assistant_level1' ? legacyRepresentative?.level1CodeId : legacyRepresentative?.level2CodeId)
+      if (!row || (!keep && !keepLegacyId && !row.active)) throw new BadRequestException('활성 분류 코드를 선택하세요')
     }
     if (result.some(old => old.level1CodeId === ids.level1CodeId && old.level2CodeId === ids.level2CodeId)) throw new BadRequestException('분류 경로가 중복되었습니다')
     result.push(ids)
@@ -68,10 +70,10 @@ export async function resolveClassifications(tx: Db, paths: ClassificationInput[
 }
 
 /** The sole path replacement writer; also synchronizes the legacy representative columns. */
-export async function writeClassifications(tx: Db, id: string, paths: ClassificationInput[]): Promise<ClassificationIds[]> {
+export async function writeClassifications(tx: Db, id: string, paths: ClassificationInput[], legacyRepresentative?: ClassificationIds): Promise<ClassificationIds[]> {
   await lockAssistantCodes(tx)
   const old = await tx.select().from(assistantClassification).where(eq(assistantClassification.assistantId, id)).orderBy(asc(assistantClassification.sortOrder))
-  const resolved = await resolveClassifications(tx, paths, old)
+  const resolved = await resolveClassifications(tx, paths, old, legacyRepresentative)
   await tx.delete(assistantClassification).where(eq(assistantClassification.assistantId, id))
   await tx.insert(assistantClassification).values(resolved.map((path, sortOrder) => ({ assistantId: id, ...path, sortOrder })))
   await tx.update(assistant).set(resolved[0]!).where(eq(assistant.id, id))

@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser'
 import request from 'supertest'
 import { beforeAll, afterAll, expect, it } from 'vitest'
 import { drizzle } from 'drizzle-orm/mysql2'
+import { eq } from 'drizzle-orm'
 import type { Pool } from 'mysql2/promise'
 import { AssistantSchema, SystemAssistantToolArgs } from '@mes/contracts'
 import { SYSTEM_TOOLS, mockSystemAssistant } from '@mes/llm'
@@ -15,7 +16,7 @@ import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
 import { DB } from '../db/db.module.js'
 import { CONFIG, loadConfig } from '../config/config.js'
-import { appUser } from '../db/schema.js'
+import { appUser, code } from '../db/schema.js'
 import { SessionGuard, RolesGuard } from '../auth/guards.js'
 import { SESSION_STORE, DbSessionStore } from '../auth/session.service.js'
 import { DbCatalogReader } from '../catalog/catalog.service.js'
@@ -61,6 +62,60 @@ it('rejects empty, duplicate, mixed, ambiguous and extra-key path writes without
   await request(app.getHttpServer()).patch('/api/assistants/http-paths').set('Cookie', ownerCookie).send({ classifications: paths, level1: 'Conflicting' }).expect(400)
   const changed = await request(app.getHttpServer()).patch('/api/assistants/http-paths').set('Cookie', ownerCookie).send({ summary: 'Unchanged paths' }).expect(200)
   expect(changed.body.classifications.map((path: { level1: string }) => path.level1)).toEqual(['HTTP One', 'HTTP Three'])
+})
+
+it('legacy PATCH renames only Lv1 while retaining an unchanged inactive Lv2 ID', async () => {
+  const created = await request(app.getHttpServer()).post('/api/assistants').set('Cookie', ownerCookie)
+    .send({ id: 'http-legacy-inactive', ...fields, level1: 'Legacy parent', level2: 'Legacy inactive child' }).expect(201)
+  const level2CodeId = created.body.level2CodeId as string
+  const db = drizzle(pool)
+  await db.update(code).set({ active: false }).where(eq(code.id, level2CodeId))
+
+  const changed = await request(app.getHttpServer()).patch('/api/assistants/http-legacy-inactive').set('Cookie', ownerCookie)
+    .send({ level1: 'Legacy renamed parent', level2CodeId }).expect(200)
+  expect(changed.body).toMatchObject({ level1: 'Legacy renamed parent', level2CodeId,
+    classifications: [{ level1: 'Legacy renamed parent', level2: 'Legacy inactive child', level2CodeId }] })
+  expect(changed.body.level1CodeId).not.toBe(created.body.level1CodeId)
+  expect((await db.select().from(code).where(eq(code.id, level2CodeId)))[0]?.active).toBe(false)
+})
+
+it('legacy PATCH promotes an existing secondary pair without duplicating it or reordering other paths', async () => {
+  const created = await request(app.getHttpServer()).post('/api/assistants').set('Cookie', ownerCookie)
+    .send({ id: 'http-legacy-promote', ...fields, classifications: [
+      { level1: 'Promote old', level2: 'Old child' },
+      { level1: 'Promote retained', level2: 'Retained child' },
+      { level1: 'Promote target', level2: 'Target child' },
+      { level1: 'Promote also retained', level2: 'Also retained child' },
+    ] }).expect(201)
+  const target = created.body.classifications[2]
+  const changed = await request(app.getHttpServer()).patch('/api/assistants/http-legacy-promote').set('Cookie', ownerCookie)
+    .send({ level1CodeId: target.level1CodeId, level2CodeId: target.level2CodeId }).expect(200)
+  expect(changed.body).toMatchObject({ level1CodeId: target.level1CodeId, level2CodeId: target.level2CodeId })
+  expect(changed.body.classifications).toEqual([target, created.body.classifications[1], created.body.classifications[3]])
+})
+
+it('keeps inactive exemptions scoped to unchanged legacy representative IDs', async () => {
+  const created = await request(app.getHttpServer()).post('/api/assistants').set('Cookie', ownerCookie)
+    .send({ id: 'http-legacy-guard', ...fields, classifications: [
+      { level1: 'Guard parent', level2: 'Guard child' },
+      { level1: 'Guard secondary', level2: 'Guard inactive child' },
+    ] }).expect(201)
+  const primary = created.body.classifications[0]
+  const secondary = created.body.classifications[1]
+  const db = drizzle(pool)
+  await db.update(code).set({ active: false }).where(eq(code.id, secondary.level2CodeId))
+  // A different pair using an inactive secondary ID is a new selection.
+  await request(app.getHttpServer()).patch('/api/assistants/http-legacy-guard').set('Cookie', ownerCookie)
+    .send({ level2CodeId: secondary.level2CodeId }).expect(400)
+  await db.update(code).set({ active: false }).where(eq(code.id, primary.level2CodeId))
+  // The classifications-array branch must continue requiring a complete existing pair.
+  await request(app.getHttpServer()).patch('/api/assistants/http-legacy-guard').set('Cookie', ownerCookie)
+    .send({ classifications: [{ level1CodeId: secondary.level1CodeId, level2CodeId: primary.level2CodeId }] }).expect(400)
+  const unchanged = await request(app.getHttpServer()).patch('/api/assistants/http-legacy-guard').set('Cookie', ownerCookie)
+    .send({ summary: 'Guarded paths' }).expect(200)
+  expect(unchanged.body.classifications).toEqual(created.body.classifications)
+  expect((await db.select().from(code).where(eq(code.id, primary.level2CodeId)))[0]?.active).toBe(false)
+  expect((await db.select().from(code).where(eq(code.id, secondary.level2CodeId)))[0]?.active).toBe(false)
 })
 
 // Exercise the JSON schema delivered to a live provider and the Zod contract
