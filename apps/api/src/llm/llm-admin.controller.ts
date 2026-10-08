@@ -10,7 +10,7 @@ import { DB, type Db } from '../db/db.module.js'
 import { appSetting } from '../db/schema.js'
 import { RequestsService } from '../requests/requests.service.js'
 import { LLM_PROVIDER } from './provider.token.js'
-import { toLlmSettings } from './presets.js'
+import { effectiveDefaultModel } from './effectiveDefaultModel.js'
 
 /** 시험 호출 상한 — 총 60 s, 응답 64 KB, SSE 프레임 64 KB. 넘으면 절단 없이 실패 */
 const TEST_LIMITS: Required<ChatLimits> = { timeoutMs: 60_000, maxResponseBytes: 64 * 1024, maxFrameBytes: 64 * 1024 }
@@ -39,7 +39,7 @@ export class LlmAdminController {
   constructor(@Inject(RequestsService) private readonly requests: RequestsService, @Inject(LLM_PROVIDER) private readonly provider: ChatProvider,
     @Inject(CONFIG) private readonly config: AppConfig, @Inject(DB) private readonly db: Db) {}
 
-  private get defaultModel() { return toLlmSettings(this.config.llm).model }
+  private get defaultModel() { return effectiveDefaultModel(this.config) }
 
   private async complete(model: string, messages: ChatMessageInput[], signal: AbortSignal): Promise<string> {
     let text = ''

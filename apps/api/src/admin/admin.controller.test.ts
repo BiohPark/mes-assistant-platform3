@@ -33,11 +33,23 @@ describe('관리 API 서버 권한', () => {
 
   it('설정 조회는 로그인 사용자, 변경과 사용자 목록은 SO만 허용한다', async () => {
     await request(app.getHttpServer()).get('/api/settings').set('Cookie', 'mes_session=member').expect(200)
-    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=member').send({ defaultModel: 'm' }).expect(403)
+    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=member').send({ fileDelivery: 'inline' }).expect(403)
     await request(app.getHttpServer()).get('/api/users').set('Cookie', 'mes_session=member').expect(403)
     await request(app.getHttpServer()).get('/api/users').set('Cookie', 'mes_session=so').expect(200)
-    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ defaultModel: 'm' }).expect(200)
-    expect(admin.settings).toHaveBeenCalledWith({ defaultModel: 'm' })
+    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ fileDelivery: 'inline' }).expect(200)
+    expect(admin.settings).toHaveBeenCalledWith({ fileDelivery: 'inline' })
+  })
+  it('기본 모델은 읽기 DTO에서 .env 유효값으로만 보이고, 쓰기 DTO에 defaultModel이 오면 400 (S7 C2)', async () => {
+    admin.getSettings.mockResolvedValueOnce({ defaultModel: 'db-model', fileMaxPerRequest: 3 })
+    const read = await request(app.getHttpServer()).get('/api/settings').set('Cookie', 'mes_session=member').expect(200)
+    expect(read.body).toEqual({ defaultModel: 'glm-5.2', fileMaxPerRequest: 3 })
+    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ defaultModel: 'm' }).expect(400)
+    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ defaultModel: 'm', fileMaxPerRequest: 5 }).expect(400)
+    expect(admin.settings).not.toHaveBeenCalled()
+    admin.settings.mockResolvedValueOnce({ defaultModel: 'db-model', fileMaxPerRequest: 5 })
+    const written = await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ fileMaxPerRequest: 5 }).expect(200)
+    expect(admin.settings).toHaveBeenCalledWith({ fileMaxPerRequest: 5 })
+    expect(written.body).toEqual({ defaultModel: 'glm-5.2', fileMaxPerRequest: 5 })
   })
   it('SO만 다른 사용자의 이름을 수정하고 본인은 내 정보를 수정한다', async () => {
     await request(app.getHttpServer()).patch('/api/users/u1').set('Cookie', 'mes_session=member').send({ name: '새 이름' }).expect(403)

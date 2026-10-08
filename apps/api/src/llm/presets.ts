@@ -1,5 +1,6 @@
-import { DEFAULT_LLM_SETTINGS, type LlmSettings } from '@mes/domain'
+import type { LlmSettings } from '@mes/domain'
 import type { AppConfig } from '../config/config.js'
+import { effectiveDefaultModel } from './effectiveDefaultModel.js'
 
 export function toLlmSettings(config: AppConfig['llm']): LlmSettings {
   const baseUrl = config.preset === 'openwebui'
@@ -9,7 +10,7 @@ export function toLlmSettings(config: AppConfig['llm']): LlmSettings {
     mode: config.mode,
     baseUrl,
     apiKey: config.apiKey,
-    model: config.defaultModel ?? DEFAULT_LLM_SETTINGS.model,
+    model: effectiveDefaultModel({ llm: config }),
     fileDelivery: config.preset === 'openwebui' ? 'openwebui' : 'inline',
   }
 }

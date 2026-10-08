@@ -17,7 +17,7 @@ async function member(page: Page) {
 
 test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저장', async ({ page }) => {
   await owner(page)
-  const previous = (await (await page.request.get('/api/settings')).json()) as { defaultModel?: string }
+  const previous = (await (await page.request.get('/api/settings')).json()) as { defaultModel: string; fileMaxPerRequest?: number }
   const originalOrder = ((await (await page.request.get('/api/assistants')).json()) as Array<{ id: string }>).map((row) => row.id)
   let id = ''
   const level1 = `E2E 분류 ${Date.now()}`
@@ -67,9 +67,14 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
     await page.getByRole('button', { name: '저장', exact: true }).last().click()
     await expect(page.getByText('순서를 저장했습니다')).toBeVisible()
     await page.goto('/settings')
-    await page.getByLabel('기본 모델').fill('e2e-model')
+    // 기본 모델은 .env 정본 — 읽기 전용 줄만 있고 입력란이 없다. 쓰기 DTO에 보내면 400 (S7 C2)
+    await expect(page.locator('form').getByText(previous.defaultModel, { exact: true })).toBeVisible()
+    await expect(page.getByLabel('기본 모델')).toHaveCount(0)
+    expect((await page.request.patch('/api/settings', { data: { defaultModel: 'e2e-model' } })).status()).toBe(400)
+    await page.getByLabel('첨부 개수 한도').fill('7')
     await page.getByRole('button', { name: '설정 저장' }).click()
-    await expect.poll(async () => (await (await page.request.get('/api/settings')).json()).defaultModel).toBe('e2e-model')
+    await expect.poll(async () => (await (await page.request.get('/api/settings')).json()).fileMaxPerRequest).toBe(7)
+    expect((await (await page.request.get('/api/settings')).json()).defaultModel).toBe(previous.defaultModel)
   } finally {
     // 순서 복구 → 만든 에이전트 삭제: 같은 DB를 쓰는 home.spec의 시드 카드 수·순서 단언이 흔들리지 않게
     const current = (await (await page.request.get('/api/assistants')).json()) as Array<{ id: string; revision: number }>
@@ -81,12 +86,12 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
       const codes = (await (await page.request.get('/api/codes?includeInactive=true')).json()) as Array<{ name: string }>
       expect(codes.filter(row => row.name === level1 || row.name === level2)).toEqual([])
     }
-    if (previous.defaultModel !== undefined) {
-      const restored = await page.request.patch('/api/settings', { data: { defaultModel: previous.defaultModel } })
+    if (previous.fileMaxPerRequest !== undefined) {
+      const restored = await page.request.patch('/api/settings', { data: { fileMaxPerRequest: previous.fileMaxPerRequest } })
       expect(restored.ok()).toBe(true)
     } else {
       const pool = createPool(process.env.DATABASE_URL!, 1)
-      try { await pool.execute("delete from app_setting where `key` = 'defaultModel'") }
+      try { await pool.execute("delete from app_setting where `key` = 'fileMaxPerRequest'") }
       finally { await pool.end() }
     }
   }
@@ -98,7 +103,7 @@ test('담당자는 관리 화면과 쓰기 API에 접근할 수 없다', async (
   await expect(page).toHaveURL(/\/$/)
   await page.goto('/settings')
   await expect(page).toHaveURL(/\/$/)
-  expect((await page.request.patch('/api/settings', { data: { defaultModel: 'denied' } })).status()).toBe(403)
+  expect((await page.request.patch('/api/settings', { data: { fileDelivery: 'inline' } })).status()).toBe(403)
   expect((await page.request.post('/api/assistants', { data: {} })).status()).toBe(403)
 })
 

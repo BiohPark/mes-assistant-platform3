@@ -10,6 +10,7 @@ import { activityLog, appSetting, assistant, chatRequest, chatRequestInput, dbLo
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { EventsService } from '../events/events.service.js'
 import { DbLlmPorts } from '../llm/dbLlmPorts.js'
+import { effectiveDefaultModel } from '../llm/effectiveDefaultModel.js'
 import { LLM_PROVIDER } from '../llm/provider.token.js'
 import { assertThreadAccess } from '../sr/access.js'
 
@@ -104,7 +105,7 @@ export class RequestsService implements OnModuleDestroy {
   private async srModel(threadModelId: string | null) {
     const [setting] = await this.db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'srIntakeAssistantId'))
     const [intake] = typeof setting?.value === 'string' ? await this.db.select().from(assistant).where(eq(assistant.id, setting.value)) : []
-    return threadModelId ?? intake?.modelId ?? this.config.llm.defaultModel ?? 'glm-5.2'
+    return threadModelId ?? intake?.modelId ?? effectiveDefaultModel(this.config)
   }
   async draftConversationSummary(actor: string, taskId: string, messages: Message[], signal?: AbortSignal) {
     const ports = new DbLlmPorts(this.db, this.config, actor)
@@ -112,7 +113,7 @@ export class RequestsService implements OnModuleDestroy {
     if (!owner) throw new NotFoundException('대화를 찾을 수 없습니다')
     const limitBytes = settings.requestBudgetBytes ?? this.config.request.budgetBytes
     if (Buffer.byteLength(messages.map((item) => item.content).join('\n\n')) > limitBytes) throw new HttpException('요약할 원문이 요청 크기 한도를 넘습니다', 413)
-    const model = owner.modelId ?? agents.find((item) => item.id === owner.assistantId)?.modelId ?? settings.llm.model
+    const model = owner.modelId ?? agents.find((item) => item.id === owner.assistantId)?.modelId ?? effectiveDefaultModel(this.config)
     const userMap = new Map(users.map((user) => [user.id, user]))
     try { return await this.runAuxiliary(actor, 'summary', (auxSignal) => summarizeConversation(this.provider, model, messages, userMap, { limitBytes, signal: auxSignal }), { signal }) }
     catch (error) { if (error instanceof SummaryBudgetError) throw new HttpException(error.message, 413); throw error }
@@ -315,11 +316,10 @@ export class RequestsService implements OnModuleDestroy {
         const [currentAssistant] = currentTask ? await tx.select().from(assistant).where(eq(assistant.id, currentTask.assistantId)) : []
         const [budgetSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
         const limitBytes = typeof budgetSetting?.value === 'number' ? budgetSetting.value : this.config.request.budgetBytes
-        const [modelSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'defaultModel'))
         const [deliverySetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'fileDelivery'))
         await tx.insert(chatRequest).values({ id: requestId, threadId, userMessageId, replyMessageId, requestedBy: actor, idempotencyKey: key,
           status: 'pending', provider: this.config.llm.mode, transport: this.config.llm.mode === 'live' && (deliverySetting?.value ?? (this.config.llm.preset === 'openwebui' ? 'openwebui' : 'inline')) === 'openwebui' ? 'openwebui' : 'inline',
-          model: owner.modelId ?? currentTask?.modelId ?? currentAssistant?.modelId ?? (typeof modelSetting?.value === 'string' ? modelSetting.value : this.config.llm.defaultModel ?? 'glm-5.2'),
+          model: owner.modelId ?? currentTask?.modelId ?? currentAssistant?.modelId ?? effectiveDefaultModel(this.config),
           bytes: 0, limitBytes, leaseUntil: dbLeaseUntil(this.config.request.leaseMs) })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'message.sent', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })

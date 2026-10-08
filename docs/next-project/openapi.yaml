@@ -794,14 +794,15 @@ paths:
   /settings:
     get:
       tags: [misc]
-      summary: 전역 설정 조회 (로그인 사용자 전원 — 웹이 기본 모델·한도를 표시). S4 ①
+      summary: 전역 설정 조회 (로그인 사용자 전원 — 웹이 기본 모델·한도를 표시). defaultModel은 서버 .env LLM_DEFAULT_MODEL 유효값(읽기 전용, 구형 DB 행은 무시). S4 ① · S7 C2
       responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Settings' } } } } }
     patch:
       tags: [misc]
-      summary: 전역 설정 (SO 전용). OpenWebUI 키는 여기서 다루지 않음(서버 비밀)
-      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Settings' } } } }
+      summary: 전역 설정 (SO 전용). OpenWebUI 키는 여기서 다루지 않음(서버 비밀). 쓰기 DTO(SettingsPatch)에 defaultModel은 없다 — 보내면 400 (S7 C2)
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/SettingsPatch' } } } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Settings' } } } }
+        '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
 
 components:
@@ -1130,8 +1131,19 @@ components:
     Settings:
       type: object
       properties:
-        defaultModel: { type: string }
+        defaultModel: { type: string, readOnly: true, description: '서버 .env LLM_DEFAULT_MODEL 유효값(미설정·공백이면 도메인 기본). 요청 시작·SR 보조·요약·시스템 assistant·진단·시험 API가 같은 함수(effectiveDefaultModel)를 쓴다. 구형 app_setting.defaultModel 행은 무시(기동 경고 1줄). S7 C2' }
         fileDelivery: { enum: [inline, openwebui] }
         requestBudgetBytes: { type: integer, minimum: 1024, maximum: 16777216 }
         srIntakeAssistantId: { type: string, nullable: true, description: '중단된 에이전트는 409' }
         link1Rule: { type: string, description: '링크1 미입력 시 기본 규칙 (U9, SO 전역 설정)' }
+        fileMaxPerRequest: { type: integer, minimum: 1, maximum: 100 }
+    SettingsPatch:
+      type: object
+      description: 전역 설정 쓰기 DTO (SO). Settings에서 defaultModel을 뺀 것 — 알 수 없는 키(defaultModel 포함)는 400. S7 C2
+      additionalProperties: false
+      properties:
+        fileDelivery: { enum: [inline, openwebui] }
+        requestBudgetBytes: { type: integer, minimum: 1024, maximum: 16777216 }
+        srIntakeAssistantId: { type: string, nullable: true, description: '중단된 에이전트는 409 · null이면 지정 해제' }
+        link1Rule: { type: string, description: '링크1 미입력 시 기본 규칙 (U9)' }
+        fileMaxPerRequest: { type: integer, minimum: 1, maximum: 100 }

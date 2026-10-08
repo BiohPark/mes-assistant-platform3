@@ -17,7 +17,7 @@ function renderPage() { return renderWithProviders(<MeContext value={{ ...me, ro
 
 it('라디오 카드·접수 에이전트 키보드 선택과 지정 해제를 설정에 저장한다', async () => {
   const saved: unknown[] = []
-  const initial = { defaultModel: 'model', fileDelivery: 'inline', srIntakeAssistantId: null }
+  const initial = { defaultModel: 'env-model', fileDelivery: 'inline', srIntakeAssistantId: null }
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/settings') {
       if (init?.method === 'PATCH') { const body = JSON.parse(String(init.body)); saved.push(body); Object.assign(initial, body) }
@@ -45,6 +45,17 @@ it('라디오 카드·접수 에이전트 키보드 선택과 지정 해제를 �
   await user.click(screen.getByRole('button', { name: '설정 저장' }))
   await waitFor(() => expect(saved).toHaveLength(2))
   expect(saved[1]).toMatchObject({ srIntakeAssistantId: null })
+  for (const body of saved) expect(body).not.toHaveProperty('defaultModel') // 쓰기 DTO는 defaultModel 제외 (S7 C2)
+})
+
+it('기본 모델은 .env 유효값을 읽기 전용 줄로 보여 주고 입력란이 없다 (S7 C2)', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => jsonResponse(200, url === '/api/settings' ? { defaultModel: 'env-model', fileDelivery: 'inline' } : [])))
+  renderPage()
+  const form = (await screen.findByRole('button', { name: '설정 저장' })).closest('form')!
+  expect(within(form).getByText('env-model')).toBeInTheDocument()
+  expect(within(form).getByText('기본 모델')).toBeInTheDocument()
+  expect(within(form).getByText(/LLM_DEFAULT_MODEL/)).toBeInTheDocument()
+  expect(screen.queryByRole('textbox', { name: '기본 모델' })).not.toBeInTheDocument()
 })
 
 it('AI 연결 요약 카드는 /api/llm/status를 보여 주고 연결 진단으로 이어진다 — 사용자 목록은 여기서 조회하지 않는다', async () => {

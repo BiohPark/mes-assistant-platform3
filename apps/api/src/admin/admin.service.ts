@@ -18,7 +18,8 @@ type AssistantInput = {
   checklistTemplate: { id: string; label: string; required: boolean }[]
 }
 type AssistantPatch = Partial<Omit<AssistantInput, 'id'>>
-type SettingsPatch = Partial<{ defaultModel: string; fileDelivery: 'inline' | 'openwebui'; requestBudgetBytes: number; srIntakeAssistantId: string | null; link1Rule: string; fileMaxPerRequest: number }>
+/** 기본 모델은 .env 정본(effectiveDefaultModel) — 쓰기 DTO에 없다 (S7 C2) */
+type SettingsPatch = Partial<{ fileDelivery: 'inline' | 'openwebui'; requestBudgetBytes: number; srIntakeAssistantId: string | null; link1Rule: string; fileMaxPerRequest: number }>
 const normalizeCodeName = (value: string) => value.trim().replace(/\s+/gu, ' ').normalize('NFC')
 const defaultChecklist = () => [
   { id: randomUUID(), label: '입력 자료 선택', required: true },
@@ -191,7 +192,8 @@ export class AdminService {
   }
   async getSettings() {
     const rows = await this.db.select().from(appSetting)
-    return Object.fromEntries(rows.map((row) => [row.key, row.value])) as Record<string, unknown>
+    // 구형 defaultModel 행은 지우지 않고 숨긴다 — 읽기 DTO의 defaultModel은 컨트롤러가 .env 유효값으로 채운다 (S7 C2)
+    return Object.fromEntries(rows.filter((row) => row.key !== 'defaultModel').map((row) => [row.key, row.value])) as Record<string, unknown>
   }
   async settings(patch: SettingsPatch) {
     await this.db.transaction(async (tx) => {
