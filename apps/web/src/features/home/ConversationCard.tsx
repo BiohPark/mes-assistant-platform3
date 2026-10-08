@@ -39,11 +39,11 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
       className={cn('group relative rounded-xl border bg-card p-2.5 shadow-xs transition hover:shadow-md', task.status === 'done' && 'opacity-70')}
       style={{ borderLeftColor: sr ? srTagColor(sr) : undefined, borderLeftWidth: sr ? 3 : undefined }}
     >
-      <Link to={`/c/${task.id}`} className="absolute inset-0 rounded-xl" aria-label={`${task.code} ${task.title} 열기`} />
+      <Link to={`/c/${task.id}`} className="absolute inset-0 rounded-xl" aria-label={t('hub.openConversation', { code: task.code, title: task.title })} />
       <div className="pointer-events-none flex items-center gap-1.5 text-xs text-muted-foreground">
         <span className="font-mono">{task.code}</span>
         <TaskStatusBadge status={task.status} className="h-5 px-1.5 text-[11px]" />
-        {task.titleSource === 'ai' && <Sparkles className="size-2.5 text-violet-500" aria-label="AI 제목" />}
+        {task.titleSource === 'ai' && <Sparkles className="size-2.5 text-violet-500" aria-label={t('hub.aiTitle')} />}
         <span className="ml-auto">{formatRelative(task.lastActivityAt)}</span>
       </div>
       <div className="pointer-events-none mt-1 line-clamp-2 text-[13px] leading-snug font-medium">{task.title}</div>
@@ -60,7 +60,7 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
           <AvatarGroup users={[task.ownerId, ...task.assigneeIds.filter((id) => id !== task.ownerId)].map((id) => users.get(id))} max={3} />
         </span>
         {task.inputs.length > 0 && (
-          <span className="pointer-events-none inline-flex items-center gap-0.5" title="선택한 입력">
+          <span className="pointer-events-none inline-flex items-center gap-0.5" title={t('hub.selectedInputs')}>
             <FileInput className="size-3" />
             {task.inputs.length}
           </span>
@@ -68,18 +68,18 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
         {task.dueDate && task.status !== 'done' && (
           <span className={cn('pointer-events-none inline-flex items-center gap-0.5', overdue && 'font-medium text-red-600')}>
             <CalendarClock className="size-3" />
-            {daysLeft !== undefined && (daysLeft < 0 ? `${-daysLeft}일 지연` : daysLeft === 0 ? '오늘' : `D-${daysLeft}`)}
+            {daysLeft !== undefined && (daysLeft < 0 ? t('hub.daysOverdue', { days: -daysLeft }) : daysLeft === 0 ? t('hub.today') : `D-${daysLeft}`)}
           </span>
         )}
         {onStatusChange && task.status !== 'done' && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-xs" className="relative z-10 ml-auto opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100" aria-label="상태 변경">
+              <Button variant="ghost" size="icon-xs" className="relative z-10 ml-auto opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100" aria-label={t('hub.changeStatus')}>
                 <MoreHorizontal />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuLabel className="text-xs">상태</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-xs">{t('hub.status')}</DropdownMenuLabel>
               <DropdownMenuRadioGroup value={task.status} onValueChange={(v) => onStatusChange(v as TaskStatus)}>
                 {TASK_STATUSES.filter((s) => s !== 'done').map((s) => (
                   <DropdownMenuRadioItem key={s} value={s} className="text-xs">

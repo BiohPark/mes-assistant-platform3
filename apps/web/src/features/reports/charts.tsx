@@ -1,3 +1,5 @@
+import { useT } from '@/i18n'
+
 /** 데모 charts.tsx 팔레트 순서. 추가 차트 의존성 없이 동일한 색을 쓴다. */
 export const SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4'] as const
 
@@ -5,6 +7,7 @@ interface SeriesDef { key: string; name: string }
 interface Props { data: ReadonlyArray<object>; xKey: string; series: SeriesDef[]; unit?: string; highlightMax?: boolean; stacked?: boolean }
 
 export function BarsChart({ data, xKey, series, unit = '', highlightMax, stacked }: Props) {
+  const t = useT()
   const rows = data as ReadonlyArray<Record<string, unknown>>
   const max = Math.max(1, ...rows.map((row) => stacked ? series.reduce((total, item) => total + Number(row[item.key] ?? 0), 0) : Math.max(...series.map((item) => Number(row[item.key] ?? 0)))))
   return <div className="space-y-2" role="img" aria-label={series.map((item) => item.name).join(', ')}>
@@ -19,7 +22,7 @@ export function BarsChart({ data, xKey, series, unit = '', highlightMax, stacked
       </div>
       }
     </div>)}
-    {rows.length === 0 && <p className="text-xs text-muted-foreground">표시할 데이터가 없습니다.</p>}
+    {rows.length === 0 && <p className="text-xs text-muted-foreground">{t('reports.noChartData')}</p>}
     {series.length > 1 && <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">{series.map((item, i) => <span key={item.key} className="flex items-center gap-1"><span className="size-2 rounded-sm" style={{ backgroundColor: SERIES[i % SERIES.length] }} />{item.name}</span>)}</div>}
   </div>
 }

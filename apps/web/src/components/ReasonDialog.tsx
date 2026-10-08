@@ -38,7 +38,7 @@ export function ReasonDialog({ open, onOpenChange, title, description, confirmLa
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
-        <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={500} placeholder={placeholder ?? t('reasonDialog.placeholder')} autoFocus className="text-xs" />
+        <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={500} placeholder={placeholder ?? t('components.reasonPlaceholder')} autoFocus className="text-xs" />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             {t('common.cancel')}

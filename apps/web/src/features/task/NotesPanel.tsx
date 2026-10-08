@@ -9,10 +9,12 @@ import { useMe } from '@/app/auth'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useDates } from '@/lib/dates'
+import { useT } from '@/i18n'
 
 export function NotesPanel({ task }: { task: Task }) {
   const { formatDateTime } = useDates()
   const users = useUserMap()
+  const t = useT()
   const me = useCurrentUserId()
   const isSystemOwner = useMe().roles.includes('system_owner')
   const notes = useQuery({ queryKey: ['notes', task.id], queryFn: () => getNotes(task.id) })
@@ -29,19 +31,19 @@ export function NotesPanel({ task }: { task: Task }) {
     finally { setBusy(false) }
   }
   return <section className="space-y-3 text-xs" data-testid="notes-panel">
-    <h3 className="font-semibold">노트</h3>
-    {notes.isError && <div role="alert">노트를 불러오지 못했습니다. <button className="underline" onClick={() => void notes.refetch()}>다시 시도</button></div>}
+    <h3 className="font-semibold">{t('task.notes.title')}</h3>
+    {notes.isError && <div role="alert">{t('task.notes.loadFailed')} <button className="underline" onClick={() => void notes.refetch()}>{t('common.retry')}</button></div>}
     {(notes.data ?? []).map((item) => <article key={item.id} className="rounded-xl border p-2">
       <div className="flex justify-between text-xs text-muted-foreground"><span>{users.get(item.authorId)?.name ?? item.authorId} · {formatDateTime(item.createdAt)}</span>
-        {task.status !== 'done' && (item.authorId === me || isSystemOwner) && <button type="button" className="underline" onClick={() => void deleteNote(task.id, item.id).catch((error: unknown) => toast.error(String(error)))}>삭제</button>}
+        {task.status !== 'done' && (item.authorId === me || isSystemOwner) && <button type="button" className="underline" onClick={() => void deleteNote(task.id, item.id).catch((error: unknown) => toast.error(String(error)))}>{t('task.delete')}</button>}
       </div>
       <p className="mt-1 whitespace-pre-wrap">{item.content}</p>
       {!!item.attachmentIds.length && <ul className="mt-1 text-muted-foreground">{item.attachmentIds.map((fileId) => <li key={fileId}>{files.find((file) => file.id === fileId)?.name ?? fileId}</li>)}</ul>}
     </article>)}
     {task.status !== 'done' && <div className="space-y-2 rounded-lg border p-2">
-      <Textarea aria-label="노트 본문" value={content} onChange={(event) => setContent(event.target.value)} rows={3} placeholder="노트 작성" className="text-xs" />
-      {!!files.length && <fieldset><legend className="mb-1 text-muted-foreground">자료함 파일 첨부</legend><div className="max-h-24 space-y-1 overflow-y-auto">{files.map((file) => <label key={file.id} className="flex items-center gap-1"><input type="checkbox" checked={attachmentIds.includes(file.id)} onChange={(event) => setAttachmentIds(event.target.checked ? [...attachmentIds, file.id] : attachmentIds.filter((id) => id !== file.id))} />{file.name} v{file.version}</label>)}</div></fieldset>}
-      <Button size="xs" disabled={busy || (!content.trim() && !attachmentIds.length)} onClick={() => void save()}>노트 추가</Button>
+      <Textarea aria-label={t('task.notes.body')} value={content} onChange={(event) => setContent(event.target.value)} rows={3} placeholder={t('task.notes.placeholder')} className="text-xs" />
+      {!!files.length && <fieldset><legend className="mb-1 text-muted-foreground">{t('task.notes.attach')}</legend><div className="max-h-24 space-y-1 overflow-y-auto">{files.map((file) => <label key={file.id} className="flex items-center gap-1"><input type="checkbox" checked={attachmentIds.includes(file.id)} onChange={(event) => setAttachmentIds(event.target.checked ? [...attachmentIds, file.id] : attachmentIds.filter((id) => id !== file.id))} />{file.name} v{file.version}</label>)}</div></fieldset>}
+      <Button size="xs" disabled={busy || (!content.trim() && !attachmentIds.length)} onClick={() => void save()}>{t('task.notes.add')}</Button>
     </div>}
   </section>
 }

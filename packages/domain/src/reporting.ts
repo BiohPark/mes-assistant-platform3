@@ -193,14 +193,6 @@ export interface InefficiencySignal {
   at: string
 }
 
-export const SIGNAL_LABEL: Record<SignalKind, string> = {
-  reopen: '재오픈',
-  missing_required: '중요 체크 미완료로 완료',
-  long_task: '장기 진행',
-  stale: '방치',
-  outdated_input: '이전 버전 입력',
-}
-
 /** 비효율 신호: 재오픈, 중요 체크 미완료로 완료, 장기 업무(≥10일), 방치(≥5일 활동 없음), 새 버전이 나왔는데 이전 버전을 입력으로 쓰는 진행 중 대화 */
 export function inefficiencySignals(tasks: Task[], activity: ReportActivity[], files: Pick<FileAsset, 'id' | 'name' | 'version' | 'previousId'>[], now = new Date(), lastActivityByTask?: ReadonlyMap<string, string>): InefficiencySignal[] {
   const out: InefficiencySignal[] = []

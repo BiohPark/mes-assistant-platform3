@@ -2,6 +2,7 @@ import { newId } from '@/lib/ids'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cancelRequest, streamRequest } from '@/api/requests'
+import { useT } from '@/i18n'
 
 export interface ChatRun { requestId: string; replyId: string; text: string; phase?: string }
 interface Attempt { key: string; threadId: string; requestId?: string; text: string; attachmentIds: string[]; path: string; body: unknown }
@@ -23,6 +24,7 @@ export function queueFirstRequest(threadId: string, body: { content: string; att
 }
 
 export function useChat(threadId?: string) {
+  const t = useT()
   const query = useQueryClient()
   const [run, setRun] = useState<ChatRun | null>(null)
   /** 전송 시도가 진행 중(started 이전 대기 포함)인지. run은 started 이후에만 채워진다. */
@@ -53,7 +55,7 @@ export function useChat(threadId?: string) {
                 terminal = true
               } else if (event === 'completed') terminal = true
             }, attempt.key)
-            if (!terminal) throw new Error('스트림 연결이 끊겼습니다')
+            if (!terminal) throw new Error(t('chat.streamDisconnected'))
           } catch (error) {
             if (terminal || number === 1) throw error
           }
@@ -71,7 +73,7 @@ export function useChat(threadId?: string) {
     active.current = work
     void work.finally(() => { if (active.current === work) active.current = null }).catch(() => undefined)
     return work
-  }, [query])
+  }, [query, t])
 
   useEffect(() => {
     if (!threadId) return
@@ -84,14 +86,14 @@ export function useChat(threadId?: string) {
     sending,
     hasPendingAttempt: () => !!(threadId && load(threadId)),
     send: (content: string, attachmentIds: string[] = [], oneShotFileIds: string[] = []) => {
-      if (!threadId) throw new Error('스레드가 없습니다')
+      if (!threadId) throw new Error(t('chat.noThread'))
       const attempt = load(threadId) ?? { key: newId(), threadId, text: content, attachmentIds,
         path: `/threads/${encodeURIComponent(threadId)}/requests`, body: { content, attachmentIds, oneShotFileIds } }
       save(attempt)
       return consume(attempt)
     },
     retry: (requestId: string, options: { excludeFileIds?: string[]; forceInlineFileIds?: string[] } = {}) => {
-      if (!threadId) throw new Error('스레드가 없습니다')
+      if (!threadId) throw new Error(t('chat.noThread'))
       const attempt = load(threadId) ?? { key: newId(), threadId, requestId, text: '', attachmentIds: [],
         path: `/requests/${encodeURIComponent(requestId)}/retry`, body: options }
       save(attempt)

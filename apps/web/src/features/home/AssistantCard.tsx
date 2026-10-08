@@ -8,6 +8,7 @@ import { assistantLink1 } from '@/lib/links'
 import { cn } from '@/lib/utils'
 import type { CatalogUser } from '@mes/contracts'
 import type { AssistantRow } from './useAssistantStats'
+import { useT } from '@/i18n'
 
 interface AssistantCardProps {
   row: AssistantRow
@@ -18,6 +19,7 @@ interface AssistantCardProps {
 
 /** 카드 본문(표시 전용). 일반 카드와 편집 모드 카드가 같이 쓴다. */
 export function AssistantCardBody({ row, owner, dimmed }: { row: AssistantRow; owner?: CatalogUser; dimmed?: boolean }) {
+  const t = useT()
   const a = row.assistant
   return (
     <>
@@ -36,9 +38,9 @@ export function AssistantCardBody({ row, owner, dimmed }: { row: AssistantRow; o
       </div>
       <div className="pointer-events-none mt-auto flex items-center justify-between text-xs group-hover:invisible">
         <span className="inline-flex items-center gap-1 text-muted-foreground">
-          <span className="font-medium text-foreground">{row.activeCount}</span> 진행
-          {row.overdueCount > 0 && <span className="text-red-600">· 지연 {row.overdueCount}</span>}
-          {!a.modelId && <span className="ml-1 rounded-full border px-1 text-[11px]">기본 모델</span>}
+          <span className="font-medium text-foreground">{row.activeCount}</span> {t('hub.active')}
+          {row.overdueCount > 0 && <span className="text-red-600">{t('hub.overdue', { count: row.overdueCount })}</span>}
+          {!a.modelId && <span className="ml-1 rounded-full border px-1 text-[11px]">{t('hub.defaultModel')}</span>}
         </span>
         {owner && <UserAvatar user={owner} size="xs" />}
       </div>
@@ -53,15 +55,16 @@ export const CARD_CLASS = 'group relative flex aspect-square flex-col gap-3 roun
  * stretched-link 패턴: 본문 위에 투명 Link, hover 액션은 그 위(z-10). <a> 중첩을 피한다.
  */
 export function AssistantCard({ row, owner, baseUrl, link1Rule }: AssistantCardProps) {
+  const t = useT()
   const a = row.assistant
   const link1 = assistantLink1(baseUrl, a, link1Rule)
   const retired = a.status === 'retired'
   return (
     <div className={cn(CARD_CLASS, 'hover:-translate-y-0.5 hover:shadow-md')} style={{ borderTopColor: a.color, borderTopWidth: 3 }}>
       {retired ? (
-        <span className="absolute inset-0 rounded-2xl" aria-label={`${a.name} (폐기)`} />
+        <span className="absolute inset-0 rounded-2xl" aria-label={t('hub.retiredAssistantLabel', { name: a.name })} />
       ) : (
-        <Link to={`/new/${encodeURIComponent(a.id)}`} className="absolute inset-0 rounded-2xl" aria-label={`${a.name}와 새 대화`} />
+        <Link to={`/new/${encodeURIComponent(a.id)}`} className="absolute inset-0 rounded-2xl" aria-label={t('hub.newConversationWith', { name: a.name })} />
       )}
       <AssistantCardBody row={row} owner={owner} dimmed={retired} />
       <div className="absolute inset-x-3 bottom-3 z-10 hidden gap-1 group-hover:flex group-focus-within:flex [@media(hover:none)]:flex">
@@ -69,21 +72,21 @@ export function AssistantCard({ row, owner, baseUrl, link1Rule }: AssistantCardP
           <Button size="xs" variant="secondary" asChild>
             <Link to={`/new/${encodeURIComponent(a.id)}`}>
               <MessageSquarePlus data-icon="inline-start" />
-              대화
+              {t('hub.conversation')}
             </Link>
           </Button>
         )}
         {link1 && <Button size="xs" variant="ghost" asChild>
-          <a href={link1} target="_blank" rel="noreferrer" title="OpenWebUI에서 열기">
+          <a href={link1} target="_blank" rel="noreferrer" title={t('hub.openWebUi')}>
             <ExternalLink data-icon="inline-start" />
             OpenWebUI
           </a>
         </Button>}
         {a.docUrl && (
           <Button size="xs" variant="ghost" asChild>
-            <a href={a.docUrl} target="_blank" rel="noreferrer" title="설명 페이지">
+            <a href={a.docUrl} target="_blank" rel="noreferrer" title={t('hub.descriptionPage')}>
               <BookOpen data-icon="inline-start" />
-              설명
+              {t('hub.description')}
             </a>
           </Button>
         )}

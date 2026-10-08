@@ -16,8 +16,10 @@ import { useChat } from './useChat'
 import { ContextTray } from './ContextTray'
 import { useRequestEstimate } from './useRequestEstimate'
 import { toast } from 'sonner'
+import { useT } from '@/i18n'
 
 export function ChatView({ task, assistant }: { task: Task; assistant?: Assistant }) {
+  const t = useT()
   const actor = useActor()
   const selfId = useCurrentUserId()
   const query = useQueryClient()
@@ -72,7 +74,7 @@ export function ChatView({ task, assistant }: { task: Task; assistant?: Assistan
       if (!discussion) {
         const preview = await estimateRequest(task.threadId, { draft: content, attachmentIds: uploaded,
           oneShotFileIds: uploaded.filter((_id, index) => attachments[index]?.once) })
-        if (preview.overLimit) throw new Error(`요청 크기 한도 초과 (${preview.bytes} / ${preview.limitBytes} 바이트). 입력을 조절하세요.`)
+        if (preview.overLimit) throw new Error(t('chat.overLimitError', { bytes: String(preview.bytes), limit: String(preview.limitBytes) }))
       }
       if (discussion) await appendMessage(actor, task.threadId, 'user', content, uploaded, 'done', 'discussion')
       else await chat.send(content, uploaded, uploaded.filter((_id, index) => attachments[index]?.once))
@@ -81,15 +83,15 @@ export function ChatView({ task, assistant }: { task: Task; assistant?: Assistan
   }
   async function retry(requestId: string, options: { excludeFileIds?: string[]; forceInlineFileIds?: string[] } = {}) {
     setSending(true)
-    try { await chat.retry(requestId, options) } catch (error) { toast.error(error instanceof Error ? error.message : '재시도 실패') }
+    try { await chat.retry(requestId, options) } catch (error) { toast.error(error instanceof Error ? error.message : t('chat.retryFailed')) }
     finally { setSending(false); setRetryChoice(null) }
   }
   async function chooseRetry(requestId: string, mode: 'exclude' | 'inline') {
     try { setRetryChoice({ record: await getRequest(requestId), mode }) }
-    catch { toast.error('요청 기록을 불러오지 못했습니다.') }
+    catch { toast.error(t('chat.requestLoadFailed')) }
   }
   return <><div className="flex min-h-0 flex-1 flex-col"><div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-    <ChatMessages messages={messages.data ?? []} run={chat.run} empty={<div className="mx-auto mt-10 max-w-md text-center text-sm text-muted-foreground">대화를 시작하세요.</div>}
+    <ChatMessages messages={messages.data ?? []} run={chat.run} empty={<div className="mx-auto mt-10 max-w-md text-center text-sm text-muted-foreground">{t('chat.startConversation')}</div>}
       actions={(item) => ({
         onSaveAsOutput: item.role === 'assistant' && assistant && item.status === 'done' ? () => setSaveTarget(item) : undefined,
         onRequestInfo: item.requestId ? () => setInfoId(item.requestId!) : undefined,
@@ -97,11 +99,11 @@ export function ChatView({ task, assistant }: { task: Task; assistant?: Assistan
         onRetryWithoutFiles: item.requestId && item.status === 'error' ? () => { void chooseRetry(item.requestId!, 'exclude') } : undefined,
         onRetryAsText: item.requestId && item.status === 'error' ? () => { void chooseRetry(item.requestId!, 'inline') } : undefined,
       })} />
-    {remoteStreaming && !chat.run?.phase && <p className="text-xs text-muted-foreground">{remoteRequest.data?.phase || '응답 중…'}</p>}
-  </div>{Object.values(typing).some((item) => item.until > Date.now()) && <p className="px-4 py-1 text-xs text-muted-foreground">{Object.values(typing).filter((item) => item.until > Date.now()).map((item) => item.name).join(', ')} 입력 중…</p>}
+    {remoteStreaming && !chat.run?.phase && <p className="text-xs text-muted-foreground">{remoteRequest.data?.phase || t('chat.responding')}</p>}
+  </div>{Object.values(typing).some((item) => item.until > Date.now()) && <p className="px-4 py-1 text-xs text-muted-foreground">{t('chat.typing', { names: Object.values(typing).filter((item) => item.until > Date.now()).map((item) => item.name).join(', ') })}</p>}
   <ContextTray task={task} info={estimate} />
   {task.status !== 'done' && <Composer disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowPin allowDiscussion
-    blockedReason={estimate?.overLimit ? '요청 크기 한도를 초과했습니다' : undefined} onDraftChange={setDraft} onTyping={notifyTyping}
+    blockedReason={estimate?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping}
     onSend={send} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />}
   {saveTarget && assistant && <SaveAsOutputDialog key={saveTarget.id} message={saveTarget} task={task} assistant={assistant} onClose={() => setSaveTarget(null)} />}</div>
   {infoId && <RequestInfoDialog requestId={infoId} onClose={() => setInfoId(null)} />}

@@ -1,3 +1,4 @@
+import { useT } from '@/i18n'
 import { cn } from '@/lib/utils'
 import type { AvatarUser } from '@/lib/users'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -12,6 +13,7 @@ interface UserAvatarProps {
 const SIZE = { xs: 'size-5 text-xs', sm: 'size-6 text-xs', md: 'size-8 text-xs' }
 
 export function UserAvatar({ user, size = 'sm', className, showName }: UserAvatarProps) {
+  const t = useT()
   const avatar = (
     <span
       className={cn('inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white', SIZE[size], className)}
@@ -24,7 +26,7 @@ export function UserAvatar({ user, size = 'sm', className, showName }: UserAvata
     return (
       <span className="inline-flex items-center gap-1.5">
         {avatar}
-        <span className="text-sm">{user?.name ?? '알 수 없음'}</span>
+        <span className="text-sm">{user?.name ?? t('components.unknownUser')}</span>
       </span>
     )
   }
@@ -32,7 +34,7 @@ export function UserAvatar({ user, size = 'sm', className, showName }: UserAvata
     <Tooltip>
       <TooltipTrigger asChild>{avatar}</TooltipTrigger>
       <TooltipContent>
-        {user?.name ?? '알 수 없음'} {user?.role ? `· ${user.role}` : ''}
+        {user?.name ?? t('components.unknownUser')} {user?.role ? `· ${user.role}` : ''}
       </TooltipContent>
     </Tooltip>
   )
