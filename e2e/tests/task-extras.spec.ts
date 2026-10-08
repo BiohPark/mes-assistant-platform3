@@ -53,6 +53,9 @@ test('체크리스트 점검, 첨부 노트, 완료 리포트와 재개', async 
   await dialog.getByRole('button', { name: '4점' }).click()
   await dialog.getByRole('textbox', { name: '피드백 코멘트' }).fill('도움이 됨')
   await expect(dialog.getByText(/s4-evidence.txt v1/)).toBeVisible()
+  // U9: 필수 체크 항목이 미완료면 완료 사유가 필수다.
+  const completeReason = dialog.getByRole('textbox', { name: '완료 사유' })
+  if (await completeReason.count()) await completeReason.fill('E2E 완료')
   await dialog.getByRole('button', { name: '완료 처리' }).click()
   await expect(page.getByRole('button', { name: '다시 열기' })).toBeVisible({ timeout: 15_000 })
 
