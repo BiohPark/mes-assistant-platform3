@@ -304,3 +304,19 @@ it('자동 코드 정리와 순서 저장이 a·z 행에 겹쳐도 교착 없이
   await admin.deleteAssistant('a')
   await admin.deleteAssistant('z')
 })
+
+// 172 UTF-16 units is the first suffix cut: the emoji starts at unit 171.
+it('접미사 충돌을 피하면서 서로게이트 쌍을 자르지 않고 키·원래 이름을 보존한다', async () => {
+  const name = `${'u'.repeat(171)}😀z`
+  const original = await admin.createAssistant('owner', input(name))
+  await admin.updateCode(original.level1CodeId, { name: '이모지 이름 변경' })
+  const occupied = await admin.createCode({ groupKey: 'assistant_level1', code: `${'u'.repeat(171)}-1`, name: '이모지 접미사 사용 중' })
+  const created = await admin.createAssistant('owner', input(name))
+  expect(created.level1CodeId).toBe(`assistant_level1:${'u'.repeat(171)}-2`)
+  expect(created.level1CodeId.length).toBeLessThanOrEqual(191)
+  expect(created.level1CodeId).not.toMatch(/[\uD800-\uDFFF]/u)
+  expect(await rows(created.level1CodeId)).toMatchObject([{ code: `${'u'.repeat(171)}-2`, name, isAuto: true }])
+  await admin.deleteAssistant(original.id)
+  await admin.deleteAssistant(created.id)
+  await db.delete(code).where(eq(code.id, occupied!.id))
+})

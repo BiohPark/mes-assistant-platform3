@@ -51,7 +51,10 @@ export class AdminService {
       let index = 0
       while (existing.some(item => item.key === key || item.id === `${group}:${key}`)) {
         const suffix = `-${++index}`
-        key = `${name.slice(0, 191 - group.length - 1 - suffix.length)}${suffix}`
+        let end = 191 - group.length - 1 - suffix.length
+        // Keep the UTF-16 ID budget without leaving a high surrogate at the cut.
+        if (/[\uD800-\uDBFF]/u.test(name.charAt(end - 1)) && /[\uDC00-\uDFFF]/u.test(name.charAt(end))) end--
+        key = `${name.slice(0, end)}${suffix}`
       }
       const id = `${group}:${key}`
       try {
