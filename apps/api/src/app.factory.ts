@@ -30,7 +30,7 @@ export function configureApp<T extends INestApplication>(app: T, config: AppConf
     const webRoot = realpathSync.native(config.webDistDir)
     app.use((req: Request, res: Response, next: NextFunction) => {
       const rawPath = req.originalUrl.split('?')[0]
-      if (/^\/api(?:\/|$)/i.test(rawPath) || req.method !== 'GET') return next()
+      if (/^\/api(?:\/|$)/i.test(rawPath) || (req.method !== 'GET' && req.method !== 'HEAD')) return next()
       let pathname: string
       try { pathname = decodeURIComponent(rawPath) }
       catch { return res.status(400).end() }
