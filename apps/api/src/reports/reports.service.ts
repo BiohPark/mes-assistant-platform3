@@ -2,7 +2,8 @@ import { ForbiddenException, Inject, Injectable } from '@nestjs/common'
 import { assistantStats, completionBuckets, feedbackDigest, inefficiencySignals, inputFlow, srLeadDays, srStatusDistribution, tagUsage, userActivityStats, type ActivityLog, type Assistant, type Granularity, type ServiceRequest, type User } from '@mes/domain'
 import { and, asc, eq, gte, inArray, isNull, max, or } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appUser, assistant, fileObject, serviceRequest, task } from '../db/schema.js'
+import { activityLog, appUser, fileObject, serviceRequest, task } from '../db/schema.js'
+import { DbCatalogReader } from '../catalog/catalog.service.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
 
 @Injectable()
@@ -29,9 +30,7 @@ export class ReportsService {
       this.db.select({ id: fileObject.id, name: fileObject.originalName, version: fileObject.version,
         previousId: fileObject.previousId, originTaskId: fileObject.originTaskId }).from(fileObject).where(isNull(fileObject.deletedAt)),
       this.db.select({ id: serviceRequest.id, status: serviceRequest.status, submittedAt: serviceRequest.submittedAt }).from(serviceRequest),
-      this.db.select({ id: assistant.id, name: assistant.name, color: assistant.color, status: assistant.status, ownerId: assistant.ownerId,
-        level1CodeId: assistant.level1CodeId, level2CodeId: assistant.level2CodeId, summary: assistant.summary, sortOrder: assistant.sortOrder,
-        usageExample: assistant.usageExample, createdBy: assistant.createdBy, createdAt: assistant.createdAt, updatedAt: assistant.updatedAt, imageFileId: assistant.imageFileId }).from(assistant),
+      new DbCatalogReader(this.db).assistants(),
       this.db.select({ id: appUser.id, name: appUser.name, role: appUser.role, initials: appUser.initials, color: appUser.color }).from(appUser),
     ])
     const mapActivity = (rows: typeof recentActivities): ActivityLog[] => rows.map((row) => ({ id: row.id, type: row.type as ActivityLog['type'], userId: row.userId,
@@ -46,10 +45,7 @@ export class ReportsService {
       ? { ...row, completedAt: completedAt.get(row.id)! } : row)
     const fileRows = files.map((row) => ({ id: row.id, name: row.name, version: row.version,
       ...(row.previousId && { previousId: row.previousId }), ...(row.originTaskId && { originTaskId: row.originTaskId }) }))
-    const assistantRows: Assistant[] = assistants.map((row) => ({ id: row.id, name: row.name, color: row.color, status: row.status as Assistant['status'],
-      ownerId: row.ownerId, level1: row.level1CodeId, level2: row.level2CodeId, summary: row.summary, order: row.sortOrder,
-      expectedInputs: [], expectedOutputs: [], usageExample: row.usageExample, checklistTemplate: [], createdBy: row.createdBy,
-      createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), ...(row.imageFileId && { imageId: row.imageFileId }) }))
+    const assistantRows: Assistant[] = assistants
     const userRows = users.map((row) => ({ id: row.id, name: row.name, role: row.role, initials: row.initials, color: row.color })) as User[]
     const srRows = srs.map((row) => ({ id: row.id, status: row.status, submittedAt: row.submittedAt?.toISOString() })) as ServiceRequest[]
     const done = reportTasks.filter((row) => row.status === 'done' && row.completedAt)

@@ -4,7 +4,8 @@ import { buildTaskReport, type Message, type Note } from '@mes/domain'
 import { reviewChecklist, type ChatProvider } from '@mes/llm'
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appUser, assistant, chatRequest, checklistItem, checklistReview, checklistReviewItem, code, conversationInput, fileObject, message, note, noteAttachment, task, taskFeedback, taskInput, thread } from '../db/schema.js'
+import { classificationView } from '../db/classifications.js'
+import { activityLog, appUser, assistant, assistantClassification, chatRequest, checklistItem, checklistReview, checklistReviewItem, code, conversationInput, fileObject, message, note, noteAttachment, task, taskFeedback, taskInput, thread } from '../db/schema.js'
 import { EventsService } from '../events/events.service.js'
 import { FILE_STORAGE } from '../files/files.service.js'
 import { createStorageKey, FileStorageService, sha256 } from '../files/fileStorage.service.js'
@@ -173,9 +174,11 @@ export class TaskExtrasService {
     if (feedback) detail.feedback = { ...feedback, by: actor, at: now.toISOString() }
     const [agent] = await tx.select().from(assistant).where(eq(assistant.id, detail.assistantId))
     if (!agent) throw new NotFoundException('에이전트를 찾을 수 없습니다')
-    const [level1, level2] = await Promise.all([
-      tx.select().from(code).where(eq(code.id, agent.level1CodeId)), tx.select().from(code).where(eq(code.id, agent.level2CodeId)),
+    const [paths, codes] = await Promise.all([
+      tx.select().from(assistantClassification).where(eq(assistantClassification.assistantId, agent.id)).orderBy(assistantClassification.sortOrder),
+      tx.select().from(code),
     ])
+    const classifications = classificationView(paths, new Map(codes.map(row => [row.id, row.name])))
     const files = await tx.select().from(fileObject).where(and(eq(fileObject.originTaskId, taskId), isNull(fileObject.deletedAt)))
     const selectedFiles = await tx.select({ row: taskInput, file: fileObject, origin: task, originAssistant: assistant })
       .from(taskInput).innerJoin(fileObject, eq(taskInput.fileId, fileObject.id)).innerJoin(task, eq(fileObject.originTaskId, task.id))
@@ -184,7 +187,7 @@ export class TaskExtrasService {
       .from(conversationInput).innerJoin(task, eq(conversationInput.sourceTaskId, task.id)).innerJoin(assistant, eq(task.assistantId, assistant.id))
       .where(eq(conversationInput.taskId, taskId))
     const users = await tx.select({ id: appUser.id, name: appUser.name }).from(appUser)
-    return buildTaskReport({ task: detail, assistant: { name: agent.name, level1: level1[0]?.name ?? '', level2: level2[0]?.name ?? '' },
+    return buildTaskReport({ task: detail, assistant: { name: agent.name, classifications, ...classifications[0]! },
       files: files.map((file) => ({ id: file.id, name: file.originalName })),
       inputs: [
         ...selectedFiles.map(({ row, file, originAssistant }) => ({ name: file.originalName, version: file.version, weight: row.weight as 'main' | 'reference', fromAssistantName: file.originTaskId === taskId ? '이 대화' : originAssistant.name })),

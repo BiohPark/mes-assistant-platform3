@@ -506,4 +506,50 @@ describe('demo bundle DB import', () => {
       expect(await db.select().from(s.appUser)).toHaveLength(0)
     } finally { await pool.end(); await isolated.drop() }
   })
+
+it('imports ordered paths only for new assistants, dry-runs without writes and preserves server paths on rerun', async () => {
+  const isolated = await createTempDb('import_paths'); const pool = createPool(isolated.url)
+  try {
+    await runMigrations(isolated.url); const db = drizzle(pool)
+    const fixture = structuredClone(base) as any
+    fixture.tables.assistants[0].link1 = 'https://example.invalid/legacy'
+    fixture.tables.assistants[0].classifications = [{ level1: 'Virtual', level2: 'One' }, { level1: 'Secondary', level2: 'Two' }]
+    const storage = new FileStorageService(root)
+    const dry = await importBundle(fixture, db, storage, true)
+    expect((dry as unknown as { link1Overrides: number }).link1Overrides).toBe(1)
+    expect(dry.report['assistants.classifications → assistant_classification']).toMatchObject({ imported: 2 })
+    expect(await db.select().from(s.assistant)).toEqual([])
+    await importBundle(fixture, db, storage)
+    const [rows] = await pool.query('select * from assistant_classification where assistant_id = ? order by sort_order', ['fixture-assistant'])
+    expect(rows).toMatchObject([{ level1_code_id: 'assistant_level1:Virtual', level2_code_id: 'assistant_level2:One', sort_order: 0 }, { level1_code_id: 'assistant_level1:Secondary', level2_code_id: 'assistant_level2:Two', sort_order: 1 }])
+    fixture.tables.assistants[0].classifications.reverse()
+    await importBundle(fixture, db, storage)
+    const [again] = await pool.query('select * from assistant_classification where assistant_id = ? order by sort_order', ['fixture-assistant'])
+    expect(again).toEqual(rows)
+    const [parent] = await db.select().from(s.assistant).where(eq(s.assistant.id, 'fixture-assistant'))
+    expect(parent).toMatchObject({ level1CodeId: 'assistant_level1:Virtual', level2CodeId: 'assistant_level2:One' })
+  } finally { await pool.end(); await isolated.drop() }
+})
+
+
+it.each([false, true])('normalizes legacy import names without creating ambiguous codes; existing=%s', async existing => {
+  const isolated = await createTempDb('import_normalized_paths'); const pool = createPool(isolated.url)
+  try {
+    await runMigrations(isolated.url); const db = drizzle(pool)
+    if (existing) {
+      await db.insert(s.codeGroup).values({ key: 'assistant_level1', name: 'Level 1' })
+      await db.insert(s.code).values({ id: 'manual-virtual', groupKey: 'assistant_level1', code: 'Virtual', name: 'Café Virtual', isAuto: false })
+    }
+    const fixture = structuredClone(base) as any
+    fixture.tables.assistants[0].level1 = '  Cafe\u0301   Virtual  '
+    fixture.tables.assistants[0].level2 = '  Draft  '
+    await importBundle(fixture, db, new FileStorageService(root))
+    const group = await db.select().from(s.code).where(eq(s.code.groupKey, 'assistant_level1'))
+    expect(group).toHaveLength(1)
+    expect(group[0]).toMatchObject({ name: 'Café Virtual' })
+    const [parent] = await db.select().from(s.assistant).where(eq(s.assistant.id, 'fixture-assistant'))
+    expect(parent?.level1CodeId).toBe(existing ? 'manual-virtual' : 'assistant_level1:Café Virtual')
+  } finally { await pool.end(); await isolated.drop() }
+})
+
 })

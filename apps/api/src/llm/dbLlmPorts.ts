@@ -5,9 +5,10 @@ import type { LlmPorts } from '@mes/llm'
 import { remoteKey } from '@mes/llm'
 import type { AppConfig } from '../config/config.js'
 import type { Db } from '../db/db.module.js'
-import { appSetting, appUser, assistant, assistantChecklistTemplate, assistantExpectedIo, code, checklistItem, fileObject, fileRemoteRef, serviceRequest, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { appSetting, appUser, checklistItem, fileObject, fileRemoteRef, serviceRequest, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { toLlmSettings } from './presets.js'
+import { DbCatalogReader } from '../catalog/catalog.service.js'
 import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
 
 const iso = (date: Date) => date.toISOString()
@@ -41,25 +42,7 @@ export class DbLlmPorts implements LlmPorts {
   }
 
   async getAssistants(): Promise<Assistant[]> {
-    const [rows, io, templates, codes] = await Promise.all([
-      this.db.select().from(assistant),
-      this.db.select().from(assistantExpectedIo),
-      this.db.select().from(assistantChecklistTemplate),
-      this.db.select().from(code),
-    ])
-    const labels = new Map(codes.map((item) => [item.id, item.name]))
-    return rows.map((row) => ({
-      id: row.id, name: row.name, level1: labels.get(row.level1CodeId) ?? row.level1CodeId, level2: labels.get(row.level2CodeId) ?? row.level2CodeId,
-      level1CodeId: row.level1CodeId, level2CodeId: row.level2CodeId, summary: row.summary,
-      order: row.sortOrder, ...(row.modelId ? { modelId: row.modelId } : {}),
-      ...(row.link1 ? { link1: row.link1 } : {}), ...(row.docUrl ? { docUrl: row.docUrl } : {}),
-      expectedInputs: io.filter((item) => item.assistantId === row.id && item.direction === 'input').sort((a, b) => a.sortOrder - b.sortOrder).map((item) => item.label),
-      expectedOutputs: io.filter((item) => item.assistantId === row.id && item.direction === 'output').sort((a, b) => a.sortOrder - b.sortOrder).map((item) => item.label),
-      ownerId: row.ownerId, status: row.status as Assistant['status'], usageExample: row.usageExample,
-      ...(row.imageFileId ? { imageId: row.imageFileId } : {}), color: row.color,
-      checklistTemplate: templates.filter((item) => item.assistantId === row.id).sort((a, b) => a.sortOrder - b.sortOrder).map((item) => ({ id: item.id, label: item.label, required: item.required })),
-      createdBy: row.createdBy, createdAt: iso(row.createdAt), updatedAt: iso(row.updatedAt),
-    }))
+    return new DbCatalogReader(this.db).assistants()
   }
 
   async getTask(id: string): Promise<Task | undefined> {

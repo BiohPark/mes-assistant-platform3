@@ -4,6 +4,7 @@ import { and, eq, isNull, ne, notInArray, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/mysql2'
 import type { Db } from './db.module.js'
 import { createPool } from './connection.js'
+import { lockAssistantCodes, writeClassifications } from './classifications.js'
 import { isDuplicateKey } from './errors.js'
 import { appSetting, appUser, assistant, assistantChecklistTemplate, assistantExpectedIo, code, codeGroup } from './schema.js'
 import { SEED_ASSISTANTS, SR_INTAKE_ASSISTANT_ID } from './seedData.js'
@@ -26,6 +27,7 @@ export async function seedCatalog(db: Db, { devUserPassword }: { devUserPassword
   assertDevelopmentSeed()
   const passwordHash = devUserPassword ? await hashPassword(devUserPassword) : null
   await db.transaction(async (tx) => {
+    await lockAssistantCodes(tx as Db)
     for (const group of [
       { key: 'assistant_level1', name: '업무 Lv1', sortOrder: 1 },
       { key: 'assistant_level2', name: '업무 Lv2', sortOrder: 2 },
@@ -50,6 +52,7 @@ export async function seedCatalog(db: Db, { devUserPassword }: { devUserPassword
         createdAt: new Date(item.createdAt), updatedAt: new Date(item.updatedAt),
       }))
       if (!inserted) continue
+      await writeClassifications(tx as Db, item.id, item.classifications!.map(({ level1CodeId, level2CodeId }) => ({ level1CodeId, level2CodeId })))
       for (const [sortOrder, label] of item.expectedInputs.entries()) {
         await tx.insert(assistantExpectedIo).values({ assistantId: item.id, direction: 'input', sortOrder, label })
       }
