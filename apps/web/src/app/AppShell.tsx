@@ -1,6 +1,6 @@
 import { Fragment } from 'react'
 import { NavLink, Outlet } from 'react-router'
-import { LayoutGrid, Boxes, Settings, Bot, Send, Inbox, BarChart3, Activity } from 'lucide-react'
+import { LayoutGrid, Boxes, Settings, Bot, Send, Inbox, BarChart3, Activity, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -16,15 +16,16 @@ function LiveEvents() { useEvents(); return null }
 type Roles = ReadonlyArray<string>
 const member = (roles: Roles) => !roles.includes('requester') || roles.includes('system_owner')
 const owner = (roles: Roles) => roles.includes('system_owner')
-/** 사이드바 메뉴 한 배열. section 머리말은 첫 항목 앞에만 붙고, show가 없으면 모두에게 보인다 */
+/** 사이드바 메뉴 한 배열. 업무(member) / 요청(모두) / 관리(owner) 3구획 — section 머리말은 구획이 2개 이상일 때만, 첫 항목 앞에 붙는다 */
 const NAV = [
   { to: '/', label: 'nav.hub', icon: LayoutGrid, end: true, section: 'nav.work', show: member },
   { to: '/sr/manage', label: 'nav.srManage', icon: Inbox, section: 'nav.work', show: member },
   { to: '/reports', label: 'nav.reports', icon: BarChart3, section: 'nav.work', show: member },
   { to: '/sr', label: 'nav.sr', icon: Send, end: true, section: 'nav.requests' },
-  { to: '/assistants/manage', label: 'nav.assistants', icon: Bot, section: 'nav.requests', show: owner },
-  { to: '/settings', label: 'nav.settings', icon: Settings, section: 'nav.requests', show: owner },
-  { to: '/admin/diagnostics', label: 'nav.diagnostics', icon: Activity, section: 'nav.requests', show: owner },
+  { to: '/assistants/manage', label: 'nav.assistants', icon: Bot, section: 'nav.admin', show: owner },
+  { to: '/settings', label: 'nav.settings', icon: Settings, section: 'nav.admin', show: owner },
+  { to: '/admin/users', label: 'nav.users', icon: Users, section: 'nav.admin', show: owner },
+  { to: '/admin/diagnostics', label: 'nav.diagnostics', icon: Activity, section: 'nav.admin', show: owner },
 ] as const
 
 export function AppShell() {
@@ -39,6 +40,8 @@ function AppContent() {
   const t = useT()
   const me = useMe()
   const requesterOnly = me.roles.includes('requester') && !me.roles.includes('system_owner')
+  const items = NAV.filter((item) => !('show' in item) || item.show(me.roles))
+  const sectioned = new Set(items.map((item) => item.section)).size > 1
   if (me.mustChangePassword) return <PasswordPage />
   return (
     <>
@@ -55,9 +58,9 @@ function AppContent() {
               </div>
             </div>
             <nav className="flex flex-col gap-1">
-              {NAV.filter((item) => !('show' in item) || item.show(me.roles)).map((item, index, items) => (
+              {items.map((item, index) => (
                 <Fragment key={item.to}>
-                  {items[index - 1]?.section !== item.section && <p className={cn('hidden px-2 text-xs text-muted-foreground lg:block', index > 0 && 'mt-3')}>{t(item.section)}</p>}
+                  {sectioned && items[index - 1]?.section !== item.section && <p className={cn('hidden px-2 text-xs text-muted-foreground lg:block', index > 0 && 'mt-3')}>{t(item.section)}</p>}
                   <NavLink
                     to={item.to}
                     end={'end' in item && item.end}
