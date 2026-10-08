@@ -11,6 +11,7 @@ import { configureApp } from '../app.factory.js'
 import { SESSION_STORE, type SessionStore } from '../auth/session.service.js'
 import { CONFIG, loadConfig } from '../config/config.js'
 import { DB } from '../db/db.module.js'
+import { dbLock } from '../db/schema.js'
 import { LLM_PROVIDER } from './provider.token.js'
 import { toLlmSettings } from './presets.js'
 
@@ -26,7 +27,11 @@ const sessions: SessionStore = {
 /** 읽기는 진행 중 chat_request 수만 돌려주고, 쓰기는 전부 실패시킨다 — 시험 API는 DB에 행을 쓰지 않는다 */
 let activeRows = 0
 const writes = vi.fn(() => { throw new Error('시험 API는 DB에 쓰지 않는다') })
-const db = { select: () => ({ from: () => ({ where: async () => [{ count: activeRows }] }) }), insert: writes, update: writes, delete: writes, transaction: writes }
+const rows = async () => [{ count: activeRows }]
+const reads = { select: () => ({ from: () => ({ where: () => Object.assign(rows(), { for: () => rows() }) }) }) }
+/** admit의 전역 용량 잠금(db_lock upsert + for update)만 허용하고 다른 쓰기는 전부 실패시킨다 */
+const tx = { ...reads, update: writes, delete: writes, insert: (table: unknown) => { if (table !== dbLock) writes(); return { values: () => ({ onDuplicateKeyUpdate: async () => undefined }) } } }
+const db = { ...reads, insert: writes, update: writes, delete: writes, transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx) }
 
 const TEST = '/api/admin/llm/test'
 const CONNECTION = '/api/admin/llm/test-connection'
@@ -70,6 +75,11 @@ describe('LLM admin test API', () => {
 
   it('요청 바이트가 한도를 넘으면 413', async () => {
     await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send(userMessage('x'.repeat(config.request.budgetBytes))).expect(413)
+  })
+
+  it('메시지 하나는 응답 상한(64 KB)만큼 길어도 형식은 통과하고 그 이상만 400', async () => {
+    await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send(userMessage('x'.repeat(65_536))).expect(413) // 형식 OK → 총 바이트 한도에서 거부
+    await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send(userMessage('x'.repeat(65_537))).expect(400)
   })
 
   it('mock은 결정적이고 응답은 text·model·ms만 담는다', async () => {

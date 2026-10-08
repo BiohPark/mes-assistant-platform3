@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { RotateCcw, Send, Square } from 'lucide-react'
 import type { LlmTestMessage } from '@mes/contracts'
@@ -23,6 +23,7 @@ function describe(error: unknown, t: Translator): string {
     if (error.status === 413) return t('admin.test.errTooLarge')
     if (error.status === 429) return t('admin.test.errBusy')
     if (error.status === 403) return t('admin.test.errForbidden')
+    if (error.status === 400) return t('admin.test.errFormat')
     if (error.code === 'TIMEOUT' || error.status === 504) return t('admin.test.errTimeout')
     if (error.code === 'RESPONSE_TOO_LARGE') return t('admin.test.errResponseTooLarge')
     if (error.code === 'MODEL_NOT_FOUND') return t('admin.test.errModelMissing')
@@ -38,6 +39,7 @@ export function AgentTestChat({ modelId, showDiagnosticsLink = true, className }
   const [pending, setPending] = useState(false)
   const [notice, setNotice] = useState<{ kind: 'error' | 'stopped'; text: string } | null>(null)
   const controller = useRef<AbortController | null>(null)
+  useEffect(() => () => controller.current?.abort(), [])
   const model = modelId?.trim() ?? ''
   const full = entries.length >= MAX_MESSAGES
   const canSend = !pending && !!draft.trim() && !full

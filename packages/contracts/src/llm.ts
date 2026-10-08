@@ -13,7 +13,8 @@ export const LlmStatusSchema = z.object({
 export const LlmModelIdSchema = z.string().trim().min(1).max(191).regex(/^\P{Cc}+$/u, '모델 ID에 제어 문자를 쓸 수 없습니다')
 
 /** POST /admin/llm/test 요청 — 업무 맥락 없이 모델에 직접 보낸다 (SO 전용, 저장 없음) */
-export const LlmTestMessageSchema = z.object({ role: z.enum(['user', 'assistant']), content: z.string().min(1).max(32_768) }).strict()
+/** 메시지당 상한은 시험 응답 상한(64 KB)과 같게 — 긴 답을 받은 다음 턴이 형식 오류가 되지 않게. 총량은 requestBudgetBytes(413)가 막는다 */
+export const LlmTestMessageSchema = z.object({ role: z.enum(['user', 'assistant']), content: z.string().min(1).max(65_536) }).strict()
 export const LlmTestRequestSchema = z.object({ model: LlmModelIdSchema.optional(), messages: z.array(LlmTestMessageSchema).min(1).max(20) }).strict()
 export const LlmTestResultSchema = z.object({ text: z.string(), model: z.string(), ms: z.number() })
 export type LlmTestMessage = z.infer<typeof LlmTestMessageSchema>

@@ -76,6 +76,14 @@ describe('OpenAICompatibleProvider limits', () => {
     expect(chunks).toEqual([{ type: 'delta', text: 'ok' }, { type: 'error', message: '응답 프레임 크기 초과' }])
     expect(cancel).toHaveBeenCalled()
   })
+  it('limits가 없으면(일반 채팅) 큰 SSE 프레임도 그대로 통과한다 — OpenWebUI RAG sources 프레임', async () => {
+    const big = 'y'.repeat(1_500_000)
+    vi.stubGlobal('fetch', vi.fn(async () => sseResponse([`data: {"sources":[{"document":["${big}"]}],"choices":[{"delta":{"content":"ok"}}]}\n\n`, 'data: [DONE]\n\n'])))
+    const chunks = await collect(provider.stream({ model: 'm', messages: [{ role: 'user', content: 'hi' }] }))
+    expect(chunks).toEqual([{ type: 'delta', text: 'ok' }, { type: 'done' }])
+    const limited = await collect(provider.stream({ model: 'm', messages: [{ role: 'user', content: 'hi' }], limits: { maxFrameBytes: 64 * 1024 } }))
+    expect(limited).toEqual([{ type: 'error', message: '응답 프레임 크기 초과' }])
+  })
   it('stream은 limits.maxResponseBytes를 넘으면 실패하고 chat/completions도 redirect: manual로 부른다', async () => {
     const fetchMock = vi.fn(async () => sseResponse(['data: {"choices":[{"delta":{"content":"ok"}}]}\n\n', 'data: {"choices":[{"delta":{"content":"more"}}]}\n\n']))
     vi.stubGlobal('fetch', fetchMock)

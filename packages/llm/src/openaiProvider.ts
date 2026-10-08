@@ -6,8 +6,6 @@ import type { LlmSettings } from '@mes/domain'
 /** 모델 목록·ping 상한 — 목록은 모델당 메타데이터가 붙어 수 MB가 될 수 있다 */
 const MODELS_TIMEOUT_MS = 15_000
 const MODELS_MAX_BYTES = 4 * 1024 * 1024
-/** 채팅 스트림 프레임 기본 상한 — 델타 하나가 이보다 크면 응답이 아니라 오류로 본다 */
-const DEFAULT_MAX_FRAME_BYTES = 1024 * 1024
 const FRAME_TOO_LARGE = '응답 프레임 크기 초과'
 
 function joinUrl(base: string, path: string): string {
@@ -66,8 +64,9 @@ export class OpenAICompatibleProvider implements ChatProvider {
   }
 
   async *stream(req: ChatRequest): AsyncIterable<ChatChunk> {
+    // 프레임·응답 상한은 limits를 준 호출(시험)에만 — 일반 채팅은 OpenWebUI RAG `sources`처럼 큰 프레임을 받을 수 있다
     const limits = req.limits ?? {}
-    const maxFrameBytes = limits.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES
+    const maxFrameBytes = limits.maxFrameBytes ?? Number.POSITIVE_INFINITY
     let res: Response
     try {
       res = await limitedFetch(joinUrl(this.settings.baseUrl, 'chat/completions'), {
@@ -105,6 +104,11 @@ export class OpenAICompatibleProvider implements ChatProvider {
         buffer = rest
         for (const ev of events) {
           if (ev === '[DONE]') continue
+          if (Number.isFinite(maxFrameBytes) && encoder.encode(ev).byteLength > maxFrameBytes) {
+            await reader.cancel().catch(() => undefined)
+            yield { type: 'error', message: FRAME_TOO_LARGE }
+            return
+          }
           let parsed: unknown
           try {
             parsed = JSON.parse(ev)
@@ -123,7 +127,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
             })
           }
         }
-        if (encoder.encode(buffer).byteLength > maxFrameBytes) {
+        if (Number.isFinite(maxFrameBytes) && encoder.encode(buffer).byteLength > maxFrameBytes) {
           await reader.cancel().catch(() => undefined)
           yield { type: 'error', message: FRAME_TOO_LARGE }
           return

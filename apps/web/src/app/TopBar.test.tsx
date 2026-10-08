@@ -124,7 +124,7 @@ describe('TopBar', () => {
   it('SO의 Mock/Live 배지는 연결 진단으로 가는 링크다', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/llm/status' ? jsonResponse(200, { mode: 'live', preset: 'openai-compatible', baseUrlHost: 'llm.example.com', ok: true, detail: '' }) : jsonResponse(204)))
     renderWithProviders(<MeContext value={{ ...me, roles: [...me.roles] }}><TooltipProvider><TopBar /></TooltipProvider></MeContext>)
-    const badge = await screen.findByRole('link', { name: '연결 진단 열기' })
+    const badge = await screen.findByRole('link', { name: 'Live · 연결 진단 열기' }) // 접근성 이름에 보이는 글자가 들어간다(WCAG 2.5.3)
     expect(badge).toHaveTextContent('Live')
     expect(badge).toHaveAttribute('href', '/admin/diagnostics')
   })

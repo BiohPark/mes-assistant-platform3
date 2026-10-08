@@ -135,7 +135,7 @@ export const en = {
       testConnection: 'Test connection', testing: 'Testing…', modelsLine: 'Model list: {result}', completionLine: 'Completion: {result}',
       resultOk: 'OK · {detail} · {ms} ms', resultFail: 'Failed · {error}', testFailed: 'Could not run the connection test ({status})',
       envGuide: 'Change the address, mode and key in the server .env (LLM_MODE · LLM_PRESET · LLM_BASE_URL · LLM_API_KEY · LLM_DEFAULT_MODEL) and restart the service. This screen only shows the values and runs the test.',
-      open: 'Open connection diagnostics', testChat: 'Test chat',
+      open: 'Open connection diagnostics', badge: '{mode} · Open connection diagnostics', testChat: 'Test chat',
     },
     test: {
       model: 'Model', defaultModel: 'Default model', notice: 'Sent straight to the model without any work context. The upstream service may keep its own record.',
@@ -145,6 +145,7 @@ export const en = {
       errTooLarge: 'The request exceeds the size limit.', errBusy: 'Too many concurrent requests. Try again shortly.', errTimeout: 'The reply timed out.',
       errResponseTooLarge: 'The reply exceeds the size limit.', errModelMissing: 'Model not found. Check the model ID.',
       errConnection: 'Could not reach the AI service.', errForbidden: 'Only a System Owner can run tests.',
+      errFormat: 'The request format or length is invalid. Shorten the message or reset.',
       modelSelect: 'Select model', modelPlaceholder: 'Pick or type a model ID', modelOpenList: 'Open model list', modelLoading: 'Loading models…',
       modelLoadFailed: 'Could not load the model list. You can type one.', modelRetry: 'Retry', modelEmpty: 'No models. You can type one.',
       modelNoMatch: 'No matching model. The typed value is used as is.',

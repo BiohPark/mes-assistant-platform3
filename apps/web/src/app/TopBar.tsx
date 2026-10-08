@@ -54,7 +54,7 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
       {actions}
       {!requesterOnly && <Button variant="ghost" size="icon-sm" aria-label={t('common.openAssistant')} onClick={() => setAssistantOpen(true)}><Sparkles /></Button>}
       {!requesterOnly && <NotificationBell />}
-      {isOwner && llmStatus.data && <Link to="/admin/diagnostics" aria-label={t('admin.diagnostics.open')} className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">{llmStatus.data.mode === 'mock' ? 'Mock' : 'Live'}</Link>}
+      {isOwner && llmStatus.data && <Link to="/admin/diagnostics" aria-label={t('admin.diagnostics.badge', { mode: llmStatus.data.mode === 'mock' ? 'Mock' : 'Live' })} className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">{llmStatus.data.mode === 'mock' ? 'Mock' : 'Live'}</Link>}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="sm" className="gap-2 pl-1.5">

@@ -133,7 +133,7 @@ export const ko = {
       testConnection: '연결 시험', testing: '시험 중…', modelsLine: '모델 목록: {result}', completionLine: '응답: {result}',
       resultOk: '성공 · {detail} · {ms} ms', resultFail: '실패 · {error}', testFailed: '연결 시험을 실행하지 못했습니다 ({status})',
       envGuide: '주소·모드·키는 서버 .env(LLM_MODE · LLM_PRESET · LLM_BASE_URL · LLM_API_KEY · LLM_DEFAULT_MODEL)에서 바꾸고 서비스를 재시작합니다. 이 화면에서는 표시와 연결 시험만 합니다.',
-      open: '연결 진단 열기', testChat: '시험 대화',
+      open: '연결 진단 열기', badge: '{mode} · 연결 진단 열기', testChat: '시험 대화',
     },
     test: {
       model: '모델', defaultModel: '기본 모델', notice: '업무 맥락 없이 모델에 직접 보냅니다. 상위 서비스가 자체 기록할 수 있습니다.',
@@ -143,6 +143,7 @@ export const ko = {
       errTooLarge: '요청이 크기 한도를 넘었습니다.', errBusy: '동시 요청이 많습니다. 잠시 후 다시 시도하세요.', errTimeout: '응답 시간을 초과했습니다.',
       errResponseTooLarge: '응답이 크기 한도를 넘었습니다.', errModelMissing: '모델을 찾을 수 없습니다. 모델 ID를 확인하세요.',
       errConnection: 'AI 서비스에 연결하지 못했습니다.', errForbidden: 'System Owner만 시험할 수 있습니다.',
+      errFormat: '요청 형식이나 길이가 맞지 않습니다. 메시지를 줄이거나 초기화하세요.',
       modelSelect: '모델 선택', modelPlaceholder: '모델 ID 선택 또는 입력', modelOpenList: '모델 목록 열기', modelLoading: '모델 목록을 불러오는 중…',
       modelLoadFailed: '모델 목록을 불러오지 못했습니다. 직접 입력할 수 있습니다.', modelRetry: '다시 시도', modelEmpty: '모델이 없습니다. 직접 입력할 수 있습니다.',
       modelNoMatch: '일치하는 모델이 없습니다. 입력한 값을 그대로 씁니다.',

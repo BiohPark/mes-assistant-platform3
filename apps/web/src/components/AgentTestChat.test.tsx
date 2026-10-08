@@ -78,6 +78,7 @@ describe('AgentTestChat', () => {
     [502, 'RESPONSE_TOO_LARGE', '응답이 크기 한도를 넘었습니다.'],
     [502, 'PROVIDER_ERROR', 'AI 서비스에 연결하지 못했습니다.'],
     [403, undefined, 'System Owner만 시험할 수 있습니다.'],
+    [400, undefined, '요청 형식이나 길이가 맞지 않습니다. 메시지를 줄이거나 초기화하세요.'],
   ])('실패 %s %s는 분류된 안내와 연결 진단 링크를 보여주고 입력을 되돌린다', async (status, code, text) => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(status, { message: '서버 문구', ...(code ? { code } : {}) })))
     renderWithProviders(<AgentTestChat modelId="m" />)
@@ -95,6 +96,19 @@ describe('AgentTestChat', () => {
     send()
     expect(await screen.findByRole('alert')).toHaveTextContent('AI 서비스에 연결하지 못했습니다.')
     expect(screen.queryByRole('link', { name: '연결 진단 열기' })).not.toBeInTheDocument()
+  })
+
+  it('화면을 떠나면 진행 중인 시험 호출을 끊는다', async () => {
+    let seen: AbortSignal | undefined
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => { seen = init.signal ?? undefined; return new Promise<Response>((_, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    }) }))
+    const { unmount } = renderWithProviders(<AgentTestChat modelId="m" />)
+    type('질문')
+    send()
+    await waitFor(() => expect(seen).toBeDefined())
+    unmount()
+    expect(seen?.aborted).toBe(true)
   })
 
   it('메시지 20개에 닿으면 전송을 막고 초기화를 안내한다', async () => {
