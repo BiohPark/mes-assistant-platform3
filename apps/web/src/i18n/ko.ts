@@ -407,6 +407,14 @@ export const ko = {
     markAllRead: '모두 읽음',
     noNotifications: '알림이 없습니다.',
   },
+  routeError: {
+    title: '화면을 표시할 수 없습니다',
+    description: '문제가 계속되면 관리자에게 알려 주세요.',
+    staleTitle: '새 버전이 있습니다',
+    staleDescription: '앱이 업데이트되어 이전 화면을 불러올 수 없습니다. 새로고침하면 새 버전으로 계속합니다.',
+    reload: '새로고침',
+    home: '홈으로',
+  },
   nav: {
     requests: '요청', work: '업무',
     hub: '에이전트 허브',

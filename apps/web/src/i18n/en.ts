@@ -409,6 +409,14 @@ export const en = {
     markAllRead: 'Mark all read',
     noNotifications: 'No notifications.',
   },
+  routeError: {
+    title: 'This page could not be displayed',
+    description: 'If this continues, contact your administrator.',
+    staleTitle: 'A new version is available',
+    staleDescription: 'The app was updated and the previous page could not be loaded. Reload to continue with the new version.',
+    reload: 'Reload',
+    home: 'Go home',
+  },
   nav: {
     requests: 'Requests', work: 'Work',
     hub: 'Agent Hub',
