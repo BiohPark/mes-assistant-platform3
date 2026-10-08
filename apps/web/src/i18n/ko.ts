@@ -55,6 +55,12 @@ export const ko = {
     unknownUser: '알 수 없음',
   },
   hub: {
+    noMatchingConversations: '조건에 맞는 대화가 없습니다',
+    level1Filter: '업무 Lv1', selectedCount: '선택됨 {count}', clearSearch: '검색어 지우기', clearFilters: '필터 {count}개 초기화',
+    manageAgents: '에이전트 관리', editAgent: '편집', editAgentLabel: '{name} 편집',
+    myActiveConversations: '내 진행 중 대화', noMyActiveConversations: '진행 중인 대화가 없습니다',
+    inputs: '입력', outputs: '출력', noIo: '미설정', addValue: '추가',
+
     level2Filter: '업무 Lv2',
     viewSwitch: '보기 전환', assistantCards: '에이전트 카드', conversationKanban: '전체 대화 칸반',
     noAssistants: '등록된 에이전트가 없습니다', noMatchingAssistants: '조건에 맞는 에이전트가 없습니다',
@@ -110,10 +116,15 @@ export const ko = {
     name: '이름', save: '저장', saveFailed: '저장 실패', changeFailed: '변경 실패', nameSaved: '이름을 저장했습니다',
     defaultModel: '기본 모델', fileMaxPerRequest: '첨부 개수 한도',
     manage: {
+      settingsTab: '설정', testTab: '시험 대화', paths: '분류 경로', primaryPath: '대표', addPath: '경로 추가',
+      pathLabel: '경로 {number}', pathUp: '경로 {number} 위로', pathDown: '경로 {number} 아래로', removePath: '경로 {number} 제거',
+      duplicatePaths: '같은 분류 경로를 중복해서 추가할 수 없습니다',
+      linkOverride: '기존 링크 재정의 있음', clearLink: '지우기', io: '입력 / 출력', defaultModelText: '기본 모델',
+
       defaultChecklist: { selectInputs: '입력 자료 선택', reviewResult: '결과 검토', saveOutput: '산출물 저장' },
       imageSaved: '이미지를 저장했습니다', imageSaveFailed: '이미지 저장 실패', imageDrop: '이미지 선택 또는 여기로 끌기', imageRemove: '이미지 제거',
       assistantSaved: '에이전트를 저장했습니다', editorLabel: '에이전트 편집', editTitle: '에이전트 수정', newAssistant: '새 에이전트',
-      summary: '설명', expectedInputs: '기대 입력 (줄마다 한 항목)', expectedOutputs: '기대 출력 (줄마다 한 항목)',
+      summary: '설명', expectedInputs: '기대 입력', expectedOutputs: '기대 출력',
       checklistDefaults: '체크리스트 기본값', checklistItem: '체크리스트 {number}', delete: '삭제', addItem: '항목 추가',
       deleteConfirm: '에이전트를 삭제할까요?', deleteFailed: '삭제 실패',
       assistant: '에이전트', category: '분류', actions: '관리', edit: '편집',

@@ -3,10 +3,12 @@ import { persist } from 'zustand/middleware'
 
 export interface HomeFilters {
   q: string
-  level1CodeId: string | null
-  level2CodeId: string | null
+  level1CodeIds: string[]
+  level2CodeIds: string[]
   showRetired: boolean
 }
+
+export const emptyHomeFilters = (): HomeFilters => ({ q: '', level1CodeIds: [], level2CodeIds: [], showRetired: false })
 
 interface UiState {
   homeFilters: HomeFilters
@@ -21,15 +23,22 @@ interface UiState {
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-      homeFilters: { q: '', level1CodeId: null, level2CodeId: null, showRetired: false },
-      // Lv1이 바뀌면 Lv2 선택은 무효
-      setHomeFilters: (patch) =>
-        set((s) => ({ homeFilters: { ...s.homeFilters, ...patch, level2CodeId: 'level1CodeId' in patch && patch.level1CodeId !== s.homeFilters.level1CodeId ? null : (patch.level2CodeId !== undefined ? patch.level2CodeId : s.homeFilters.level2CodeId) } })),
+      homeFilters: emptyHomeFilters(),
+      setHomeFilters: (patch) => set((s) => ({ homeFilters: { ...s.homeFilters, ...patch } })),
       kanbanCollapseEmpty: false,
       setKanbanCollapseEmpty: (kanbanCollapseEmpty) => set({ kanbanCollapseEmpty }),
       assistantOpen: false,
       setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
     }),
-    { name: 'mes-hub-ui', partialize: (s) => ({ homeFilters: s.homeFilters, kanbanCollapseEmpty: s.kanbanCollapseEmpty }) },
+    { name: 'mes-hub-ui', version: 1,
+      migrate: (stored) => {
+        const state = stored as { homeFilters?: Partial<HomeFilters> & { level1CodeId?: string | null; level2CodeId?: string | null }; kanbanCollapseEmpty?: boolean }
+        const old = state.homeFilters
+        return { kanbanCollapseEmpty: state.kanbanCollapseEmpty ?? false, homeFilters: {
+          q: old?.q ?? '', showRetired: old?.showRetired ?? false,
+          level1CodeIds: old?.level1CodeIds ?? (old?.level1CodeId ? [old.level1CodeId] : []),
+          level2CodeIds: old?.level2CodeIds ?? (old?.level2CodeId ? [old.level2CodeId] : []),
+        } }
+      }, partialize: (s) => ({ homeFilters: s.homeFilters, kanbanCollapseEmpty: s.kanbanCollapseEmpty }) },
   ),
 )

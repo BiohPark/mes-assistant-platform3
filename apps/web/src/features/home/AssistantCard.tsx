@@ -2,7 +2,8 @@ import { Link } from 'react-router'
 import { BookOpen, ExternalLink, MessageSquarePlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
-import { AssistantStatusBadge } from '@/components/StatusBadges'
+import { useMe } from '@/app/auth'
+import { AssistantStatusBadge, IoBadges } from '@/components/StatusBadges'
 import { UserAvatar } from '@/components/UserAvatar'
 import { assistantLink1 } from '@/lib/links'
 import { cn } from '@/lib/utils'
@@ -24,19 +25,20 @@ export function AssistantCardBody({ row, owner, dimmed }: { row: AssistantRow; o
   return (
     <>
       <div className={cn('pointer-events-none flex items-start justify-between', dimmed && 'opacity-60')}>
-        <AssistantAvatar assistant={a} size="lg" />
+        <AssistantAvatar assistant={a} size="md" />
         <AssistantStatusBadge status={a.status} />
       </div>
       <div className={cn('pointer-events-none min-w-0', dimmed && 'opacity-60')}>
         <div className="text-xs text-muted-foreground">
-          {a.level1} › {a.level2}
+          {a.level1} › {a.level2}{(a.classifications?.length ?? 1) > 1 && ` +${a.classifications!.length - 1}`}
         </div>
         <div className="truncate font-semibold" title={a.name}>
           {a.name}
         </div>
         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{a.summary}</p>
       </div>
-      <div className="pointer-events-none mt-auto flex items-center justify-between text-xs group-hover:invisible">
+      <div className="relative z-10 min-w-0"><IoBadges inputs={a.expectedInputs} outputs={a.expectedOutputs} compact /></div>
+      <div className="pointer-events-none mt-auto flex items-center justify-between text-xs group-hover:invisible group-focus-within:invisible [@media(hover:none)]:invisible">
         <span className="inline-flex items-center gap-1 text-muted-foreground">
           <span className="font-medium text-foreground">{row.activeCount}</span> {t('hub.active')}
           {row.overdueCount > 0 && <span className="text-red-600">{t('hub.overdue', { count: row.overdueCount })}</span>}
@@ -48,7 +50,7 @@ export function AssistantCardBody({ row, owner, dimmed }: { row: AssistantRow; o
   )
 }
 
-export const CARD_CLASS = 'group relative flex aspect-square flex-col gap-3 rounded-2xl border bg-card p-4 shadow-xs transition'
+export const CARD_CLASS = 'group relative flex min-h-56 flex-col gap-3 rounded-2xl border bg-card p-4 shadow-xs transition'
 
 /**
  * 카드 클릭 = 바로 대화할 준비(초안). 첫 전송 때 대화가 만들어진다.
@@ -56,6 +58,7 @@ export const CARD_CLASS = 'group relative flex aspect-square flex-col gap-3 roun
  */
 export function AssistantCard({ row, owner, baseUrl, link1Rule }: AssistantCardProps) {
   const t = useT()
+  const isOwner = useMe().roles.includes('system_owner')
   const a = row.assistant
   const link1 = assistantLink1(baseUrl, a, link1Rule)
   const retired = a.status === 'retired'
@@ -67,7 +70,7 @@ export function AssistantCard({ row, owner, baseUrl, link1Rule }: AssistantCardP
         <Link to={`/new/${encodeURIComponent(a.id)}`} className="absolute inset-0 rounded-2xl" aria-label={t('hub.newConversationWith', { name: a.name })} />
       )}
       <AssistantCardBody row={row} owner={owner} dimmed={retired} />
-      <div className="absolute inset-x-3 bottom-3 z-10 hidden gap-1 group-hover:flex group-focus-within:flex [@media(hover:none)]:flex">
+      <div className="absolute inset-x-3 bottom-3 z-10 hidden flex-wrap gap-1 group-hover:flex group-focus-within:flex [@media(hover:none)]:flex">
         {!retired && (
           <Button size="xs" variant="secondary" asChild>
             <Link to={`/new/${encodeURIComponent(a.id)}`}>
@@ -90,6 +93,7 @@ export function AssistantCard({ row, owner, baseUrl, link1Rule }: AssistantCardP
             </a>
           </Button>
         )}
+        {isOwner && <Button size="xs" variant="outline" asChild><Link to={`/assistants/manage?edit=${encodeURIComponent(a.id)}`} aria-label={t('hub.editAgentLabel', { name: a.name })}>{t('hub.editAgent')}</Link></Button>}
       </div>
     </div>
   )
