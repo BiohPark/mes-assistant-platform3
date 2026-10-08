@@ -60,7 +60,16 @@ function AssistantEditorSheet({ assistant, onClose, onSaved }: { assistant?: Ass
     if (!form.level1 || !form.level2) { toast.error(t('admin.codesRequired')); return }
     setBusy(true)
     try {
-      if (assistant) { const { id: _id, ...patch } = form; void _id; await updateAssistant(assistant.id, patch) }
+      if (assistant) {
+        const { id: _id, ...patch } = form; void _id
+        for (const level of ['level1', 'level2'] as const) {
+          if (patch[level] === assistant[level]) {
+            delete patch[level]
+            patch[`${level}CodeId`] = assistant[`${level}CodeId`]
+          }
+        }
+        await updateAssistant(assistant.id, patch)
+      }
       else await createAssistant(form)
       onSaved(); onClose(); toast.success('에이전트를 저장했습니다')
     } catch (error) { toast.error(error instanceof Error ? error.message : '저장 실패') }

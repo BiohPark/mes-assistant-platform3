@@ -99,6 +99,38 @@ it('새 에이전트는 ID 없이 생성하고 연결 모델을 직접 입력할
   expect(body).not.toHaveProperty('id')
 })
 
+it.each([false, true])('편집 저장은 바꾸지 않은 분류 ID를 보존하고 변경한 분류만 이름으로 보낸다: %s', async changeLevel1 => {
+  let body: Record<string, unknown> | undefined
+  const codes = [
+    { id: 'assistant_level1:MANUAL', groupKey: 'assistant_level1', code: 'MANUAL', name: 'SDLC', sortOrder: 0, active: true, isAuto: false },
+    { id: assistant.level1CodeId, groupKey: 'assistant_level1', code: 'SDLC', name: 'SDLC', sortOrder: 1, active: true, isAuto: true },
+  ]
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/codes?includeInactive=true') return jsonResponse(200, codes)
+    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
+    if (url === '/api/assistants/a' && init?.method === 'PATCH') { body = JSON.parse(String(init.body)); return jsonResponse(200, assistant) }
+    return jsonResponse(200, {})
+  }))
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  fireEvent.click(screen.getByRole('button', { name: '편집' }))
+  fireEvent.change(screen.getByLabelText('설명'), { target: { value: '설명만 수정' } })
+  if (changeLevel1) {
+    fireEvent.change(screen.getByRole('combobox', { name: '분류 1' }), { target: { value: '새 분류' } })
+    await screen.findByRole('option', { name: '새로 추가: 새 분류' })
+    fireEvent.keyDown(screen.getByRole('combobox', { name: '분류 1' }), { key: 'Enter' })
+  }
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+  await waitFor(() => expect(body).toMatchObject({ summary: '설명만 수정', level2CodeId: assistant.level2CodeId }))
+  expect(body).not.toHaveProperty('level2')
+  if (changeLevel1) {
+    expect(body).toHaveProperty('level1', '새 분류')
+    expect(body).not.toHaveProperty('level1CodeId')
+  } else {
+    expect(body).toHaveProperty('level1CodeId', assistant.level1CodeId)
+    expect(body).not.toHaveProperty('level1')
+  }
+})
+
 it('코드 탭은 두 분류 섹션·사용 수·자동 배지를 표시하고 추가 폼은 없다', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [
     { id: assistant.level1CodeId, groupKey: 'assistant_level1', code: 'SDLC', name: 'SDLC', sortOrder: 1, active: true, isAuto: false },

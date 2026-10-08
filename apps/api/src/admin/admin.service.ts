@@ -17,6 +17,7 @@ type AssistantInput = {
 }
 type AssistantPatch = Partial<Omit<AssistantInput, 'id'>>
 type SettingsPatch = Partial<{ defaultModel: string; fileDelivery: 'inline' | 'openwebui'; requestBudgetBytes: number; srIntakeAssistantId: string | null; link1Rule: string; fileMaxPerRequest: number }>
+const normalizeCodeName = (value: string) => value.trim().replace(/\s+/gu, ' ').normalize('NFC')
 const defaultChecklist = () => [
   { id: randomUUID(), label: '입력 자료 선택', required: true },
   { id: randomUUID(), label: '결과 검토', required: true },
@@ -34,18 +35,27 @@ export class AdminService {
     await tx.execute(sql`insert into db_lock (lock_key) values ('assistant-codes') on duplicate key update lock_key = lock_key`)
   }
   private async resolveCode(tx: Db, group: string, value: string) {
-    const name = value.trim().replace(/\s+/gu, ' ').normalize('NFC')
+    const name = normalizeCodeName(value)
     if (!name || name.length > 191) throw new BadRequestException('분류 이름은 1~191자여야 합니다')
     const find = async () => {
       const rows = await tx.select().from(code).where(eq(code.groupKey, group)).orderBy(asc(code.id)).for('update')
-      return rows.find(row => row.name.trim().replace(/\s+/gu, ' ').normalize('NFC').toLowerCase() === name.toLowerCase())
+      const matches = rows.filter(row => normalizeCodeName(row.name).toLowerCase() === name.toLowerCase())
+      if (matches.length > 1) throw new ConflictException('분류 이름에 해당하는 코드가 여러 개입니다')
+      return matches[0]
     }
     let row = await find()
     if (!row) {
-      const id = `${group}:${name}`
-      if (id.length > 191) throw new BadRequestException('코드 ID는 191자를 넘을 수 없습니다')
+      if (`${group}:${name}`.length > 191) throw new BadRequestException('코드 ID는 191자를 넘을 수 없습니다')
+      const existing = await tx.select({ id: code.id, key: code.code }).from(code).where(eq(code.groupKey, group)).for('update')
+      let key = name
+      let index = 0
+      while (existing.some(item => item.key === key || item.id === `${group}:${key}`)) {
+        const suffix = `-${++index}`
+        key = `${name.slice(0, 191 - group.length - 1 - suffix.length)}${suffix}`
+      }
+      const id = `${group}:${key}`
       try {
-        await tx.insert(code).values({ id, groupKey: group, code: name, name, isAuto: true })
+        await tx.insert(code).values({ id, groupKey: group, code: key, name, isAuto: true })
         return id
       } catch (error) {
         if (!isDuplicateKey(error)) throw error
@@ -60,8 +70,8 @@ export class AdminService {
     const refs: { level1CodeId?: string; level2CodeId?: string } = {}
     for (const level of ['level1', 'level2'] as const) {
       const field = `${level}CodeId` as const
-      if (input[level] !== undefined) refs[field] = await this.resolveCode(tx, `assistant_${level}`, input[level])
-      else if (input[field] !== undefined) refs[field] = input[field]
+      if (input[field] !== undefined) refs[field] = input[field]
+      else if (input[level] !== undefined) refs[field] = await this.resolveCode(tx, `assistant_${level}`, input[level])
     }
     return refs
   }
@@ -69,8 +79,9 @@ export class AdminService {
     for (const id of [...new Set(ids)].sort()) {
       const [row] = await tx.select().from(code).where(eq(code.id, id)).for('update')
       if (!row?.isAuto) continue
+      // 참조 변경은 assistant-codes 잠금으로 직렬화한다. 순서 저장과 assistant 행 잠금을 교차하지 않는다.
       const [linked] = await tx.select({ id: assistant.id }).from(assistant)
-        .where(or(eq(assistant.level1CodeId, id), eq(assistant.level2CodeId, id))).limit(1).for('update')
+        .where(or(eq(assistant.level1CodeId, id), eq(assistant.level2CodeId, id))).limit(1)
       if (!linked) await tx.delete(code).where(and(eq(code.id, id), eq(code.isAuto, true)))
     }
   }
@@ -237,19 +248,35 @@ export class AdminService {
   async codes(group?: string, includeInactive = false) {
     return this.db.select().from(code).where(and(group ? eq(code.groupKey, group) : undefined, includeInactive ? undefined : eq(code.active, true))).orderBy(asc(code.sortOrder), asc(code.id))
   }
+  private async uniqueCodeName(tx: Db, group: string, name: string, id?: string) {
+    const rows = await tx.select().from(code).where(eq(code.groupKey, group)).orderBy(asc(code.id)).for('update')
+    const key = normalizeCodeName(name).toLowerCase()
+    if (rows.some(row => row.id !== id && normalizeCodeName(row.name).toLowerCase() === key)) throw new ConflictException('이미 존재하는 분류 이름입니다')
+  }
   async createCode(input: { groupKey: string; code: string; name: string; sortOrder?: number }) {
-    const [group] = await this.db.select().from(codeGroup).where(eq(codeGroup.key, input.groupKey))
-    if (!group) throw new BadRequestException('정의되지 않은 코드 그룹입니다')
     const id = `${input.groupKey}:${input.code}`
     if (id.length > 191) throw new BadRequestException('코드 ID는 191자를 넘을 수 없습니다')
-    try { await this.db.insert(code).values({ id, ...input, sortOrder: input.sortOrder ?? 0 }) }
+    try {
+      return await this.db.transaction(async tx => {
+        await this.lockCodes(tx as Db)
+        const [group] = await tx.select().from(codeGroup).where(eq(codeGroup.key, input.groupKey))
+        if (!group) throw new BadRequestException('정의되지 않은 코드 그룹입니다')
+        await this.uniqueCodeName(tx as Db, input.groupKey, input.name)
+        await tx.insert(code).values({ id, ...input, sortOrder: input.sortOrder ?? 0 })
+        return (await tx.select().from(code).where(eq(code.id, id)))[0]
+      })
+    }
     catch (error) { if (isDuplicateKey(error)) throw new ConflictException('이미 존재하는 코드입니다'); throw error }
-    return (await this.db.select().from(code).where(eq(code.id, id)))[0]
   }
   async updateCode(id: string, patch: { name?: string; sortOrder?: number; active?: boolean }) {
-    const result = await this.db.update(code).set(patch).where(eq(code.id, id))
-    if (!result[0].affectedRows) throw new NotFoundException('코드를 찾을 수 없습니다')
-    return (await this.db.select().from(code).where(eq(code.id, id)))[0]
+    return this.db.transaction(async tx => {
+      await this.lockCodes(tx as Db)
+      const [row] = await tx.select().from(code).where(eq(code.id, id)).for('update')
+      if (!row) throw new NotFoundException('코드를 찾을 수 없습니다')
+      if (patch.name !== undefined) await this.uniqueCodeName(tx as Db, row.groupKey, patch.name, id)
+      await tx.update(code).set(patch).where(eq(code.id, id))
+      return (await tx.select().from(code).where(eq(code.id, id)))[0]
+    })
   }
 }
 
