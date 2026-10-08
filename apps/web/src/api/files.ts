@@ -19,6 +19,9 @@ export interface FileMeta {
 export interface FileCandidate {
   file: FileMeta
   sourceTaskId: string
+  /** 출처 대화의 코드·제목 — 화면에는 내부 ID 대신 이것을 보여 준다 */
+  sourceCode?: string
+  sourceTitle?: string
   sourceAssistantId?: string
   viaTags: string[]
   role: 'output' | 'upload'
