@@ -18,3 +18,10 @@ describe('catalog contracts', () => {
     expect(CodeSchema.parse({ id: 'assistant_level1:SDLC', groupKey: 'assistant_level1', code: 'SDLC', name: 'SDLC', sortOrder: 0, active: true }).code).toBe('SDLC')
   })
 })
+
+it('자동 코드 메타데이터를 보존하고 전환 기간 응답은 수동 코드로 해석한다', () => {
+  const legacy = { id: 'c', groupKey: 'assistant_level1', code: 'c', name: '분류', sortOrder: 0, active: true }
+  expect(CodeSchema.parse(legacy).isAuto).toBe(false)
+  expect(CodeSchema.parse({ ...legacy, isAuto: true }).isAuto).toBe(true)
+  expect(CodeSchema.safeParse({ ...legacy, isAuto: 'true' }).success).toBe(false)
+})

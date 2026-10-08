@@ -25,6 +25,6 @@ export const CatalogUserSchema = z.object({
 export type CatalogUser = z.infer<typeof CatalogUserSchema>
 
 export const CodeSchema = z.object({
-  id: z.string(), groupKey: z.string(), code: z.string(), name: z.string(), sortOrder: z.number().int(), active: z.boolean(),
+  id: z.string(), groupKey: z.string(), code: z.string(), name: z.string(), sortOrder: z.number().int(), active: z.boolean(), isAuto: z.boolean().default(false),
 })
 export type CatalogCode = z.infer<typeof CodeSchema>

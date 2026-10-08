@@ -48,6 +48,8 @@ export const en = {
     assistantInvalid: 'Choose an agent from the list',
   },
   admin: {
+    level1: 'Category 1', level2: 'Category 2', codesRequired: 'Enter both categories',
+    codeName: '{name} name', codeOrder: '{name} order', codeActive: 'Active', codeUsage: 'Used {count}', codeAuto: 'Auto', codeSaveFailed: 'Failed to save category code',
     createAssistantProposal: 'Register agent: {name} — {level1} › {level2}',
     createAssistantExample: 'Register an agent named Label Validation Helper, Record › Label',
     connectedModel: 'Connected model',

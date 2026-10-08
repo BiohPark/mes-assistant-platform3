@@ -7,16 +7,18 @@ import type { Assistant } from '@mes/contracts'
 import { toast } from 'sonner'
 import { TopBar } from '@/app/TopBar'
 import { useAssistants, useUsers } from '@/app/hooks'
+import { CodeInput } from '@/components/CodeInput'
+import { Chip } from '@/components/Chip'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { createAssistant, createCode, deleteAssistant, listManagedCodes, saveOrder, updateAssistant, updateCode, uploadImage, type AssistantInput } from '@/api/admin'
+import { createAssistant, deleteAssistant, listManagedCodes, saveOrder, updateAssistant, updateCode, uploadImage, type AssistantInput } from '@/api/admin'
 
-const empty = (ownerId: string): AssistantInput => ({ name: '', level1CodeId: '', level2CodeId: '', summary: '', ownerId,
+const empty = (ownerId: string): AssistantInput => ({ name: '', level1: '', level2: '', summary: '', ownerId,
   status: 'open', usageExample: '', modelId: '', link1: '', docUrl: '', expectedInputs: [], expectedOutputs: [],
   checklistTemplate: [['입력 자료 선택', true], ['결과 검토', true], ['산출물 저장', false]].map(([label, required]) => ({ id: newId(), label: String(label), required: Boolean(required) })) })
-const fromAssistant = (row: Assistant): AssistantInput => ({ id: row.id, name: row.name, level1CodeId: row.level1CodeId,
-  level2CodeId: row.level2CodeId, summary: row.summary, ownerId: row.ownerId, status: row.status,
+const fromAssistant = (row: Assistant): AssistantInput => ({ id: row.id, name: row.name, level1: row.level1,
+  level2: row.level2, summary: row.summary, ownerId: row.ownerId, status: row.status,
   usageExample: row.usageExample, modelId: row.modelId ?? '', link1: row.link1 ?? '', docUrl: row.docUrl ?? '',
   expectedInputs: row.expectedInputs, expectedOutputs: row.expectedOutputs, checklistTemplate: row.checklistTemplate })
 const lines = (value: string) => value.split('\n').map((line) => line.trim()).filter(Boolean)
@@ -40,11 +42,11 @@ function AssistantEditorSheet({ assistant, onClose, onSaved }: { assistant?: Ass
   const t = useT()
   const { models } = useModelList()
   const users = useUsers()
+  const assistants = useAssistants()
   const codes = useQuery({ queryKey: ['managed-codes'], queryFn: listManagedCodes }).data ?? []
   const [form, setForm] = useState<AssistantInput>(() => assistant ? fromAssistant(assistant) : empty(users[0]?.id ?? ''))
   const [busy, setBusy] = useState(false)
   useEffect(() => { if (!assistant && !form.ownerId && users[0]) setForm((current) => ({ ...current, ownerId: users[0]!.id })) }, [assistant, form.ownerId, users])
-  const codeOptions = (group: string) => codes.filter((item) => item.groupKey === group && (item.active || item.id === (group === 'assistant_level1' ? form.level1CodeId : form.level2CodeId)))
   function change<K extends keyof AssistantInput>(field: K, value: AssistantInput[K]) { setForm((current) => ({ ...current, [field]: value })) }
   function moveChecklist(index: number, step: -1 | 1) {
     const next = [...form.checklistTemplate]
@@ -54,9 +56,20 @@ function AssistantEditorSheet({ assistant, onClose, onSaved }: { assistant?: Ass
     change('checklistTemplate', next)
   }
   async function submit(event: FormEvent) {
-    event.preventDefault(); setBusy(true)
+    event.preventDefault()
+    if (!form.level1 || !form.level2) { toast.error(t('admin.codesRequired')); return }
+    setBusy(true)
     try {
-      if (assistant) { const { id: _id, ...patch } = form; void _id; await updateAssistant(assistant.id, patch) }
+      if (assistant) {
+        const { id: _id, ...patch } = form; void _id
+        for (const level of ['level1', 'level2'] as const) {
+          if (patch[level] === assistant[level]) {
+            delete patch[level]
+            patch[`${level}CodeId`] = assistant[`${level}CodeId`]
+          }
+        }
+        await updateAssistant(assistant.id, patch)
+      }
       else await createAssistant(form)
       onSaved(); onClose(); toast.success('에이전트를 저장했습니다')
     } catch (error) { toast.error(error instanceof Error ? error.message : '저장 실패') }
@@ -67,10 +80,11 @@ function AssistantEditorSheet({ assistant, onClose, onSaved }: { assistant?: Ass
       <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">{assistant ? '에이전트 수정' : '새 에이전트'}</h2><Button variant="ghost" onClick={onClose}>닫기</Button></div>
       <form onSubmit={(event) => void submit(event)} className="space-y-3 text-sm">
         <label className="block">이름<Input value={form.name} onChange={(event) => change('name', event.target.value)} required /></label>
-        {(['assistant_level1', 'assistant_level2'] as const).map((group) => <label key={group} className="block">{group === 'assistant_level1' ? '분류 1' : '분류 2'}
-          <select className="w-full rounded-lg border bg-background p-2" value={group === 'assistant_level1' ? form.level1CodeId : form.level2CodeId} required onChange={(event) => change(group === 'assistant_level1' ? 'level1CodeId' : 'level2CodeId', event.target.value)}>
-            <option value="">선택</option>{codeOptions(group).map((item) => <option key={item.id} value={item.id}>{item.name}{item.active ? '' : ' (비활성)'}</option>)}
-          </select></label>)}
+        {(['level1', 'level2'] as const).map((level) => <div key={level}>
+          <div className="mb-1">{t(level === 'level1' ? 'admin.level1' : 'admin.level2')}</div>
+          <CodeInput group={`assistant_${level}`} codes={codes} assistants={assistants} level1={form.level1}
+            value={form[level] ?? ''} onChange={value => change(level, value)} aria-label={t(level === 'level1' ? 'admin.level1' : 'admin.level2')} />
+        </div>)}
         <label className="block">담당자<select className="w-full rounded-lg border bg-background p-2" value={form.ownerId} required onChange={(event) => change('ownerId', event.target.value)}><option value="">선택</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
         <label className="block">상태<select className="w-full rounded-lg border bg-background p-2" value={form.status} onChange={(event) => change('status', event.target.value as AssistantInput['status'])}>{(['open', 'developing', 'testing', 'retired'] as const).map((value) => <option key={value} value={value}>{t(`status.assistant.${value}`)}</option>)}</select></label>
         <label className="block">{t('admin.connectedModel')}<Input list="assistant-models" value={form.modelId ?? ''} onChange={(event) => change('modelId', event.target.value)} /><datalist id="assistant-models">{models.map((model) => <option key={model} value={model} />)}</datalist></label>
@@ -103,13 +117,22 @@ function SortableAssistantGrid({ rows, onSaved }: { rows: Assistant[]; onSaved: 
 }
 
 function CodesPanel() {
+  const t = useT()
+  const client = useQueryClient()
+  const assistants = useAssistants()
   const query = useQuery({ queryKey: ['managed-codes'], queryFn: listManagedCodes })
-  const [groupKey, setGroup] = useState('assistant_level1')
-  const [code, setCode] = useState('')
-  const [name, setName] = useState('')
-  return <div className="space-y-3"><form className="flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); void createCode({ groupKey, code, name }).then(() => { setCode(''); setName(''); void query.refetch() }, (error: unknown) => toast.error(error instanceof Error ? error.message : '추가 실패')) }}><select className="rounded-lg border bg-background p-2" value={groupKey} onChange={(event) => setGroup(event.target.value)}><option value="assistant_level1">분류 1</option><option value="assistant_level2">분류 2</option></select><Input className="w-36" placeholder="코드" value={code} onChange={(event) => setCode(event.target.value)} required /><Input className="w-48" placeholder="이름" value={name} onChange={(event) => setName(event.target.value)} required /><Button>추가</Button></form>
-    {query.data?.map((item) => <div key={item.id} className="flex items-center gap-2 rounded-xl border p-2 text-sm"><span className="w-28 text-muted-foreground">{item.groupKey === 'assistant_level1' ? '분류 1' : '분류 2'}</span><span className="w-36 font-mono">{item.code}</span><Input defaultValue={item.name} key={`${item.id}-${item.name}`} onBlur={(event) => { if (event.target.value !== item.name) void updateCode(item.id, { name: event.target.value }).then(() => void query.refetch()) }} /><Input className="w-20" type="number" aria-label={`${item.code} 순서`} defaultValue={item.sortOrder} onBlur={(event) => { const sortOrder = Number(event.target.value); if (sortOrder !== item.sortOrder) void updateCode(item.id, { sortOrder }).then(() => void query.refetch()) }} /><label className="flex items-center gap-1"><input type="checkbox" checked={item.active} onChange={(event) => void updateCode(item.id, { active: event.target.checked }).then(() => void query.refetch(), (error: unknown) => toast.error(error instanceof Error ? error.message : '변경 실패'))} />활성</label></div>)}
-  </div>
+  const save = (id: string, patch: Parameters<typeof updateCode>[1]) => void updateCode(id, patch).then(() => { void query.refetch(); void client.invalidateQueries({ queryKey: ['assistants'] }) },
+    (error: unknown) => toast.error(error instanceof Error ? error.message : t('admin.codeSaveFailed')))
+  return <div className="space-y-4">{(['assistant_level1', 'assistant_level2'] as const).map(group => <section key={group} className="space-y-2">
+    <h2 className="text-sm font-semibold">{t(group === 'assistant_level1' ? 'admin.level1' : 'admin.level2')}</h2>
+    {query.data?.filter(item => item.groupKey === group).map(item => <div key={item.id} className="flex flex-wrap items-center gap-2 rounded-xl border p-2 text-sm">
+      <Input className="min-w-32 flex-1" aria-label={t('admin.codeName', { name: item.name })} defaultValue={item.name} key={`${item.id}-${item.name}`} onBlur={event => { if (event.target.value !== item.name) save(item.id, { name: event.target.value }) }} />
+      <Input className="w-20" type="number" aria-label={t('admin.codeOrder', { name: item.name })} defaultValue={item.sortOrder} onBlur={event => { const sortOrder = Number(event.target.value); if (sortOrder !== item.sortOrder) save(item.id, { sortOrder }) }} />
+      <label className="flex items-center gap-1"><input type="checkbox" checked={item.active} onChange={event => save(item.id, { active: event.target.checked })} />{t('admin.codeActive')}</label>
+      <Chip label={t('admin.codeUsage', { count: assistants.filter(row => (group === 'assistant_level1' ? row.level1CodeId : row.level2CodeId) === item.id).length })} />
+      {item.isAuto && <Chip label={t('admin.codeAuto')} />}
+    </div>)}
+  </section>)}</div>
 }
 
 export function ManagePage() {
@@ -121,7 +144,7 @@ export function ManagePage() {
   const [search, setSearch] = useState('')
   const sorted = [...rows].sort((a, b) => a.order - b.order)
   const filtered = sorted.filter((row) => `${row.name} ${row.level1} ${row.level2}`.toLowerCase().includes(search.toLowerCase()))
-  const refresh = () => { void client.invalidateQueries({ queryKey: ['assistants'] }) }
+  const refresh = () => { void client.invalidateQueries({ queryKey: ['assistants'] }); void client.invalidateQueries({ queryKey: ['managed-codes'] }) }
   useEffect(() => { if (editor === 'new' && users.length === 0) void client.invalidateQueries({ queryKey: ['users'] }) }, [editor, users.length, client])
   return <><TopBar title="에이전트 관리" actions={<Button size="sm" onClick={() => setEditor('new')}>새 에이전트</Button>} /><div className="flex-1 space-y-4 overflow-auto p-4 lg:p-6"><div className="flex gap-2"><Button variant={tab === 'assistants' ? 'default' : 'outline'} onClick={() => setTab('assistants')}>에이전트</Button><Button variant={tab === 'codes' ? 'default' : 'outline'} onClick={() => setTab('codes')}>분류 코드</Button></div>{tab === 'codes' ? <CodesPanel /> : <><Input className="max-w-xs" placeholder="에이전트 검색" value={search} onChange={(event) => setSearch(event.target.value)} /><AssistantTable rows={filtered} onEdit={setEditor} onSaved={refresh} />{!search && <SortableAssistantGrid rows={sorted} onSaved={refresh} />}</>}</div>{editor && <AssistantEditorSheet key={editor === 'new' ? 'new' : editor.id} assistant={editor === 'new' ? undefined : editor} onClose={() => setEditor(null)} onSaved={refresh} />}</>
 }

@@ -180,13 +180,13 @@ paths:
       tags: [admin]
       summary: 코드 추가 (SO 전용, S4-2). 그룹은 시스템 정의 — 새 그룹은 만들 수 없다
       requestBody: { content: { application/json: { schema: { type: object, required: [groupKey, code, name], properties: { groupKey: { type: string }, code: { type: string }, name: { type: string }, sortOrder: { type: integer } } } } } }
-      responses: { '201': { description: 생성 }, '403': { $ref: '#/components/responses/Problem' } }
+      responses: { '201': { description: 생성 }, '403': { $ref: '#/components/responses/Problem' }, '409': { description: '코드 키 중복 또는 그룹 내 정규화 이름 충돌(비활성 코드 포함)' } }
     get:
       tags: [misc]
       summary: 코드 목록 (FR-63, D36 — active만; group으로 필터. includeInactive=true는 SO 전용)
       parameters: [{ name: group, in: query, schema: { type: string, description: 'code_group.key (예 assistant_level1)' } }]
       responses:
-        '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: object, required: [id, groupKey, code, name, sortOrder, active], properties: { id: { type: string }, groupKey: { type: string }, code: { type: string }, name: { type: string }, sortOrder: { type: integer }, active: { type: boolean } } } } } } }
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: object, required: [id, groupKey, code, name, sortOrder, active, isAuto], properties: { id: { type: string }, groupKey: { type: string }, code: { type: string }, name: { type: string }, sortOrder: { type: integer }, active: { type: boolean }, isAuto: { type: boolean, description: 자동 생성 여부. 기존·수동 코드는 false } } } } } } }
   /codes/manage:
     get:
       tags: [admin]
@@ -196,10 +196,10 @@ paths:
   /codes/{codeId}:
     patch:
       tags: [admin]
-      summary: 코드 수정 (SO 전용) — 이름·순서·활성. 삭제 없음(참조 무결성). 비활성 코드는 새 선택 불가
+      summary: 코드 수정 (SO 전용) — 이름·순서·활성. 수동 삭제 없음(참조 무결성). 비활성 코드 ID는 새 선택 불가하고 이름 입력은 재활성
       parameters: [{ name: codeId, in: path, required: true, schema: { type: string } }]
       requestBody: { content: { application/json: { schema: { type: object, properties: { name: { type: string }, sortOrder: { type: integer }, active: { type: boolean } } } } } }
-      responses: { '204': { description: 변경됨 } }
+      responses: { '204': { description: 변경됨 }, '409': { description: '그룹 내 다른 코드와 정규화 이름 충돌(비활성 코드 포함)' } }
   /assistants/{assistantId}/image:
     post:
       tags: [assistants]
@@ -842,16 +842,21 @@ components:
       allOf:
         - $ref: '#/components/schemas/AssistantPatch'
         - type: object
-          required: [name, level1CodeId, level2CodeId, summary, ownerId, status, usageExample, expectedInputs, expectedOutputs]
+          required: [name, summary, ownerId, status, usageExample, expectedInputs, expectedOutputs]
+          allOf:
+            - anyOf: [{ required: [level1] }, { required: [level1CodeId] }]
+            - anyOf: [{ required: [level2] }, { required: [level2CodeId] }]
           properties:
             id: { type: string, minLength: 1, maxLength: 191, description: '선택. 생략 시 서버 생성(a- + 무작위 12자리 hex). 기존 ID는 유지.' }
     AssistantPatch:
       type: object
-      description: 부분 수정. 내부 ID는 변경 불가. 생략한 필드는 유지.
+      description: '부분 수정. 내부 ID는 변경 불가. 생략한 필드는 유지. level1·level2 이름은 trim·연속 공백 1개·NFC로 정규화하고 그룹 내 대소문자 무시 비교한다. 같은 트랜잭션에서 기존 코드 조회·재활성 또는 자동 생성하고 분류 변경·삭제 후 미참조 자동 코드만 정리한다. 이름과 ID를 함께 주면 ID가 우선하며 이름을 재매칭하지 않는다. 이름에 일치하는 코드가 여러 행이면 409. 신규 코드 ID(group:정규화 이름)는 191자 이하이며 키 충돌 시 이름을 유지하고 키에 숫자 접미사를 붙인다. 접미사가 길이 한도를 넘으면 키 앞부분만 줄인다.'
       properties:
         name: { type: string, minLength: 1, maxLength: 1000 }
-        level1CodeId: { type: string, minLength: 1, maxLength: 191 }
-        level2CodeId: { type: string, minLength: 1, maxLength: 191 }
+        level1: { type: string, minLength: 1, maxLength: 191, description: 분류 1 이름 }
+        level2: { type: string, minLength: 1, maxLength: 191, description: 분류 2 이름 }
+        level1CodeId: { type: string, minLength: 1, maxLength: 191, description: '분류 1 코드 ID. 기존 참조 유지 시 비활성 코드도 허용.' }
+        level2CodeId: { type: string, minLength: 1, maxLength: 191, description: '분류 2 코드 ID. 기존 참조 유지 시 비활성 코드도 허용.' }
         summary: { type: string }
         ownerId: { type: string, minLength: 1, maxLength: 191 }
         status: { enum: [open, developing, testing, retired] }

@@ -96,7 +96,7 @@ it.each([undefined, 'legacy-id'])('에이전트 제안 ID는 선택이며 요약
   expect(proposal.invalidReason).toBeUndefined()
   expect(proposal.summary).toBe('에이전트 등록: 새 도우미 — Record › 라벨')
   expect(await applyProposal({ userId: 'u' }, proposal)).toMatchObject({ ok: true, link: '/assistants/manage' })
-  expect(body).toMatchObject({ name: '새 도우미', ownerId: 'u', level1CodeId: 'l1', level2CodeId: 'l2' })
+  expect(body).toMatchObject({ name: '새 도우미', ownerId: 'u', level1: 'Record', level2: '라벨' })
   if (id) expect(body?.id).toBe(id)
   else expect(body).not.toHaveProperty('id')
 })
@@ -105,4 +105,19 @@ it.each([undefined, 'legacy-id'])('에이전트 제안 ID는 선택이며 요약
 it('에이전트 등록 제안 요약은 영어 번역을 사용할 수 있다', () => {
   const proposal = toProposal({ id: 'create', name: 'create_assistant', arguments: '{"name":"Helper","level1":"Record","level2":"Label"}' }, createT('en'))
   expect(proposal.summary).toBe('Register agent: Helper — Record › Label')
+})
+
+it('새 분류 이름을 코드 사전 조회 없이 서버에 전달한다', async () => {
+  const calls: string[] = []
+  let body: Record<string, unknown> | undefined
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push(url)
+    if (url === '/api/catalog/users') return jsonResponse(200, [])
+    if (url === '/api/assistants' && init?.method === 'POST') { body = JSON.parse(String(init.body)); return jsonResponse(201, assistant) }
+    return jsonResponse(404)
+  }))
+  expect(await applyProposal({ userId: 'u' }, toProposal({ id: 'new', name: 'create_assistant', arguments: '{"name":"도우미","level1":"새 분류","level2":"새 하위"}' }))).toMatchObject({ ok: true })
+  expect(body).toMatchObject({ level1: '새 분류', level2: '새 하위' })
+  expect(body).not.toHaveProperty('level1CodeId')
+  expect(calls).not.toContain('/api/codes')
 })

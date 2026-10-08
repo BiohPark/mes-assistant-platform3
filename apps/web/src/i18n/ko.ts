@@ -46,6 +46,8 @@ export const ko = {
     assistantInvalid: '목록에서 에이전트를 선택하세요',
   },
   admin: {
+    level1: '분류 1', level2: '분류 2', codesRequired: '분류 1과 분류 2를 입력하세요',
+    codeName: '{name} 이름', codeOrder: '{name} 순서', codeActive: '활성', codeUsage: '사용 {count}', codeAuto: '자동', codeSaveFailed: '분류 코드 저장 실패',
     createAssistantProposal: '에이전트 등록: {name} — {level1} › {level2}',
     createAssistantExample: '에이전트 등록: 이름 라벨 검증 도우미, Record › 라벨',
     connectedModel: '연결 모델',
