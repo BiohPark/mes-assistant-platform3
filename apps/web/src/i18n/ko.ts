@@ -135,7 +135,7 @@ export const ko = {
       link1Rule: '링크1 기본 규칙 (주소에서 {modelId} 사용)', saveSettings: '설정 저장',
       userName: '{name} 이름', saveName: '이름 저장', usersRoles: '사용자·역할',
       issueConfirm: '{name}의 임시 비밀번호를 발급할까요?', issueFailed: '발급 실패', temporaryPassword: '임시 비밀번호', pendingChange: '변경 대기',
-      issuedPassword: '임시 비밀번호 (이번 화면에만 표시): ', openDiagnostics: '진단 화면 열기', loading: '설정을 불러오는 중…',
+      issuedPassword: '임시 비밀번호 (이번 화면에만 표시): ', openDiagnostics: '연결 진단 열기', aiSummary: 'AI 연결 요약', loading: '설정을 불러오는 중…',
     },
     password: {
       mismatch: '새 비밀번호가 일치하지 않습니다', mustChange: '비밀번호를 변경해야 계속할 수 있습니다',
@@ -416,14 +416,15 @@ export const ko = {
     home: '홈으로',
   },
   nav: {
-    requests: '요청', work: '업무',
+    requests: '요청', work: '업무', admin: '관리',
     hub: '에이전트 허브',
     sr: '내 SR 요청',
     reports: '리포트',
     srManage: 'SR 처리',
     assistants: '에이전트 관리',
-    settings: '설정',
-    diagnostics: '진단',
+    settings: '전역 설정',
+    users: '사용자 관리',
+    diagnostics: '연결 진단',
   },
   status: {
     task: { todo: '대기', in_progress: '진행 중', on_hold: '보류', done: '완료' },

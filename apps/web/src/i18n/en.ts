@@ -137,7 +137,7 @@ export const en = {
       link1Rule: 'Default Link 1 rule (use {modelId} in the URL)', saveSettings: 'Save settings',
       userName: '{name} name', saveName: 'Save name', usersRoles: 'Users & roles',
       issueConfirm: 'Issue a temporary password for {name}?', issueFailed: 'Failed to issue password', temporaryPassword: 'Temporary password', pendingChange: 'Change pending',
-      issuedPassword: 'Temporary password (shown only on this screen): ', openDiagnostics: 'Open diagnostics', loading: 'Loading settings…',
+      issuedPassword: 'Temporary password (shown only on this screen): ', openDiagnostics: 'Open connection check', aiSummary: 'AI connection summary', loading: 'Loading settings…',
     },
     password: {
       mismatch: 'New passwords do not match', mustChange: 'You must change your password to continue',
@@ -418,14 +418,15 @@ export const en = {
     home: 'Go home',
   },
   nav: {
-    requests: 'Requests', work: 'Work',
+    requests: 'Requests', work: 'Work', admin: 'Admin',
     hub: 'Agent Hub',
     sr: 'My SR requests',
     reports: 'Reports',
     srManage: 'SR inbox',
     assistants: 'Manage agents',
-    settings: 'Settings',
-    diagnostics: 'Diagnostics',
+    settings: 'Global settings',
+    users: 'User management',
+    diagnostics: 'Connection check',
   },
   status: {
     task: { todo: 'Pending', in_progress: 'In progress', on_hold: 'On hold', done: 'Done' },
