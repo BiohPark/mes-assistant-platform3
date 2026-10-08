@@ -1,4 +1,4 @@
-import { AssistantSchema, CodeSchema, ProfileSchema, type Assistant, type ProfilePatch } from '@mes/contracts'
+import { AssistantSchema, CodeSchema, ProfileSchema, type Assistant, type ClassificationInput, type ProfilePatch } from '@mes/contracts'
 
 export async function adminRequest(path: string, method: string, body?: unknown) {
   const response = await fetch(`/api/${path}`, { method, credentials: 'same-origin',
@@ -11,7 +11,7 @@ export async function adminRequest(path: string, method: string, body?: unknown)
   return response.status === 204 ? undefined : response.json() as Promise<unknown>
 }
 export type AssistantInput = Pick<Assistant, 'name' | 'summary' | 'ownerId' | 'status' | 'usageExample' | 'expectedInputs' | 'expectedOutputs' | 'checklistTemplate'> & {
-  id?: string; level1?: string; level2?: string; level1CodeId?: string; level2CodeId?: string; modelId?: string | null; link1?: string | null; docUrl?: string | null
+  classifications?: ClassificationInput[]; id?: string; level1?: string; level2?: string; level1CodeId?: string; level2CodeId?: string; modelId?: string | null; link1?: string | null; docUrl?: string | null
 }
 export const createAssistant = async (input: AssistantInput) => AssistantSchema.parse(await adminRequest('assistants', 'POST', input))
 export const updateAssistant = async (id: string, patch: Partial<Omit<AssistantInput, 'id'>>) => AssistantSchema.parse(await adminRequest(`assistants/${encodeURIComponent(id)}`, 'PATCH', patch))

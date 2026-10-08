@@ -23,8 +23,8 @@ interface CodeInputProps {
 export function CodeInput({ group, codes, assistants, level1 = '', value, onChange, ...props }: CodeInputProps) {
   const t = useT()
   const options = useMemo(() => codes.filter(item => item.groupKey === group && item.active).map(item => {
-    const used = assistants.filter(row => (group === 'assistant_level1' ? row.level1CodeId : row.level2CodeId) === item.id)
-    const together = group === 'assistant_level2' && level1 ? used.filter(row => key(row.level1) === key(level1)).length : 0
+    const used = assistants.filter(row => (row.classifications ?? [row]).some(path => (group === 'assistant_level1' ? path.level1CodeId : path.level2CodeId) === item.id))
+    const together = group === 'assistant_level2' && level1 ? used.filter(row => (row.classifications ?? [row]).some(path => path.level2CodeId === item.id && key(path.level1) === key(level1))).length : 0
     return { item, count: used.length, together }
   }).sort((a, b) => b.together - a.together || b.count - a.count || a.item.sortOrder - b.item.sortOrder || a.item.id.localeCompare(b.item.id))
     .map(({ item, count }): Option => ({ value: normalize(item.name), label: normalize(item.name), hint: t('admin.codeUsage', { count }) })), [group, codes, assistants, level1, t])

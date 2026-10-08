@@ -42,7 +42,7 @@ it('서랍을 닫으면 진행 중인 요청의 신호를 중단한다', async (
 it('에이전트 등록 예시와 제안 인자에서 내부 ID를 표시하지 않는다', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/system-assistant/model'
     ? Response.json({ mode: 'mock', model: 'mock' })
-    : Response.json({ text: '확인하세요', toolCalls: [{ id: 'create', name: 'create_assistant', arguments: '{"id":"internal-agent-uuid","name":"새 도우미","level1":"Record","level2":"라벨"}' }] })))
+    : Response.json({ text: '확인하세요', toolCalls: [{ id: 'create', name: 'create_assistant', arguments: '{"id":"internal-agent-uuid","name":"새 도우미","classifications":[{"level1":"Record","level2":"라벨"}]}' }] })))
   useUiStore.getState().setAssistantOpen(true)
   renderWithProviders(<SystemAssistantDrawer />)
   const drawer = screen.getByRole('dialog', { name: '시스템 assistant' }) // Sheet는 portal에 그려져 container 밖이다
