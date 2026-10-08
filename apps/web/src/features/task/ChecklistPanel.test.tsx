@@ -58,3 +58,24 @@ it('restores the submitted item when adding fails', async () => {
   await waitFor(() => expect(input).toHaveValue('근거 확인'))
   expect(input).toBeEnabled()
 })
+
+it('renders each item as a checkbox named by its label and toggles it on the server', async () => {
+  const calls: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'PATCH') calls.push(url)
+    return jsonResponse(200, [])
+  }))
+  const checklist = [{ id: 'c1', label: '근거 확인', required: true, checked: false }, { id: 'c2', label: '승인 확인', required: false, checked: true, checkedBy: 'u', checkedAt: '2026-01-01T00:00:00.000Z' }]
+  renderWithProviders(<ChecklistPanel task={{ ...task, checklist }} />)
+  const first = screen.getByRole('checkbox', { name: '근거 확인' })
+  expect(first).not.toBeChecked()
+  expect(screen.getByRole('checkbox', { name: '승인 확인' })).toBeChecked()
+  fireEvent.click(first)
+  await waitFor(() => expect(calls).toContain('/api/tasks/t/checklist/c1'))
+})
+
+it('locks the item checkboxes when the task is done', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  renderWithProviders(<ChecklistPanel task={{ ...task, status: 'done', checklist: [{ id: 'c1', label: '근거 확인', required: false, checked: false }] }} />)
+  expect(screen.getByRole('checkbox', { name: '근거 확인' })).toBeDisabled()
+})

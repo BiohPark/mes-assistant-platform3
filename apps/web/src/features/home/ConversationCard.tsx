@@ -41,10 +41,10 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
     >
       <Link to={`/c/${task.id}`} className="absolute inset-0 rounded-xl" aria-label={t('hub.openConversation', { code: task.code, title: task.title })} />
       <div className="pointer-events-none flex items-center gap-1.5 text-xs text-muted-foreground">
-        <span className="font-mono">{task.code}</span>
-        <TaskStatusBadge status={task.status} className="h-5 px-1.5 text-[11px]" />
-        {task.titleSource === 'ai' && <Sparkles className="size-2.5 text-violet-500" aria-label={t('hub.aiTitle')} />}
-        <span className="ml-auto">{formatRelative(task.lastActivityAt)}</span>
+        <span className="shrink-0 font-mono whitespace-nowrap">{task.code}</span>
+        <TaskStatusBadge status={task.status} className="h-5 shrink-0 px-1.5 text-[11px]" />
+        {task.titleSource === 'ai' && <Sparkles className="size-2.5 shrink-0 text-violet-500" aria-label={t('hub.aiTitle')} />}
+        <span className="ml-auto min-w-0 truncate">{formatRelative(task.lastActivityAt)}</span>
       </div>
       <div className="pointer-events-none mt-1 line-clamp-2 text-[13px] leading-snug font-medium">{task.title}</div>
       {task.tags.length > 0 && (

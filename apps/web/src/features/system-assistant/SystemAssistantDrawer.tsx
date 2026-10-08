@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
 import { ArrowRight, Bot, Check, Sparkles, Trash2, Wrench, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Markdown } from '@/components/Markdown'
 import { Composer } from '@/features/chat/Composer'
 import { useActor } from '@/app/hooks'
@@ -37,16 +38,12 @@ export function SystemAssistantDrawer() {
   const [applying, setApplying] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  /** 서랍은 SheetTrigger가 아니라 TopBar 버튼(setAssistantOpen)으로 열린다 — 닫힐 때 돌아갈 요소를 직접 기억한다 */
+  const openerRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight }, [messages])
   useEffect(() => { if (!open) abortRef.current?.abort() }, [open])
   useEffect(() => () => abortRef.current?.abort(), [])
-  useEffect(() => {
-    if (!open) return
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
-    window.addEventListener('keydown', close)
-    return () => window.removeEventListener('keydown', close)
-  }, [open, setOpen])
 
   async function send(text: string) {
     if (waiting || !text.trim()) return
@@ -78,9 +75,10 @@ export function SystemAssistantDrawer() {
     } finally { setApplying(null) }
   }
 
-  if (!open) return null
-  return <div className="fixed inset-0 z-50 bg-black/30" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false) }}>
-    <aside role="dialog" aria-modal="true" aria-label={t('systemAssistant.title')} className="ml-auto flex h-full w-full flex-col bg-background shadow-xl sm:max-w-md">
+  return <Sheet open={open} onOpenChange={setOpen}>
+    <SheetContent aria-label={t('systemAssistant.title')} aria-describedby={undefined} showCloseButton={false} className="w-full gap-0 overflow-hidden p-0 sm:max-w-md"
+      onOpenAutoFocus={() => { openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null }}
+      onCloseAutoFocus={(event) => { event.preventDefault(); openerRef.current?.focus(); openerRef.current = null }}>
       <div className="border-b px-4 py-3">
         <div className="flex items-center gap-2 text-sm font-semibold"><span className="flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground"><Sparkles className="size-3.5" /></span>{t('systemAssistant.title')}
           <span className="ml-auto text-xs font-normal text-muted-foreground">{model.data ? model.data.mode === 'mock' ? t('systemAssistant.mockMode') : model.data.model : ''}</span>
@@ -110,6 +108,6 @@ export function SystemAssistantDrawer() {
       </div>
       {messages.length > 0 && <div className="flex justify-end px-4 pb-1"><Button variant="ghost" size="xs" onClick={() => setMessages([])}><Trash2 />{t('systemAssistant.clear')}</Button></div>}
       <Composer streaming={waiting} onSend={async (text) => send(text)} onStop={() => abortRef.current?.abort()} placeholder={t('systemAssistant.placeholder')} allowAttachments={false} clearOnSubmit />
-    </aside>
-  </div>
+    </SheetContent>
+  </Sheet>
 }

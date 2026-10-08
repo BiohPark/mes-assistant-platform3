@@ -58,3 +58,35 @@ it('uses the current selection for a manually written summary', async () => {
   expect(body.summary.messageIds).toEqual(['m1'])
   expect(calls.some(([url]) => url.endsWith('/summary-draft'))).toBe(false)
 })
+
+it('offers the main-input choice as a switch and sends weight main when on', async () => {
+  const calls: Array<[string, RequestInit | undefined]> = []
+  renderPicker(calls)
+  await waitFor(() => expect(calls.some(([url]) => url === '/api/threads/h/messages')).toBe(true))
+  const main = screen.getByRole('switch', { name: '★ 주 입력' })
+  expect(main).not.toBeChecked()
+  fireEvent.click(main)
+  expect(main).toBeChecked()
+  fireEvent.click(screen.getByRole('button', { name: '적용' }))
+  await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t/conversation-inputs/source' && init?.method === 'PUT')).toBe(true))
+  const body = JSON.parse(String(calls.find(([url, init]) => url === '/api/tasks/t/conversation-inputs/source' && init?.method === 'PUT')![1]?.body))
+  expect(body).toMatchObject({ mode: 'full', weight: 'main' })
+})
+
+it('selects a message range with shift-click on the message checkboxes', async () => {
+  const calls: Array<[string, RequestInit | undefined]> = []
+  renderPicker(calls)
+  await waitFor(() => expect(calls.some(([url]) => url === '/api/threads/h/messages')).toBe(true))
+  fireEvent.click(screen.getByRole('tab', { name: '메시지 선택' }))
+  const first = await screen.findByRole('checkbox', { name: '1번째 메시지 선택' })
+  const second = screen.getByRole('checkbox', { name: '2번째 메시지 선택' })
+  expect(first).toBeChecked()
+  expect(second).toBeChecked()
+  fireEvent.click(screen.getByRole('button', { name: '해제' }))
+  expect(first).not.toBeChecked()
+  fireEvent.click(first)
+  fireEvent.click(second, { shiftKey: true })
+  expect(first).toBeChecked()
+  expect(second).toBeChecked()
+  expect(screen.getByText(/2\/2개/)).toBeInTheDocument()
+})

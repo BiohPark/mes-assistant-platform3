@@ -45,3 +45,20 @@ it('SO에게 모든 메뉴를 보인다', async () => {
     expect(await screen.findByRole('link', { name })).toBeInTheDocument()
   }
 })
+
+it('활성 메뉴는 accent 배경, 나머지 메뉴는 같은 스타일을 쓴다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/me'
+    ? jsonResponse(200, { id: 'owner', name: '관리자', role: '', roles: ['member', 'requester', 'system_owner'], theme: 'system' as const, locale: 'ko' as const })
+    : jsonResponse(200, [])))
+  renderWithProviders(<AppShell />)
+  const hub = await screen.findByRole('link', { name: '에이전트 허브' })
+  expect(hub).toHaveAttribute('aria-current', 'page')
+  expect(hub).toHaveClass('bg-accent')
+  for (const name of ['내 SR 요청', '리포트', 'SR 처리', '에이전트 관리', '설정', '진단']) {
+    const link = screen.getByRole('link', { name })
+    expect(link).not.toHaveClass('bg-accent')
+    expect(link).toHaveClass('rounded-lg')
+    expect(link).toHaveAttribute('title', name)
+  }
+  expect(hub.closest('aside')).toHaveClass('bg-sidebar')
+})

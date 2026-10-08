@@ -53,6 +53,22 @@ describe('web 정적 제공', () => {
     expect(missingApi.headers['content-type']).toMatch(/json/)
   })
 
+  it('HEAD는 GET과 같은 상태·헤더로 응답하고 본문만 비운다', async () => {
+    writeFileSync(join(dist, 'assets', 'x-12345678.js'), 'window.x = 1')
+    const client = await start(dist)
+    for (const path of ['/', '/c/abc']) {
+      const response = await client.head(path).expect(200)
+      expect(response.headers['content-type']).toMatch(/html/)
+      expect(response.headers['cache-control']).toBe('no-cache')
+      expect(response.headers['content-security-policy']).toContain("default-src 'self'")
+      expect(response.text ?? '').toBe('')
+    }
+    const asset = await client.head('/assets/x-12345678.js').expect(200)
+    expect(asset.headers['cache-control']).toMatch(/max-age=31536000/)
+    await client.head('/api/missing').expect(404)
+    await client.post('/').expect(404)
+  })
+
   it('공통 보안 헤더와 index CSP를 제공한다', async () => {
     const client = await start(dist)
     const page = await client.get('/c/abc').expect(200)

@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { NavLink, Outlet } from 'react-router'
 import { LayoutGrid, Boxes, Settings, Bot, Send, Inbox, BarChart3, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -12,7 +13,19 @@ import { useT } from '@/i18n'
 
 function LiveEvents() { useEvents(); return null }
 
-const NAV = [{ to: '/', label: 'nav.hub', icon: LayoutGrid, end: true }] as const
+type Roles = ReadonlyArray<string>
+const member = (roles: Roles) => !roles.includes('requester') || roles.includes('system_owner')
+const owner = (roles: Roles) => roles.includes('system_owner')
+/** 사이드바 메뉴 한 배열. section 머리말은 첫 항목 앞에만 붙고, show가 없으면 모두에게 보인다 */
+const NAV = [
+  { to: '/', label: 'nav.hub', icon: LayoutGrid, end: true, section: 'nav.work', show: member },
+  { to: '/sr/manage', label: 'nav.srManage', icon: Inbox, section: 'nav.work', show: member },
+  { to: '/reports', label: 'nav.reports', icon: BarChart3, section: 'nav.work', show: member },
+  { to: '/sr', label: 'nav.sr', icon: Send, end: true, section: 'nav.requests' },
+  { to: '/assistants/manage', label: 'nav.assistants', icon: Bot, section: 'nav.requests', show: owner },
+  { to: '/settings', label: 'nav.settings', icon: Settings, section: 'nav.requests', show: owner },
+  { to: '/admin/diagnostics', label: 'nav.diagnostics', icon: Activity, section: 'nav.requests', show: owner },
+] as const
 
 export function AppShell() {
   return (
@@ -31,7 +44,7 @@ function AppContent() {
     <>
       {!requesterOnly && <LiveEvents />}
         <div className="flex h-full bg-muted/30">
-          <aside className="flex w-14 shrink-0 flex-col items-center border-r bg-sidebar py-3 lg:w-52 lg:items-stretch lg:px-3">
+          <aside className="flex w-14 shrink-0 flex-col items-center border-r border-sidebar-border bg-sidebar py-3 text-sidebar-foreground lg:w-52 lg:items-stretch lg:px-3">
             <div className="mb-4 flex items-center gap-2 px-1 lg:px-1">
               <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <Boxes className="size-4" />
@@ -42,33 +55,25 @@ function AppContent() {
               </div>
             </div>
             <nav className="flex flex-col gap-1">
-              {!requesterOnly && <p className="hidden px-2 text-xs text-muted-foreground lg:block">{t('nav.work')}</p>}
-              {!requesterOnly && NAV.map(({ to, label, icon: Icon, end }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end={end}
-                  title={t(label)}
-                  className={({ isActive }) =>
-                    cn(
-                      'flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
-                      isActive && 'bg-primary/10 font-medium text-primary hover:bg-primary/10 hover:text-primary',
-                    )
-                  }
-                >
-                  <Icon className="size-4 shrink-0" />
-                  <span className="hidden lg:inline">{t(label)}</span>
-                </NavLink>
+              {NAV.filter((item) => !('show' in item) || item.show(me.roles)).map((item, index, items) => (
+                <Fragment key={item.to}>
+                  {items[index - 1]?.section !== item.section && <p className={cn('hidden px-2 text-xs text-muted-foreground lg:block', index > 0 && 'mt-3')}>{t(item.section)}</p>}
+                  <NavLink
+                    to={item.to}
+                    end={'end' in item && item.end}
+                    title={t(item.label)}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+                        isActive && 'bg-accent font-medium text-accent-foreground hover:bg-accent hover:text-accent-foreground',
+                      )
+                    }
+                  >
+                    <item.icon className="size-4 shrink-0" />
+                    <span className="hidden lg:inline">{t(item.label)}</span>
+                  </NavLink>
+                </Fragment>
               ))}
-              {(!me.roles.includes('requester') || me.roles.includes('system_owner')) && <NavLink to="/sr/manage" title={t('nav.srManage')} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Inbox className="size-4" /><span className="hidden lg:inline">{t('nav.srManage')}</span></NavLink>}
-              {(!me.roles.includes('requester') || me.roles.includes('system_owner')) && <NavLink to="/reports" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><BarChart3 className="size-4" /><span className="hidden lg:inline">{t('nav.reports')}</span></NavLink>}
-              <p className="mt-3 hidden px-2 text-xs text-muted-foreground lg:block">{t('nav.requests')}</p>
-              <NavLink to="/sr" end title={t('nav.sr')} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Send className="size-4" /><span className="hidden lg:inline">{t('nav.sr')}</span></NavLink>
-              {me.roles.includes('system_owner') && <>
-                <NavLink to="/assistants/manage" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Bot className="size-4" /><span className="hidden lg:inline">{t('nav.assistants')}</span></NavLink>
-                <NavLink to="/settings" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Settings className="size-4" /><span className="hidden lg:inline">{t('nav.settings')}</span></NavLink>
-                <NavLink to="/admin/diagnostics" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Activity className="size-4" /><span className="hidden lg:inline">{t('nav.diagnostics')}</span></NavLink>
-              </>}
             </nav>
           </aside>
           <main className="flex min-w-0 flex-1 flex-col">
