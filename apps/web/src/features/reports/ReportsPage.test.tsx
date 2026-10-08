@@ -29,3 +29,27 @@ it('8개 섹션을 보여주고 기간·단위 변경 시 서버에 다시 요�
   expect(calls).toContain('/api/reports?days=7&granularity=day')
   await waitFor(() => expect(screen.getByRole('img', { name: '완료 업무' }).children).toHaveLength(7))
 })
+
+it('Popover 담당자 검색·키보드 선택과 전체 해제는 서버 필터를 갱신한다', async () => {
+  const calls: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url.startsWith('/api/reports?')) { calls.push(url); return jsonResponse(200, {
+      kpi: { done: 0, reopens: 0 }, buckets: [], assistantStats: [], userStats: [], flow: [], tags: [], srDist: [], signals: [], digest: [], assistants: [], users: [{ id: 'other', name: '다른 사람' }],
+    }) }
+    return jsonResponse(404)
+  }))
+  const user = userEvent.setup()
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ReportsPage /></TooltipProvider></MeContext>)
+  const filter = await screen.findByRole('button', { name: '담당자: 전체' })
+  filter.focus(); await user.keyboard('{Enter}')
+  const picker = screen.getByRole('combobox', { name: '담당자' })
+  await user.type(picker, '다른')
+  await screen.findByRole('option', { name: '다른 사람' })
+  await user.keyboard('{ArrowDown}{Enter}')
+  await waitFor(() => expect(calls).toContain('/api/reports?days=30&granularity=week&userId=other'))
+  await user.keyboard('{Escape}')
+  await user.click(screen.getByRole('button', { name: '담당자: 다른 사람' }))
+  await user.click(screen.getByRole('button', { name: '전체' }))
+  expect(screen.getByRole('button', { name: '담당자: 전체' })).toHaveAttribute('aria-pressed', 'false')
+  await waitFor(() => expect(calls.at(-1)).toBe('/api/reports?days=30&granularity=week'))
+})

@@ -1,3 +1,4 @@
+import userEvent from '@testing-library/user-event'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
@@ -94,6 +95,14 @@ it('새 에이전트는 ID 없이 생성하고 연결 모델을 직접 입력할
   await screen.findByRole('option', { name: '새로 추가: 새 하위' })
   fireEvent.keyDown(screen.getByRole('combobox', { name: '분류 2' }), { key: 'Enter' })
   fireEvent.change(screen.getByLabelText('연결 모델'), { target: { value: 'custom-model' } })
+  fireEvent.click(screen.getByRole('button', { name: '운영자 제거' }))
+  expect(screen.queryByRole('button', { name: '운영자 제거' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+  expect(body).toBeUndefined()
+  expect(screen.getByRole('combobox', { name: '담당자' })).toHaveAttribute('aria-invalid', 'true')
+  fireEvent.change(screen.getByRole('combobox', { name: '담당자' }), { target: { value: '운영자' } })
+  await screen.findByRole('option', { name: '운영자' })
+  fireEvent.keyDown(screen.getByRole('combobox', { name: '담당자' }), { key: 'Enter' })
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
   await waitFor(() => expect(body).toMatchObject({ name: '새 도우미', modelId: 'custom-model', ownerId: 'owner', level1: '새 분류', level2: '새 하위' }))
   expect(body).not.toHaveProperty('id')
@@ -170,4 +179,41 @@ it('코드 이름·순서·활성을 계속 수정하고 비활성 코드도 관
   await waitFor(() => expect(screen.getByRole('checkbox', { name: '활성' })).not.toBeChecked())
   expect(screen.getByRole('textbox', { name: '새 이름 이름' })).toHaveValue('새 이름')
   expect(patches).toEqual([{ name: '새 이름' }, { sortOrder: 4 }, { active: false }])
+})
+
+it('담당자·상태·필수 항목을 키보드로 변경해 저장하고 담당자 미선택은 거부한다', async () => {
+  users.push({ ...users[0]!, id: 'other', name: '다른 담당자' })
+  assistantRows = [{ ...assistant, checklistTemplate: [{ id: 'check', label: '검토', required: false }] }]
+  const bodies: Record<string, unknown>[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants/a' && init?.method === 'PATCH') {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>; bodies.push(body)
+      return jsonResponse(200, { ...assistantRows[0], ...body })
+    }
+    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
+    return jsonResponse(200, [])
+  }))
+  const user = userEvent.setup()
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  await user.click(screen.getByRole('button', { name: '편집' }))
+  expect(screen.getByRole('combobox', { name: '담당자' })).toHaveAttribute('aria-required', 'true')
+  await user.click(screen.getByRole('button', { name: '운영자 제거' }))
+  await user.click(screen.getByRole('button', { name: /^저장$/ }))
+  expect(bodies).toEqual([])
+  expect(screen.getByRole('combobox', { name: '담당자' })).toHaveAttribute('aria-invalid', 'true')
+  await user.click(screen.getByRole('combobox', { name: '담당자' }))
+  await user.type(screen.getByRole('combobox', { name: '담당자' }), '다른')
+  await screen.findByRole('option', { name: '다른 담당자' })
+  await user.keyboard('{ArrowDown}{Enter}')
+  const status = screen.getByRole('radio', { name: '개발 중' })
+  status.focus()
+  await user.keyboard('{ArrowRight} ')
+  expect(screen.getByRole('radio', { name: '테스트' })).toBeChecked()
+  const required = screen.getByRole('checkbox', { name: '검토 필수' })
+  required.focus()
+  await user.keyboard(' ')
+  expect(required).toBeChecked()
+  await user.click(screen.getByRole('button', { name: /^저장$/ }))
+  await waitFor(() => expect(bodies).toHaveLength(1))
+  expect(bodies[0]).toMatchObject({ ownerId: 'other', status: 'testing', checklistTemplate: [{ id: 'check', label: '검토', required: true }] })
 })

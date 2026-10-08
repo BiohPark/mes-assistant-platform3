@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { startSrTask, statusSr, type SrDetail } from '@/api/sr'
 import { listAssistants } from '@/lib/catalog'
+import { AssistantPicker } from '@/components/AssistantPicker'
 import { Button } from '@/components/ui/button'
 import { SrTitleEditor } from './SrTitleEditor'
 import { SharedResults } from './SharedResults'
@@ -22,6 +23,8 @@ export function SrDetailSheet({ sr, onSaved }: { sr: SrDetail; onSaved: () => vo
   const [candidates, setCandidates] = useState<SrDetail['conversations']>([])
   const [shareOpen, setShareOpen] = useState(false)
   const { data: assistants = [] } = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
+  const options = useMemo(() => assistants.map(item => ({ value: item.id, label: item.name, status: item.status })), [assistants])
+  const assistantSource = useCallback(() => options, [options])
   async function start(forceNew = false) {
     if (!assistantId) return
     try {
@@ -37,8 +40,9 @@ export function SrDetailSheet({ sr, onSaved }: { sr: SrDetail; onSaved: () => vo
       {(['submitted', 'reviewing', 'in_progress', 'responded', 'done', 'rejected'] as const).map((status) => <option key={status} value={status}>{t(`status.sr.${status}`)}</option>)}
     </select><Button onClick={() => setShareOpen(true)} disabled={sr.status === 'draft'}>결과 공유</Button></div>
     {sr.conversations.length > 0 && <div><h3 className="font-medium">연결 대화</h3>{sr.conversations.map((item) => <Link key={item.id} to={`/c/${item.id}`} className="block text-sm text-primary underline">{item.code} {item.title} ({t(TASK_STATUS_KEY[item.status as TaskStatus])})</Link>)}</div>}
-    <div className="flex gap-2"><select aria-label="연결 업무 에이전트" value={assistantId} onChange={(event) => setAssistantId(event.target.value)} className="rounded-lg border p-2 text-sm"><option value="">에이전트 선택</option>
-      {assistants.filter((item) => item.status !== 'retired').map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+    <div className="flex flex-wrap gap-2"><AssistantPicker mode="single" source={assistantSource} quickPicks={options}
+      value={options.find(option => option.value === assistantId) ?? null} onChange={option => setAssistantId(option?.value ?? '')}
+      aria-label={t('sr.linkedAssistant')} className="min-w-48 flex-1" />
       <Button onClick={() => start()} disabled={!assistantId || sr.status === 'draft'}>연결 업무 시작</Button></div>
     {candidates.length > 0 && <div className="rounded-xl border p-3 text-sm"><p>진행 중인 연결 대화가 있습니다. 이어가기를 우선 확인하세요.</p>
       {candidates.map((item) => <Link key={item.id} to={`/c/${item.id}`} className="block text-primary underline">{item.code} 이어가기</Link>)}

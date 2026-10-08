@@ -1,4 +1,8 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
+import { useT } from '@/i18n'
+import { Chip } from '@/components/Chip'
+import { PersonPicker } from '@/components/PersonPicker'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ArrowRight, Download, Star } from 'lucide-react'
 import { Link } from 'react-router'
@@ -17,12 +21,15 @@ function Card({ title, children, action }: { title: string; children: React.Reac
 }
 
 export function ReportsPage() {
+  const t = useT()
   const { formatDateTime } = useDates()
   const [days, setDays] = useState(30)
   const [granularity, setGranularity] = useState<Granularity>('week')
   const [userId, setUserId] = useState('')
   const report = useQuery({ queryKey: ['reports', days, granularity, userId], queryFn: () => getReport(days, granularity, userId) })
   const data = report.data
+  const peopleSource = useCallback(() => data?.users.map(user => ({ value: user.id, label: user.name })) ?? [], [data?.users])
+  const person = data?.users.find(user => user.id === userId)
   const assistants = new Map(data?.assistants.map((item) => [item.id, item]))
   const download = () => {
     if (!data) return
@@ -39,7 +46,11 @@ export function ReportsPage() {
       <div className="flex flex-wrap gap-2" aria-label="리포트 기간과 단위">
         {[7, 30, 90].map((value) => <Button key={value} size="sm" variant={days === value ? 'default' : 'outline'} onClick={() => setDays(value)}>{value}일</Button>)}
         {(['day', 'week'] as const).map((value) => <Button key={value} size="sm" variant={granularity === value ? 'default' : 'outline'} onClick={() => setGranularity(value)}>{value === 'day' ? '일' : '주'}</Button>)}
-        {data && <label className="flex items-center gap-1 text-xs">담당자 <select className="h-7 rounded-lg border bg-background px-2" value={userId} onChange={(event) => setUserId(event.target.value)}><option value="">전체</option>{data.users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>}
+        {data && <Popover><PopoverTrigger asChild><button type="button" aria-pressed={!!userId} className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"><Chip variant="filter" label={t('reports.ownerFilter', { name: person?.name ?? t('common.all') })} selected={!!userId} /></button></PopoverTrigger>
+          <PopoverContent align="start"><PersonPicker mode="single" source={peopleSource} value={person ? { value: person.id, label: person.name } : null}
+            onChange={option => setUserId(option?.value ?? '')} aria-label={t('reports.owner')} />
+            <Chip label={t('common.all')} selected={!userId} onClick={() => setUserId('')} className="mt-1.5" />
+          </PopoverContent></Popover>}
       </div>
       {report.isPending && <p className="text-sm text-muted-foreground">리포트를 불러오는 중입니다.</p>}
       {report.isError && <p role="alert" className="text-sm text-destructive">리포트를 불러오지 못했습니다. <Button size="xs" variant="outline" onClick={() => void report.refetch()}>다시 시도</Button></p>}

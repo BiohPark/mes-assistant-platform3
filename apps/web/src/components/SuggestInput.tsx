@@ -25,6 +25,7 @@ interface CommonProps {
   'aria-label'?: string
   'aria-describedby'?: string
   'aria-invalid'?: boolean | 'true' | 'false'
+  'aria-required'?: boolean | 'true' | 'false'
 }
 export type SuggestInputProps = CommonProps & (
   | { mode: 'single'; value: Option | null; onChange: (value: Option | null) => void }
@@ -160,6 +161,7 @@ export function SuggestInput(props: SuggestInputProps) {
               aria-controls={open && !disabled ? listId : undefined}
               aria-activedescendant={open && !disabled && options.length ? `${listId}-${activeIndex}` : undefined}
               aria-invalid={!!error || props['aria-invalid']}
+              aria-required={props['aria-required']}
               aria-describedby={[props['aria-describedby'], error ? errorId : undefined].filter(Boolean).join(' ') || undefined}
               placeholder={props.placeholder ?? t('components.suggestPlaceholder')}
               onChange={event => { setText(event.target.value); setOpen(true); setActive(0); setInvalid(false) }}
