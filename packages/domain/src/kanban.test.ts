@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { EMPTY_FILTER, filterFromParams, filterToParams, isFiltering, kanbanColumns, stageOptions } from './kanban.js'
+import { EMPTY_FILTER, filterFromParams, filterToParams, isFiltering, kanbanColumns, stageOptions, stageKey } from './kanban.js'
 import type { Assistant, Task } from './types.js'
 
 const asst = (id: string, order: number, level1: string, level2: string, status: Assistant['status'] = 'open') => ({ id, order, level1, level2, status }) as Assistant
@@ -48,4 +48,18 @@ describe('filters', () => {
       { level1: 'Record', stages: [{ key: 'Record/CCA', level2: 'CCA' }] },
     ])
   })
+})
+
+
+it('uses escaped code IDs and matches non-primary paths once without cross-path matches', () => {
+  const a = { ...assistants[0], level1CodeId: 'l/1', level2CodeId: 'l%2', classifications: [
+    { level1: 'Record', level2: 'CCA', level1CodeId: 'l/1', level2CodeId: 'l%2' },
+    { level1: 'SDLC', level2: '설계', level1CodeId: 'other', level2CodeId: 'child' },
+  ] }
+  expect(stageKey(a)).toBe('l%2F1/l%252')
+  expect(stageKey({ ...a, ...a.classifications[1] })).toBe('other/child')
+  expect(filterFromParams(filterToParams({ ...EMPTY_FILTER, stages: [stageKey(a)] }, new URLSearchParams())).stages).toEqual(['l%2F1/l%252'])
+  expect(kanbanColumns([a], [], { ...EMPTY_FILTER, stages: ['other/child'] })).toHaveLength(1)
+  expect(kanbanColumns([a], [], { ...EMPTY_FILTER, stages: ['l%2F1/child'] })).toHaveLength(0)
+  expect(stageOptions([a])[1]).toEqual({ level1: 'SDLC', stages: [{ key: 'other/child', level2: '설계' }] })
 })

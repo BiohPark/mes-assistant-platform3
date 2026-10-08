@@ -2,8 +2,9 @@ import { tagKey } from './tags.js'
 import { TASK_STATUSES, type Assistant, type ID, type Task, type TaskStatus } from './types.js'
 
 /** 업무 단계 = 에이전트 Lv1/Lv2. 하드코딩한 단계 목록 대신 카탈로그에서 뽑는다. */
-export function stageKey(a: Pick<Assistant, 'level1' | 'level2'>): string {
-  return `${a.level1}/${a.level2}`
+export function stageKey(a: Pick<Assistant, 'level1' | 'level2' | 'level1CodeId' | 'level2CodeId'>): string {
+  if (!a.level1CodeId && !a.level2CodeId) return `${a.level1}/${a.level2}`
+  return `${encodeURIComponent(a.level1CodeId ?? a.level1)}/${encodeURIComponent(a.level2CodeId ?? a.level2)}`
 }
 
 export interface StageGroup {
@@ -15,13 +16,12 @@ export interface StageGroup {
 export function stageOptions(assistants: Assistant[]): StageGroup[] {
   const groups: StageGroup[] = []
   for (const a of [...assistants].sort((x, y) => x.order - y.order)) {
-    let g = groups.find((x) => x.level1 === a.level1)
-    if (!g) {
-      g = { level1: a.level1, stages: [] }
-      groups.push(g)
+    for (const path of a.classifications ?? [a]) {
+      let g = groups.find((x) => x.level1 === path.level1)
+      if (!g) { g = { level1: path.level1, stages: [] }; groups.push(g) }
+      const key = stageKey(path)
+      if (!g.stages.some((s) => s.key === key)) g.stages.push({ key, level2: path.level2 })
     }
-    const key = stageKey(a)
-    if (!g.stages.some((s) => s.key === key)) g.stages.push({ key, level2: a.level2 })
   }
   return groups
 }
@@ -96,7 +96,7 @@ export function kanbanColumns(assistants: Assistant[], tasks: Task[], f: KanbanF
   const hasAny = new Set(tasks.map((t) => t.assistantId))
   return [...assistants]
     .sort((a, b) => a.order - b.order)
-    .filter((a) => (f.stages.length ? f.stages.includes(stageKey(a)) : true))
+    .filter((a) => (f.stages.length ? (a.classifications ?? [a]).some(path => f.stages.includes(stageKey(path))) : true))
     .filter((a) => (f.assistantId ? a.id === f.assistantId : true))
     .filter((a) => a.status !== 'retired' || hasAny.has(a.id))
     .map((assistant) => ({

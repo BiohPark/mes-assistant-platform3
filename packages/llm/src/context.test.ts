@@ -220,3 +220,11 @@ describe('referenced conversations', () => {
     expect(p).not.toContain('WK-3 질문')
   })
 })
+
+it('sends every classification path in order without adding workflow instructions', async () => {
+  const p = await buildTaskSystemPrompt({ assistant: { ...assistant, classifications: [
+    { level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2' },
+    { level1: 'Record', level2: 'CCA', level1CodeId: 'r1', level2CodeId: 'r2' },
+  ] }, task, linkedSrs: [], inputs: [] })
+  expect(p).toContain('(SDLC > 분석, Record > CCA)')
+})

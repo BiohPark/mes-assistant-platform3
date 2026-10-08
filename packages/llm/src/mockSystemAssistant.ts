@@ -32,10 +32,10 @@ export function mockSystemAssistant(userText: string): MockSystemResult {
   if (/(어시스턴트|에이전트)\s*(등록|추가|생성)/.test(t) || englishRegistration) {
     const id = /\bID\b\s*[:：]?\s*([a-z0-9-]+)/i.exec(t)?.[1]
     const name = englishRegistration?.[1]?.trim() ?? /이름\s*[:：]?\s*([^,，]+)/.exec(t)?.[1]?.trim() ?? quoted(t) ?? '새 에이전트'
-    const lv = /([^,，\s]+)\s*[›>]\s*([^,，\s]+)/.exec(t)
+    const paths = [...t.matchAll(/([^,，\s]+)\s*[›>]\s*([^,，\s]+)/g)].map(match => ({ level1: match[1]!, level2: match[2]! }))
     return {
       text: `"${name}" 에이전트를 등록하겠습니다. 모델 ID는 관리 페이지에서 매핑하세요.`,
-      toolCalls: [call('create_assistant', { ...(id && { id }), name, level1: lv?.[1] ?? '공통', level2: lv?.[2] ?? '기타', summary: '' })],
+      toolCalls: [call('create_assistant', { ...(id && { id }), name, classifications: paths.length ? paths : [{ level1: '공통', level2: '기타' }], summary: '' })],
     }
   }
   const m = /(.+?)\s*(?:어시스턴트|에이전트|도우미)?\s*(?:로|으로|에|에서|와|과)\s*["'“”「](.+?)["'“”」]\s*(?:업무|대화)/.exec(t)
