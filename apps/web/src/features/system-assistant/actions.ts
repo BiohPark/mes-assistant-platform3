@@ -1,7 +1,7 @@
 import { createT, type Translator } from '@/i18n'
 import { newId } from '@/lib/ids'
 import { normalizeTag } from '@mes/domain'
-import { SystemAssistantToolArgs } from '@mes/contracts'
+import { SystemAssistantToolArgs, type ClassificationInput } from '@mes/contracts'
 import { createAssistant } from '@/api/admin'
 import { addTag, listTasks, startConversation, updateTask, type Actor } from '@/api/tasks'
 import { queryClient } from '@/api/queryClient'
@@ -34,7 +34,7 @@ export function toProposal(call: ToolCall, t: Translator = createT('ko')): Propo
   const tags = strList(args.tags)
   const summaries: Record<string, () => string> = {
     start_conversation: () => `${t('systemAssistant.startSummary', { name: str(args.assistantName) })}${args.title ? ` — "${str(args.title)}"` : ''}${tags.length ? ` · ${t('systemAssistant.summaryTags', { tags: tags.join(', ') })}` : ''}${args.priority ? ` · ${t('systemAssistant.summaryPriority', { priority: str(args.priority) })}` : ''}`,
-    create_assistant: () => `${t('admin.createAssistantProposal', { name: str(args.name), level1: str(args.level1), level2: str(args.level2) })}${args.summary ? ` · ${t('systemAssistant.summaryDescription', { value: str(args.summary) })}` : ''}${args.ownerName ? ` · ${t('systemAssistant.summaryOwner', { name: str(args.ownerName) })}` : ''}${args.modelId ? ` · ${t('systemAssistant.summaryModel', { model: str(args.modelId) })}` : ''}`,
+    create_assistant: () => `${(args.classifications as ClassificationInput[]).map((path, index) => index === 0 ? t('admin.createAssistantProposal', { name: str(args.name), level1: 'level1' in path ? path.level1 : path.level1CodeId, level2: 'level2' in path ? path.level2 : path.level2CodeId }) : `${'level1' in path ? path.level1 : path.level1CodeId} › ${'level2' in path ? path.level2 : path.level2CodeId}`).join(', ')}${args.summary ? ` · ${t('systemAssistant.summaryDescription', { value: str(args.summary) })}` : ''}${args.ownerName ? ` · ${t('systemAssistant.summaryOwner', { name: str(args.ownerName) })}` : ''}${args.modelId ? ` · ${t('systemAssistant.summaryModel', { model: str(args.modelId) })}` : ''}`,
     add_tag: () => t('systemAssistant.addTagSummary', { code: str(args.taskCode), tag: normalizeTag(str(args.tag)) }),
   }
   return { id: call.id, name: call.name, args, summary: summaries[call.name]?.() ?? call.name }
@@ -63,7 +63,7 @@ export async function applyProposal(actor: Actor, proposal: ProposedAction, t: T
         const users = await listUsers()
         const owner = users.find((row) => row.name === str(args.ownerName))
         const created = await createAssistant({
-          ...(typeof args.id === 'string' && { id: args.id }), name: str(args.name, '새 에이전트'), level1: str(args.level1), level2: str(args.level2),
+          ...(typeof args.id === 'string' && { id: args.id }), name: str(args.name, '새 에이전트'), classifications: args.classifications as ClassificationInput[],
           summary: str(args.summary), ownerId: owner?.id ?? actor.userId, status: 'developing', usageExample: '',
           expectedInputs: [], expectedOutputs: [], checklistTemplate: [['입력 자료 선택', true], ['결과 검토', true], ['산출물 저장', false]].map(([label, required]) => ({ id: newId(), label: String(label), required: Boolean(required) })), modelId: str(args.modelId) || undefined,
         })

@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, Req, UploadedFile, UseInterceptors } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { z } from 'zod'
+import { ClassificationsInputSchema } from '@mes/contracts'
 import type { AuthedRequest } from '../auth/guards.js'
 import { Roles } from '../auth/roles.decorator.js'
 import { AdminService, defaultChecklist } from './admin.service.js'
@@ -12,14 +13,18 @@ const codeName = z.string().transform(value => value.trim().replace(/\s+/gu, ' '
 const status = z.enum(['open', 'developing', 'testing', 'retired'])
 const template = z.object({ id: key, label, required: z.boolean() }).strict()
 const assistantFields = z.object({
+  classifications: ClassificationsInputSchema.optional(),
   name: label, level1: codeName.optional(), level2: codeName.optional(), level1CodeId: key.optional(), level2CodeId: key.optional(), summary: z.string(), ownerId: key,
   status, usageExample: z.string(), modelId: z.string().nullable().optional(), link1: z.string().nullable().optional(),
   docUrl: z.string().nullable().optional(), expectedInputs: z.array(label).max(100), expectedOutputs: z.array(label).max(100),
   checklistTemplate: z.array(template).max(100).optional(),
 }).strict()
-const createAssistant = assistantFields.extend({ id: key.optional() }).refine((input) =>
-  (input.level1 !== undefined || input.level1CodeId !== undefined) && (input.level2 !== undefined || input.level2CodeId !== undefined))
-const patchAssistant = assistantFields.partial()
+const classificationShape = (input: z.infer<typeof assistantFields>) => !input.classifications ||
+  [input.level1, input.level2, input.level1CodeId, input.level2CodeId].every(value => value === undefined)
+const createAssistant = assistantFields.extend({ id: key.optional() }).refine(classificationShape).refine((input) =>
+  input.classifications !== undefined || ((input.level1 !== undefined || input.level1CodeId !== undefined) && (input.level2 !== undefined || input.level2CodeId !== undefined)))
+const patchAssistant = assistantFields.partial().refine(input => !input.classifications ||
+  [input.level1, input.level2, input.level1CodeId, input.level2CodeId].every(value => value === undefined))
 const settings = z.object({
   defaultModel: label.optional(), fileDelivery: z.enum(['inline', 'openwebui']).optional(),
   requestBudgetBytes: z.number().int().min(1024).max(100_000_000).optional(),

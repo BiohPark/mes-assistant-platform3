@@ -5,6 +5,7 @@ import { createPool } from '../db/connection.js'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { loadConfig } from '../config/config.js'
+import { writeClassifications } from '../db/classifications.js'
 import { runMigrations } from '../db/migrate.js'
 import { appSetting, appUser, assistant, code, codeGroup, fileObject, task } from '../db/schema.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -32,10 +33,11 @@ describe('DbLlmPorts', () => {
     await db.insert(codeGroup).values([{ key: 'assistant_level1', name: 'Lv1' }, { key: 'assistant_level2', name: 'Lv2' }])
     await db.insert(code).values([{ id: 'assistant_level1:업무', groupKey: 'assistant_level1', code: '업무', name: '업무' }, { id: 'assistant_level2:일반', groupKey: 'assistant_level2', code: '일반', name: '일반' }])
     await db.insert(assistant).values({ id: 'a1', name: '도우미', level1CodeId: 'assistant_level1:업무', level2CodeId: 'assistant_level2:일반', sortOrder: 1, ownerId: 'u1', status: 'open', color: 'blue', createdBy: 'u1' })
+    await db.transaction(tx => writeClassifications(tx as Db, 'a1', [{ level1CodeId: 'assistant_level1:업무', level2CodeId: 'assistant_level2:일반' }]))
     const ports = new DbLlmPorts(db, config, 'u1')
     expect((await ports.getSettings()).srIntakeAssistantId).toBe('a1')
     expect((await ports.getUsers())[0]?.id).toBe('u1')
-    expect((await ports.getAssistants())[0]).toMatchObject({ id: 'a1', expectedInputs: [], checklistTemplate: [] })
+    expect((await ports.getAssistants())[0]).toMatchObject({ id: 'a1', expectedInputs: [], checklistTemplate: [], classifications: [{ level1: '업무', level2: '일반', level1CodeId: 'assistant_level1:업무', level2CodeId: 'assistant_level2:일반' }] })
   })
 
   it('업무와 파일을 입력 순서대로 조회하고 없는 ID는 undefined로 둔다', async () => {

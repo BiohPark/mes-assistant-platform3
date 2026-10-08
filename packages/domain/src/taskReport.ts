@@ -3,7 +3,7 @@ import type { Assistant, FileAsset, ID, Task, TaskInput } from './types.js'
 
 export interface TaskReportInput {
   task: Task
-  assistant: Pick<Assistant, 'name' | 'level1' | 'level2'>
+  assistant: Pick<Assistant, 'name' | 'level1' | 'level2' | 'classifications'>
   files: Pick<FileAsset, 'id' | 'name'>[]
   /** 선택한 입력 (출처 대화의 어시스턴트 이름 포함) */
   inputs: Array<{ name: string; version: number; weight: TaskInput['weight']; fromAssistantName: string }>
@@ -30,7 +30,7 @@ export function buildTaskReport({ task, assistant, files, inputs, users, now = n
   return [
     `# 업무 완료 리포트 — ${task.code} ${task.title}`,
     '',
-    `- 어시스턴트: ${assistant.name} (${assistant.level1} > ${assistant.level2})`,
+    `- 어시스턴트: ${assistant.name} (${(assistant.classifications ?? [assistant]).map(path => `${path.level1} > ${path.level2}`).join(', ')})`,
     `- 기간: ${formatDate(task.startedAt ?? task.createdAt)} ~ ${formatDate(task.completedAt)} · 리드타임: ${lead ?? 0}일`,
     `- 요약: ${task.summary || '(없음)'}`,
     `- 태그: ${task.tags.length ? task.tags.join(', ') : '(없음)'}`,

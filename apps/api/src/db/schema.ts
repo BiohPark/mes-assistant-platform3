@@ -133,6 +133,17 @@ export const assistant = mysqlTable(
   (t) => [check('assistant_status_check', inList(t.status, ['open', 'developing', 'testing', 'retired']))],
 )
 
+export const assistantClassification = mysqlTable('assistant_classification', {
+  assistantId: varchar('assistant_id', { length: 191 }).notNull().references(() => assistant.id, { onDelete: 'cascade' }),
+  level1CodeId: varchar('level1_code_id', { length: 191 }).notNull().references(() => code.id),
+  level2CodeId: varchar('level2_code_id', { length: 191 }).notNull().references(() => code.id),
+  sortOrder: integer('sort_order').notNull(),
+}, t => [
+  primaryKey({ name: 'assistant_classification_pk', columns: [t.assistantId, t.level1CodeId, t.level2CodeId] }),
+  unique('assistant_classification_order_key').on(t.assistantId, t.sortOrder),
+  check('assistant_classification_order_check', sql`${t.sortOrder} >= 0`),
+])
+
 export const assistantExpectedIo = mysqlTable(
   'assistant_expected_io',
   {

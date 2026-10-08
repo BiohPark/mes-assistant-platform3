@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 
-test('데모 이관 계정은 비밀번호 변경 후 대화와 파일을 본다', async ({ page }) => {
+type CatalogAssistant = {
+  id: string
+  classifications: Array<{ level1: string; level2: string }>
+  level1: string
+  level2: string
+}
+
+test('데모 이관 계정은 비밀번호 변경 후 대화와 파일을 본다', async ({ page, request }) => {
   const key = `e2e-import-${Date.now()}`
   const at = '2026-09-01T00:00:00.000Z'
   const folder = await mkdtemp(join(tmpdir(), 'mes-import-e2e-'))
@@ -15,6 +22,7 @@ test('데모 이관 계정은 비밀번호 변경 후 대화와 파일을 본다
   const thread = `${key}-thread`
   const asset = `${key}-file`
   const bundle = { format: 'mes-assistant-hub', version: 3, exportedAt: at, tables: {
+    assistants: [{ id: assistant, name: 'Ignored imported name', level1: 'Ignored', level2: 'Ignored', ownerId: user, status: 'open' }],
     users: [{ id: user, name: 'Virtual User', role: 'member', initials: 'VU', color: '#123456' }],
     tasks: [{ id: task, code: `WK-2099-${Date.now()}`, assistantId: assistant, title: 'Imported conversation', status: 'in_progress', ownerId: user,
       createdBy: user, createdAt: at, priority: 'normal', tags: [], inputs: [], outputFileIds: [asset] }],
@@ -24,6 +32,14 @@ test('데모 이관 계정은 비밀번호 변경 후 대화와 파일을 본다
       uploadedAt: at, version: 1, blobBase64: Buffer.from('virtual file contents').toString('base64') }],
   } }
   try {
+    // 별도 요청 세션으로 이관 전 분류를 읽어 데모 계정의 브라우저 로그인 흐름을 유지한다.
+    const signup = await request.post('/api/auth/signup', { data: { loginId: `${key}-before`, password: 'e2e-password-1234' } })
+    expect(signup.ok()).toBe(true)
+    const catalogBefore = await request.get('/api/assistants')
+    expect(catalogBefore.ok()).toBe(true)
+    const existingBefore = (await catalogBefore.json() as CatalogAssistant[]).find(row => row.id === assistant)!
+    expect(existingBefore).toBeDefined()
+    expect(existingBefore.classifications.length).toBeGreaterThan(0)
     await writeFile(file, JSON.stringify(bundle))
     const apiDir = resolve(import.meta.dirname, '../../apps/api')
     const output = execFileSync(process.execPath, [join(apiDir, 'dist/db/import.js'), file], { cwd: apiDir, env: process.env, encoding: 'utf8' })
@@ -44,6 +60,15 @@ test('데모 이관 계정은 비밀번호 변경 후 대화와 파일을 본다
     await page.getByLabel('비밀번호').fill('virtual-new-password-1234')
     await page.getByRole('button', { name: '로그인' }).click()
     await expect(page).not.toHaveURL(/\/login$/) // 로그인 완료 전에 이동하면 세션 없이 로그인 화면으로 돌아온다
+    const catalog = await page.request.get('/api/assistants')
+    expect(catalog.ok()).toBe(true)
+    const existing = (await catalog.json() as CatalogAssistant[]).find(row => row.id === assistant)!
+    expect(existing).toBeDefined()
+    expect(existing.classifications).toEqual(existingBefore.classifications)
+    expect([existing.level1, existing.level2]).toEqual([
+      existing.classifications[0]!.level1,
+      existing.classifications[0]!.level2,
+    ])
     await page.goto(`/c/${task}`)
     await expect(page.getByText('Imported virtual message')).toBeVisible()
     await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()

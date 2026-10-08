@@ -25,3 +25,11 @@ it('자동 코드 메타데이터를 보존하고 전환 기간 응답은 수동
   expect(CodeSchema.parse({ ...legacy, isAuto: true }).isAuto).toBe(true)
   expect(CodeSchema.safeParse({ ...legacy, isAuto: 'true' }).success).toBe(false)
 })
+
+
+it('derives all four representative fields from ordered nonempty classifications', () => {
+  const base = { id: 'a', name: 'A', level1: 'stale', level2: 'stale', level1CodeId: 'old', level2CodeId: 'old', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '', updatedAt: '', revision: 0 }
+  const classifications = [{ level1: 'SDLC', level2: '分析', level1CodeId: 'l1', level2CodeId: 'l2' }, { level1: 'Record', level2: 'CCA', level1CodeId: 'r1', level2CodeId: 'r2' }]
+  expect(AssistantSchema.parse({ ...base, classifications })).toMatchObject({ ...classifications[0], classifications })
+  expect(AssistantSchema.safeParse({ ...base, classifications: [] }).success).toBe(false)
+})

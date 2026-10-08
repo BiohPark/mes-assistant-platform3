@@ -14,14 +14,14 @@ afterEach(() => vi.unstubAllGlobals())
 describe('system assistant proposals', () => {
   it('도구별 요약을 만들고 잘못된 JSON도 안전하게 표시한다', () => {
     expect(toProposal({ id: '1', name: 'start_conversation', arguments: '{"assistantName":"FDS 작성 도우미","title":"테스트","tags":["SR-2026-0001"]}' }).summary).toContain('FDS 작성 도우미 — "테스트" · 태그 SR-2026-0001')
-    expect(toProposal({ id: '2', name: 'create_assistant', arguments: '{"id":"label-check","name":"라벨 검증","level1":"Record","level2":"라벨"}' }).summary).toContain('라벨 검증 — Record › 라벨')
+    expect(toProposal({ id: '2', name: 'create_assistant', arguments: '{"id":"label-check","name":"라벨 검증","classifications":[{"level1":"Record","level2":"라벨"}]}' }).summary).toContain('라벨 검증 — Record › 라벨')
     expect(toProposal({ id: '3', name: 'add_tag', arguments: '{"taskCode":"WK-2026-0006","tag":"#release"}' }).summary).toContain('WK-2026-0006 ← release')
     expect(toProposal({ id: '4', name: 'add_tag', arguments: '{bad' }).args).toEqual({})
   })
 
   it('적용할 선택 인자를 모두 요약하고 잘못된 인자는 제안에서 제외한다', () => {
     expect(toProposal({ id: 'p', name: 'start_conversation', arguments: '{"assistantName":"FDS","priority":"urgent"}' }).summary).toContain('우선순위 urgent')
-    const assistantProposal = toProposal({ id: 'a', name: 'create_assistant', arguments: '{"id":"label","name":"라벨","level1":"Record","level2":"라벨","summary":"설명","ownerName":"담당자","modelId":"model-x"}' })
+    const assistantProposal = toProposal({ id: 'a', name: 'create_assistant', arguments: '{"id":"label","name":"라벨","classifications":[{"level1":"Record","level2":"라벨"}],"summary":"설명","ownerName":"담당자","modelId":"model-x"}' })
     expect(assistantProposal.summary).toContain('설명')
     expect(assistantProposal.summary).toContain('담당자')
     expect(assistantProposal.summary).toContain('model-x')
@@ -35,7 +35,7 @@ describe('system assistant proposals', () => {
   it('검증 실패한 제안은 API를 호출하지 않고 사유를 반환한다', async () => {
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
-    const proposal = toProposal({ id: 'bad', name: 'create_assistant', arguments: '{"id":"x","name":"X","level1":"Record","level2":"라벨","modelId":42}' })
+    const proposal = toProposal({ id: 'bad', name: 'create_assistant', arguments: '{"id":"x","name":"X","classifications":[{"level1":"Record","level2":"라벨"}],"modelId":42}' })
     const result = await applyProposal({ userId: 'u' }, proposal)
     expect(result.ok).toBe(false)
     expect(result.message).toContain('modelId')
@@ -75,7 +75,7 @@ describe('system assistant proposals', () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
     expect(await applyProposal({ userId: 'u' }, toProposal({ id: '1', name: 'start_conversation', arguments: '{"assistantName":"없음"}' }))).toMatchObject({ ok: false, message: expect.stringContaining('찾을 수 없습니다') })
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/codes' ? jsonResponse(200, codes) : url === '/api/catalog/users' ? jsonResponse(200, []) : jsonResponse(403, { message: '권한이 없습니다' })))
-    const result = await applyProposal({ userId: 'u' }, toProposal({ id: '2', name: 'create_assistant', arguments: '{"id":"label","name":"라벨","level1":"Record","level2":"라벨"}' }))
+    const result = await applyProposal({ userId: 'u' }, toProposal({ id: '2', name: 'create_assistant', arguments: '{"id":"label","name":"라벨","classifications":[{"level1":"Record","level2":"라벨"}]}' }))
     expect(result).toEqual({ ok: false, message: '권한이 없습니다' })
   })
 })
@@ -92,18 +92,18 @@ it.each([undefined, 'legacy-id'])('에이전트 제안 ID는 선택이며 요약
     }
     return jsonResponse(404)
   }))
-  const proposal = toProposal({ id: 'create', name: 'create_assistant', arguments: JSON.stringify({ id, name: '새 도우미', level1: 'Record', level2: '라벨' }) })
+  const proposal = toProposal({ id: 'create', name: 'create_assistant', arguments: JSON.stringify({ id, name: '새 도우미', classifications: [{ level1: 'Record', level2: '라벨' }] }) })
   expect(proposal.invalidReason).toBeUndefined()
   expect(proposal.summary).toBe('에이전트 등록: 새 도우미 — Record › 라벨')
   expect(await applyProposal({ userId: 'u' }, proposal)).toMatchObject({ ok: true, link: '/assistants/manage' })
-  expect(body).toMatchObject({ name: '새 도우미', ownerId: 'u', level1: 'Record', level2: '라벨' })
+  expect(body).toMatchObject({ name: '새 도우미', ownerId: 'u', classifications: [{ level1: 'Record', level2: '라벨' }] })
   if (id) expect(body?.id).toBe(id)
   else expect(body).not.toHaveProperty('id')
 })
 
 
 it('에이전트 등록 제안 요약은 영어 번역을 사용할 수 있다', () => {
-  const proposal = toProposal({ id: 'create', name: 'create_assistant', arguments: '{"name":"Helper","level1":"Record","level2":"Label"}' }, createT('en'))
+  const proposal = toProposal({ id: 'create', name: 'create_assistant', arguments: '{"name":"Helper","classifications":[{"level1":"Record","level2":"Label"}]}' }, createT('en'))
   expect(proposal.summary).toBe('Register agent: Helper — Record › Label')
 })
 
@@ -116,8 +116,29 @@ it('새 분류 이름을 코드 사전 조회 없이 서버에 전달한다', as
     if (url === '/api/assistants' && init?.method === 'POST') { body = JSON.parse(String(init.body)); return jsonResponse(201, assistant) }
     return jsonResponse(404)
   }))
-  expect(await applyProposal({ userId: 'u' }, toProposal({ id: 'new', name: 'create_assistant', arguments: '{"name":"도우미","level1":"새 분류","level2":"새 하위"}' }))).toMatchObject({ ok: true })
-  expect(body).toMatchObject({ level1: '새 분류', level2: '새 하위' })
+  expect(await applyProposal({ userId: 'u' }, toProposal({ id: 'new', name: 'create_assistant', arguments: '{"name":"도우미","classifications":[{"level1":"새 분류","level2":"새 하위"}]}' }))).toMatchObject({ ok: true })
+  expect(body).toMatchObject({ classifications: [{ level1: '새 분류', level2: '새 하위' }] })
   expect(body).not.toHaveProperty('level1CodeId')
   expect(calls).not.toContain('/api/codes')
+})
+
+
+it('summarizes and submits every path in order, including existing IDs', async () => {
+  let body: unknown
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/catalog/users') return jsonResponse(200, [])
+    if (url === '/api/assistants' && init?.method === 'POST') { body = JSON.parse(String(init.body)); return jsonResponse(201, assistant) }
+    return jsonResponse(404)
+  }))
+  const classifications = [{ level1: 'SDLC', level2: '분석' }, { level1: 'Record', level2: 'CCA' }]
+  const proposal = toProposal({ id: 'multi', name: 'create_assistant', arguments: JSON.stringify({ name: 'A', classifications }) })
+  expect(proposal.invalidReason).toBeUndefined()
+  expect(proposal.summary).toContain('SDLC › 분석, Record › CCA')
+  expect(await applyProposal({ userId: 'u' }, proposal)).toMatchObject({ ok: true })
+  expect(body).toMatchObject({ classifications })
+  expect(body).not.toHaveProperty('level1')
+  const ids = toProposal({ id: 'ids', name: 'create_assistant', arguments: JSON.stringify({ name: 'A', classifications: [{ level1CodeId: 'l1', level2CodeId: 'l2' }] }) })
+  expect(ids.invalidReason).toBeUndefined()
+  expect(await applyProposal({ userId: 'u' }, ids)).toMatchObject({ ok: true })
+  expect(body).toMatchObject({ classifications: [{ level1CodeId: 'l1', level2CodeId: 'l2' }] })
 })

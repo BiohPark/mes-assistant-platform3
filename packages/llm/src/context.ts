@@ -121,7 +121,7 @@ export async function buildTaskSystemPrompt(input: TaskPromptInput, ports: Pick<
   const { assistant, task, linkedSrs, inputs, conversations = [], participants = [] } = input
   const parts: string[] = [
     PLATFORM_CONTEXT_NOTE,
-    `## 에이전트: ${assistant.name} (${assistant.level1} > ${assistant.level2})`,
+    `## 에이전트: ${assistant.name} (${(assistant.classifications ?? [assistant]).map(path => `${path.level1} > ${path.level2}`).join(', ')})`,
     `## 대화: ${task.code} ${task.title}\n- 요약: ${task.summary || '(없음)'}\n- 태그: ${task.tags?.length ? task.tags.join(', ') : '(없음)'}`,
   ]
   if (participants.length >= 2) {

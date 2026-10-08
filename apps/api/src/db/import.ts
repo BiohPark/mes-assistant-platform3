@@ -3,7 +3,9 @@ import { readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { drizzle } from 'drizzle-orm/mysql2'
-import { desc, eq, sql } from 'drizzle-orm'
+import { and, count, desc, eq, isNotNull, ne, sql } from 'drizzle-orm'
+import { ClassificationsInputSchema, type ClassificationInput } from '@mes/contracts'
+import { lockAssistantCodes, normalizeCodeName, resolveCode, resolveClassifications, writeClassifications } from './classifications.js'
 import { isSrTag, normalizeTag, tagKey } from '@mes/domain'
 import type { Db } from './db.module.js'
 import { createPool } from './connection.js'
@@ -107,9 +109,10 @@ const same = (actual: Row, expected: Row) => Object.entries(expected).every(([ke
   (value instanceof Date ? new Date(actual[key]).getTime() === value.getTime() :
     typeof value === 'object' && value !== null ? JSON.stringify(actual[key]) === JSON.stringify(value) : (actual[key] ?? null) === (value ?? null)))
 
-export async function importBundle(input: unknown, db: Db, storage: FileStorageService | undefined, dryRun = false, options: ImportOptions = {}): Promise<{ report: ImportReport; codeMappings: CodeMapping[]; credentials: { loginId: string; password: string }[] }> {
+export async function importBundle(input: unknown, db: Db, storage: FileStorageService | undefined, dryRun = false, options: ImportOptions = {}): Promise<{ report: ImportReport; link1Overrides: number; codeMappings: CodeMapping[]; credentials: { loginId: string; password: string }[] }> {
   const b = normalizeBundle(input)
   const report: ImportReport = {}
+  let link1Overrides = 0
   const credentials: { loginId: string; password: string }[] = []
   const written: string[] = []
   const conflicts: string[] = []
@@ -167,6 +170,7 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
   }
   try {
     await db.transaction(async (tx) => {
+      await lockAssistantCodes(tx as Db)
       // 한 이관 실행만 같은 DB에서 진행하도록 트랜잭션 범위 이름 잠금.
       await tx.execute(sql`insert into db_lock (lock_key) values ('demo-import') on duplicate key update lock_key = lock_key`)
       const assignedCodes = new Map<string, string>()
@@ -235,22 +239,42 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
         }
         users.add(id(row.id)); loginToUser.set(loginId, id(row.id)); mark('users', 'app_user', true)
       }
-      const level1 = [...new Set(rows(b, 'assistants').map((a) => String(a.level1 ?? '이전 데모')))]
-      const level2 = [...new Set(rows(b, 'assistants').map((a) => String(a.level2 ?? '기타')))]
+      const existingAssistants = await existing(tx, s.assistant, s.assistant.id)
+      const pathsById = new Map<string, ClassificationInput[]>()
+      for (const a of rows(b, 'assistants')) {
+        if (existingAssistants.has(id(a.id))) continue
+        const raw = a.classifications === undefined ? [{ level1: a.level1 ?? '이전 데모', level2: a.level2 ?? '기타' }] :
+          Array.isArray(a.classifications) ? a.classifications.map((path: Row) => path && typeof path === 'object' && 'level1' in path && 'level2' in path
+            ? { level1: path.level1, level2: path.level2 } : path) : a.classifications
+        const parsed = ClassificationsInputSchema.safeParse(raw)
+        if (!parsed.success) throw new Error(`assistant:${a.id}: 분류 경로 형식이 올바르지 않습니다`)
+        pathsById.set(id(a.id), parsed.data)
+      }
+      const namedPaths = [...pathsById.values()].flat().filter((path): path is { level1: string; level2: string } => 'level1' in path)
+      const level1 = [...new Set([...rows(b, 'assistants').map(a => String(a.level1 ?? '이전 데모')), ...namedPaths.map(path => path.level1)].map(normalizeCodeName))]
+      const level2 = [...new Set([...rows(b, 'assistants').map(a => String(a.level2 ?? '기타')), ...namedPaths.map(path => path.level2)].map(normalizeCodeName))]
       for (const [group, names] of [['assistant_level1', level1], ['assistant_level2', level2]] as const) {
         if (!names.length) continue
         const [old] = await tx.select().from(s.codeGroup).where(eq(s.codeGroup.key, group))
         if (!old) await tx.insert(s.codeGroup).values({ key: group, name: group === 'assistant_level1' ? '업무 Lv1' : '업무 Lv2' })
         mark('assistants.levels', 'code_group', !old, old && old.name !== (group === 'assistant_level1' ? '업무 Lv1' : '업무 Lv2') ? '서버 카탈로그 값 유지 (차이 있음)' : undefined)
+        const incoming = new Set(namedPaths.map(path => group === 'assistant_level1' ? path.level1.toLowerCase() : path.level2.toLowerCase()))
         for (const [i, name] of names.entries()) {
-          const codeId = `${group}:${name}`
-          const [oldCode] = await tx.select().from(s.code).where(eq(s.code.id, codeId))
-          if (!oldCode) await tx.insert(s.code).values({ id: codeId, groupKey: group, code: name, name, sortOrder: i })
+          const codes = await tx.select().from(s.code).where(eq(s.code.groupKey, group))
+          const oldCode = codes.find(row => normalizeCodeName(row.name).toLowerCase() === name.toLowerCase())
+          if (!incoming.has(name.toLowerCase())) {
+            // Existing assistants and their codes are authoritative, including inactive flags.
+            mark('assistants.levels', 'code', false, oldCode && !same(oldCode, { groupKey: group, code: name, name, sortOrder: i }) ? '서버 카탈로그 값 유지 (차이 있음)' : '서버 카탈로그 값 유지')
+            continue
+          }
+          await resolveCode(tx as Db, group, name, { isAuto: false, sortOrder: i })
           mark('assistants.levels', 'code', !oldCode, oldCode && !same(oldCode, { groupKey: group, code: name, name, sortOrder: i }) ? '서버 카탈로그 값 유지 (차이 있음)' : undefined)
         }
       }
+      const resolvedPaths = new Map<string, Awaited<ReturnType<typeof resolveClassifications>>>()
+      for (const [assistantId, paths] of pathsById) resolvedPaths.set(assistantId, await resolveClassifications(tx as Db, paths))
       const newAssistants = await insert(tx, 'assistants', 'assistant', s.assistant, s.assistant.id, rows(b, 'assistants'), (a, i) => ({
-        id: id(a.id), name: String(a.name), level1CodeId: `assistant_level1:${a.level1 ?? '이전 데모'}`, level2CodeId: `assistant_level2:${a.level2 ?? '기타'}`,
+        id: id(a.id), name: String(a.name), ...resolvedPaths.get(id(a.id))![0]!,
         summary: String(a.summary ?? ''), sortOrder: a.order ?? i, modelId: a.modelId ?? null, link1: a.link1 ?? null, docUrl: a.docUrl ?? null,
         ownerId: userRef(a.ownerId, `assistant:${a.id}`), status: a.status === 'working' ? 'developing' : a.status, usageExample: String(a.usageExample ?? ''),
         color: String(a.color ?? '#64748b'), createdBy: userRef(a.createdBy || a.ownerId, `assistant:${a.id}.createdBy`), createdAt: date(a.createdAt), updatedAt: date(a.updatedAt),
@@ -265,8 +289,12 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
             const [old] = await tx.select().from(s.assistantChecklistTemplate).where(eq(s.assistantChecklistTemplate.id, id(item.id)))
             mark('assistants.checklistTemplate', 'assistant_checklist_template', false, old && same(old, { assistantId: id(a.id), sortOrder, label: String(item.label), required: !!item.required }) ? '상위 행 건너뜀' : '서버 카탈로그 값 유지 (차이 있음)')
           }
+          mark('assistants.classifications', 'assistant_classification', false, '서버 카탈로그 값 유지')
           continue
         }
+        const paths = resolvedPaths.get(id(a.id))!
+        await writeClassifications(tx as Db, id(a.id), paths)
+        for (const _path of paths) mark('assistants.classifications', 'assistant_classification', true)
         for (const [direction, labels] of [['input', a.expectedInputs ?? []], ['output', a.expectedOutputs ?? []]] as const) {
           for (const [sortOrder, label] of labels.entries()) {
             const [old] = await tx.select().from(s.assistantExpectedIo).where(sql`${s.assistantExpectedIo.assistantId} = ${a.id} and ${s.assistantExpectedIo.direction} = ${direction} and ${s.assistantExpectedIo.sortOrder} = ${sortOrder}`)
@@ -577,6 +605,8 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
       for (const name of Object.keys(b.tables)) if (!handled.has(name)) skip(name, '—', '서버 대응 없음')
       if (conflicts.length) throw new Error(`ID 충돌: ${[...new Set(conflicts)].join(', ')}`)
       if (missing.length) throw new Error(`누락된 하위 행: ${[...new Set(missing)].join(', ')}`)
+      const [links] = await tx.select({ n: count() }).from(s.assistant).where(and(isNotNull(s.assistant.link1), ne(s.assistant.link1, '')))
+      link1Overrides = links!.n
       if (dryRun) throw new DryRunComplete()
     })
   } catch (error) {
@@ -585,7 +615,7 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
       throw error
     }
   }
-  return { report, codeMappings, credentials }
+  return { report, link1Overrides, codeMappings, credentials }
 }
 
 class DryRunComplete extends Error {}
@@ -618,6 +648,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const storage = dryRun ? undefined : new FileStorageService(resolve(process.env.FILE_STORAGE_ROOT ?? 'storage'))
       const result = await importBundle(input, drizzle(client), storage, dryRun, { defaultOwner, allowMultiSr })
       for (const [name, counts] of Object.entries(result.report)) console.log(`${name}: 가져올 ${counts.imported}, 건너뛸 ${counts.skipped}${counts.reason ? ` (${counts.reason})` : ''}`)
+      console.log(`link1 재정의 보유: ${result.link1Overrides}`)
       for (const entry of result.codeMappings) console.log(`${entry.kind} 번호: ${entry.from} → ${entry.to} (${entry.id})`)
       for (const entry of result.credentials) console.log(`${entry.loginId}\t${entry.password}`)
     } finally { await client.end() }

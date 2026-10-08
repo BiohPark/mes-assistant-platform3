@@ -22,12 +22,21 @@ export interface ChecklistTemplateItem {
   required: boolean
 }
 
+export interface Classification {
+  level1: string
+  level2: string
+  level1CodeId: string
+  level2CodeId: string
+}
+
 /** 어시스턴트 카탈로그 항목. id는 내부 slug, 실제 호출 모델은 modelId(없으면 공통 기본 모델). */
 export interface Assistant {
   id: ID
   name: string
   level1: string
   level2: string
+  /** Ordered paths. Legacy local catalogs may omit them during migration. */
+  classifications?: Classification[]
   level1CodeId?: string
   level2CodeId?: string
   summary: string

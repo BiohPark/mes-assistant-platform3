@@ -1,0 +1,3954 @@
+{
+  "id": "f14334d7-76a2-4c86-877e-dc5a74eb4682",
+  "prevId": "e3d61c62-c6f5-47d2-b156-4fcc1932ad07",
+  "version": "5",
+  "dialect": "mysql",
+  "tables": {
+    "activity_log": {
+      "name": "activity_log",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "assistant_id": {
+          "name": "assistant_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sr_id": {
+          "name": "sr_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "at": {
+          "name": "at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {
+        "activity_by_task": {
+          "name": "activity_by_task",
+          "columns": [
+            "task_id",
+            "at"
+          ],
+          "isUnique": false
+        },
+        "activity_at": {
+          "name": "activity_at",
+          "columns": [
+            "at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "activity_log_user_id_app_user_id_fk": {
+          "name": "activity_log_user_id_app_user_id_fk",
+          "tableFrom": "activity_log",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "activity_log_task_id_task_id_fk": {
+          "name": "activity_log_task_id_task_id_fk",
+          "tableFrom": "activity_log",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "activity_log_assistant_id_assistant_id_fk": {
+          "name": "activity_log_assistant_id_assistant_id_fk",
+          "tableFrom": "activity_log",
+          "columnsFrom": [
+            "assistant_id"
+          ],
+          "tableTo": "assistant",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "activity_log_sr_id_service_request_id_fk": {
+          "name": "activity_log_sr_id_service_request_id_fk",
+          "tableFrom": "activity_log",
+          "columnsFrom": [
+            "sr_id"
+          ],
+          "tableTo": "service_request",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {
+        "activity_log_id": {
+          "name": "activity_log_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "app_session": {
+      "name": "app_session",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "app_session_user": {
+          "name": "app_session_user",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "app_session_user_id_app_user_id_fk": {
+          "name": "app_session_user_id_app_user_id_fk",
+          "tableFrom": "app_session",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "app_session_id": {
+          "name": "app_session_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "app_setting": {
+      "name": "app_setting",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value": {
+          "name": "value",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "app_setting_key": {
+          "name": "app_setting_key",
+          "columns": [
+            "key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "app_user": {
+      "name": "app_user",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sso_subject": {
+          "name": "sso_subject",
+          "type": "varchar(512)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "('')"
+        },
+        "initials": {
+          "name": "initials",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "color": {
+          "name": "color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "is_system_owner": {
+          "name": "is_system_owner",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "is_business_owner": {
+          "name": "is_business_owner",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "must_change_password": {
+          "name": "must_change_password",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        },
+        "login_id": {
+          "name": "login_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "theme": {
+          "name": "theme",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'system'"
+        },
+        "locale": {
+          "name": "locale",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'ko'"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "app_user_id": {
+          "name": "app_user_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "app_user_sso_subject_key": {
+          "name": "app_user_sso_subject_key",
+          "columns": [
+            "sso_subject"
+          ]
+        },
+        "app_user_login_id_key": {
+          "name": "app_user_login_id_key",
+          "columns": [
+            "login_id"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "app_user_theme_check": {
+          "name": "app_user_theme_check",
+          "value": "`app_user`.`theme` in ('system', 'light', 'dark')"
+        },
+        "app_user_locale_check": {
+          "name": "app_user_locale_check",
+          "value": "`app_user`.`locale` in ('ko', 'en')"
+        }
+      }
+    },
+    "assistant": {
+      "name": "assistant",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "level1_code_id": {
+          "name": "level1_code_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "level2_code_id": {
+          "name": "level2_code_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "summary": {
+          "name": "summary",
+          "type": "longtext",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model_id": {
+          "name": "model_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "link1": {
+          "name": "link1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "doc_url": {
+          "name": "doc_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "usage_example": {
+          "name": "usage_example",
+          "type": "longtext",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "image_file_id": {
+          "name": "image_file_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "color": {
+          "name": "color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "assistant_level1_code_id_code_id_fk": {
+          "name": "assistant_level1_code_id_code_id_fk",
+          "tableFrom": "assistant",
+          "columnsFrom": [
+            "level1_code_id"
+          ],
+          "tableTo": "code",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "assistant_level2_code_id_code_id_fk": {
+          "name": "assistant_level2_code_id_code_id_fk",
+          "tableFrom": "assistant",
+          "columnsFrom": [
+            "level2_code_id"
+          ],
+          "tableTo": "code",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "assistant_owner_id_app_user_id_fk": {
+          "name": "assistant_owner_id_app_user_id_fk",
+          "tableFrom": "assistant",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "assistant_image_file_id_file_object_id_fk": {
+          "name": "assistant_image_file_id_file_object_id_fk",
+          "tableFrom": "assistant",
+          "columnsFrom": [
+            "image_file_id"
+          ],
+          "tableTo": "file_object",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "assistant_created_by_app_user_id_fk": {
+          "name": "assistant_created_by_app_user_id_fk",
+          "tableFrom": "assistant",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "assistant_id": {
+          "name": "assistant_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "assistant_status_check": {
+          "name": "assistant_status_check",
+          "value": "`assistant`.`status` in ('open', 'developing', 'testing', 'retired')"
+        }
+      }
+    },
+    "assistant_checklist_template": {
+      "name": "assistant_checklist_template",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assistant_id": {
+          "name": "assistant_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "required": {
+          "name": "required",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "assistant_checklist_template_assistant_id_assistant_id_fk": {
+          "name": "assistant_checklist_template_assistant_id_assistant_id_fk",
+          "tableFrom": "assistant_checklist_template",
+          "columnsFrom": [
+            "assistant_id"
+          ],
+          "tableTo": "assistant",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "assistant_checklist_template_id": {
+          "name": "assistant_checklist_template_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "assistant_classification": {
+      "name": "assistant_classification",
+      "columns": {
+        "assistant_id": {
+          "name": "assistant_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "level1_code_id": {
+          "name": "level1_code_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "level2_code_id": {
+          "name": "level2_code_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "assistant_classification_assistant_id_assistant_id_fk": {
+          "name": "assistant_classification_assistant_id_assistant_id_fk",
+          "tableFrom": "assistant_classification",
+          "columnsFrom": [
+            "assistant_id"
+          ],
+          "tableTo": "assistant",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "assistant_classification_level1_code_id_code_id_fk": {
+          "name": "assistant_classification_level1_code_id_code_id_fk",
+          "tableFrom": "assistant_classification",
+          "columnsFrom": [
+            "level1_code_id"
+          ],
+          "tableTo": "code",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "assistant_classification_level2_code_id_code_id_fk": {
+          "name": "assistant_classification_level2_code_id_code_id_fk",
+          "tableFrom": "assistant_classification",
+          "columnsFrom": [
+            "level2_code_id"
+          ],
+          "tableTo": "code",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "assistant_classification_pk": {
+          "name": "assistant_classification_pk",
+          "columns": [
+            "assistant_id",
+            "level1_code_id",
+            "level2_code_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "assistant_classification_order_key": {
+          "name": "assistant_classification_order_key",
+          "columns": [
+            "assistant_id",
+            "sort_order"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "assistant_classification_order_check": {
+          "name": "assistant_classification_order_check",
+          "value": "`assistant_classification`.`sort_order` >= 0"
+        }
+      }
+    },
+    "assistant_expected_io": {
+      "name": "assistant_expected_io",
+      "columns": {
+        "assistant_id": {
+          "name": "assistant_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "direction": {
+          "name": "direction",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "assistant_expected_io_assistant_id_assistant_id_fk": {
+          "name": "assistant_expected_io_assistant_id_assistant_id_fk",
+          "tableFrom": "assistant_expected_io",
+          "columnsFrom": [
+            "assistant_id"
+          ],
+          "tableTo": "assistant",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "assistant_expected_io_assistant_id_direction_sort_order_pk": {
+          "name": "assistant_expected_io_assistant_id_direction_sort_order_pk",
+          "columns": [
+            "assistant_id",
+            "direction",
+            "sort_order"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "assistant_expected_io_direction_check": {
+          "name": "assistant_expected_io_direction_check",
+          "value": "`assistant_expected_io`.`direction` in ('input', 'output')"
+        }
+      }
+    },
+    "chat_request": {
+      "name": "chat_request",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_message_id": {
+          "name": "user_message_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reply_message_id": {
+          "name": "reply_message_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "requested_by": {
+          "name": "requested_by",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "retry_of": {
+          "name": "retry_of",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "active_thread_id": {
+          "name": "active_thread_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "type": "stored",
+            "as": "case when status in ('pending', 'streaming') then thread_id else null end"
+          }
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "phase": {
+          "name": "phase",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "transport": {
+          "name": "transport",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "bytes": {
+          "name": "bytes",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "limit_bytes": {
+          "name": "limit_bytes",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "error": {
+          "name": "error",
+          "type": "longtext",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "lease_until": {
+          "name": "lease_until",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "chat_request_one_active": {
+          "name": "chat_request_one_active",
+          "columns": [
+            "active_thread_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "chat_request_thread_id_thread_id_fk": {
+          "name": "chat_request_thread_id_thread_id_fk",
+          "tableFrom": "chat_request",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "tableTo": "thread",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "chat_request_user_message_id_message_id_fk": {
+          "name": "chat_request_user_message_id_message_id_fk",
+          "tableFrom": "chat_request",
+          "columnsFrom": [
+            "user_message_id"
+          ],
+          "tableTo": "message",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "chat_request_reply_message_id_message_id_fk": {
+          "name": "chat_request_reply_message_id_message_id_fk",
+          "tableFrom": "chat_request",
+          "columnsFrom": [
+            "reply_message_id"
+          ],
+          "tableTo": "message",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "chat_request_requested_by_app_user_id_fk": {
+          "name": "chat_request_requested_by_app_user_id_fk",
+          "tableFrom": "chat_request",
+          "columnsFrom": [
+            "requested_by"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "chat_request_retry_of_chat_request_id_fk": {
+          "name": "chat_request_retry_of_chat_request_id_fk",
+          "tableFrom": "chat_request",
+          "columnsFrom": [
+            "retry_of"
+          ],
+          "tableTo": "chat_request",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "chat_request_id": {
+          "name": "chat_request_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "chat_request_reply_message_id_key": {
+          "name": "chat_request_reply_message_id_key",
+          "columns": [
+            "reply_message_id"
+          ]
+        },
+        "chat_request_thread_id_idempotency_key_key": {
+          "name": "chat_request_thread_id_idempotency_key_key",
+          "columns": [
+            "thread_id",
+            "idempotency_key"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "chat_request_status_check": {
+          "name": "chat_request_status_check",
+          "value": "`chat_request`.`status` in ('pending', 'streaming', 'succeeded', 'failed', 'cancelled', 'interrupted')"
+        },
+        "chat_request_provider_check": {
+          "name": "chat_request_provider_check",
+          "value": "`chat_request`.`provider` in ('mock', 'live')"
+        },
+        "chat_request_transport_check": {
+          "name": "chat_request_transport_check",
+          "value": "`chat_request`.`transport` in ('inline', 'openwebui')"
+        }
+      }
+    },
+    "chat_request_input": {
+      "name": "chat_request_input",
+      "columns": {
+        "request_id": {
+          "name": "request_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "seq": {
+          "name": "seq",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "weight": {
+          "name": "weight",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file_id": {
+          "name": "file_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "file_version": {
+          "name": "file_version",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_label": {
+          "name": "source_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "one_shot": {
+          "name": "one_shot",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "delivery": {
+          "name": "delivery",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "remote_id": {
+          "name": "remote_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_task_id": {
+          "name": "source_task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "snapshot_id": {
+          "name": "snapshot_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "message_count": {
+          "name": "message_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "bytes": {
+          "name": "bytes",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "error": {
+          "name": "error",
+          "type": "longtext",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "chat_request_input_request_id_chat_request_id_fk": {
+          "name": "chat_request_input_request_id_chat_request_id_fk",
+          "tableFrom": "chat_request_input",
+          "columnsFrom": [
+            "request_id"
+          ],
+          "tableTo": "chat_request",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "chat_request_input_file_id_file_object_id_fk": {
+          "name": "chat_request_input_file_id_file_object_id_fk",
+          "tableFrom": "chat_request_input",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "tableTo": "file_object",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "chat_request_input_source_task_id_task_id_fk": {
+          "name": "chat_request_input_source_task_id_task_id_fk",
+          "tableFrom": "chat_request_input",
+          "columnsFrom": [
+            "source_task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "chat_request_input_snapshot_id_context_snapshot_id_fk": {
+          "name": "chat_request_input_snapshot_id_context_snapshot_id_fk",
+          "tableFrom": "chat_request_input",
+          "columnsFrom": [
+            "snapshot_id"
+          ],
+          "tableTo": "context_snapshot",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "chat_request_input_request_id_seq_pk": {
+          "name": "chat_request_input_request_id_seq_pk",
+          "columns": [
+            "request_id",
+            "seq"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chat_request_input_kind_check": {
+          "name": "chat_request_input_kind_check",
+          "value": "`chat_request_input`.`kind` in ('file', 'conversation')"
+        },
+        "chat_request_input_weight_check": {
+          "name": "chat_request_input_weight_check",
+          "value": "`chat_request_input`.`weight` in ('main', 'reference')"
+        },
+        "chat_request_input_delivery_check": {
+          "name": "chat_request_input_delivery_check",
+          "value": "`chat_request_input`.`delivery` in ('attached', 'inline', 'metadata_only', 'failed')"
+        },
+        "chat_request_input_mode_check": {
+          "name": "chat_request_input_mode_check",
+          "value": "`chat_request_input`.`mode` in ('full', 'messages', 'summary')"
+        },
+        "chat_request_input_check": {
+          "name": "chat_request_input_check",
+          "value": "(`chat_request_input`.`kind` = 'file') = (`chat_request_input`.`file_id` is not null)"
+        },
+        "chat_request_input_check1": {
+          "name": "chat_request_input_check1",
+          "value": "(`chat_request_input`.`kind` = 'conversation') = (`chat_request_input`.`snapshot_id` is not null)"
+        }
+      }
+    },
+    "checklist_item": {
+      "name": "checklist_item",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "template_item_id": {
+          "name": "template_item_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "required": {
+          "name": "required",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "checked": {
+          "name": "checked",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "checked_by": {
+          "name": "checked_by",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "checked_at": {
+          "name": "checked_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "checklist_item_task_id_task_id_fk": {
+          "name": "checklist_item_task_id_task_id_fk",
+          "tableFrom": "checklist_item",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "checklist_item_checked_by_app_user_id_fk": {
+          "name": "checklist_item_checked_by_app_user_id_fk",
+          "tableFrom": "checklist_item",
+          "columnsFrom": [
+            "checked_by"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "checklist_item_template_item_id_fk": {
+          "name": "checklist_item_template_item_id_fk",
+          "tableFrom": "checklist_item",
+          "columnsFrom": [
+            "template_item_id"
+          ],
+          "tableTo": "assistant_checklist_template",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "checklist_item_id": {
+          "name": "checklist_item_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "checklist_review": {
+      "name": "checklist_review",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "by_user": {
+          "name": "by_user",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "at": {
+          "name": "at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        },
+        "met": {
+          "name": "met",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "total": {
+          "name": "total",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "checklist_review_task_id_task_id_fk": {
+          "name": "checklist_review_task_id_task_id_fk",
+          "tableFrom": "checklist_review",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "checklist_review_by_user_app_user_id_fk": {
+          "name": "checklist_review_by_user_app_user_id_fk",
+          "tableFrom": "checklist_review",
+          "columnsFrom": [
+            "by_user"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "checklist_review_id": {
+          "name": "checklist_review_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "checklist_review_source_check": {
+          "name": "checklist_review_source_check",
+          "value": "`checklist_review`.`source` in ('ai', 'rule')"
+        }
+      }
+    },
+    "checklist_review_item": {
+      "name": "checklist_review_item",
+      "columns": {
+        "review_id": {
+          "name": "review_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "met": {
+          "name": "met",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "('')"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "checklist_review_item_review_id_checklist_review_id_fk": {
+          "name": "checklist_review_item_review_id_checklist_review_id_fk",
+          "tableFrom": "checklist_review_item",
+          "columnsFrom": [
+            "review_id"
+          ],
+          "tableTo": "checklist_review",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "checklist_review_item_item_id_checklist_item_id_fk": {
+          "name": "checklist_review_item_item_id_checklist_item_id_fk",
+          "tableFrom": "checklist_review_item",
+          "columnsFrom": [
+            "item_id"
+          ],
+          "tableTo": "checklist_item",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "checklist_review_item_review_id_item_id_pk": {
+          "name": "checklist_review_item_review_id_item_id_pk",
+          "columns": [
+            "review_id",
+            "item_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "code": {
+      "name": "code",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "group_key": {
+          "name": "group_key",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "code": {
+          "name": "code",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "is_auto": {
+          "name": "is_auto",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "code_group_key_code_group_key_fk": {
+          "name": "code_group_key_code_group_key_fk",
+          "tableFrom": "code",
+          "columnsFrom": [
+            "group_key"
+          ],
+          "tableTo": "code_group",
+          "columnsTo": [
+            "key"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "code_id": {
+          "name": "code_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "code_group_key_code_key": {
+          "name": "code_group_key_code_key",
+          "columns": [
+            "group_key",
+            "code"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "code_group": {
+      "name": "code_group",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "code_group_key": {
+          "name": "code_group_key",
+          "columns": [
+            "key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "context_snapshot": {
+      "name": "context_snapshot",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_task_id": {
+          "name": "source_task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "up_to_message_id": {
+          "name": "up_to_message_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "summary_text": {
+          "name": "summary_text",
+          "type": "longtext",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "summary_source": {
+          "name": "summary_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "summary_model": {
+          "name": "summary_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "context_snapshot_source_task_id_task_id_fk": {
+          "name": "context_snapshot_source_task_id_task_id_fk",
+          "tableFrom": "context_snapshot",
+          "columnsFrom": [
+            "source_task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "context_snapshot_up_to_message_id_message_id_fk": {
+          "name": "context_snapshot_up_to_message_id_message_id_fk",
+          "tableFrom": "context_snapshot",
+          "columnsFrom": [
+            "up_to_message_id"
+          ],
+          "tableTo": "message",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "context_snapshot_created_by_app_user_id_fk": {
+          "name": "context_snapshot_created_by_app_user_id_fk",
+          "tableFrom": "context_snapshot",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "context_snapshot_id": {
+          "name": "context_snapshot_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "context_snapshot_mode_check": {
+          "name": "context_snapshot_mode_check",
+          "value": "`context_snapshot`.`mode` in ('full', 'messages', 'summary')"
+        },
+        "context_snapshot_summary_source_check": {
+          "name": "context_snapshot_summary_source_check",
+          "value": "`context_snapshot`.`summary_source` in ('ai', 'rule')"
+        },
+        "context_snapshot_check": {
+          "name": "context_snapshot_check",
+          "value": "(`context_snapshot`.`mode` = 'summary') = (`context_snapshot`.`summary_text` is not null)"
+        }
+      }
+    },
+    "context_snapshot_message": {
+      "name": "context_snapshot_message",
+      "columns": {
+        "snapshot_id": {
+          "name": "snapshot_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "seq": {
+          "name": "seq",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "context_snapshot_message_snapshot_id_context_snapshot_id_fk": {
+          "name": "context_snapshot_message_snapshot_id_context_snapshot_id_fk",
+          "tableFrom": "context_snapshot_message",
+          "columnsFrom": [
+            "snapshot_id"
+          ],
+          "tableTo": "context_snapshot",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "context_snapshot_message_message_id_message_id_fk": {
+          "name": "context_snapshot_message_message_id_message_id_fk",
+          "tableFrom": "context_snapshot_message",
+          "columnsFrom": [
+            "message_id"
+          ],
+          "tableTo": "message",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "context_snapshot_message_snapshot_id_message_id_pk": {
+          "name": "context_snapshot_message_snapshot_id_message_id_pk",
+          "columns": [
+            "snapshot_id",
+            "message_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "conversation_input": {
+      "name": "conversation_input",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_task_id": {
+          "name": "source_task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "weight": {
+          "name": "weight",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "snapshot_id": {
+          "name": "snapshot_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "selected_by": {
+          "name": "selected_by",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "selected_at": {
+          "name": "selected_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {
+        "conversation_input_by_source": {
+          "name": "conversation_input_by_source",
+          "columns": [
+            "source_task_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "conversation_input_task_id_task_id_fk": {
+          "name": "conversation_input_task_id_task_id_fk",
+          "tableFrom": "conversation_input",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "conversation_input_source_task_id_task_id_fk": {
+          "name": "conversation_input_source_task_id_task_id_fk",
+          "tableFrom": "conversation_input",
+          "columnsFrom": [
+            "source_task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "conversation_input_snapshot_id_context_snapshot_id_fk": {
+          "name": "conversation_input_snapshot_id_context_snapshot_id_fk",
+          "tableFrom": "conversation_input",
+          "columnsFrom": [
+            "snapshot_id"
+          ],
+          "tableTo": "context_snapshot",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "conversation_input_selected_by_app_user_id_fk": {
+          "name": "conversation_input_selected_by_app_user_id_fk",
+          "tableFrom": "conversation_input",
+          "columnsFrom": [
+            "selected_by"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "conversation_input_id": {
+          "name": "conversation_input_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "conversation_input_task_id_source_task_id_key": {
+          "name": "conversation_input_task_id_source_task_id_key",
+          "columns": [
+            "task_id",
+            "source_task_id"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "conversation_input_weight_check": {
+          "name": "conversation_input_weight_check",
+          "value": "`conversation_input`.`weight` in ('main', 'reference')"
+        },
+        "conversation_input_mode_check": {
+          "name": "conversation_input_mode_check",
+          "value": "`conversation_input`.`mode` in ('full', 'messages', 'summary')"
+        },
+        "conversation_input_check": {
+          "name": "conversation_input_check",
+          "value": "`conversation_input`.`task_id` <> `conversation_input`.`source_task_id`"
+        }
+      }
+    },
+    "db_lock": {
+      "name": "db_lock",
+      "columns": {
+        "lock_key": {
+          "name": "lock_key",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "db_lock_lock_key": {
+          "name": "db_lock_lock_key",
+          "columns": [
+            "lock_key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "file_object": {
+      "name": "file_object",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "origin_task_id": {
+          "name": "origin_task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "origin_sr_id": {
+          "name": "origin_sr_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "original_name": {
+          "name": "original_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mime": {
+          "name": "mime",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "size_bytes": {
+          "name": "size_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "is_output": {
+          "name": "is_output",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "version": {
+          "name": "version",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "previous_id": {
+          "name": "previous_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "uploaded_by": {
+          "name": "uploaded_by",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "uploaded_at": {
+          "name": "uploaded_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "active_origin": {
+          "name": "active_origin",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "type": "stored",
+            "as": "case when deleted_at is null then coalesce(origin_task_id, origin_sr_id) else null end"
+          }
+        }
+      },
+      "indexes": {
+        "file_object_origin_task": {
+          "name": "file_object_origin_task",
+          "columns": [
+            "origin_task_id"
+          ],
+          "isUnique": false
+        },
+        "file_object_origin_sr": {
+          "name": "file_object_origin_sr",
+          "columns": [
+            "origin_sr_id"
+          ],
+          "isUnique": false
+        },
+        "file_object_version": {
+          "name": "file_object_version",
+          "columns": [
+            "active_origin",
+            "original_name",
+            "version"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "file_object_origin_task_id_task_id_fk": {
+          "name": "file_object_origin_task_id_task_id_fk",
+          "tableFrom": "file_object",
+          "columnsFrom": [
+            "origin_task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "file_object_origin_sr_id_service_request_id_fk": {
+          "name": "file_object_origin_sr_id_service_request_id_fk",
+          "tableFrom": "file_object",
+          "columnsFrom": [
+            "origin_sr_id"
+          ],
+          "tableTo": "service_request",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "file_object_previous_id_file_object_id_fk": {
+          "name": "file_object_previous_id_file_object_id_fk",
+          "tableFrom": "file_object",
+          "columnsFrom": [
+            "previous_id"
+          ],
+          "tableTo": "file_object",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "file_object_uploaded_by_app_user_id_fk": {
+          "name": "file_object_uploaded_by_app_user_id_fk",
+          "tableFrom": "file_object",
+          "columnsFrom": [
+            "uploaded_by"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "file_object_id": {
+          "name": "file_object_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "file_object_storage_key_key": {
+          "name": "file_object_storage_key_key",
+          "columns": [
+            "storage_key"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "file_object_kind_check": {
+          "name": "file_object_kind_check",
+          "value": "`file_object`.`kind` in ('task_file', 'sr_attachment', 'assistant_image')"
+        },
+        "file_object_source_check": {
+          "name": "file_object_source_check",
+          "value": "`file_object`.`source` in ('upload', 'assistant')"
+        },
+        "file_object_version_check": {
+          "name": "file_object_version_check",
+          "value": "`file_object`.`version` >= 1"
+        },
+        "file_object_check": {
+          "name": "file_object_check",
+          "value": "not `file_object`.`is_output` or `file_object`.`kind` = 'task_file'"
+        },
+        "file_object_check1": {
+          "name": "file_object_check1",
+          "value": "(`file_object`.`kind` = 'sr_attachment') = (`file_object`.`origin_sr_id` is not null)"
+        }
+      }
+    },
+    "file_remote_ref": {
+      "name": "file_remote_ref",
+      "columns": {
+        "file_id": {
+          "name": "file_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "scope_hash": {
+          "name": "scope_hash",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "remote_id": {
+          "name": "remote_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "uploaded_at": {
+          "name": "uploaded_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "file_remote_ref_file_id_file_object_id_fk": {
+          "name": "file_remote_ref_file_id_file_object_id_fk",
+          "tableFrom": "file_remote_ref",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "tableTo": "file_object",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "file_remote_ref_file_id_scope_hash_pk": {
+          "name": "file_remote_ref_file_id_scope_hash_pk",
+          "columns": [
+            "file_id",
+            "scope_hash"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "message": {
+      "name": "message",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "content": {
+          "name": "content",
+          "type": "longtext",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "error": {
+          "name": "error",
+          "type": "longtext",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "message_thread_id_thread_id_fk": {
+          "name": "message_thread_id_thread_id_fk",
+          "tableFrom": "message",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "tableTo": "thread",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "message_author_id_app_user_id_fk": {
+          "name": "message_author_id_app_user_id_fk",
+          "tableFrom": "message",
+          "columnsFrom": [
+            "author_id"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "message_id": {
+          "name": "message_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "message_thread_id_seq_key": {
+          "name": "message_thread_id_seq_key",
+          "columns": [
+            "thread_id",
+            "seq"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "message_role_check": {
+          "name": "message_role_check",
+          "value": "`message`.`role` in ('system', 'user', 'assistant')"
+        },
+        "message_kind_check": {
+          "name": "message_kind_check",
+          "value": "`message`.`kind` in ('discussion')"
+        },
+        "message_status_check": {
+          "name": "message_status_check",
+          "value": "`message`.`status` in ('streaming', 'done', 'error')"
+        }
+      }
+    },
+    "message_attachment": {
+      "name": "message_attachment",
+      "columns": {
+        "message_id": {
+          "name": "message_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file_id": {
+          "name": "file_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "message_attachment_message_id_message_id_fk": {
+          "name": "message_attachment_message_id_message_id_fk",
+          "tableFrom": "message_attachment",
+          "columnsFrom": [
+            "message_id"
+          ],
+          "tableTo": "message",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "message_attachment_file_id_file_object_id_fk": {
+          "name": "message_attachment_file_id_file_object_id_fk",
+          "tableFrom": "message_attachment",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "tableTo": "file_object",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "message_attachment_message_id_file_id_pk": {
+          "name": "message_attachment_message_id_file_id_pk",
+          "columns": [
+            "message_id",
+            "file_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "note": {
+      "name": "note",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content": {
+          "name": "content",
+          "type": "longtext",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "note_task_id_task_id_fk": {
+          "name": "note_task_id_task_id_fk",
+          "tableFrom": "note",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "note_author_id_app_user_id_fk": {
+          "name": "note_author_id_app_user_id_fk",
+          "tableFrom": "note",
+          "columnsFrom": [
+            "author_id"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "note_id": {
+          "name": "note_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "note_attachment": {
+      "name": "note_attachment",
+      "columns": {
+        "note_id": {
+          "name": "note_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file_id": {
+          "name": "file_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "note_attachment_note_id_note_id_fk": {
+          "name": "note_attachment_note_id_note_id_fk",
+          "tableFrom": "note_attachment",
+          "columnsFrom": [
+            "note_id"
+          ],
+          "tableTo": "note",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "note_attachment_file_id_file_object_id_fk": {
+          "name": "note_attachment_file_id_file_object_id_fk",
+          "tableFrom": "note_attachment",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "tableTo": "file_object",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "note_attachment_note_id_file_id_pk": {
+          "name": "note_attachment_note_id_file_id_pk",
+          "columns": [
+            "note_id",
+            "file_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "notification": {
+      "name": "notification",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "body": {
+          "name": "body",
+          "type": "longtext",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "link": {
+          "name": "link",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "at": {
+          "name": "at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        },
+        "read_at": {
+          "name": "read_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "notification_unread": {
+          "name": "notification_unread",
+          "columns": [
+            "user_id",
+            "read_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "notification_user_id_app_user_id_fk": {
+          "name": "notification_user_id_app_user_id_fk",
+          "tableFrom": "notification",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "notification_id": {
+          "name": "notification_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "service_request": {
+      "name": "service_request",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "code": {
+          "name": "code",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "requester_id": {
+          "name": "requester_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "('')"
+        },
+        "title_source": {
+          "name": "title_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "body": {
+          "name": "body",
+          "type": "longtext",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "submitted_at": {
+          "name": "submitted_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "service_request_requester_id_app_user_id_fk": {
+          "name": "service_request_requester_id_app_user_id_fk",
+          "tableFrom": "service_request",
+          "columnsFrom": [
+            "requester_id"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "service_request_id": {
+          "name": "service_request_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "service_request_code_key": {
+          "name": "service_request_code_key",
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "service_request_title_source_check": {
+          "name": "service_request_title_source_check",
+          "value": "`service_request`.`title_source` in ('default', 'ai', 'manual')"
+        },
+        "service_request_status_check": {
+          "name": "service_request_status_check",
+          "value": "`service_request`.`status` in ('draft', 'submitted', 'reviewing', 'in_progress', 'responded', 'done', 'rejected')"
+        }
+      }
+    },
+    "shared_result": {
+      "name": "shared_result",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sr_id": {
+          "name": "sr_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "text": {
+          "name": "text",
+          "type": "longtext",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "by_user": {
+          "name": "by_user",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "at": {
+          "name": "at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "shared_result_sr_id_service_request_id_fk": {
+          "name": "shared_result_sr_id_service_request_id_fk",
+          "tableFrom": "shared_result",
+          "columnsFrom": [
+            "sr_id"
+          ],
+          "tableTo": "service_request",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "shared_result_task_id_task_id_fk": {
+          "name": "shared_result_task_id_task_id_fk",
+          "tableFrom": "shared_result",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "shared_result_by_user_app_user_id_fk": {
+          "name": "shared_result_by_user_app_user_id_fk",
+          "tableFrom": "shared_result",
+          "columnsFrom": [
+            "by_user"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "shared_result_id": {
+          "name": "shared_result_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "shared_result_file": {
+      "name": "shared_result_file",
+      "columns": {
+        "result_id": {
+          "name": "result_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file_id": {
+          "name": "file_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "shared_result_file_result_id_shared_result_id_fk": {
+          "name": "shared_result_file_result_id_shared_result_id_fk",
+          "tableFrom": "shared_result_file",
+          "columnsFrom": [
+            "result_id"
+          ],
+          "tableTo": "shared_result",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "shared_result_file_file_id_file_object_id_fk": {
+          "name": "shared_result_file_file_id_file_object_id_fk",
+          "tableFrom": "shared_result_file",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "tableTo": "file_object",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "shared_result_file_result_id_file_id_pk": {
+          "name": "shared_result_file_result_id_file_id_pk",
+          "columns": [
+            "result_id",
+            "file_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "tag": {
+      "name": "tag",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "tag_key": {
+          "name": "tag_key",
+          "columns": [
+            "key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "tag_kind_check": {
+          "name": "tag_kind_check",
+          "value": "`tag`.`kind` in ('sr', 'keyword')"
+        }
+      }
+    },
+    "task": {
+      "name": "task",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "code": {
+          "name": "code",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assistant_id": {
+          "name": "assistant_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sr_id": {
+          "name": "sr_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title_source": {
+          "name": "title_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "summary": {
+          "name": "summary",
+          "type": "longtext",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "priority": {
+          "name": "priority",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "due_date": {
+          "name": "due_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "model_id": {
+          "name": "model_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        },
+        "last_activity_at": {
+          "name": "last_activity_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "completed_by": {
+          "name": "completed_by",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "task_assistant": {
+          "name": "task_assistant",
+          "columns": [
+            "assistant_id"
+          ],
+          "isUnique": false
+        },
+        "task_last_activity": {
+          "name": "task_last_activity",
+          "columns": [
+            "last_activity_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "task_assistant_id_assistant_id_fk": {
+          "name": "task_assistant_id_assistant_id_fk",
+          "tableFrom": "task",
+          "columnsFrom": [
+            "assistant_id"
+          ],
+          "tableTo": "assistant",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "task_sr_id_service_request_id_fk": {
+          "name": "task_sr_id_service_request_id_fk",
+          "tableFrom": "task",
+          "columnsFrom": [
+            "sr_id"
+          ],
+          "tableTo": "service_request",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "task_owner_id_app_user_id_fk": {
+          "name": "task_owner_id_app_user_id_fk",
+          "tableFrom": "task",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "task_created_by_app_user_id_fk": {
+          "name": "task_created_by_app_user_id_fk",
+          "tableFrom": "task",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "task_completed_by_app_user_id_fk": {
+          "name": "task_completed_by_app_user_id_fk",
+          "tableFrom": "task",
+          "columnsFrom": [
+            "completed_by"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "task_id": {
+          "name": "task_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "task_code_key": {
+          "name": "task_code_key",
+          "columns": [
+            "code"
+          ]
+        },
+        "task_idempotency_key_key": {
+          "name": "task_idempotency_key_key",
+          "columns": [
+            "idempotency_key"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "task_title_source_check": {
+          "name": "task_title_source_check",
+          "value": "`task`.`title_source` in ('default', 'ai', 'manual')"
+        },
+        "task_status_check": {
+          "name": "task_status_check",
+          "value": "`task`.`status` in ('todo', 'in_progress', 'on_hold', 'done')"
+        },
+        "task_priority_check": {
+          "name": "task_priority_check",
+          "value": "`task`.`priority` in ('low', 'normal', 'high', 'urgent')"
+        }
+      }
+    },
+    "task_assignee": {
+      "name": "task_assignee",
+      "columns": {
+        "task_id": {
+          "name": "task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "task_assignee_task_id_task_id_fk": {
+          "name": "task_assignee_task_id_task_id_fk",
+          "tableFrom": "task_assignee",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "task_assignee_user_id_app_user_id_fk": {
+          "name": "task_assignee_user_id_app_user_id_fk",
+          "tableFrom": "task_assignee",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "task_assignee_task_id_user_id_pk": {
+          "name": "task_assignee_task_id_user_id_pk",
+          "columns": [
+            "task_id",
+            "user_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "task_feedback": {
+      "name": "task_feedback",
+      "columns": {
+        "task_id": {
+          "name": "task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rating": {
+          "name": "rating",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "comment": {
+          "name": "comment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "('')"
+        },
+        "by_user": {
+          "name": "by_user",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "at": {
+          "name": "at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "task_feedback_task_id_task_id_fk": {
+          "name": "task_feedback_task_id_task_id_fk",
+          "tableFrom": "task_feedback",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "task_feedback_by_user_app_user_id_fk": {
+          "name": "task_feedback_by_user_app_user_id_fk",
+          "tableFrom": "task_feedback",
+          "columnsFrom": [
+            "by_user"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "task_feedback_task_id": {
+          "name": "task_feedback_task_id",
+          "columns": [
+            "task_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "task_feedback_rating_check": {
+          "name": "task_feedback_rating_check",
+          "value": "`task_feedback`.`rating` between 1 and 5"
+        }
+      }
+    },
+    "task_input": {
+      "name": "task_input",
+      "columns": {
+        "task_id": {
+          "name": "task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file_id": {
+          "name": "file_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "weight": {
+          "name": "weight",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "selected_by": {
+          "name": "selected_by",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "selected_at": {
+          "name": "selected_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {
+        "task_input_by_file": {
+          "name": "task_input_by_file",
+          "columns": [
+            "file_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "task_input_task_id_task_id_fk": {
+          "name": "task_input_task_id_task_id_fk",
+          "tableFrom": "task_input",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "task_input_file_id_file_object_id_fk": {
+          "name": "task_input_file_id_file_object_id_fk",
+          "tableFrom": "task_input",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "tableTo": "file_object",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "task_input_selected_by_app_user_id_fk": {
+          "name": "task_input_selected_by_app_user_id_fk",
+          "tableFrom": "task_input",
+          "columnsFrom": [
+            "selected_by"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "task_input_task_id_file_id_pk": {
+          "name": "task_input_task_id_file_id_pk",
+          "columns": [
+            "task_id",
+            "file_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "task_input_weight_check": {
+          "name": "task_input_weight_check",
+          "value": "`task_input`.`weight` in ('main', 'reference')"
+        }
+      }
+    },
+    "task_tag": {
+      "name": "task_tag",
+      "columns": {
+        "task_id": {
+          "name": "task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tag_key": {
+          "name": "tag_key",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "added_by": {
+          "name": "added_by",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "added_at": {
+          "name": "added_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {
+        "task_tag_by_tag": {
+          "name": "task_tag_by_tag",
+          "columns": [
+            "tag_key"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "task_tag_task_id_task_id_fk": {
+          "name": "task_tag_task_id_task_id_fk",
+          "tableFrom": "task_tag",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "task_tag_tag_key_tag_key_fk": {
+          "name": "task_tag_tag_key_tag_key_fk",
+          "tableFrom": "task_tag",
+          "columnsFrom": [
+            "tag_key"
+          ],
+          "tableTo": "tag",
+          "columnsTo": [
+            "key"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "task_tag_added_by_app_user_id_fk": {
+          "name": "task_tag_added_by_app_user_id_fk",
+          "tableFrom": "task_tag",
+          "columnsFrom": [
+            "added_by"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "task_tag_task_id_tag_key_pk": {
+          "name": "task_tag_task_id_tag_key_pk",
+          "columns": [
+            "task_id",
+            "tag_key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "thread": {
+      "name": "thread",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sr_id": {
+          "name": "sr_id",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model_id": {
+          "name": "model_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "current_timestamp(6)"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "thread_task_id_task_id_fk": {
+          "name": "thread_task_id_task_id_fk",
+          "tableFrom": "thread",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "tableTo": "task",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "thread_sr_id_service_request_id_fk": {
+          "name": "thread_sr_id_service_request_id_fk",
+          "tableFrom": "thread",
+          "columnsFrom": [
+            "sr_id"
+          ],
+          "tableTo": "service_request",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "thread_created_by_app_user_id_fk": {
+          "name": "thread_created_by_app_user_id_fk",
+          "tableFrom": "thread",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "tableTo": "app_user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "thread_id": {
+          "name": "thread_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "thread_task_id_key": {
+          "name": "thread_task_id_key",
+          "columns": [
+            "task_id"
+          ]
+        },
+        "thread_sr_id_key": {
+          "name": "thread_sr_id_key",
+          "columns": [
+            "sr_id"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "thread_check": {
+          "name": "thread_check",
+          "value": "(`thread`.`task_id` is null) <> (`thread`.`sr_id` is null)"
+        }
+      }
+    }
+  },
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  },
+  "internal": {
+    "tables": {},
+    "indexes": {}
+  }
+}

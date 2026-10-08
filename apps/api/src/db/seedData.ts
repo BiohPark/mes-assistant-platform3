@@ -207,5 +207,7 @@ export const SEED_ASSISTANTS: Assistant[] = SPECS.map((s, i) => ({
   updatedAt: T,
   level1CodeId: `assistant_level1:${s.level1}`,
   level2CodeId: `assistant_level2:${s.level2}`,
+  classifications: [{ level1: s.level1, level2: s.level2, level1CodeId: `assistant_level1:${s.level1}`, level2CodeId: `assistant_level2:${s.level2}` },
+    ...(['deviation-drafter', 'cc-writer'].includes(s.id) ? [{ level1: 'SDLC', level2: '분석', level1CodeId: 'assistant_level1:SDLC', level2CodeId: 'assistant_level2:분석' }] : [])],
   revision: 0,
 }))

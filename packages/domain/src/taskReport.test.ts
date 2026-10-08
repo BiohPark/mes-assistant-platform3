@@ -54,3 +54,13 @@ describe('buildTaskReport', () => {
     expect(buildTaskReport({ ...base, completionReason: '담당자 구두 승인' })).toContain('- 필수 항목 미완료 완료 사유: 담당자 구두 승인')
   })
 })
+
+
+it('renders every path in the same order as the transmitted context', () => {
+  const md = buildTaskReport({ task: { code: 'WK-1', title: 'T', summary: '', status: 'done', checklist: [], outputFileIds: [], tags: [], createdAt: '2026-09-01' } as never,
+    assistant: { name: 'A', level1: 'SDLC', level2: '분석', classifications: [
+      { level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2' },
+      { level1: 'Record', level2: 'CCA', level1CodeId: 'r1', level2CodeId: 'r2' },
+    ] } as never, files: [], inputs: [], users: new Map() })
+  expect(md).toContain('A (SDLC > 분석, Record > CCA)')
+})
