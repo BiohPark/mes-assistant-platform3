@@ -17,7 +17,7 @@ describe('SR HTTP API', () => {
     list: vi.fn(async () => []), create: vi.fn(async () => ({ id: 'sr', status: 'draft' })), get: vi.fn(async () => ({ id: 'sr' })),
     draft: vi.fn(async () => ({ title: '제목', body: '본문' })), submit: vi.fn(async () => ({ id: 'sr', code: 'SR-2026-0001' })),
     title: vi.fn(async () => ({ title: '사람 제목', titleSource: 'manual' })), status: vi.fn(async () => ({ status: 'in_progress' })),
-    content: vi.fn(async () => ({ title: '사람 제목', body: '본문' })),
+    content: vi.fn(async () => ({ title: '사람 제목', body: '본문' })), refine: vi.fn(async () => ({ title: '다듬은 제목', body: '다듬은 본문' })),
     delete: vi.fn(async () => undefined), startTask: vi.fn(async () => ({ id: 'task' })),
     share: vi.fn(async () => ({ id: 'result' })), results: vi.fn(async () => []),
   }
@@ -55,7 +55,13 @@ describe('SR HTTP API', () => {
     expect(sr.content).toHaveBeenCalledWith('u', 'sr', { title: '사람 제목', body: '본문', attachmentIds: [] })
     await request(app.getHttpServer()).patch('/api/service-requests/sr/status').set(auth()).send({ status: 'invalid' }).expect(400)
     await request(app.getHttpServer()).patch('/api/service-requests/sr/status').set(auth()).send({ status: 'in_progress' }).expect(200)
-    expect(sr.status).toHaveBeenCalledWith('u', 'sr', 'in_progress')
+    expect(sr.status).toHaveBeenCalledWith('u', 'sr', 'in_progress', undefined)
+    await request(app.getHttpServer()).patch('/api/service-requests/sr/status').set(auth()).send({ status: 'rejected', reason: 'x'.repeat(501) }).expect(400)
+    await request(app.getHttpServer()).patch('/api/service-requests/sr/status').set(auth()).send({ status: 'rejected', reason: '범위 밖 요청' }).expect(200)
+    expect(sr.status).toHaveBeenCalledWith('u', 'sr', 'rejected', '범위 밖 요청')
+    await request(app.getHttpServer()).post('/api/service-requests/sr/refine').set(auth()).send({ title: '제목' }).expect(400)
+    await request(app.getHttpServer()).post('/api/service-requests/sr/refine').set(auth()).send({ title: '제목', body: '본문' }).expect(201, { title: '다듬은 제목', body: '다듬은 본문' })
+    expect(sr.refine).toHaveBeenCalledWith('u', 'sr', { title: '제목', body: '본문' })
     await request(app.getHttpServer()).post('/api/service-requests/sr/tasks').set(auth()).send({ assistantId: 'a' }).expect(201)
     expect(sr.startTask).toHaveBeenCalledWith('u', 'sr', { assistantId: 'a' })
     await request(app.getHttpServer()).post('/api/service-requests/sr/results').set(auth()).send({ text: '완료', fileIds: [] }).expect(201)

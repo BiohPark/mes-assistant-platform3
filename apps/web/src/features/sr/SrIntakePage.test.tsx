@@ -25,7 +25,7 @@ it('접수 상태와 첨부를 읽을 수 있는 이름으로 표시하고 UUID�
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/service-requests/internal-sr') return jsonResponse(200, {
       id: 'internal-sr', code: 'SR-2026-0001', requesterId: 'u', title: '요청', titleSource: 'manual', body: '', status: 'reviewing',
-      threadId: 'thread', attachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01',
+      threadId: 'thread', attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01',
     })
     if (url === '/api/threads/thread/messages') return jsonResponse(200, [{ id: 'm', threadId: 'thread', role: 'user', kind: 'chat', content: '요청 내용', createdAt: '2026-10-01', authorId: 'u', attachmentIds: ['internal-file-uuid'], status: 'done' }])
     if (url === '/api/service-requests?scope=mine') return jsonResponse(200, [{ id: 'internal-sr', code: 'SR-2026-0001', title: '요청', status: 'reviewing', createdAt: '2026-10-01', updatedAt: '2026-10-01' }])
@@ -48,7 +48,7 @@ it('새 요청 클릭은 저장하지 않고 첫 Enter 전송만 초안과 접�
     if (init?.method === 'POST') posts.push({ url, key: new Headers(init.headers).get('Idempotency-Key') })
     if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, { srIntakeAssistantId: 'a', name: '접수 도우미', summary: '요청을 정리합니다' })
     if (url === '/api/service-requests?scope=mine') return jsonResponse(200, rows)
-    const sr = { id: 'created', threadId: 'intake', code: '', title: '', titleSource: 'default', body: '', status: 'draft', requesterId: 'u', attachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
+    const sr = { id: 'created', threadId: 'intake', code: '', title: '', titleSource: 'default', body: '', status: 'draft', requesterId: 'u', attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
     if (url === '/api/service-requests' && init?.method === 'POST') { rows = [sr]; return jsonResponse(201, sr) }
     if (url === '/api/service-requests/created') return jsonResponse(200, sr)
     if (url === '/api/threads/intake/messages') return jsonResponse(200, messages)
@@ -96,7 +96,7 @@ it('첫 생성 응답을 잃으면 같은 멱등 키로 재시도하고 입력�
 })
 
 it('내 요청 목록은 진행/완료를 나누고 초안 삭제는 확인 후 요청한다', async () => {
-  const draft = { id: 'draft', requesterId: 'u', code: '', title: '', firstMessage: '첫 메시지의 제목', titleSource: 'default', body: '', status: 'draft', threadId: 'thread', attachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
+  const draft = { id: 'draft', requesterId: 'u', code: '', title: '', firstMessage: '첫 메시지의 제목', titleSource: 'default', body: '', status: 'draft', threadId: 'thread', attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
   let rows = [draft, { ...draft, id: 'closed', code: 'SR-2026-0002', title: '종료된 요청', status: 'done' }]
   let deletes = 0
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -127,7 +127,7 @@ it('내 요청 목록은 진행/완료를 나누고 초안 삭제는 확인 후 
 })
 
 it.each(['done', 'rejected'])('%s 요청은 입력을 닫고 접수 내용은 읽기 전용으로 보여준다', async status => {
-  const sr = { id: 'closed', requesterId: 'u', code: 'SR-2026-0001', title: '종료 요청', titleSource: 'manual', body: '접수 본문', status, threadId: 'thread', attachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
+  const sr = { id: 'closed', requesterId: 'u', code: 'SR-2026-0001', title: '종료 요청', titleSource: 'manual', body: '접수 본문', status, threadId: 'thread', attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/closed' ? jsonResponse(200, sr) : url === '/api/service-requests/intake-assistant' ? jsonResponse(200, { srIntakeAssistantId: 'a' }) : jsonResponse(200, [])))
   renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=closed' })
   expect(await screen.findByText('접수 본문')).toBeInTheDocument()
@@ -140,7 +140,7 @@ it.each(['done', 'rejected'])('%s 요청은 입력을 닫고 접수 내용은 �
 it('첫 응답 시작을 기다리는 동안 새 요청·목록 이동을 막아 후속 입력 유실을 방지한다', async () => {
   let release!: (response: Response) => void
   let creates = 0
-  const base = { requesterId: 'u', code: '', title: '', titleSource: 'default', body: '', status: 'draft', attachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
+  const base = { requesterId: 'u', code: '', title: '', titleSource: 'default', body: '', status: 'draft', attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
   const created = { ...base, id: 'created', threadId: 'intake' }
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, { srIntakeAssistantId: 'a' })
@@ -169,7 +169,7 @@ it('첫 응답 시작을 기다리는 동안 새 요청·목록 이동을 막아
 })
 
 it('요청 기록이 있는 초안은 삭제 버튼을 숨긴다(서버 hasRequests)', async () => {
-  const draft = { id: 'draft', requesterId: 'u', code: '', title: '', firstMessage: '첫 메시지', titleSource: 'default', body: '', status: 'draft', threadId: 'thread', attachmentIds: [], results: [], conversations: [], hasRequests: true, createdAt: '2026-10-01', updatedAt: '2026-10-01' }
+  const draft = { id: 'draft', requesterId: 'u', code: '', title: '', firstMessage: '첫 메시지', titleSource: 'default', body: '', status: 'draft', threadId: 'thread', attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], hasRequests: true, createdAt: '2026-10-01', updatedAt: '2026-10-01' }
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/service-requests?scope=mine') return jsonResponse(200, [draft])
     if (url === '/api/service-requests/draft') return jsonResponse(200, draft)
@@ -182,7 +182,7 @@ it('요청 기록이 있는 초안은 삭제 버튼을 숨긴다(서버 hasReque
 })
 
 it('요청자(BO) 화면의 접수 첨부는 내려받기만 보이고 버전 기록은 숨긴다', async () => {
-  const sr = { id: 'sr', requesterId: 'u', code: 'SR-2026-0001', title: '첨부 요청', titleSource: 'manual', body: '본문', status: 'reviewing', threadId: 'thread', attachmentIds: ['file'], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
+  const sr = { id: 'sr', requesterId: 'u', code: 'SR-2026-0001', title: '첨부 요청', titleSource: 'manual', body: '본문', status: 'reviewing', threadId: 'thread', attachmentIds: ['file'], candidateAttachmentIds: ['file'], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/service-requests/sr') return jsonResponse(200, sr)
     if (url === '/api/files/file') return jsonResponse(200, { id: 'file', name: '알람.txt', version: 1, size: 10, source: 'upload' })
@@ -193,4 +193,17 @@ it('요청자(BO) 화면의 접수 첨부는 내려받기만 보이고 버전 �
   expect(await screen.findByText('알람.txt v1')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '다운로드' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '버전 기록' })).not.toBeInTheDocument()
+})
+
+it('접수자 화면에서 상태 이력을 펼치면 시각·처리자·변경·사유가 보인다', async () => {
+  const sr = { id: 'sr', requesterId: 'u', code: 'SR-2026-0001', title: '이력 요청', titleSource: 'manual', body: '본문', status: 'rejected', threadId: 'thread', attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01',
+    statusHistory: [{ id: 'h1', at: '2026-10-01T01:00:00.000Z', by: 'u', byName: '사용자', from: 'draft', to: 'submitted' }, { id: 'h2', at: '2026-10-02T02:00:00.000Z', by: 's', byName: '담당자', from: 'submitted', to: 'rejected', reason: '범위 밖 요청' }] }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/sr' ? jsonResponse(200, sr) : url === '/api/service-requests/intake-assistant' ? jsonResponse(200, { srIntakeAssistantId: 'a' }) : jsonResponse(200, [])))
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['requester'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=sr' })
+  await userEvent.click(await screen.findByRole('button', { name: '상태 이력' }))
+  const list = screen.getByRole('list', { name: '상태 이력' })
+  expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+  expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('담당자')
+  expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('접수됨 → 반려')
+  expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('사유: 범위 밖 요청')
 })

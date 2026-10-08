@@ -17,7 +17,8 @@ import { SrStatusBadge } from '@/components/StatusBadges'
 import { newId } from '@/lib/ids'
 import { SrList } from './SrList'
 import { SrTitleEditor } from './SrTitleEditor'
-import { SrConvertDialog } from './SrConvertDialog'
+import { SrConvertSheet } from './SrConvertSheet'
+import { SrStatusHistory } from './SrStatusHistory'
 import { SharedResults } from './SharedResults'
 import { SrAttachments } from './SrAttachments'
 import { useMe } from '@/app/auth'
@@ -35,11 +36,11 @@ export function SrIntakePage() {
   const isNew = params.has('new')
   const first = useRef<{ key: string; sr?: SrDetail } | null>(null)
   const sending = useRef(false)
-  const content = useRef<HTMLElement>(null)
   const [filter, setFilter] = useState<'active' | 'complete'>('active')
   const [busy, setBusy] = useState(false)
   const [convert, setConvert] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const selectedQuery = useQuery({ queryKey: ['sr', selectedId], queryFn: () => getSr(selectedId), enabled: !!selectedId })
   const selected = selectedQuery.data
   const { data: messages = [] } = useQuery({ queryKey: ['messages', selected?.threadId], queryFn: ({ signal }) => getMessages(selected!.threadId, signal), enabled: !!selected?.threadId })
@@ -96,12 +97,14 @@ export function SrIntakePage() {
         {selected ? <>
           <header className="space-y-2"><div className="flex flex-wrap items-center gap-2"><SrStatusBadge status={selected.status} /><span>{selected.code || t('status.sr.draft')}</span>
             {canEdit ? <SrTitleEditor key={selected.id} sr={selected} onSaved={refresh} /> : <h1 className="font-semibold">{selected.title}</h1>}
-            {canEdit && (selected.status !== 'draft' || messages.some(message => message.role === 'user')) && <Button className="ml-auto" onClick={() => selected.status === 'draft' || selected.status === 'submitted' ? setConvert(true) : content.current?.scrollIntoView?.({ block: 'start' })}>{t(selected.status === 'draft' ? 'sr.convert' : selected.status === 'submitted' ? 'sr.editContent' : 'sr.viewContent')}</Button>}
+            {canEdit && (selected.status !== 'draft' || messages.some(message => message.role === 'user')) && <Button className="ml-auto" onClick={() => setConvert(true)}>{t(selected.status === 'draft' ? 'sr.convert' : selected.status === 'submitted' ? 'sr.editContent' : 'sr.viewContent')}</Button>}
           </div>
-            <ol aria-label={t('sr.steps')} className="flex flex-wrap gap-2 text-xs text-muted-foreground">{steps.map((step, index) => <li key={step} aria-current={selected.status === step ? 'step' : undefined} className={selected.status === step ? 'font-semibold text-primary' : ''}>{index > 0 && <span aria-hidden>→ </span>}{t(`status.sr.${step}`)}</li>)}</ol>
+            <div className="flex flex-wrap items-center gap-2"><ol aria-label={t('sr.steps')} className="flex flex-wrap gap-2 text-xs text-muted-foreground">{steps.map((step, index) => <li key={step} aria-current={selected.status === step ? 'step' : undefined} className={selected.status === step ? 'font-semibold text-primary' : ''}>{index > 0 && <span aria-hidden>→ </span>}{t(`status.sr.${step}`)}</li>)}</ol>
+              {selected.status !== 'draft' && <Button variant="ghost" size="xs" aria-expanded={historyOpen} onClick={() => setHistoryOpen((value) => !value)}>{t('srFlow.statusHistory')}</Button>}</div>
+            {historyOpen && <SrStatusHistory history={selected.statusHistory ?? []} />}
           </header>
           <SharedResults results={selected.results} />
-          {selected.status !== 'draft' && <section ref={content} className="space-y-2 rounded-lg border p-3"><h2 className="font-medium">{t('sr.content')}</h2><p className="whitespace-pre-wrap text-sm">{selected.body}</p>{selected.attachmentIds.length > 0 && <SrAttachments ids={selected.attachmentIds} />}</section>}
+          {selected.status !== 'draft' && <section className="space-y-2 rounded-lg border p-3"><h2 className="font-medium">{t('sr.content')}</h2><p className="whitespace-pre-wrap text-sm">{selected.body}</p>{selected.attachmentIds.length > 0 && <SrAttachments ids={selected.attachmentIds} />}</section>}
         </> : selectedQuery.isError ? <p role="alert">{String(selectedQuery.error)}</p> : !isNew && <p className="text-sm text-muted-foreground">{t('sr.selectRequest')}</p>}
         {(selected || isNew) && <>
           <section className="min-h-40 flex-1 space-y-4 overflow-y-auto rounded-lg border p-3" aria-label={t('sr.conversation')}>
@@ -110,7 +113,7 @@ export function SrIntakePage() {
           {closed ? <p role="status" className="text-sm text-muted-foreground">{t('sr.closed')}</p> : <Composer key={selectedId || 'new'} maxAttachments={settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST} inputLabel={t('sr.message')} placeholder={t('sr.messagePlaceholder')} disabled={busy || awaitingStart || !settings?.srIntakeAssistantId} streaming={!!chat.run} allowAttachments onSend={send} onStop={() => { void chat.stop() }} suggestions={!messages.length ? [settings?.usageExample || t('sr.example')] : undefined} />}
           {selected?.status === 'draft' && canEdit && !selected.hasRequests && <Button variant="ghost" className="self-start" onClick={() => setDeleting(true)}>{t('sr.deleteDraft')}</Button>}
         </>}
-        {selected && <><SrConvertDialog sr={selected} open={convert} onOpenChange={setConvert} onSaved={refresh} /><ConfirmDialog open={deleting} onOpenChange={setDeleting} title={t('sr.deleteConfirm')} description={t('sr.deleteDescription')} confirmLabel={t('sr.deleteDraft')} onConfirm={async () => { try { await deleteSr(selected.id); setSelectedId(''); refresh() } catch (error) { toast.error(String(error)); throw error } }} /></>}
+        {selected && <><SrConvertSheet sr={selected} open={convert} onOpenChange={setConvert} onSaved={refresh} /><ConfirmDialog open={deleting} onOpenChange={setDeleting} title={t('sr.deleteConfirm')} description={t('sr.deleteDescription')} confirmLabel={t('sr.deleteDraft')} onConfirm={async () => { try { await deleteSr(selected.id); setSelectedId(''); refresh() } catch (error) { toast.error(String(error)); throw error } }} /></>}
       </div>
     </div>
   </>

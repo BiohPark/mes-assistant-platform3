@@ -339,34 +339,38 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
           if (old && old.imageFileId !== id(a.imageId)) mark('assistants.imageId', 'assistant.image_file_id', false, '서버 카탈로그 값 유지 (차이 있음)')
         }
       }
+      // 접수 첨부 정본 = 접수 본문 메시지(role user · kind discussion · authorId null — SrService.saveContentAttachments·assemble과 같은 규칙)의 첨부.
+      // 데모 채팅 메시지(authorId 있음)에는 붙이지 않는다. 초안 첨부는 전환 때 사람이 고르므로 후보(file_object.origin_sr_id)로만 남긴다.
+      const intakeBody = (threadId: string) => tx.select({ id: s.message.id }).from(s.message)
+        .where(sql`${s.message.threadId} = ${threadId} and ${s.message.role} = 'user' and ${s.message.kind} = 'discussion' and ${s.message.authorId} is null`).orderBy(s.message.seq).limit(1)
       for (const sr of rows(b, 'serviceRequests')) {
         if (!newSrs.has(id(sr.id))) {
           for (const _ of sr.attachmentIds ?? []) mark('serviceRequests.attachmentIds', 'message_attachment', false, '상위 행 건너뜀')
           continue
         }
         if (!(sr.attachmentIds ?? []).length) continue
-        const srThread = rows(b, 'threads').find((th) => th.srId === sr.id)
-        if (!srThread || !newThreads.has(id(srThread.id))) throw new Error(`SR ${sr.id}: 접수 대화가 없습니다`)
-        const [firstUser] = await tx.select().from(s.message).where(sql`${s.message.threadId} = ${id(srThread.id)} and ${s.message.role} = 'user'`).orderBy(s.message.seq).limit(1)
-        if (firstUser) {
-          for (const fileId of sr.attachmentIds) {
-            const [old] = await tx.select().from(s.messageAttachment).where(sql`${s.messageAttachment.messageId} = ${firstUser.id} and ${s.messageAttachment.fileId} = ${fileId}`)
-            if (!old) await tx.insert(s.messageAttachment).values({ messageId: firstUser.id, fileId: id(fileId) })
-            mark('serviceRequests.attachmentIds', 'message_attachment', !old)
-          }
+        if ((sr.status ?? 'draft') === 'draft') {
+          for (const _ of sr.attachmentIds) mark('serviceRequests.attachmentIds', 'message_attachment', false, '초안 첨부는 전환 때 선택 (후보로만 가져옴)')
           continue
         }
-        const [last] = await tx.select({ seq: s.message.seq, createdAt: s.message.createdAt }).from(s.message)
-          .where(eq(s.message.threadId, id(srThread.id))).orderBy(desc(s.message.seq)).limit(1)
-        const messageId = `${sr.id}:import-attachments`
-        const attachmentMessage = await insert(tx, 'serviceRequests.attachmentIds', 'message', s.message, s.message.id, [{ id: messageId, sr, srThread, seq: Number(last?.seq ?? 0) + 1 }], (entry) => ({
-          id: entry.id, threadId: id(entry.srThread.id), seq: entry.seq, role: 'user', kind: 'discussion', content: '', authorId: userRef(entry.sr.requesterId, `service_request:${entry.sr.id}.requesterId`),
-          status: 'done', createdAt: last?.createdAt ?? date(entry.sr.createdAt),
-        }))
+        const srThread = rows(b, 'threads').find((th) => th.srId === sr.id)
+        if (!srThread || !newThreads.has(id(srThread.id))) throw new Error(`SR ${sr.id}: 접수 대화가 없습니다`)
+        let bodyId = (await intakeBody(id(srThread.id)))[0]?.id
+        if (!bodyId) {
+          const [last] = await tx.select({ seq: s.message.seq, createdAt: s.message.createdAt }).from(s.message)
+            .where(eq(s.message.threadId, id(srThread.id))).orderBy(desc(s.message.seq)).limit(1)
+          const messageId = `${sr.id}:import-attachments`
+          const created = await insert(tx, 'serviceRequests.attachmentIds', 'message', s.message, s.message.id, [{ id: messageId, sr, srThread, seq: Number(last?.seq ?? 0) + 1 }], (entry) => ({
+            id: entry.id, threadId: id(entry.srThread.id), seq: entry.seq, role: 'user', kind: 'discussion', content: String(entry.sr.body ?? ''), authorId: null,
+            status: 'done', createdAt: last?.createdAt ?? date(entry.sr.createdAt),
+          }))
+          if (!created.has(messageId)) { for (const _ of sr.attachmentIds) mark('serviceRequests.attachmentIds', 'message_attachment', false, '상위 행 건너뜀'); continue }
+          bodyId = messageId
+        }
         for (const fileId of sr.attachmentIds) {
-          if (!attachmentMessage.has(messageId)) { mark('serviceRequests.attachmentIds', 'message_attachment', false, '상위 행 건너뜀'); continue }
-          await tx.insert(s.messageAttachment).values({ messageId, fileId: id(fileId) })
-          mark('serviceRequests.attachmentIds', 'message_attachment', true)
+          const [old] = await tx.select().from(s.messageAttachment).where(sql`${s.messageAttachment.messageId} = ${bodyId} and ${s.messageAttachment.fileId} = ${id(fileId)}`)
+          if (!old) await tx.insert(s.messageAttachment).values({ messageId: bodyId, fileId: id(fileId) })
+          mark('serviceRequests.attachmentIds', 'message_attachment', !old)
         }
       }
       for (const t of rows(b, 'tasks')) {
@@ -558,14 +562,14 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
             sql`${s.sharedResultFile.resultId} = ${id(result.id)} and ${s.sharedResultFile.fileId} = ${id(fileId)}`, `shared_result_file:${result.id}/${fileId}`,
             { resultId: id(result.id), fileId: id(fileId) })
         }
-        if ((sr.attachmentIds ?? []).length) {
+        if ((sr.attachmentIds ?? []).length && (sr.status ?? 'draft') !== 'draft') {
           const srThread = rows(b, 'threads').find((th) => th.srId === sr.id)
-          const [firstUser] = srThread ? await tx.select().from(s.message).where(sql`${s.message.threadId} = ${id(srThread.id)} and ${s.message.role} = 'user'`).orderBy(s.message.seq).limit(1) : []
+          const [body] = srThread ? await intakeBody(id(srThread.id)) : []
           for (const fileId of sr.attachmentIds) {
-            if (!firstUser) missing.push(`message_attachment:${sr.id}/${fileId}`)
+            if (!body) missing.push(`message_attachment:${sr.id}/${fileId}`)
             else await requireChild(s.messageAttachment,
-              sql`${s.messageAttachment.messageId} = ${firstUser.id} and ${s.messageAttachment.fileId} = ${id(fileId)}`, `message_attachment:${firstUser.id}/${fileId}`,
-              { messageId: firstUser.id, fileId: id(fileId) })
+              sql`${s.messageAttachment.messageId} = ${body.id} and ${s.messageAttachment.fileId} = ${id(fileId)}`, `message_attachment:${body.id}/${fileId}`,
+              { messageId: body.id, fileId: id(fileId) })
           }
         }
       }

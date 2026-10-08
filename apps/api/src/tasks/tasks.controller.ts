@@ -18,7 +18,7 @@ const statusSchema = z.object({ status: z.enum(['todo', 'in_progress', 'on_hold'
 const checklistSchema = z.object({ label: z.string().trim().min(1), required: z.boolean().optional() }).strict()
 const noteSchema = z.object({ content: z.string(), attachmentIds: z.array(z.string().min(1)).optional() }).strict()
 const feedbackSchema = z.object({ rating: z.number().int().min(1).max(5), comment: z.string().default('') }).strict()
-const completeSchema = z.object({ feedback: feedbackSchema.optional() }).strict()
+const completeSchema = z.object({ feedback: feedbackSchema.optional(), reason: z.string().max(500).optional() }).strict()
 const messageSchema = z.object({ content: z.string().trim(), kind: z.literal('discussion'), attachmentIds: z.array(z.string().min(1)).optional() }).strict().refine((value) => !!value.content || !!value.attachmentIds?.length)
 function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body)
@@ -100,12 +100,14 @@ export class TasksController {
 
   @Post(':id/complete/preview')
   preview(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
-    return this.extras.preview(req.user!.id, id, parse(completeSchema, body).feedback)
+    const input = parse(completeSchema, body)
+    return this.extras.preview(req.user!.id, id, input.feedback, input.reason)
   }
 
   @Post(':id/complete')
   complete(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
-    return this.extras.complete(req.user!.id, id, parse(completeSchema, body).feedback)
+    const input = parse(completeSchema, body)
+    return this.extras.complete(req.user!.id, id, input.feedback, input.reason)
   }
 
   @Delete(':id')

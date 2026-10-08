@@ -9,6 +9,8 @@ export interface TaskReportInput {
   inputs: Array<{ name: string; version: number; weight: TaskInput['weight']; fromAssistantName: string }>
   users: Map<ID, { name: string }>
   now?: Date
+  /** 필수 체크 항목이 미완료인 채 완료할 때의 사유 */
+  completionReason?: string
 }
 
 const NONE = '- (없음)'
@@ -18,7 +20,7 @@ function list<T>(items: T[], render: (item: T) => string): string {
 }
 
 /** 업무 완료 리포트 (markdown). 파일함에 산출물로 저장된다. */
-export function buildTaskReport({ task, assistant, files, inputs, users, now = new Date() }: TaskReportInput): string {
+export function buildTaskReport({ task, assistant, files, inputs, users, now = new Date(), completionReason }: TaskReportInput): string {
   const fileById = new Map(files.map((f) => [f.id, f]))
   const lead = durationDays(task.startedAt ?? task.createdAt, task.completedAt, now)
   const outputs = task.outputFileIds.map((id) => fileById.get(id)).filter((f): f is Pick<FileAsset, 'id' | 'name'> => !!f)
@@ -36,6 +38,7 @@ export function buildTaskReport({ task, assistant, files, inputs, users, now = n
     '## 체크리스트',
     list(task.checklist, (c) => `- [${c.checked ? 'x' : ' '}] ${c.label}${c.required ? ' (중요)' : ''}`),
     ...(task.checklistReview ? [`- AI 달성도: ${task.checklistReview.met}/${task.checklistReview.total} (${formatDate(task.checklistReview.at, 'yyyy-MM-dd HH:mm')})`] : []),
+    ...(completionReason ? [`- 필수 항목 미완료 완료 사유: ${completionReason}`] : []),
     '',
     '## 산출물',
     list(outputs, (f) => `- ${f.name}`),

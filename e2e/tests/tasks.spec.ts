@@ -30,6 +30,9 @@ test('대화 생성, 태그와 칸반, 완료와 재개, 다른 사용자 조회
   await expect(page.getByRole('link', { name: /WK-\d{4}-\d{4}.*열기/ })).toBeVisible()
   await page.goto(taskUrl)
   await page.getByRole('button', { name: '업무 완료' }).click()
+  // U9: 필수 체크 항목이 미완료면 완료 사유가 필수다(시드 템플릿에 필수 항목이 있을 수 있음).
+  const completeReason = page.getByRole('dialog').getByRole('textbox', { name: '완료 사유' })
+  if (await completeReason.count()) await completeReason.fill('E2E 완료')
   await page.getByRole('dialog').getByRole('button', { name: '완료 처리' }).click()
   await expect(page.getByRole('button', { name: '다시 열기' })).toBeVisible()
   await page.getByRole('button', { name: '다시 열기' }).click()

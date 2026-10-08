@@ -66,9 +66,9 @@ describe('reports DB', () => {
     const draft = await sr.create('requester')
     await sr.submit('requester', draft.id, { title: '리드타임', body: '', attachmentIds: [] })
     await db.update(serviceRequest).set({ submittedAt: new Date(Date.now() - 2 * 86_400_000) }).where(eq(serviceRequest.id, draft.id))
-    await sr.status('system-owner', draft.id, 'done')
+    await sr.status('system-owner', draft.id, 'done', '처리 완료')
     const logs = await db.select().from(activityLog).where(eq(activityLog.srId, draft.id))
-    expect(logs.filter((row) => row.type === 'sr.status_changed')).toContainEqual(expect.objectContaining({ userId: 'system-owner', payload: { from: 'submitted', to: 'done' } }))
+    expect(logs.filter((row) => row.type === 'sr.status_changed')).toContainEqual(expect.objectContaining({ userId: 'system-owner', payload: { from: 'submitted', to: 'done', reason: '처리 완료' } }))
     expect((await reports.get(7, 'day', 'reporter')).kpi.srLead).toBe(2)
   })
 

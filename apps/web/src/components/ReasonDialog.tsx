@@ -1,5 +1,5 @@
-import { useT } from '@/i18n'
 import { useState } from 'react'
+import { useT } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
@@ -38,7 +38,7 @@ export function ReasonDialog({ open, onOpenChange, title, description, confirmLa
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
-        <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder={placeholder ?? t('components.reasonPlaceholder')} autoFocus className="text-xs" />
+        <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={500} placeholder={placeholder ?? t('components.reasonPlaceholder')} autoFocus className="text-xs" />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             {t('common.cancel')}

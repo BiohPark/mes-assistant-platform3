@@ -1,8 +1,8 @@
-import type { Message, ServiceRequest, SharedResult } from '@mes/domain'
+import type { Message, ServiceRequest, SharedResult, SrStatusChange } from '@mes/domain'
 import type { FileMeta } from './files'
 import { queryClient } from './queryClient'
 
-export type SrDetail = ServiceRequest & { intakeMessages?: Message[]; firstMessage?: string; requesterName?: string; /** 상세 응답: 접수 대화에 요청 기록이 있어 초안을 삭제할 수 없음 */ hasRequests?: boolean; conversations: Array<{ id: string; code: string; title: string; status: string; threadId: string | null }> }
+export type SrDetail = ServiceRequest & { /** 첨부 후보: 이 SR에 올라간 파일 전체. 정본(attachmentIds)은 전환·수정에서 사람이 고른 것만 */ candidateAttachmentIds: string[]; intakeMessages?: Message[]; firstMessage?: string; requesterName?: string; /** 상세 응답: 접수 대화에 요청 기록이 있어 초안을 삭제할 수 없음 */ hasRequests?: boolean; /** 상세 응답: 상태 이력(activity_log sr.status_changed) */ statusHistory?: SrStatusChange[]; conversations: Array<{ id: string; code: string; title: string; status: string; threadId: string | null }> }
 async function request<T>(path: string, method = 'GET', body?: unknown, key?: string): Promise<T> {
   const response = await fetch(`/api/service-requests${path}`, { method, credentials: 'same-origin',
     headers: { ...(body !== undefined && { 'content-type': 'application/json' }), ...(key && { 'Idempotency-Key': key }) },
@@ -21,7 +21,9 @@ export const draftSr = (id: string) => request<{ title: string; body: string }>(
 export const submitSr = (id: string, input: { title: string; titleSource: 'ai' | 'manual'; body: string; attachmentIds: string[] }) => request<SrDetail>(`${path(id)}/submit`, 'POST', input)
 export const titleSr = (id: string, title: string) => request<SrDetail>(`${path(id)}/title`, 'PATCH', { title })
 export const contentSr = (id: string, input: { title: string; body: string; attachmentIds: string[]; titleSource?: 'ai' | 'manual' }) => request<SrDetail>(`${path(id)}/content`, 'PATCH', input)
-export const statusSr = (id: string, status: string) => request<SrDetail>(`${path(id)}/status`, 'PATCH', { status })
+export const statusSr = (id: string, status: string, reason?: string) => request<SrDetail>(`${path(id)}/status`, 'PATCH', { status, ...(reason && { reason }) })
+/** 현재 제목·본문을 다듬은 제안만 받는다(저장 없음). 적용은 사람이 한다. */
+export const refineSr = (id: string, input: { title: string; body: string }) => request<{ title: string; body: string }>(`${path(id)}/refine`, 'POST', input)
 export const startSrTask = (id: string, assistantId: string, forceNew = false) => request<{ id?: string; candidates?: SrDetail['conversations'] }>(`${path(id)}/tasks`, 'POST', { assistantId, forceNew })
 export const shareSr = (id: string, input: { taskId?: string; text: string; fileIds: string[] }) => request<SharedResult>(`${path(id)}/results`, 'POST', input)
 export const srResults = (id: string) => request<SharedResult[]>(`${path(id)}/results`)

@@ -71,17 +71,34 @@ test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유',
     expect(sentMessages[0]!.attachmentIds).toHaveLength(1)
     const fileId = sentMessages[0]!.attachmentIds[0]!
     expect((await page.request.get(`/api/files/${fileId}`)).ok()).toBe(true)
+    // 두 번째 파일은 화면을 다시 불러오기 전에 올려 Sheet 후보에 포함되게 한다
+    const extraUpload = await page.request.post(`/api/service-requests/${srId}/files`, { multipart: { file: { name: 'sr-e2e-extra.txt', mimeType: 'text/plain', buffer: Buffer.from('해제할 파일') } } })
+    expect(extraUpload.ok()).toBe(true)
+    const extraFileId = ((await extraUpload.json()) as { id: string }).id
     await page.unroute('**/api/threads/*/requests')
     await page.reload()
     await expect(page.getByRole('region', { name: '접수 대화' })).toContainText('알람 필터 요청')
     await page.getByRole('button', { name: '접수로 전환' }).click()
+    // U9: 전환은 오른쪽 Sheet — AI 초안 로딩 후 제목이 채워지고, 첨부는 이 SR의 파일 전체가 후보로 나열되며(기본 전부 선택) 해제한 파일은 접수에서 빠진다.
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByLabel('SR 제목')).not.toBeEmpty()
+    const attachmentCheck = dialog.getByRole('checkbox', { name: 'sr-e2e.txt' })
+    const extraCheck = dialog.getByRole('checkbox', { name: 'sr-e2e-extra.txt' })
+    await expect(attachmentCheck).toBeChecked()
+    await expect(extraCheck).toBeChecked()
+    await attachmentCheck.click()
+    await expect(attachmentCheck).not.toBeChecked()
+    await attachmentCheck.click()
+    await expect(attachmentCheck).toBeChecked()
+    await extraCheck.click()
+    await expect(extraCheck).not.toBeChecked()
     await dialog.getByRole('button', { name: '접수 제출' }).click()
     await expect(dialog).toBeHidden()
-    const submitted = await (await page.request.get(`/api/service-requests/${srId}`)).json() as { code: string }
+    const submitted = await (await page.request.get(`/api/service-requests/${srId}`)).json() as { code: string; attachmentIds: string[]; candidateAttachmentIds: string[] }
     srCode = submitted.code
     expect(submitted.code).toMatch(/^SR-\d{4}-\d{4}$/)
+    expect(submitted.attachmentIds).toEqual([fileId])
+    expect(submitted.candidateAttachmentIds).toEqual([fileId, extraFileId])
 
     await owner.goto('/sr/manage')
     await owner.getByRole('textbox', { name: 'SR 검색' }).fill(srCode)
@@ -106,6 +123,25 @@ test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유',
     expect((await owner.request.post(`/api/service-requests/${srId}/results`, { data: { taskId, text: '처리 완료', fileIds: [sharedId] } })).ok()).toBe(true)
     await page.reload()
     await expect(page.getByText('처리 완료')).toBeVisible()
+    // U9: 완료는 사유 필수 — 처리 Sheet의 "다음 단계"(답변 공유 → 완료) → ReasonDialog. 서버는 사유 없는 완료를 400으로 막는다.
+    expect((await owner.request.patch(`/api/service-requests/${srId}/status`, { data: { status: 'done' } })).status()).toBe(400)
+    await owner.goto('/sr/manage')
+    await owner.getByRole('textbox', { name: 'SR 검색' }).fill(srCode)
+    await owner.getByRole('button', { name: new RegExp(srCode) }).click()
+    await owner.getByRole('button', { name: '다음 단계: 완료' }).click()
+    const reasonDialog = owner.getByRole('dialog', { name: 'SR 완료 사유' })
+    await expect(reasonDialog.getByRole('button', { name: '확인' })).toBeDisabled()
+    await reasonDialog.getByPlaceholder('사유를 입력하세요').fill('요청 범위 모두 처리')
+    await reasonDialog.getByRole('button', { name: '확인' }).click()
+    await expect(reasonDialog).toBeHidden()
+    await expect(owner.getByRole('list', { name: '상태 이력' })).toContainText('사유: 요청 범위 모두 처리')
+    const closed = await (await page.request.get(`/api/service-requests/${srId}`)).json() as { status: string; statusHistory: Array<{ to: string; reason?: string }> }
+    expect(closed.status).toBe('done')
+    expect(closed.statusHistory.at(-1)).toMatchObject({ to: 'done', reason: '요청 범위 모두 처리' })
+    await page.reload()
+    await page.getByRole('button', { name: '상태 이력' }).click()
+    await expect(page.getByRole('list', { name: '상태 이력' })).toContainText('답변 공유 → 완료')
+    await expect(page.getByRole('list', { name: '상태 이력' })).toContainText('사유: 요청 범위 모두 처리')
     expect((await page.request.get(`/api/tasks/${taskId}`)).status()).toBe(403)
     expect((await page.request.get(`/api/threads/${task.threadId}/messages`)).status()).toBe(403)
     expect((await page.request.get(`/api/files/${sharedId}/content`)).status()).toBe(200)

@@ -166,7 +166,7 @@ export class TaskExtrasService {
     this.updated(taskId)
   }
 
-  private async report(tx: Db | Tx, taskId: string, actor: string, now: Date, feedback?: { rating: number; comment: string }) {
+  private async report(tx: Db | Tx, taskId: string, actor: string, now: Date, feedback?: { rating: number; comment: string }, completionReason?: string) {
     const detail = await new DbTasksService(tx as Db).get(taskId)
     detail.completedAt = now.toISOString()
     detail.completedBy = actor
@@ -189,18 +189,28 @@ export class TaskExtrasService {
       inputs: [
         ...selectedFiles.map(({ row, file, originAssistant }) => ({ name: file.originalName, version: file.version, weight: row.weight as 'main' | 'reference', fromAssistantName: file.originTaskId === taskId ? '이 대화' : originAssistant.name })),
         ...selectedConversations.map(({ row, source, originAssistant }) => ({ name: `${source.code} ${source.title}`, version: 1, weight: row.weight as 'main' | 'reference', fromAssistantName: originAssistant.name })),
-      ], users: new Map(users.map((user) => [user.id, { name: user.name }])), now })
+      ], users: new Map(users.map((user) => [user.id, { name: user.name }])), now, completionReason })
   }
 
-  async preview(actor: string, taskId: string, feedback?: { rating: number; comment: string }) {
-    await assertTaskAccess(this.db, actor, taskId)
-    if (feedback && (feedback.rating < 1 || feedback.rating > 5 || !Number.isInteger(feedback.rating))) throw new BadRequestException('별점은 1~5여야 합니다')
-    return { content: await this.report(this.db, taskId, actor, new Date(), feedback) }
+  /** 필수 체크 항목 미완료 건수. 0이면 완료 사유를 요구하지도, 리포트·이력에 남기지도 않는다. */
+  private async missingRequired(tx: Db | Tx, taskId: string) {
+    return (await tx.select({ required: checklistItem.required, checked: checklistItem.checked }).from(checklistItem).where(eq(checklistItem.taskId, taskId)))
+      .filter((item) => item.required && !item.checked).length
   }
 
-  async complete(actor: string, taskId: string, feedback?: { rating: number; comment: string }) {
+  async preview(actor: string, taskId: string, feedback?: { rating: number; comment: string }, reason?: string) {
     await assertTaskAccess(this.db, actor, taskId)
     if (feedback && (feedback.rating < 1 || feedback.rating > 5 || !Number.isInteger(feedback.rating))) throw new BadRequestException('별점은 1~5여야 합니다')
+    const recorded = await this.missingRequired(this.db, taskId) > 0 ? reason?.trim() || undefined : undefined
+    return { content: await this.report(this.db, taskId, actor, new Date(), feedback, recorded) }
+  }
+
+  /** 완료. 필수 체크 항목이 미완료면 사유(1–500자)가 필수이고, 사유는 리포트와 task.completed 이력에 남는다. */
+  async complete(actor: string, taskId: string, feedback?: { rating: number; comment: string }, reason?: string) {
+    await assertTaskAccess(this.db, actor, taskId)
+    if (feedback && (feedback.rating < 1 || feedback.rating > 5 || !Number.isInteger(feedback.rating))) throw new BadRequestException('별점은 1~5여야 합니다')
+    const clean = reason?.trim() || undefined
+    if (clean && clean.length > 500) throw new BadRequestException('완료 사유는 500자 이내여야 합니다')
     const storageKey = createStorageKey('완료리포트.md')
     let written = false
     try {
@@ -210,12 +220,15 @@ export class TaskExtrasService {
           .where(and(eq(thread.taskId, taskId), inArray(chatRequest.status, ['pending', 'streaming']))).limit(1)
         if (active) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
         const now = new Date()
+        const missingRequired = await this.missingRequired(tx, taskId)
+        if (missingRequired > 0 && !clean) throw new BadRequestException('필수 체크 항목이 미완료입니다. 완료 사유를 입력하세요')
+        const recorded = missingRequired > 0 ? clean : undefined
         if (feedback) {
           await tx.insert(taskFeedback).values({ taskId, rating: feedback.rating, comment: feedback.comment, byUser: actor, at: now })
             .onDuplicateKeyUpdate({ set: { rating: feedback.rating, comment: feedback.comment, byUser: actor, at: now } })
           await tx.insert(activityLog).values({ id: id(), type: 'feedback.given', userId: actor, taskId, assistantId: current.assistantId, payload: { rating: feedback.rating } })
         }
-        const content = await this.report(tx, taskId, actor, now, feedback)
+        const content = await this.report(tx, taskId, actor, now, feedback, recorded)
         const bytes = Buffer.from(content, 'utf8')
         await this.storage.write(storageKey, bytes)
         written = true
@@ -226,10 +239,8 @@ export class TaskExtrasService {
           mime: 'text/markdown', sizeBytes: bytes.byteLength, sha256: sha256(bytes), storageKey, source: 'assistant', isOutput: true,
           version: (prev?.version ?? 0) + 1, previousId: prev?.id, uploadedBy: actor })
         await tx.update(task).set({ status: 'done', completedAt: now, completedBy: actor, lastActivityAt: now }).where(eq(task.id, taskId))
-        const missingRequired = (await tx.select({ required: checklistItem.required, checked: checklistItem.checked }).from(checklistItem).where(eq(checklistItem.taskId, taskId)))
-          .filter((item) => item.required && !item.checked).length
         await tx.insert(activityLog).values({ id: id(), type: 'task.completed', userId: actor, taskId, assistantId: current.assistantId,
-          payload: { from: current.status, to: 'done', missingRequired } })
+          payload: { from: current.status, to: 'done', missingRequired, ...(recorded && { reason: recorded }) } })
       })
     } catch (error) { if (written) await this.storage.remove(storageKey); throw error }
     this.updated(taskId)

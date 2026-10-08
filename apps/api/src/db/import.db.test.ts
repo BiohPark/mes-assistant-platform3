@@ -14,6 +14,8 @@ import { importBundle } from './import.js'
 import { seedCatalog } from './seed.js'
 import { SEED_ASSISTANTS } from './seedData.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
+import { EventsService } from '../events/events.service.js'
+import { SrService } from '../sr/sr.service.js'
 import * as s from './schema.js'
 
 const at = '2026-09-01T00:00:00.000Z'
@@ -275,34 +277,45 @@ describe('demo bundle DB import', () => {
     } finally { await pool.end(); await isolated.drop() }
   })
 
-  it('imports multiple draft SRs and selected SR attachments through the intake thread', async () => {
+  it('imports selected SR attachments onto the canonical intake body message; draft attachments stay candidates only; rerun is idempotent', async () => {
     const isolated = await createTempDb('import_sr')
     const pool = createPool(isolated.url)
     try {
       await runMigrations(isolated.url)
       const db = drizzle(pool)
       const fixture = structuredClone(base) as any
-      fixture.tables.serviceRequests[0].attachmentIds = ['fixture-sr-file']
-      fixture.tables.serviceRequests.push({ id: 'fixture-draft-a', code: '', requesterId: 'fixture-user', title: '', status: 'draft', createdAt: at, updatedAt: at },
+      fixture.tables.serviceRequests[0].body = 'Request body'
+      fixture.tables.serviceRequests[0].attachmentIds = ['fixture-sr-file', 'fixture-sr-file-2']
+      fixture.tables.serviceRequests.push({ id: 'fixture-draft-a', code: '', requesterId: 'fixture-user', title: '', status: 'draft', createdAt: at, updatedAt: at, attachmentIds: ['fixture-draft-file'] },
         { id: 'fixture-draft-b', code: '', requesterId: 'fixture-user', title: '', status: 'draft', createdAt: at, updatedAt: at })
+      fixture.tables.threads.push({ id: 'fixture-draft-a-thread', srId: 'fixture-draft-a', title: '', createdBy: 'fixture-user', createdAt: at })
       fixture.tables.messages.push({ id: 'sr-assistant-message', threadId: 'fixture-sr-thread', role: 'assistant', content: 'Acknowledged',
         createdAt: '2026-09-01T00:00:01.000Z' })
-      fixture.tables.files.push({ id: 'fixture-sr-file', originSrId: 'fixture-sr', name: 'selected.txt', uploadedBy: 'fixture-user', uploadedAt: at, blobBase64: data.toString('base64') })
+      fixture.tables.files.push({ id: 'fixture-sr-file', originSrId: 'fixture-sr', name: 'selected.txt', uploadedBy: 'fixture-user', uploadedAt: at, blobBase64: data.toString('base64') },
+        { id: 'fixture-sr-file-2', originSrId: 'fixture-sr', name: 'second.txt', uploadedBy: 'fixture-user', uploadedAt: '2026-09-01T00:00:02.000Z', blobBase64: data.toString('base64') },
+        { id: 'fixture-draft-file', originSrId: 'fixture-draft-a', name: 'draft.txt', uploadedBy: 'fixture-user', uploadedAt: at, blobBase64: data.toString('base64') })
       await importBundle(fixture, db, new FileStorageService(root))
       expect((await db.select().from(s.serviceRequest).where(eq(s.serviceRequest.id, 'fixture-draft-a')))[0]?.code).toBeNull()
       expect((await db.select().from(s.serviceRequest).where(eq(s.serviceRequest.id, 'fixture-draft-b')))[0]?.code).toBeNull()
       const attached = await db.select().from(s.messageAttachment).where(eq(s.messageAttachment.fileId, 'fixture-sr-file'))
       expect(attached).toHaveLength(1)
-      expect((await db.select().from(s.message).where(eq(s.message.id, attached[0]!.messageId)))[0]?.threadId).toBe('fixture-sr-thread')
+      // 정본 = SrService.saveContentAttachments와 같은 접수 본문 메시지(role user · kind discussion · authorId null · content = 데모 body), 마지막 seq 뒤에 붙는다.
       expect((await db.select().from(s.message).where(eq(s.message.id, attached[0]!.messageId)))[0]).toMatchObject({
-        content: '', seq: 2, authorId: 'fixture-user', createdAt: new Date('2026-09-01T00:00:01.000Z'),
+        threadId: 'fixture-sr-thread', role: 'user', kind: 'discussion', authorId: null, content: 'Request body', seq: 2, createdAt: new Date('2026-09-01T00:00:01.000Z'),
       })
+      const srs = new SrService(db, new DbTasksService(db), new EventsService())
+      expect(await srs.get('fixture-user', 'fixture-sr')).toMatchObject({ attachmentIds: ['fixture-sr-file', 'fixture-sr-file-2'], candidateAttachmentIds: ['fixture-sr-file', 'fixture-sr-file-2'] })
+      // 초안의 첨부는 전환 때 사람이 고른다 — 메시지를 만들지 않고 후보(origin_sr_id 파일)로만 남는다.
+      expect(await srs.get('fixture-user', 'fixture-draft-a')).toMatchObject({ attachmentIds: [], candidateAttachmentIds: ['fixture-draft-file'] })
+      expect(await db.select().from(s.message).where(eq(s.message.threadId, 'fixture-draft-a-thread'))).toEqual([])
       await importBundle(fixture, db, new FileStorageService(root))
       expect(await db.select().from(s.messageAttachment).where(eq(s.messageAttachment.fileId, 'fixture-sr-file'))).toHaveLength(1)
+      expect(await db.select().from(s.message).where(eq(s.message.threadId, 'fixture-sr-thread'))).toHaveLength(2)
+      expect(await srs.get('fixture-user', 'fixture-sr')).toMatchObject({ attachmentIds: ['fixture-sr-file', 'fixture-sr-file-2'] })
     } finally { await pool.end(); await isolated.drop() }
   })
 
-  it('attaches SR files to the first intake user message without adding a duplicate message', async () => {
+  it('never attaches SR files to the demo chat message: adds one canonical body message beside it and reruns add nothing', async () => {
     const isolated = await createTempDb('import_sr_message')
     const pool = createPool(isolated.url)
     try {
@@ -315,11 +328,15 @@ describe('demo bundle DB import', () => {
         authorId: 'fixture-user', createdAt: at })
       fixture.tables.files.push({ id: 'fixture-sr-file', originSrId: 'fixture-sr', name: 'selected.txt', uploadedBy: 'fixture-user', uploadedAt: at,
         blobBase64: data.toString('base64') })
+      const threadMessages = () => db.select().from(s.message).where(eq(s.message.threadId, 'fixture-sr-thread')).orderBy(s.message.seq)
       await importBundle(fixture, db, new FileStorageService(root))
-      expect((await db.select().from(s.message).where(eq(s.message.threadId, 'fixture-sr-thread'))).map((m) => m.id)).toEqual(['intake-message'])
-      expect((await db.select().from(s.messageAttachment).where(eq(s.messageAttachment.fileId, 'fixture-sr-file')))[0]?.messageId).toBe('intake-message')
+      expect((await threadMessages()).map((m) => [m.id, m.authorId])).toEqual([['intake-message', 'fixture-user'], ['fixture-sr:import-attachments', null]])
+      expect((await db.select().from(s.messageAttachment).where(eq(s.messageAttachment.fileId, 'fixture-sr-file'))).map((row) => row.messageId)).toEqual(['fixture-sr:import-attachments'])
+      const srs = new SrService(db, new DbTasksService(db), new EventsService())
+      expect(await srs.get('fixture-user', 'fixture-sr')).toMatchObject({ attachmentIds: ['fixture-sr-file'], candidateAttachmentIds: ['fixture-sr-file'] })
       await importBundle(fixture, db, new FileStorageService(root))
-      expect((await db.select().from(s.message).where(eq(s.message.threadId, 'fixture-sr-thread'))).map((m) => m.id)).toEqual(['intake-message'])
+      expect((await threadMessages()).map((m) => m.id)).toEqual(['intake-message', 'fixture-sr:import-attachments'])
+      expect(await db.select().from(s.messageAttachment).where(eq(s.messageAttachment.fileId, 'fixture-sr-file'))).toHaveLength(1)
     } finally { await pool.end(); await isolated.drop() }
   })
 

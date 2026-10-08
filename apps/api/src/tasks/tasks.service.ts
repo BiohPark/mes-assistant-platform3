@@ -258,7 +258,7 @@ export class DbTasksService {
   async setStatus(actor: string, taskId: string, status: TaskStatus, reason?: string): Promise<Task> {
     if (status === 'done') {
       if (!this.extras) throw new Error('완료 서비스가 연결되지 않았습니다')
-      return this.extras.complete(actor, taskId)
+      return this.extras.complete(actor, taskId, undefined, reason)
     }
     await assertTaskAccess(this.db, actor, taskId)
     await this.db.transaction(async (tx) => {

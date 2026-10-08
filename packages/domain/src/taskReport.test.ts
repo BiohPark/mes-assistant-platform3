@@ -45,4 +45,12 @@ describe('buildTaskReport', () => {
     })
     expect(md).toContain('(없음)')
   })
+
+  it('records the completion reason under the checklist only when given', () => {
+    const base = { task: { code: 'WK-2026-0002', title: 'T', summary: '', status: 'done', checklist: [{ id: 'c', label: 'A', required: true, checked: false }], outputFileIds: [], tags: [],
+      createdAt: '2026-09-01T00:00:00.000Z', completedAt: '2026-09-05T00:00:00.000Z' } as never,
+      assistant: { name: 'A', level1: 'L1', level2: 'L2' } as never, files: [], inputs: [], users: new Map(), now: new Date('2026-09-05T00:00:00.000Z') }
+    expect(buildTaskReport(base)).not.toContain('완료 사유')
+    expect(buildTaskReport({ ...base, completionReason: '담당자 구두 승인' })).toContain('- 필수 항목 미완료 완료 사유: 담당자 구두 승인')
+  })
 })

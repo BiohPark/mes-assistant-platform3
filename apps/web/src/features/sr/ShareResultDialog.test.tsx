@@ -6,7 +6,7 @@ import { jsonResponse, renderWithProviders } from '@/test/render'
 import { ShareResultDialog } from './ShareResultDialog'
 
 afterEach(() => vi.unstubAllGlobals())
-const sr: SrDetail = { id: 'sr', code: 'SR-1', title: '요청', titleSource: 'manual', requesterId: 'u', body: '', status: 'submitted', attachmentIds: [], threadId: 'thread', results: [], createdAt: '2026-10-01', updatedAt: '2026-10-01', conversations: [] }
+const sr: SrDetail = { id: 'sr', code: 'SR-1', title: '요청', titleSource: 'manual', requesterId: 'u', body: '', status: 'submitted', attachmentIds: [], candidateAttachmentIds: [], threadId: 'thread', results: [], createdAt: '2026-10-01', updatedAt: '2026-10-01', conversations: [] }
 
 it.each([6, 7])('%i개 연결 대화는 칩/검색으로 선택하고 변경 시 이전 파일 선택을 지운다', async count => {
   const conversations = Array.from({ length: count }, (_, i) => ({ id: `task${i}`, code: `WK-${i}`, title: `대화 ${i}`, status: 'in_progress', threadId: `thread${i}` }))

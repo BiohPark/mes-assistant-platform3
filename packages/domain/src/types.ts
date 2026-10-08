@@ -328,6 +328,17 @@ export interface SharedResult {
 }
 
 /** 서비스 요청. draft = 접수 전 대화 중. 코드(SR-YYYY-NNNN)가 곧 태그가 된다. */
+/** SR 상태 이력 한 건 — activity_log(sr.status_changed)에서 파생. 반려·완료는 사유가 있다. */
+export interface SrStatusChange {
+  id: ID
+  at: ISODate
+  by: ID
+  byName?: string
+  from: string
+  to: string
+  reason?: string
+}
+
 export interface ServiceRequest {
   id: ID
   code: string
