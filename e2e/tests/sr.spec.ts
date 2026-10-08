@@ -48,6 +48,9 @@ test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유',
     })
     await page.goto('/sr')
     const before = await (await page.request.get('/api/service-requests?scope=mine')).json() as Array<{ id: string }>
+    // 새 사용자라 내 요청이 0건 — 접수 에이전트 카드(데이터만)와 새 요청 버튼이 보인다.
+    expect(before).toHaveLength(0)
+    await expect(page.getByText(intakeAssistant.name).first()).toBeVisible()
     await page.getByRole('button', { name: '새 요청' }).click()
     expect(await (await page.request.get('/api/service-requests?scope=mine')).json()).toEqual(before)
     expect(createCount).toBe(0)

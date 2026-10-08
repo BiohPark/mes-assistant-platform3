@@ -64,7 +64,7 @@ it('새 요청 클릭은 저장하지 않고 첫 Enter 전송만 초안과 접�
   expect(reads).not.toContain('/api/settings')
   expect(reads).not.toContain('/api/catalog/users')
   expect(screen.queryByRole('button', { name: '접수로 전환' })).not.toBeInTheDocument()
-  expect(screen.getByText('접수 도우미')).toBeInTheDocument()
+  expect(screen.getAllByText('접수 도우미').length).toBeGreaterThan(0)
   await userEvent.type(screen.getByRole('textbox', { name: '접수 메시지' }), '알람 확인 요청{Enter}')
   await screen.findByText('알람 확인 요청')
   await waitFor(() => expect(posts).toHaveLength(2))
@@ -206,4 +206,84 @@ it('접수자 화면에서 상태 이력을 펼치면 시각·처리자·변경�
   expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('담당자')
   expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('접수됨 → 반려')
   expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('사유: 범위 밖 요청')
+})
+
+const me = { id: 'u', name: '사용자', role: '', roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
+const intake = { srIntakeAssistantId: 'a', name: '접수 도우미', summary: '요청을 정리합니다', usageExample: '설비 알람 확인\n리포트 요청' }
+const row = (id: string, status: string) => ({ id, requesterId: 'u', code: `SR-${id}`, title: `요청 ${id}`, titleSource: 'manual', body: '', status, threadId: `thread-${id}`, attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' })
+
+it('목록·접수 에이전트를 불러오는 동안 뼈대를 보이고 끝나면 치운다', async () => {
+  let release!: () => void
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/service-requests?scope=mine') { await new Promise<void>(resolve => { release = resolve }); return jsonResponse(200, [row('x', 'submitted')]) }
+    if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, intake)
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
+  expect(await screen.findByLabelText('불러오는 중…')).toHaveAttribute('aria-busy', 'true')
+  expect(screen.queryByRole('button', { name: '새 요청' })).not.toBeInTheDocument()
+  release()
+  expect(await screen.findByRole('button', { name: /요청 x/ })).toBeInTheDocument()
+  expect(screen.queryByLabelText('불러오는 중…')).not.toBeInTheDocument()
+})
+
+it('목록 조회 실패는 경고와 다시 시도를 보이고 재시도 성공 시 목록을 그린다', async () => {
+  let calls = 0
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/service-requests?scope=mine') return ++calls === 1 ? jsonResponse(500, { message: '서버 오류' }) : jsonResponse(200, [row('y', 'reviewing')])
+    if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, intake)
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('요청 목록을 불러오지 못했습니다')
+  expect(alert).toHaveTextContent('서버 오류')
+  await userEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))
+  expect(await screen.findByRole('button', { name: /요청 y/ })).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  expect(calls).toBe(2)
+})
+
+it('요청이 하나도 없으면 접수 에이전트 카드(이름·설명·예시 칩)와 새 요청만 보이고 플랫폼 문구·집계·필터는 없다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/intake-assistant' ? jsonResponse(200, intake) : jsonResponse(200, [])))
+  const { container } = renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
+  expect(await screen.findByText('접수 도우미')).toBeInTheDocument()
+  expect(screen.getByText('요청을 정리합니다')).toBeInTheDocument()
+  const examples = screen.getByRole('list', { name: '첫 질문 예시' })
+  expect(within(examples).getAllByRole('listitem').map(item => item.textContent)).toEqual(['설비 알람 확인', '리포트 요청'])
+  expect(screen.getByRole('button', { name: '새 요청' })).toBeEnabled()
+  expect(screen.queryByRole('button', { name: '진행 중' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '완료' })).not.toBeInTheDocument()
+  expect(container).not.toHaveTextContent('SR이 없습니다')
+  expect(container).not.toHaveTextContent('요청 내용을 대화로 정리해 접수합니다')
+  expect(container).not.toHaveTextContent(/\d+건/)
+})
+
+it('에이전트 설명·예시가 비어 있으면 이름만 보이고 플랫폼이 지은 예시는 넣지 않는다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/intake-assistant' ? jsonResponse(200, { srIntakeAssistantId: 'a', name: '접수 도우미', summary: '', usageExample: '' }) : jsonResponse(200, [])))
+  const { container } = renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
+  expect(await screen.findByText('접수 도우미')).toBeInTheDocument()
+  expect(screen.queryByRole('list', { name: '첫 질문 예시' })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '새 요청' }))
+  expect(screen.getByRole('textbox', { name: '접수 메시지' })).toBeInTheDocument()
+  expect(container).not.toHaveTextContent('설비 알람 원인을 확인하고 싶어요')
+})
+
+it('필터에 맞는 요청이 없으면 안내와 필터 초기화를 보이고 기본 필터에서는 초기화 버튼을 숨긴다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/service-requests?scope=mine') return jsonResponse(200, [row('z', 'submitted')])
+    if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, intake)
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
+  await screen.findByRole('button', { name: /요청 z/ })
+  expect(screen.queryByText('선택한 상태의 요청이 없습니다.')).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '완료' }))
+  expect(screen.getByText('선택한 상태의 요청이 없습니다.')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /요청 z/ })).not.toBeInTheDocument()
+  expect(screen.queryByText('접수 도우미')).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '필터 초기화' }))
+  expect(screen.getByRole('button', { name: /요청 z/ })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '진행 중' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.queryByRole('button', { name: '필터 초기화' })).not.toBeInTheDocument()
 })
