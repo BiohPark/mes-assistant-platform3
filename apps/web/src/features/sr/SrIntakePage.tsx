@@ -46,6 +46,8 @@ export function SrIntakePage() {
   const chat = useChat(selected?.threadId)
   // 첫 응답이 시작되기 전(생성·업로드·스트림 대기)에도 요청 전환을 막아 후속 입력이 다른 요청으로 새지 않게 한다.
   const locked = busy || chat.sending
+  // started 전에는 입력도 닫는다(ChatView와 같은 규칙) — 열려 있으면 대기 중 attempt가 재사용되어 새 입력이 버려진다.
+  const awaitingStart = chat.sending && !chat.run
   useEffect(() => { if (messages.length) void client.invalidateQueries({ queryKey: ['sr'] }) }, [client, messages.length, selectedId])
   const refresh = () => { void client.invalidateQueries({ queryKey: ['sr'] }); void client.invalidateQueries({ queryKey: ['messages', selected?.threadId] }) }
   const setSelectedId = (id: string) => { if (locked) return; first.current = null; setConvert(false); setParams(id ? { id } : {}) }
@@ -105,8 +107,8 @@ export function SrIntakePage() {
           <section className="min-h-40 flex-1 space-y-4 overflow-y-auto rounded-lg border p-3" aria-label={t('sr.conversation')}>
             <ChatMessages messages={messages} run={chat.run} empty={empty} actions={message => ({ intake: true, assistantName: settings?.name || t('sr.intakeAgent'), onRetry: message.requestId && message.status === 'error' ? () => { void chat.retry(message.requestId!).catch(error => toast.error(String(error))) } : undefined })} />
           </section>
-          {closed ? <p role="status" className="text-sm text-muted-foreground">{t('sr.closed')}</p> : <Composer key={selectedId || 'new'} maxAttachments={settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST} inputLabel={t('sr.message')} placeholder={t('sr.messagePlaceholder')} disabled={busy || !settings?.srIntakeAssistantId} streaming={!!chat.run} allowAttachments onSend={send} onStop={() => { void chat.stop() }} suggestions={!messages.length ? [settings?.usageExample || t('sr.example')] : undefined} />}
-          {selected?.status === 'draft' && canEdit && <Button variant="ghost" className="self-start" onClick={() => setDeleting(true)}>{t('sr.deleteDraft')}</Button>}
+          {closed ? <p role="status" className="text-sm text-muted-foreground">{t('sr.closed')}</p> : <Composer key={selectedId || 'new'} maxAttachments={settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST} inputLabel={t('sr.message')} placeholder={t('sr.messagePlaceholder')} disabled={busy || awaitingStart || !settings?.srIntakeAssistantId} streaming={!!chat.run} allowAttachments onSend={send} onStop={() => { void chat.stop() }} suggestions={!messages.length ? [settings?.usageExample || t('sr.example')] : undefined} />}
+          {selected?.status === 'draft' && canEdit && !selected.hasRequests && <Button variant="ghost" className="self-start" onClick={() => setDeleting(true)}>{t('sr.deleteDraft')}</Button>}
         </>}
         {selected && <><SrConvertDialog sr={selected} open={convert} onOpenChange={setConvert} onSaved={refresh} /><ConfirmDialog open={deleting} onOpenChange={setDeleting} title={t('sr.deleteConfirm')} description={t('sr.deleteDescription')} confirmLabel={t('sr.deleteDraft')} onConfirm={async () => { try { await deleteSr(selected.id); setSelectedId(''); refresh() } catch (error) { toast.error(String(error)); throw error } }} /></>}
       </div>

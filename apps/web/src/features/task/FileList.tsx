@@ -6,9 +6,9 @@ import { deleteFile, downloadBlob, formatSize, type FileMeta } from '@/api/files
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { FileVersionsDialog } from './FileVersionsDialog'
 
-export function FileList({ files, taskId, onToggleOutput, onPreview, canDelete = true, renderActions }: {
+export function FileList({ files, taskId, onToggleOutput, onPreview, canDelete = true, canViewHistory = true, renderActions }: {
   files: FileMeta[]; taskId?: string; onToggleOutput?: (fileId: string, isOutput: boolean) => void;
-  onPreview?: (file: FileMeta) => void; canDelete?: boolean; renderActions?: (file: FileMeta) => ReactNode
+  onPreview?: (file: FileMeta) => void; canDelete?: boolean; canViewHistory?: boolean; renderActions?: (file: FileMeta) => ReactNode
 }) {
   const t = useT()
   const [deleting, setDeleting] = useState<FileMeta | null>(null)
@@ -26,7 +26,7 @@ export function FileList({ files, taskId, onToggleOutput, onPreview, canDelete =
     <span className="text-xs text-muted-foreground">{formatSize(file.size)}</span>
     {renderActions?.(file)}
     {taskId && onToggleOutput && <button type="button" aria-label={file.isOutput ? t('components.outputOff') : t('components.outputOn')} onClick={() => onToggleOutput(file.id, !file.isOutput)}><Sparkles className={`size-3.5 ${file.isOutput ? 'fill-violet-300 text-violet-500' : ''}`} /></button>}
-    <button type="button" aria-label={t('components.fileHistory')} onClick={() => setHistory(file)}><History className="size-3.5" /></button>
+    {canViewHistory && <button type="button" aria-label={t('components.fileHistory')} onClick={() => setHistory(file)}><History className="size-3.5" /></button>}
     <button type="button" aria-label={t('components.download')} onClick={() => void downloadBlob(file)}><Download className="size-3.5" /></button>
     {canDelete && file.originTaskId === taskId && <button type="button" aria-label={t('components.delete')} onClick={() => setDeleting(file)}><Trash2 className="size-3.5" /></button>}
   </li>)}</ul>

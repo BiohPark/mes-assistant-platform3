@@ -2,7 +2,7 @@ import type { Message, ServiceRequest, SharedResult } from '@mes/domain'
 import type { FileMeta } from './files'
 import { queryClient } from './queryClient'
 
-export type SrDetail = ServiceRequest & { intakeMessages?: Message[]; firstMessage?: string; requesterName?: string; conversations: Array<{ id: string; code: string; title: string; status: string; threadId: string | null }> }
+export type SrDetail = ServiceRequest & { intakeMessages?: Message[]; firstMessage?: string; requesterName?: string; /** 상세 응답: 접수 대화에 요청 기록이 있어 초안을 삭제할 수 없음 */ hasRequests?: boolean; conversations: Array<{ id: string; code: string; title: string; status: string; threadId: string | null }> }
 async function request<T>(path: string, method = 'GET', body?: unknown, key?: string): Promise<T> {
   const response = await fetch(`/api/service-requests${path}`, { method, credentials: 'same-origin',
     headers: { ...(body !== undefined && { 'content-type': 'application/json' }), ...(key && { 'Idempotency-Key': key }) },

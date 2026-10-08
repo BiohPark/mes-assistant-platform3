@@ -156,10 +156,41 @@ it('첫 응답 시작을 기다리는 동안 새 요청·목록 이동을 막아
   await waitFor(() => expect(release).toBeTypeOf('function'))
   expect(screen.getByRole('button', { name: '새 요청' })).toBeDisabled()
   expect(screen.getByRole('button', { name: /이전 요청/ })).toBeDisabled()
+  // 첫 started 전에는 입력도 닫는다 — 열려 있으면 대기 중 attempt가 재사용되어 새 입력이 버려진다.
+  expect(screen.getByRole('textbox', { name: '접수 메시지' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '전송' })).toBeDisabled()
   await userEvent.click(screen.getByRole('button', { name: '새 요청' }))
   expect(creates).toBe(1)
   release(new Response('event: started\ndata: {"requestId":"r","replyMessageId":"reply"}\n\nevent: completed\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } }))
   await waitFor(() => expect(screen.getByRole('button', { name: '새 요청' })).toBeEnabled())
+  expect(screen.getByRole('textbox', { name: '접수 메시지' })).toBeEnabled()
   await userEvent.click(screen.getByRole('button', { name: '새 요청' }))
   expect(screen.getByRole('textbox', { name: '접수 메시지' })).toHaveValue('')
+})
+
+it('요청 기록이 있는 초안은 삭제 버튼을 숨긴다(서버 hasRequests)', async () => {
+  const draft = { id: 'draft', requesterId: 'u', code: '', title: '', firstMessage: '첫 메시지', titleSource: 'default', body: '', status: 'draft', threadId: 'thread', attachmentIds: [], results: [], conversations: [], hasRequests: true, createdAt: '2026-10-01', updatedAt: '2026-10-01' }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/service-requests?scope=mine') return jsonResponse(200, [draft])
+    if (url === '/api/service-requests/draft') return jsonResponse(200, draft)
+    if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, { srIntakeAssistantId: 'a' })
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=draft' })
+  expect(await screen.findByRole('textbox', { name: '접수 메시지' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '초안 삭제' })).not.toBeInTheDocument()
+})
+
+it('요청자(BO) 화면의 접수 첨부는 내려받기만 보이고 버전 기록은 숨긴다', async () => {
+  const sr = { id: 'sr', requesterId: 'u', code: 'SR-2026-0001', title: '첨부 요청', titleSource: 'manual', body: '본문', status: 'reviewing', threadId: 'thread', attachmentIds: ['file'], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/service-requests/sr') return jsonResponse(200, sr)
+    if (url === '/api/files/file') return jsonResponse(200, { id: 'file', name: '알람.txt', version: 1, size: 10, source: 'upload' })
+    if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, { srIntakeAssistantId: 'a' })
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['requester'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=sr' })
+  expect(await screen.findByText('알람.txt v1')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '다운로드' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '버전 기록' })).not.toBeInTheDocument()
 })
