@@ -38,6 +38,8 @@ export function SystemAssistantDrawer() {
   const [applying, setApplying] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  /** 서랍은 SheetTrigger가 아니라 TopBar 버튼(setAssistantOpen)으로 열린다 — 닫힐 때 돌아갈 요소를 직접 기억한다 */
+  const openerRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight }, [messages])
   useEffect(() => { if (!open) abortRef.current?.abort() }, [open])
@@ -74,7 +76,9 @@ export function SystemAssistantDrawer() {
   }
 
   return <Sheet open={open} onOpenChange={setOpen}>
-    <SheetContent aria-label={t('systemAssistant.title')} aria-describedby={undefined} showCloseButton={false} className="w-full gap-0 overflow-hidden p-0 sm:max-w-md">
+    <SheetContent aria-label={t('systemAssistant.title')} aria-describedby={undefined} showCloseButton={false} className="w-full gap-0 overflow-hidden p-0 sm:max-w-md"
+      onOpenAutoFocus={() => { openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null }}
+      onCloseAutoFocus={(event) => { event.preventDefault(); openerRef.current?.focus(); openerRef.current = null }}>
       <div className="border-b px-4 py-3">
         <div className="flex items-center gap-2 text-sm font-semibold"><span className="flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground"><Sparkles className="size-3.5" /></span>{t('systemAssistant.title')}
           <span className="ml-auto text-xs font-normal text-muted-foreground">{model.data ? model.data.mode === 'mock' ? t('systemAssistant.mockMode') : model.data.model : ''}</span>

@@ -1,10 +1,14 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
+import { MeContext } from '@/app/auth'
+import { TopBar } from '@/app/TopBar'
 import { useUiStore } from '@/app/uiStore'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { renderWithProviders } from '@/test/render'
 import { SystemAssistantDrawer } from './SystemAssistantDrawer'
 
 vi.mock('@/app/hooks', () => ({ useActor: () => ({ userId: 'u' }) }))
+vi.mock('@/app/NotificationBell', () => ({ NotificationBell: () => null }))
 afterEach(() => { act(() => useUiStore.getState().setAssistantOpen(false)); vi.unstubAllGlobals() })
 
 it('잘못된 도구 호출은 제안 불가 사유를 표시하고 적용 버튼을 숨긴다', async () => {
@@ -61,4 +65,18 @@ it('서랍은 이름 있는 dialog로 열리고 Esc로 닫힌다', async () => {
   fireEvent.keyDown(dialog, { key: 'Escape' })
   await waitFor(() => expect(useUiStore.getState().assistantOpen).toBe(false))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '시스템 assistant' })).not.toBeInTheDocument())
+})
+
+it('TopBar 버튼으로 연 서랍을 닫으면 포커스가 그 버튼으로 돌아간다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ mode: 'mock', model: 'mock' })))
+  const me = { id: 'u', name: '사용자', role: '', roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
+  renderWithProviders(<MeContext value={me}><TooltipProvider><TopBar /><SystemAssistantDrawer /></TooltipProvider></MeContext>)
+  const opener = screen.getByRole('button', { name: '시스템 assistant 열기' })
+  opener.focus()
+  fireEvent.click(opener)
+  const dialog = await screen.findByRole('dialog', { name: '시스템 assistant' })
+  await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+  fireEvent.keyDown(dialog, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '시스템 assistant' })).not.toBeInTheDocument())
+  expect(opener).toHaveFocus()
 })
