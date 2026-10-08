@@ -208,9 +208,11 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     const tasks = new DbTasksService(db)
     await tasks.appendMessage('requester', draft.threadId, { content: '알람 요청', kind: 'discussion', attachmentIds: [fileId] })
     expect((await tasks.messages(draft.threadId, 'requester'))[0]?.attachmentIds).toEqual([fileId])
-    expect((await sr.get('requester', draft.id)).attachmentIds).toEqual([fileId])
+    // 채팅 메시지 첨부는 후보일 뿐이다. 접수 첨부 정본은 접수 본문 메시지의 첨부(제출 전에는 없음).
+    expect(await sr.get('requester', draft.id)).toMatchObject({ attachmentIds: [], candidateAttachmentIds: [fileId] })
     await expect(tasks.messages(draft.threadId, 'other')).rejects.toMatchObject({ status: 403 })
     await sr.submit('requester', draft.id, { title: '알람', body: '', attachmentIds: [] })
+    expect(await sr.get('requester', draft.id)).toMatchObject({ attachmentIds: [], candidateAttachmentIds: [fileId] })
     await sr.startTask('staff', draft.id, { assistantId })
     expect(await tasks.messages(draft.threadId, 'staff')).toHaveLength(1)
     await assertFileAccess(db, 'requester', fileId)
@@ -256,11 +258,27 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     for (const fileId of ['selected-a', 'selected-b', 'unselected']) await db.insert(fileObject).values({ id: `${fileId}-${draft.id}`,
       kind: 'sr_attachment', originSrId: draft.id, originalName: `${fileId}.txt`, mime: 'text/plain', sizeBytes: 1,
       sha256: 'd'.repeat(64), storageKey: `${fileId}-${draft.id}`, source: 'upload', version: 1, uploadedBy: 'requester' })
-    expect((await sr.get('requester', draft.id)).attachmentIds).toEqual([])
+    expect(await sr.get('requester', draft.id)).toMatchObject({ attachmentIds: [], candidateAttachmentIds: ['selected-a', 'selected-b', 'unselected'].map((fileId) => `${fileId}-${draft.id}`) })
     expect((await sr.submit('requester', draft.id, { title: '첨부', body: '첫 본문', attachmentIds: [`selected-a-${draft.id}`] })).attachmentIds)
       .toEqual([`selected-a-${draft.id}`])
     expect((await sr.content('requester', draft.id, { title: '첨부', body: '수정 본문', attachmentIds: [`selected-b-${draft.id}`] })).attachmentIds)
       .toEqual([`selected-b-${draft.id}`])
+  })
+  it('keeps the intake body attachments canonical: chat-uploaded A·B, submit A only → [A]; editing can re-add B', async () => {
+    const draft = await sr.create('requester')
+    const [a, b] = [`canon-a-${draft.id}`, `canon-b-${draft.id}`]
+    for (const fileId of [a, b]) await db.insert(fileObject).values({ id: fileId, kind: 'sr_attachment', originSrId: draft.id, originalName: `${fileId}.txt`,
+      mime: 'text/plain', sizeBytes: 1, sha256: 'e'.repeat(64), storageKey: fileId, source: 'upload', version: 1, uploadedBy: 'requester' })
+    await new DbTasksService(db).appendMessage('requester', draft.threadId, { content: '둘 다 올림', kind: 'discussion', attachmentIds: [a, b] })
+    const submitted = await sr.submit('requester', draft.id, { title: '정본', body: '본문', attachmentIds: [a] })
+    expect(submitted.attachmentIds).toEqual([a])
+    expect(submitted.candidateAttachmentIds).toEqual([a, b])
+    expect(await sr.get('requester', draft.id)).toMatchObject({ attachmentIds: [a], candidateAttachmentIds: [a, b] })
+    expect((await sr.list('staff', 'inbox')).find((row) => row.id === draft.id)).toMatchObject({ attachmentIds: [a], candidateAttachmentIds: [a, b] })
+    const edited = await sr.content('requester', draft.id, { title: '정본', body: '본문', attachmentIds: [a, b] })
+    expect(edited.attachmentIds).toEqual([a, b])
+    expect((await sr.content('requester', draft.id, { title: '정본', body: '본문', attachmentIds: [] })).attachmentIds).toEqual([])
+    expect((await sr.get('requester', draft.id)).candidateAttachmentIds).toEqual([a, b])
   })
   it('forces BO mine even for inbox; staff mine filters requester and inbox excludes drafts', async () => {
     await db.insert(appUser).values([

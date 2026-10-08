@@ -145,8 +145,14 @@ describe('tasks DB', () => {
     const clean = (await service.create('member', { assistantId })).task
     await extras.addChecklist('member', clean.id, '승인 확인', true)
     for (const item of (await extras.checklist('member', clean.id)).filter((entry) => entry.required && !entry.checked)) await extras.toggleChecklist('member', clean.id, item.id)
-    expect((await extras.complete('member', clean.id)).status).toBe('done')
-    expect((await service.activity(clean.id))[0]).toMatchObject({ type: 'task.completed', payload: { missingRequired: 0 } })
+    // 미완료 0이면 사유가 와도 리포트·이력에 남기지 않는다(미리보기 동일).
+    expect((await extras.preview('member', clean.id, undefined, '불필요한 사유')).content).not.toContain('불필요한 사유')
+    expect((await extras.complete('member', clean.id, undefined, '불필요한 사유')).status).toBe('done')
+    const cleanActivity = (await service.activity(clean.id))[0]!
+    expect(cleanActivity).toMatchObject({ type: 'task.completed', payload: { missingRequired: 0 } })
+    expect(cleanActivity.payload).not.toHaveProperty('reason')
+    const [cleanReport] = await db.select().from(fileObject).where(and(eq(fileObject.originTaskId, clean.id), eq(fileObject.isOutput, true)))
+    expect(Buffer.from(await new FileStorageService(reportRoot).read(cleanReport!.storageKey)).toString('utf8')).not.toContain('완료 사유')
   })
 
   it('uses an optional idempotency key to return one draft under retries', async () => {

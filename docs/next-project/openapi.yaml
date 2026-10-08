@@ -1050,6 +1050,8 @@ components:
         body: { type: string }
         status: { enum: [draft, submitted, reviewing, in_progress, responded, done, rejected] }
         threadId: { type: string }
+        attachmentIds: { type: array, items: { type: string }, description: 접수 첨부 정본 — 접수 본문 메시지의 첨부. submit·content에서 사람이 고른 것만(초안은 빈 배열) }
+        candidateAttachmentIds: { type: array, items: { type: string }, description: 첨부 후보 — 이 SR에 업로드된 파일 전체(채팅 메시지 첨부 포함, 업로드순). 전환·수정 Sheet가 나열하고 선택은 attachmentIds로 보낸다 (U9) }
         results: { type: array, items: { type: object, properties: { id: { type: string }, taskId: { type: string }, text: { type: string }, fileIds: { type: array, items: { type: string } }, by: { type: string }, byName: { type: string }, at: { type: string, format: date-time } } } }
     Settings:
       type: object

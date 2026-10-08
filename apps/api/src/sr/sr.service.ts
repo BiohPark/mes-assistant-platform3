@@ -82,10 +82,14 @@ export class SrService {
   }
   private async assemble(row: typeof serviceRequest.$inferSelect, includeInternal: boolean) {
     const [srThread] = await this.db.select().from(thread).where(eq(thread.srId, row.id))
-    const [attachments, results, linked] = await Promise.all([
+    const [attachments, candidates, results, linked] = await Promise.all([
+      // 접수 첨부 정본 = 접수 본문 메시지(authorId null, saveContentAttachments)의 첨부. 채팅 메시지의 첨부는 후보일 뿐이다.
       srThread ? this.db.select({ id: messageAttachment.fileId }).from(messageAttachment)
         .innerJoin(message, eq(messageAttachment.messageId, message.id)).innerJoin(fileObject, eq(messageAttachment.fileId, fileObject.id))
-        .where(and(eq(message.threadId, srThread.id), eq(fileObject.originSrId, row.id), isNull(fileObject.deletedAt))).orderBy(message.seq) : Promise.resolve([]),
+        .where(and(eq(message.threadId, srThread.id), eq(message.role, 'user'), eq(message.kind, 'discussion'), isNull(message.authorId), eq(fileObject.originSrId, row.id), isNull(fileObject.deletedAt)))
+        .orderBy(fileObject.uploadedAt, fileObject.id) : Promise.resolve([]),
+      // 후보 = 이 SR에 업로드된 파일 전체(데모 SrIntakePage의 originSrId 조회와 같음). 전환·수정 Sheet가 나열하고 사람이 고른다.
+      this.db.select({ id: fileObject.id }).from(fileObject).where(and(eq(fileObject.originSrId, row.id), isNull(fileObject.deletedAt))).orderBy(fileObject.uploadedAt, fileObject.id),
       this.db.select().from(sharedResult).where(eq(sharedResult.srId, row.id)).orderBy(sharedResult.at),
       this.db.select({ id: task.id, code: task.code, title: task.title, status: task.status, threadId: thread.id }).from(task)
         .leftJoin(thread, eq(thread.taskId, task.id)).where(and(eq(task.srId, row.id), isNull(task.deletedAt))),
@@ -94,7 +98,7 @@ export class SrService {
     const files = results.length ? await this.db.select().from(sharedResultFile).where(inArray(sharedResultFile.resultId, results.map((item) => item.id))) : []
     const [firstMessage] = srThread ? await this.db.select({ content: message.content }).from(message)
       .where(and(eq(message.threadId, srThread.id), eq(message.role, 'user'))).orderBy(message.seq).limit(1) : []
-    return { ...row, requesterName: names.find(user => user.id === row.requesterId)?.name, firstMessage: firstMessage?.content.slice(0, 40) ?? '', code: row.code ?? '', threadId: srThread?.id ?? '', attachmentIds: [...new Set(attachments.map((item) => item.id))],
+    return { ...row, requesterName: names.find(user => user.id === row.requesterId)?.name, firstMessage: firstMessage?.content.slice(0, 40) ?? '', code: row.code ?? '', threadId: srThread?.id ?? '', attachmentIds: [...new Set(attachments.map((item) => item.id))], candidateAttachmentIds: candidates.map((item) => item.id),
       results: results.map((item) => ({ id: item.id, ...(includeInternal && item.taskId && { taskId: item.taskId }), text: item.text, fileIds: files.filter((file) => file.resultId === item.id).map((file) => file.fileId), by: item.byUser, byName: names.find(user => user.id === item.byUser)?.name, at: item.at.toISOString() })),
       conversations: includeInternal ? linked : [], submittedAt: row.submittedAt?.toISOString(), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }
   }
