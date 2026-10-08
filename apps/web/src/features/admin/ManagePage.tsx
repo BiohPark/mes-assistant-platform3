@@ -1,12 +1,15 @@
 import { useT } from '@/i18n'
 import { useModelList } from '@/lib/useModelList'
 import { newId } from '@/lib/ids'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Assistant } from '@mes/contracts'
 import { toast } from 'sonner'
 import { TopBar } from '@/app/TopBar'
 import { useAssistants, useUsers } from '@/app/hooks'
+import { PersonPicker } from '@/components/PersonPicker'
+import { Checkbox } from '@/components/ui/checkbox'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { CodeInput } from '@/components/CodeInput'
 import { Chip } from '@/components/Chip'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
@@ -46,7 +49,11 @@ function AssistantEditorSheet({ assistant, onClose, onSaved }: { assistant?: Ass
   const codes = useQuery({ queryKey: ['managed-codes'], queryFn: listManagedCodes }).data ?? []
   const [form, setForm] = useState<AssistantInput>(() => assistant ? fromAssistant(assistant) : empty(users[0]?.id ?? ''))
   const [busy, setBusy] = useState(false)
-  useEffect(() => { if (!assistant && !form.ownerId && users[0]) setForm((current) => ({ ...current, ownerId: users[0]!.id })) }, [assistant, form.ownerId, users])
+  const ownerTouched = useRef(false)
+  const [ownerInvalid, setOwnerInvalid] = useState(false)
+  const peopleSource = useCallback(() => users.map(user => ({ value: user.id, label: user.name })), [users])
+  const owner = users.find(user => user.id === form.ownerId)
+  useEffect(() => { if (!assistant && !ownerTouched.current && !form.ownerId && users[0]) setForm((current) => ({ ...current, ownerId: users[0]!.id })) }, [assistant, form.ownerId, users])
   function change<K extends keyof AssistantInput>(field: K, value: AssistantInput[K]) { setForm((current) => ({ ...current, [field]: value })) }
   function moveChecklist(index: number, step: -1 | 1) {
     const next = [...form.checklistTemplate]
@@ -57,6 +64,7 @@ function AssistantEditorSheet({ assistant, onClose, onSaved }: { assistant?: Ass
   }
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (!form.ownerId) { setOwnerInvalid(true); toast.error(t('admin.ownerRequired')); return }
     if (!form.level1 || !form.level2) { toast.error(t('admin.codesRequired')); return }
     setBusy(true)
     try {
@@ -85,15 +93,22 @@ function AssistantEditorSheet({ assistant, onClose, onSaved }: { assistant?: Ass
           <CodeInput group={`assistant_${level}`} codes={codes} assistants={assistants} level1={form.level1}
             value={form[level] ?? ''} onChange={value => change(level, value)} aria-label={t(level === 'level1' ? 'admin.level1' : 'admin.level2')} />
         </div>)}
-        <label className="block">담당자<select className="w-full rounded-lg border bg-background p-2" value={form.ownerId} required onChange={(event) => change('ownerId', event.target.value)}><option value="">선택</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
-        <label className="block">상태<select className="w-full rounded-lg border bg-background p-2" value={form.status} onChange={(event) => change('status', event.target.value as AssistantInput['status'])}>{(['open', 'developing', 'testing', 'retired'] as const).map((value) => <option key={value} value={value}>{t(`status.assistant.${value}`)}</option>)}</select></label>
+        <div><div className="mb-1">{t('admin.owner')}</div><PersonPicker mode="single" source={peopleSource}
+          value={owner ? { value: owner.id, label: owner.name } : null} aria-label={t('admin.owner')} aria-required aria-invalid={ownerInvalid}
+          onChange={person => { ownerTouched.current = true; change('ownerId', person?.value ?? ''); setOwnerInvalid(false) }} /></div>
+        <div><div className="mb-1">{t('admin.assistantStatus')}</div><ToggleGroup type="single" variant="outline" size="sm" value={form.status} aria-label={t('admin.assistantStatus')}
+          onValueChange={value => { if (value) change('status', value as AssistantInput['status']) }} className="flex-wrap">
+          {(['open', 'developing', 'testing', 'retired'] as const).map(value => <ToggleGroupItem key={value} value={value}>
+            <span aria-hidden className={`size-2 rounded-full ${{ open: 'bg-tone-success-fg', developing: 'bg-tone-warning-fg', testing: 'bg-tone-info-fg', retired: 'bg-tone-neutral-fg' }[value]}`} />{t(`status.assistant.${value}`)}
+          </ToggleGroupItem>)}
+        </ToggleGroup></div>
         <label className="block">{t('admin.connectedModel')}<Input list="assistant-models" value={form.modelId ?? ''} onChange={(event) => change('modelId', event.target.value)} /><datalist id="assistant-models">{models.map((model) => <option key={model} value={model} />)}</datalist></label>
         <label className="block">{t('admin.openWebUiLink')}<Input value={form.link1 ?? ''} onChange={(event) => change('link1', event.target.value)} /></label>
         <label className="block">{t('admin.documentUrl')}<Input value={form.docUrl ?? ''} onChange={(event) => change('docUrl', event.target.value)} /></label>
         <label className="block">설명<textarea className="w-full rounded-lg border bg-background p-2" value={form.summary} onChange={(event) => change('summary', event.target.value)} /></label>
         <label className="block">{t('admin.firstQuestionExamples')}<textarea className="w-full rounded-lg border bg-background p-2" value={form.usageExample} onChange={(event) => change('usageExample', event.target.value)} /></label>
         {(['expectedInputs', 'expectedOutputs'] as const).map((field) => <label key={field} className="block">{field === 'expectedInputs' ? '기대 입력' : '기대 출력'} (줄마다 한 항목)<textarea className="w-full rounded-lg border bg-background p-2" value={form[field].join('\n')} onChange={(event) => change(field, lines(event.target.value))} /></label>)}
-        <fieldset className="space-y-2"><legend>체크리스트 기본값</legend>{form.checklistTemplate.map((item, index) => <div key={item.id} className="flex gap-2"><Input aria-label={`체크리스트 ${index + 1}`} value={item.label} onChange={(event) => change('checklistTemplate', form.checklistTemplate.map((entry, i) => i === index ? { ...entry, label: event.target.value } : entry))} /><label className="flex items-center gap-1"><input type="checkbox" checked={item.required} onChange={(event) => change('checklistTemplate', form.checklistTemplate.map((entry, i) => i === index ? { ...entry, required: event.target.checked } : entry))} />필수</label><Button type="button" variant="outline" disabled={index === 0} onClick={() => moveChecklist(index, -1)}>↑</Button><Button type="button" variant="outline" disabled={index === form.checklistTemplate.length - 1} onClick={() => moveChecklist(index, 1)}>↓</Button><Button type="button" variant="outline" onClick={() => change('checklistTemplate', form.checklistTemplate.filter((_, i) => i !== index))}>삭제</Button></div>)}<Button type="button" variant="outline" onClick={() => change('checklistTemplate', [...form.checklistTemplate, { id: newId(), label: '', required: false }])}>항목 추가</Button></fieldset>
+        <fieldset className="space-y-2"><legend>체크리스트 기본값</legend>{form.checklistTemplate.map((item, index) => <div key={item.id} className="flex gap-2"><Input aria-label={`체크리스트 ${index + 1}`} value={item.label} onChange={(event) => change('checklistTemplate', form.checklistTemplate.map((entry, i) => i === index ? { ...entry, label: event.target.value } : entry))} /><label className="flex items-center gap-1"><Checkbox aria-label={t('admin.requiredItem', { name: item.label || String(index + 1) })} checked={item.required} onCheckedChange={(checked) => change('checklistTemplate', form.checklistTemplate.map((entry, i) => i === index ? { ...entry, required: checked === true } : entry))} />{t('admin.checklistRequired')}</label><Button type="button" variant="outline" disabled={index === 0} onClick={() => moveChecklist(index, -1)}>↑</Button><Button type="button" variant="outline" disabled={index === form.checklistTemplate.length - 1} onClick={() => moveChecklist(index, 1)}>↓</Button><Button type="button" variant="outline" onClick={() => change('checklistTemplate', form.checklistTemplate.filter((_, i) => i !== index))}>삭제</Button></div>)}<Button type="button" variant="outline" onClick={() => change('checklistTemplate', [...form.checklistTemplate, { id: newId(), label: '', required: false }])}>항목 추가</Button></fieldset>
         {assistant && <ImageDropzone assistant={assistant} onSaved={onSaved} />}
         <div className="flex gap-2"><Button type="submit" disabled={busy}>저장</Button>{assistant && <Button type="button" variant="destructive" disabled={busy} onClick={() => { if (window.confirm('에이전트를 삭제할까요?')) void deleteAssistant(assistant.id).then(() => { onSaved(); onClose() }, (error: unknown) => toast.error(error instanceof Error ? error.message : '삭제 실패')) }}>삭제</Button>}</div>
       </form>

@@ -34,7 +34,11 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
       await expect(page.getByRole('option', { name: `새로 추가: ${name}` })).toBeVisible()
       await input.press('Enter')
     }
-    await editor.getByRole('combobox', { name: '담당자' }).selectOption({ index: 1 })
+    const ownerPicker = editor.getByRole('combobox', { name: '담당자' })
+    await ownerPicker.click()
+    await expect(page.getByRole('option').first()).toBeVisible()
+    await ownerPicker.press('ArrowDown')
+    await ownerPicker.press('Enter')
     const creation = page.waitForResponse((response) => response.url().endsWith('/api/assistants') && response.request().method() === 'POST')
     await editor.getByRole('button', { name: '저장', exact: true }).click()
     const created = await creation

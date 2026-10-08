@@ -62,7 +62,15 @@ test('리포트 8개 섹션과 기간·단위 토글', async ({ page }) => {
     await expect(page.getByRole('heading', { name: new RegExp(title) })).toBeVisible({ timeout: 15_000 })
   }
   // 태그 목록은 상위 12개만 보이므로 담당자 필터로 내 대화만 집계해 확인한다
-  await page.getByLabel('담당자').selectOption(myId)
+  const me = (await (await page.request.get('/api/me')).json()) as { id: string; name: string }
+  expect(me.id).toBe(myId)
+  await page.getByRole('button', { name: '담당자: 전체' }).click()
+  const personPicker = page.getByRole('combobox', { name: '담당자' })
+  await personPicker.fill(me.name)
+  await expect(page.getByRole('option', { name: me.name, exact: true })).toBeVisible()
+  await personPicker.press('ArrowDown')
+  await personPicker.press('Enter')
+  await page.keyboard.press('Escape')
   await expect(page.getByText('리포트검증')).toBeVisible({ timeout: 15_000 })
   await page.getByRole('button', { name: '7일' }).click()
   await page.getByRole('button', { name: '일', exact: true }).click()
