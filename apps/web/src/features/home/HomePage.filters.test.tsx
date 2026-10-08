@@ -269,7 +269,11 @@ it.each([
     expect(new URLSearchParams(router.state.location.search).get(searchKey)).toBe('프로토콜')
     expect(router.state.navigation.state).toBe('loading')
     fireEvent.click(screen.getByRole(role, { name: action }))
-    await waitFor(() => expect(router.state.navigation.state).toBe('idle'))
+    await waitFor(() => {
+      expect(router.state.navigation.state).toBe('idle')
+      // Loader completion precedes React's transition commit; read the committed URL.
+      expect(screen.getByTestId('url').textContent).toBe(router.state.location.search)
+    })
     const params = new URLSearchParams(screen.getByTestId('url').textContent!)
     expect(params.has(searchKey)).toBe(false)
     expect(params.get(filterKey) ?? '').toBe(filterValue)
