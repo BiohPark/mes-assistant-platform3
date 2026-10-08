@@ -562,6 +562,13 @@ paths:
         '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/FileMeta' } } } }
         '413': { $ref: '#/components/responses/Problem' }
   /files/{fileId}:
+    get:
+      tags: [files]
+      summary: 메타데이터 (요청자는 본인 SR 첨부·본인 SR에 공유된 결과 파일만 — 다운로드와 같은 범위, 그 밖은 403)
+      parameters: [{ $ref: '#/components/parameters/fileId' }]
+      responses:
+        '200': { description: 파일 메타, content: { application/json: { schema: { $ref: '#/components/schemas/FileMeta' } } } }
+        '403': { $ref: '#/components/responses/Problem' }
     patch:
       tags: [files]
       summary: 산출물 표시
@@ -599,18 +606,26 @@ paths:
   /service-requests:
     get:
       tags: [service-requests]
-      summary: 목록 (요청자(BO)는 자기 것만 — 서버 강제. 담당자·SO는 전체). S4 ②
+      summary: SR 목록 — mine은 본인 요청, inbox는 초안 제외. BO는 scope와 무관하게 mine 강제. 생략 시 기존 범위 유지.
+      parameters: [{ name: scope, in: query, required: false, schema: { type: string, enum: [mine, inbox] } }]
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ServiceRequest' } } } } }
     post:
       tags: [service-requests]
-      summary: 접수 대화 시작 (draft, 코드 없음)
+      summary: 첫 전송 시 SR 초안·접수 대화 생성 (draft, 코드 없음). 같은 actor·키 재전송은 기존 SR 반환.
+      parameters: [{ name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 1, maxLength: 128 }, description: '웹 첫 전송은 필수로 전송. 생략은 기존 클라이언트 호환.' }]
       responses:
         '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }
+  /service-requests/intake-assistant:
+    get:
+      tags: [service-requests]
+      summary: 접수 에이전트 표시 정보와 첨부 수 제한 (BO도 읽기 가능)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { srIntakeAssistantId: { type: [string, 'null'] }, name: { type: string }, summary: { type: string }, usageExample: { type: string }, fileMaxPerRequest: { type: integer } } } } } }
   /service-requests/{srId}:
     get:
       tags: [service-requests]
-      summary: 상세 (결과 목록·연결 대화·접수 스레드 첨부). 요청자 범위 강제
+      summary: 상세 (결과·연결 업무·접수 첨부·읽기 전용 intakeMessages). BO 요청자 범위 강제. 스레드 쓰기 권한 부여 없음
       parameters: [{ $ref: '#/components/parameters/srId' }]
       responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }, '403': { $ref: '#/components/responses/Problem' } }
     delete:
@@ -1015,6 +1030,9 @@ components:
       type: object
       properties:
         id: { type: string }
+        firstMessage: { type: string, description: 제목이 없는 목록의 첫 사용자 메시지 40자 }
+        requesterName: { type: string }
+        intakeMessages: { type: array, description: 상세 응답의 읽기 전용 접수 원문, items: { $ref: '#/components/schemas/Message' } }
         code: { type: string }
         requesterId: { type: string }
         title: { type: string }
@@ -1022,7 +1040,7 @@ components:
         body: { type: string }
         status: { enum: [draft, submitted, reviewing, in_progress, responded, done, rejected] }
         threadId: { type: string }
-        results: { type: array, items: { type: object, properties: { id: { type: string }, taskId: { type: string }, text: { type: string }, fileIds: { type: array, items: { type: string } }, by: { type: string }, at: { type: string, format: date-time } } } }
+        results: { type: array, items: { type: object, properties: { id: { type: string }, taskId: { type: string }, text: { type: string }, fileIds: { type: array, items: { type: string } }, by: { type: string }, byName: { type: string }, at: { type: string, format: date-time } } } }
     Settings:
       type: object
       properties:

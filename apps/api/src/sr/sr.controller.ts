@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Req } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Patch, Post, Query, Req } from '@nestjs/common'
 import { z } from 'zod'
 import type { AuthedRequest } from '../auth/guards.js'
 import { SrService } from './sr.service.js'
@@ -20,9 +20,15 @@ export class SrController {
   @Get('intake-assistant')
   intakeAssistant() { return this.sr.intakeAssistant() }
   @Get()
-  list(@Req() req: AuthedRequest) { return this.sr.list(req.user!.id) }
+  list(@Req() req: AuthedRequest, @Query('scope') scope?: string) {
+    if (scope === undefined) return this.sr.list(req.user!.id)
+    return this.sr.list(req.user!.id, parse(z.enum(['mine', 'inbox']), scope))
+  }
   @Post()
-  create(@Req() req: AuthedRequest) { return this.sr.create(req.user!.id) }
+  create(@Req() req: AuthedRequest, @Headers('idempotency-key') key?: string) {
+    if (key === undefined) return this.sr.create(req.user!.id)
+    return this.sr.create(req.user!.id, parse(z.string().trim().min(1).max(128), key))
+  }
   @Get(':id')
   get(@Req() req: AuthedRequest, @Param('id') id: string) { return this.sr.get(req.user!.id, id) }
   @Get(':id/draft')

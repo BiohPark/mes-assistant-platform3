@@ -32,6 +32,16 @@ describe('SR HTTP API', () => {
   afterAll(async () => { await app?.close() })
   const auth = () => ({ Cookie: 'mes_session=x' })
 
+  it('validates explicit scope and accepts an idempotent draft creation key', async () => {
+    await request(app.getHttpServer()).get('/api/service-requests?scope=mine').set(auth()).expect(200)
+    expect(sr.list).toHaveBeenLastCalledWith('u', 'mine')
+    await request(app.getHttpServer()).get('/api/service-requests?scope=inbox').set(auth()).expect(200)
+    expect(sr.list).toHaveBeenLastCalledWith('u', 'inbox')
+    await request(app.getHttpServer()).get('/api/service-requests?scope=all').set(auth()).expect(400)
+    await request(app.getHttpServer()).post('/api/service-requests').set(auth()).set('Idempotency-Key', 'first-send').expect(201)
+    expect(sr.create).toHaveBeenLastCalledWith('u', 'first-send')
+  })
+
   it('maps the actor and validates submit, status, task and result bodies', async () => {
     await request(app.getHttpServer()).post('/api/service-requests').expect(401)
     await request(app.getHttpServer()).get('/api/service-requests').set(auth()).expect(200, [])
