@@ -120,4 +120,12 @@ describe('TopBar', () => {
     expect(fetchMock).not.toHaveBeenCalled()
     expect(screen.queryByText('Mock')).not.toBeInTheDocument()
   })
+
+  it('SO의 Mock/Live 배지는 연결 진단으로 가는 링크다', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/llm/status' ? jsonResponse(200, { mode: 'live', preset: 'openai-compatible', baseUrlHost: 'llm.example.com', ok: true, detail: '' }) : jsonResponse(204)))
+    renderWithProviders(<MeContext value={{ ...me, roles: [...me.roles] }}><TooltipProvider><TopBar /></TooltipProvider></MeContext>)
+    const badge = await screen.findByRole('link', { name: '연결 진단 열기' })
+    expect(badge).toHaveTextContent('Live')
+    expect(badge).toHaveAttribute('href', '/admin/diagnostics')
+  })
 })

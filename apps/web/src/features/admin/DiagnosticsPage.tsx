@@ -1,6 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import type { LlmTestConnection } from '@mes/contracts'
+import { LlmTestError, testConnection } from '@/api/llm'
 import { TopBar } from '@/app/TopBar'
+import { AgentTestChat } from '@/components/AgentTestChat'
+import { ModelSelect } from '@/components/ModelSelect'
 import { Button } from '@/components/ui/button'
 import { copyText } from '@/lib/clipboard'
 import { useT, type Translator } from '@/i18n'
@@ -41,6 +46,43 @@ export function formatDiagnostics(data: Diagnostics, t: Translator): string {
     ...data.recentErrors.map((error) => `${error.at} ${error.path} ${error.status} ${error.message}`)].join('\n')
 }
 
+/** AI 연결 카드 — .env 값의 표시와 연결 시험만 한다(주소·모드·키 편집 없음) */
+function AiConnectionCard({ data }: { data: Diagnostics }) {
+  const t = useT()
+  const test = useMutation({ mutationFn: testConnection })
+  const line = (key: 'admin.diagnostics.modelsLine' | 'admin.diagnostics.completionLine', result: LlmTestConnection['models'] | LlmTestConnection['completion'], detail: string) =>
+    t(key, { result: result.ok ? t('admin.diagnostics.resultOk', { detail, ms: String(result.ms) }) : t('admin.diagnostics.resultFail', { error: result.error ?? '' }) })
+  const cells: [string, string][] = [
+    [t('admin.diagnostics.mode'), data.llm.mode === 'mock' ? 'Mock' : 'Live'],
+    [t('admin.diagnostics.presetHost'), `${data.llm.preset} · ${data.llm.baseUrlHost || '—'}`],
+    [t('admin.diagnostics.defaultModelEnv'), data.llm.defaultModel || '—'],
+    [t('admin.diagnostics.apiKey'), data.secrets.llmApiKey ? t('admin.diagnostics.configured') : t('admin.diagnostics.missing')],
+  ]
+  return <section aria-label={t('admin.diagnostics.aiConnection')} className="rounded-xl border bg-card p-4">
+    <h2 className="mb-3 font-semibold">{t('admin.diagnostics.aiConnection')}</h2>
+    <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">{cells.map(([name, value]) => <div key={name} className="min-w-0"><dt className="text-xs text-muted-foreground">{name}</dt><dd aria-label={name} className="truncate font-medium">{value}</dd></div>)}</dl>
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>{test.isPending ? t('admin.diagnostics.testing') : t('admin.diagnostics.testConnection')}</Button>
+      {test.data && <p role="status" className="text-sm">
+        <span className="block">{line('admin.diagnostics.modelsLine', test.data.models, t('common.items', { count: test.data.models.count }))}</span>
+        <span className="block">{line('admin.diagnostics.completionLine', test.data.completion, test.data.completion.model)}</span>
+      </p>}
+      {test.isError && <p role="alert" className="text-sm text-destructive">{t('admin.diagnostics.testFailed', { status: test.error instanceof LlmTestError ? String(test.error.status) : test.error.message })}</p>}
+    </div>
+    <p className="mt-3 text-xs text-muted-foreground">{t('admin.diagnostics.envGuide')}</p>
+  </section>
+}
+
+function TestChatSection() {
+  const t = useT()
+  const [model, setModel] = useState('')
+  return <section aria-label={t('admin.diagnostics.testChat')} className="rounded-xl border bg-card p-4">
+    <h2 className="mb-3 font-semibold">{t('admin.diagnostics.testChat')}</h2>
+    <ModelSelect value={model} onChange={setModel} className="mb-3 max-w-sm" />
+    <AgentTestChat modelId={model} showDiagnosticsLink={false} />
+  </section>
+}
+
 export function DiagnosticsPage() {
   const t = useT()
   const query = useQuery<Diagnostics>({ queryKey: ['diagnostics'], queryFn: async () => {
@@ -49,6 +91,7 @@ export function DiagnosticsPage() {
     return response.json() as Promise<Diagnostics>
   } })
   return <><TopBar title={t('nav.diagnostics')} /><div className="flex-1 overflow-auto p-4"><div className="mx-auto max-w-3xl space-y-4">
+    {query.data && <AiConnectionCard data={query.data} />}
     <div className="flex gap-2"><Button variant="outline" onClick={() => void query.refetch()}>{t('admin.diagnostics.recheck')}</Button>
       <Button disabled={!query.data} onClick={() => { if (query.data) void copyText(formatDiagnostics(query.data, t)).then((ok) => toast[ok ? 'success' : 'error'](ok ? t('admin.diagnostics.copied') : t('admin.diagnostics.copyFailed'))) }}>{t('admin.diagnostics.copyText')}</Button></div>
     {query.isError && <p role="alert">{t('admin.diagnostics.loadFailed')}</p>}
@@ -57,5 +100,6 @@ export function DiagnosticsPage() {
     </section><section className="rounded-xl border bg-card p-4"><h2 className="mb-3 font-semibold">{t('admin.diagnostics.recentErrors')}</h2>
       {query.data.recentErrors.length ? <ul className="space-y-2 text-sm">{query.data.recentErrors.map((error, index) => <li key={`${error.at}-${index}`}>{error.at} · {error.path} · {error.status} · {error.message}</li>)}</ul> : <p className="text-sm text-muted-foreground">{t('admin.diagnostics.noErrors')}</p>}
     </section></>}
+    <TestChatSection />
   </div></div></>
 }
