@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router'
-import { LayoutGrid, Boxes, Settings, Bot, ClipboardList, BarChart3, Activity } from 'lucide-react'
+import { LayoutGrid, Boxes, Settings, Bot, Send, Inbox, BarChart3, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -42,6 +42,7 @@ function AppContent() {
               </div>
             </div>
             <nav className="flex flex-col gap-1">
+              {!requesterOnly && <p className="hidden px-2 text-xs text-muted-foreground lg:block">{t('nav.work')}</p>}
               {!requesterOnly && NAV.map(({ to, label, icon: Icon, end }) => (
                 <NavLink
                   key={to}
@@ -59,9 +60,10 @@ function AppContent() {
                   <span className="hidden lg:inline">{t(label)}</span>
                 </NavLink>
               ))}
-              <NavLink to="/sr" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><ClipboardList className="size-4" /><span className="hidden lg:inline">{t('nav.sr')}</span></NavLink>
+              {(!me.roles.includes('requester') || me.roles.includes('system_owner')) && <NavLink to="/sr/manage" title={t('nav.srManage')} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Inbox className="size-4" /><span className="hidden lg:inline">{t('nav.srManage')}</span></NavLink>}
               {(!me.roles.includes('requester') || me.roles.includes('system_owner')) && <NavLink to="/reports" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><BarChart3 className="size-4" /><span className="hidden lg:inline">{t('nav.reports')}</span></NavLink>}
-              {(!me.roles.includes('requester') || me.roles.includes('system_owner')) && <NavLink to="/sr/manage" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><ClipboardList className="size-4" /><span className="hidden lg:inline">{t('nav.srManage')}</span></NavLink>}
+              <p className="mt-3 hidden px-2 text-xs text-muted-foreground lg:block">{t('nav.requests')}</p>
+              <NavLink to="/sr" end title={t('nav.sr')} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Send className="size-4" /><span className="hidden lg:inline">{t('nav.sr')}</span></NavLink>
               {me.roles.includes('system_owner') && <>
                 <NavLink to="/assistants/manage" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Bot className="size-4" /><span className="hidden lg:inline">{t('nav.assistants')}</span></NavLink>
                 <NavLink to="/settings" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted"><Settings className="size-4" /><span className="hidden lg:inline">{t('nav.settings')}</span></NavLink>

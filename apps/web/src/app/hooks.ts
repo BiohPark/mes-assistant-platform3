@@ -3,12 +3,12 @@ import type { Assistant } from '@mes/contracts'
 import { listAssistants, listUsers } from '@/lib/catalog'
 import { useMe } from './auth'
 
-export function useUsers() {
-  return useQuery({ queryKey: ['users'], queryFn: listUsers }).data ?? []
+export function useUsers(enabled = true) {
+  return useQuery({ queryKey: ['users'], queryFn: listUsers, enabled }).data ?? []
 }
 
-export function useUserMap() {
-  return new Map(useUsers().map((user) => [user.id, user]))
+export function useUserMap(enabled = true) {
+  return new Map(useUsers(enabled).map((user) => [user.id, user]))
 }
 
 export function useCurrentUserId() { return useMe().id }

@@ -27,6 +27,8 @@ export function useChat(threadId?: string) {
   const t = useT()
   const query = useQueryClient()
   const [run, setRun] = useState<ChatRun | null>(null)
+  /** 전송 시도가 진행 중(started 이전 대기 포함)인지. run은 started 이후에만 채워진다. */
+  const [sending, setSending] = useState(false)
   const active = useRef<Promise<void> | null>(null)
 
   const consume = useCallback((attempt: Attempt): Promise<void> => {
@@ -34,6 +36,7 @@ export function useChat(threadId?: string) {
     const work = (async () => {
       let terminal = false
       let failed: string | undefined
+      setSending(true)
       try {
         for (let number = 0; number < 2 && !terminal; number++) {
           try {
@@ -61,6 +64,7 @@ export function useChat(threadId?: string) {
       } finally {
         if (terminal) clear(attempt)
         setRun(null)
+        setSending(false)
         await query.cancelQueries({ queryKey: ['messages', attempt.threadId] })
         await query.invalidateQueries({ queryKey: ['messages', attempt.threadId] })
         await query.invalidateQueries({ queryKey: ['activity'] })
@@ -79,6 +83,7 @@ export function useChat(threadId?: string) {
 
   return {
     run,
+    sending,
     hasPendingAttempt: () => !!(threadId && load(threadId)),
     send: (content: string, attachmentIds: string[] = [], oneShotFileIds: string[] = []) => {
       if (!threadId) throw new Error(t('chat.noThread'))

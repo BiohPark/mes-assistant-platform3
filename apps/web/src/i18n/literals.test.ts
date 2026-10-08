@@ -3,7 +3,7 @@ import path from 'node:path'
 import ts from 'typescript'
 import { expect, it } from 'vitest'
 
-it('features Korean literals do not exceed the U11 baseline (45 files, 51 literals)', () => {
+it('features Korean literals do not exceed the U11 baseline (47 files, 0 literals)', () => {
   const root = path.resolve(import.meta.dirname, '../features')
   const files = readdirSync(root, { recursive: true }).map(String).filter((file) => file.endsWith('.tsx') && !file.endsWith('.test.tsx'))
   let count = 0
@@ -16,5 +16,5 @@ it('features Korean literals do not exceed the U11 baseline (45 files, 51 litera
     visit(source)
   }
   expect(files.length).toBeGreaterThan(0)
-  expect(count).toBeLessThanOrEqual(51)
+  expect(count).toBeLessThanOrEqual(0)
 })

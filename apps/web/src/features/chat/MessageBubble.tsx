@@ -7,12 +7,12 @@ import { useUserMap } from '@/app/hooks'
 import { useDates } from '@/lib/dates'
 import { useT } from '@/i18n'
 
-export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithoutFiles, onRetryAsText, onRequestInfo }: {
-  message: Message; onSaveAsOutput?: () => void; onRetry?: () => void; onRetryWithoutFiles?: () => void; onRetryAsText?: () => void; onRequestInfo?: () => void
+export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithoutFiles, onRetryAsText, onRequestInfo, intake = false, assistantName }: {
+  intake?: boolean; assistantName?: string; message: Message; onSaveAsOutput?: () => void; onRetry?: () => void; onRetryWithoutFiles?: () => void; onRetryAsText?: () => void; onRequestInfo?: () => void
 }) {
   const t = useT()
   const { formatDateTime } = useDates()
-  const user = useUserMap().get(message.authorId ?? '')
+  const user = useUserMap(!intake).get(message.authorId ?? '')
   const assistant = message.role === 'assistant'
   const attachments = useQueries({ queries: message.attachmentIds.map((id) => ({ queryKey: ['file', id], queryFn: async () => {
     const response = await fetch(`/api/files/${encodeURIComponent(id)}`, { credentials: 'same-origin' })
@@ -20,9 +20,9 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
     return response.json() as Promise<{ name: string }>
   }, retry: false })) })
   return <div className={`flex gap-2.5 ${assistant ? '' : 'flex-row-reverse'}`}>{!assistant && <UserAvatar user={user} size="sm" className="mt-1" />}<div className={`flex max-w-[85%] min-w-0 flex-col gap-1 ${assistant ? 'items-start' : 'items-end'}`}>
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">{assistant ? 'assistant' : user?.name ?? t('chat.user')}</span><span>{formatDateTime(message.createdAt)}</span>{!assistant && message.kind === 'discussion' && <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 text-[11px] font-medium text-amber-800"><MessagesSquare className="size-2.5" />{t('chat.discussionBadge')}</span>}</div>
-    <div className={`rounded-2xl px-3.5 py-2.5 ${assistant ? 'border bg-card' : message.kind === 'discussion' ? 'rounded-tr-sm border border-dashed border-amber-300 bg-amber-50/60' : 'rounded-tr-sm bg-primary text-primary-foreground'}`}><Markdown content={message.content} /></div>
-    {!assistant && attachments.length > 0 && <div className="flex flex-wrap justify-end gap-1 text-xs">{attachments.map((attachment, index) => <span key={message.attachmentIds[index]} className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5"><Paperclip className="size-3" />{attachment.data?.name ?? (attachment.isError ? t('chat.deletedFile') : t('chat.checkingFile'))}</span>)}</div>}
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">{assistant ? assistantName ?? 'assistant' : user?.name ?? t(intake ? 'sr.requester' : 'chat.user')}</span><span>{formatDateTime(message.createdAt)}</span>{!assistant && !intake && message.kind === 'discussion' && <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 text-[11px] font-medium text-amber-800"><MessagesSquare className="size-2.5" />{t('chat.discussionBadge')}</span>}</div>
+    <div className={`rounded-2xl px-3.5 py-2.5 ${assistant ? 'border bg-card' : !intake && message.kind === 'discussion' ? 'rounded-tr-sm border border-dashed border-amber-300 bg-amber-50/60' : 'rounded-tr-sm bg-primary text-primary-foreground'}`}><Markdown content={message.content} /></div>
+    {!assistant && attachments.length > 0 && <div className="flex flex-wrap justify-end gap-1 text-xs">{attachments.map((attachment, index) => <span key={message.attachmentIds[index]} className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5"><Paperclip className="size-3" />{intake ? <a href={`/api/files/${encodeURIComponent(message.attachmentIds[index]!)}/content`} className="underline">{attachment.data?.name ?? t('sr.attachment', { number: index + 1 })}</a> : attachment.data?.name ?? (attachment.isError ? t('chat.deletedFile') : t('chat.checkingFile'))}</span>)}</div>}
     {onSaveAsOutput && <button type="button" className="text-xs underline" onClick={onSaveAsOutput}>{t('chat.saveAsOutput')}</button>}
     {assistant && message.status === 'streaming' && <span className="text-xs text-muted-foreground">{t('chat.responding')}</span>}
     {assistant && message.error && <span role="alert" className="text-xs text-destructive">{message.error}</span>}

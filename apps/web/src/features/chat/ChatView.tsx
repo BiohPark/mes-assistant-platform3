@@ -8,7 +8,7 @@ import { estimateRequest, getRequest, type RequestRecord } from '@/api/requests'
 import { subscribeEvent } from '@/app/useEvents'
 import { useActor, useCurrentUserId } from '@/app/hooks'
 import { Composer, type PendingAttachment } from './Composer'
-import { MessageBubble } from './MessageBubble'
+import { ChatMessages } from './ChatMessages'
 import { SaveAsOutputDialog } from './SaveAsOutputDialog'
 import { RequestInfoDialog } from './RequestInfoDialog'
 import { RetryFilesDialog } from './RetryFilesDialog'
@@ -91,13 +91,14 @@ export function ChatView({ task, assistant }: { task: Task; assistant?: Assistan
     catch { toast.error(t('chat.requestLoadFailed')) }
   }
   return <><div className="flex min-h-0 flex-1 flex-col"><div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-    {messages.data?.length ? messages.data.map((item) => <MessageBubble key={item.id} message={chat.run?.replyId === item.id ? { ...item, content: chat.run.text || item.content } : item}
-      onSaveAsOutput={item.role === 'assistant' && assistant && item.status === 'done' ? () => setSaveTarget(item) : undefined}
-      onRequestInfo={item.requestId ? () => setInfoId(item.requestId!) : undefined}
-      onRetry={item.requestId && item.status === 'error' ? () => { void retry(item.requestId!) } : undefined}
-      onRetryWithoutFiles={item.requestId && item.status === 'error' ? () => { void chooseRetry(item.requestId!, 'exclude') } : undefined}
-      onRetryAsText={item.requestId && item.status === 'error' ? () => { void chooseRetry(item.requestId!, 'inline') } : undefined} />) : <div className="mx-auto mt-10 max-w-md text-center text-sm text-muted-foreground">{t('chat.startConversation')}</div>}
-    {chat.run?.phase && <p className="text-xs text-muted-foreground">{chat.run.phase}</p>}
+    <ChatMessages messages={messages.data ?? []} run={chat.run} empty={<div className="mx-auto mt-10 max-w-md text-center text-sm text-muted-foreground">{t('chat.startConversation')}</div>}
+      actions={(item) => ({
+        onSaveAsOutput: item.role === 'assistant' && assistant && item.status === 'done' ? () => setSaveTarget(item) : undefined,
+        onRequestInfo: item.requestId ? () => setInfoId(item.requestId!) : undefined,
+        onRetry: item.requestId && item.status === 'error' ? () => { void retry(item.requestId!) } : undefined,
+        onRetryWithoutFiles: item.requestId && item.status === 'error' ? () => { void chooseRetry(item.requestId!, 'exclude') } : undefined,
+        onRetryAsText: item.requestId && item.status === 'error' ? () => { void chooseRetry(item.requestId!, 'inline') } : undefined,
+      })} />
     {remoteStreaming && !chat.run?.phase && <p className="text-xs text-muted-foreground">{remoteRequest.data?.phase || t('chat.responding')}</p>}
   </div>{Object.values(typing).some((item) => item.until > Date.now()) && <p className="px-4 py-1 text-xs text-muted-foreground">{t('chat.typing', { names: Object.values(typing).filter((item) => item.until > Date.now()).map((item) => item.name).join(', ') })}</p>}
   <ContextTray task={task} info={estimate} />

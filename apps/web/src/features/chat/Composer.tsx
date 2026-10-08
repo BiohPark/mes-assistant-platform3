@@ -21,6 +21,8 @@ interface ComposerProps {
   disabled?: boolean
   streaming: boolean
   placeholder?: string
+  inputLabel?: string
+  maxAttachments?: number
   /** discussion=true 이면 팀 의견(AI 미전송) */
   onSend: (text: string, attachments: PendingAttachment[], discussion: boolean) => Promise<void>
   onStop: () => void
@@ -38,13 +40,14 @@ interface ComposerProps {
   clearOnSubmit?: boolean
 }
 
-export function Composer({ disabled, streaming, placeholder, onSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange, clearOnSubmit = false }: ComposerProps) {
+export function Composer({ disabled, streaming, placeholder, inputLabel, maxAttachments, onSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange, clearOnSubmit = false }: ComposerProps) {
   const t = useT()
   const [discussion, setDiscussion] = useState(false)
   const [text, setTextState] = useState('')
   const [pending, setPending] = useState<PendingAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState('')
-  const attachmentLimit = useQuery({ queryKey: ['settings'], queryFn: getSettings }).data?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST
+  const settings = useQuery({ queryKey: ['settings'], queryFn: getSettings, enabled: maxAttachments === undefined }).data
+  const attachmentLimit = maxAttachments ?? settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST
   const inputRef = useRef<HTMLInputElement>(null)
   const blocked = !discussion && !!blockedReason
   const canSend = !disabled && !blocked && (discussion || !streaming) && (text.trim().length > 0 || pending.length > 0)
@@ -56,14 +59,14 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
 
   async function submit() {
     if (!canSend) return
-    const content = text
+    const submittedText = text
     const f = pending
     if (clearOnSubmit) { setText(''); setPending([]) }
     try {
-      await onSend(content, f, discussion)
+      await onSend(submittedText, f, discussion)
       if (!clearOnSubmit) { setText(''); setPending([]) }
     } catch (e) {
-      if (clearOnSubmit) { setTextState((current) => current || content); setPending((current) => current.length ? current : f) }
+      if (clearOnSubmit) { setTextState((current) => current || submittedText); setPending((current) => current.length ? current : f) }
       toast.error(t('chat.sendFailed'), { description: e instanceof Error ? e.message : String(e) })
     }
   }
@@ -129,7 +132,7 @@ export function Composer({ disabled, streaming, placeholder, onSend, onStop, sug
           }}
         />
         <Textarea
-          aria-label={t('chat.composerLabel')}
+          aria-label={inputLabel ?? t('chat.composerLabel')}
           value={text}
           onChange={(e) => {
             setText(e.target.value)

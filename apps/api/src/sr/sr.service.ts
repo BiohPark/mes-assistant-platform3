@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common'
+import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
 import { draftFromConversation } from '@mes/domain'
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileObject, message, messageAttachment, serviceRequest, sharedResult, sharedResultFile, tag, task, thread } from '../db/schema.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
@@ -86,34 +87,61 @@ export class SrService {
       this.db.select({ id: task.id, code: task.code, title: task.title, status: task.status, threadId: thread.id }).from(task)
         .leftJoin(thread, eq(thread.taskId, task.id)).where(and(eq(task.srId, row.id), isNull(task.deletedAt))),
     ])
+    const names = await this.db.select({ id: appUser.id, name: appUser.name }).from(appUser).where(inArray(appUser.id, [row.requesterId, ...results.map(result => result.byUser)]))
     const files = results.length ? await this.db.select().from(sharedResultFile).where(inArray(sharedResultFile.resultId, results.map((item) => item.id))) : []
-    return { ...row, code: row.code ?? '', threadId: srThread?.id ?? '', attachmentIds: [...new Set(attachments.map((item) => item.id))],
-      results: results.map((item) => ({ id: item.id, ...(includeInternal && item.taskId && { taskId: item.taskId }), text: item.text, fileIds: files.filter((file) => file.resultId === item.id).map((file) => file.fileId), by: item.byUser, at: item.at.toISOString() })),
+    const [firstMessage] = srThread ? await this.db.select({ content: message.content }).from(message)
+      .where(and(eq(message.threadId, srThread.id), eq(message.role, 'user'))).orderBy(message.seq).limit(1) : []
+    return { ...row, requesterName: names.find(user => user.id === row.requesterId)?.name, firstMessage: firstMessage?.content.slice(0, 40) ?? '', code: row.code ?? '', threadId: srThread?.id ?? '', attachmentIds: [...new Set(attachments.map((item) => item.id))],
+      results: results.map((item) => ({ id: item.id, ...(includeInternal && item.taskId && { taskId: item.taskId }), text: item.text, fileIds: files.filter((file) => file.resultId === item.id).map((file) => file.fileId), by: item.byUser, byName: names.find(user => user.id === item.byUser)?.name, at: item.at.toISOString() })),
       conversations: includeInternal ? linked : [], submittedAt: row.submittedAt?.toISOString(), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }
   }
-  async create(actor: string) {
+  async create(actor: string, key?: string) {
     await this.user(actor)
-    const srId = id(), threadId = id()
+    // 기존 PK와 db_lock으로 재전송을 직렬화한다. DDL 없이 actor별 키를 분리한다.
+    const hash = key ? createHash('sha256').update(JSON.stringify(['sr-draft', actor, key])).digest('hex') : undefined
+    const srId = hash ? `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20, 32)}` : id(), threadId = id()
     await this.db.transaction(async (tx) => {
+      if (key) {
+        const lockKey = `sr-create:${srId}`
+        await tx.insert(dbLock).values({ lockKey }).onDuplicateKeyUpdate({ set: { lockKey } })
+        await tx.select().from(dbLock).where(eq(dbLock.lockKey, lockKey)).for('update')
+        // 행 잠금은 커밋까지 유지되므로 같은 트랜잭션에서 지워도 직렬화는 그대로다. 생성마다 행이 남지 않게 한다.
+        await tx.delete(dbLock).where(eq(dbLock.lockKey, lockKey))
+        const [existing] = await tx.select().from(serviceRequest).where(eq(serviceRequest.id, srId))
+        if (existing) return
+      }
       await tx.insert(serviceRequest).values({ id: srId, requesterId: actor, titleSource: 'default', status: 'draft' })
       await tx.insert(thread).values({ id: threadId, srId, title: '접수 대화', createdBy: actor })
     })
     return this.get(actor, srId)
   }
   async intakeAssistant() {
-    const [setting] = await this.db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'srIntakeAssistantId'))
-    return { srIntakeAssistantId: typeof setting?.value === 'string' ? setting.value : null }
+    const settings = await this.db.select().from(appSetting).where(inArray(appSetting.key, ['srIntakeAssistantId', 'fileMaxPerRequest']))
+    const assistantId = settings.find(setting => setting.key === 'srIntakeAssistantId')?.value
+    const limit = settings.find(setting => setting.key === 'fileMaxPerRequest')?.value
+    const [intake] = typeof assistantId === 'string' ? await this.db.select({ id: assistant.id, name: assistant.name, summary: assistant.summary, usageExample: assistant.usageExample }).from(assistant).where(eq(assistant.id, assistantId)) : []
+    return { srIntakeAssistantId: intake?.id ?? null, name: intake?.name, summary: intake?.summary, usageExample: intake?.usageExample,
+      fileMaxPerRequest: typeof limit === 'number' ? limit : FILE_MAX_PER_REQUEST }
   }
-  async list(actor: string) {
+  async list(actor: string, scope?: 'mine' | 'inbox') {
     const user = await this.user(actor)
     const rows = await this.db.select().from(serviceRequest)
-      .where(user.isBusinessOwner && !user.isSystemOwner ? eq(serviceRequest.requesterId, actor) : undefined)
+      .where(user.isBusinessOwner && !user.isSystemOwner || scope === 'mine' ? eq(serviceRequest.requesterId, actor) : scope === 'inbox' ? ne(serviceRequest.status, 'draft') : undefined)
       .orderBy(desc(serviceRequest.createdAt))
     return Promise.all(rows.map((row) => this.assemble(row, !user.isBusinessOwner || user.isSystemOwner)))
   }
   async get(actor: string, srId: string) {
     const [row, user] = await Promise.all([this.view(actor, srId), this.user(actor)])
-    return this.assemble(row, !user.isBusinessOwner || user.isSystemOwner)
+    const detail = await this.assemble(row, !user.isBusinessOwner || user.isSystemOwner)
+    // 상세의 읽기 권한은 view에서 검증했다. 접수 원문만 제공하며 스레드 쓰기 권한은 부여하지 않는다.
+    // 초안(접수 전 상담)의 원문은 요청자 본인·SO만 본다.
+    const canReadIntake = row.status !== 'draft' || row.requesterId === actor || user.isSystemOwner
+    const [intakeMessages, requests] = await Promise.all([
+      detail.threadId && canReadIntake ? this.tasks.messages(detail.threadId, row.requesterId) : Promise.resolve([]),
+      detail.threadId ? this.db.select({ id: chatRequest.id }).from(chatRequest).where(eq(chatRequest.threadId, detail.threadId)).limit(1) : Promise.resolve([]),
+    ])
+    // hasRequests: 요청 기록이 있는 초안은 감사 보호로 삭제할 수 없다(delete 409) — 화면이 삭제 버튼을 숨기는 근거.
+    return { ...detail, intakeMessages, hasRequests: requests.length > 0 }
   }
   async draft(actor: string, srId: string) {
     await this.view(actor, srId)
