@@ -48,6 +48,23 @@ Windows와 같다. `pnpm dev` → http://localhost:5173 → 회원가입(예: `d
 배포 묶음 생성은 저장소 루트에서 `pnpm release`로 하고, 로컬 운영 HOME 테스트는 `pnpm deploy:local -- --home /absolute/path/mes-hub --init --no-service`로 한다.
 데모 bundle은 `mise exec -- pnpm db:import /path/to/bundle.json --dry-run --default-owner <loginId>`로 먼저 확인한다. 소유자가 빈 행이 있으면 `--default-owner`에 기존 또는 함께 가져올 사용자의 로그인 ID를 지정한다. 기본 크기 제한은 64 MiB다. macOS/Node 22에서 60 MiB bundle의 최대 RSS는 382 MiB였으므로 이관 프로세스에 최소 512 MiB의 여유 메모리를 둔다. 다중 SR 업무는 기본적으로 중단하며, 연결 손실을 수용할 때만 `--allow-multi-sr`를 추가한다.
 
+### 분류 경로 업그레이드 (S7)
+
+반드시 **서비스 중지 → DB와 파일 저장소 백업 → `pnpm db:migrate` → 검증 → 기동** 순서로 진행한다. 배포 묶음에서는 같은 환경 파일을 사용해 `api/dist/db/migrate.js`를 실행한다. 실행 중인 서버와 구버전 앱의 쓰기를 함께 중지한다.
+
+마이그레이션은 경로 테이블을 생성한 뒤 기존 에이전트의 Lv1·Lv2 코드 쌍을 `sort_order = 0` 경로로 백필한다. 비활성 코드 참조와 기존 링크 재정의 값은 보존한다. CLI 보고의 에이전트 수·경로 수·`link1 재정의 보유` 수를 백업의 수와 대조한다. 검증은 모든 에이전트에 대표 경로가 존재하고 대표 컬럼이 일치하는지 확인하며, 서버도 기동 전에 같은 불변식을 검사해 위반하면 중단한다. 수동 검증에서는 아래 결과가 0건이어야 한다.
+
+```sql
+SELECT a.id
+FROM assistant a
+LEFT JOIN assistant_classification p ON p.assistant_id = a.id AND p.sort_order = 0
+WHERE p.assistant_id IS NULL
+   OR a.level1_code_id <> p.level1_code_id
+   OR a.level2_code_id <> p.level2_code_id;
+```
+
+검증 뒤 서비스를 기동하고 `/api/health`와 카탈로그 경로를 확인한다. 다중 경로를 저장한 뒤 구버전으로 되돌릴 때는 **업그레이드 전 DB·파일 백업 복원**만 사용한다. 구형 대표 컬럼만으로 나머지 경로를 복구할 수 없으며 역마이그레이션은 제공하지 않는다. 앱 파일만 롤백한 상태에서는 서비스를 기동하지 않는다.
+
 ## 9. 문제 해결 (macOS 차이)
 
 | 증상 | 해결 |
