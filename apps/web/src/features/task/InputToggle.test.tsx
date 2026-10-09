@@ -27,3 +27,15 @@ it('disables both controls', () => {
   expect(screen.getByRole('checkbox')).toBeDisabled()
   expect(screen.getByRole('button')).toBeDisabled()
 })
+
+it('gives both controls a 32px hit area and uses semantic tokens', () => {
+  const onChange = vi.fn()
+  const { container } = renderWithProviders(<InputToggle label="spec.txt" weight="main" onChange={onChange} />)
+  const star = screen.getByRole('button', { name: 'spec.txt 주 입력으로 지정' })
+  expect(star).toHaveClass('size-8', 'text-tone-warning-fg')
+  const box = screen.getByRole('checkbox')
+  expect(box.closest('label')).toHaveClass('size-8')
+  fireEvent.click(box.closest('label')!)
+  expect(onChange).toHaveBeenCalledWith(null)
+  expect(container.innerHTML).not.toMatch(/(?:bg|text|border|fill)-(?:amber|violet|sky)-\d/)
+})

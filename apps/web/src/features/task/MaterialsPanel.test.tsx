@@ -1,11 +1,13 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Task } from '@mes/domain'
 import { MeContext } from '@/app/auth'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { MaterialsPanel } from './MaterialsPanel'
 
-afterEach(() => vi.unstubAllGlobals())
+const toastSuccess = vi.hoisted(() => vi.fn())
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: toastSuccess } }))
+afterEach(() => { vi.unstubAllGlobals(); toastSuccess.mockClear() })
 
 it('shows a selected older version, offers an explicit switch, and keeps indirect files out of the pool', async () => {
   const calls: Array<[string, RequestInit | undefined]> = []
@@ -72,4 +74,70 @@ it('groups shared files by assistant order and sorts names within each group', a
   fireEvent.click(screen.getByRole('tab', { name: '공유 자료함' }))
   await screen.findByTestId('candidate-file-z')
   await waitFor(() => expect(screen.getByTestId('materials-shared').textContent).toMatch(/에이전트 1.*a\.txt.*b\.txt.*에이전트 2.*z\.txt/s))
+})
+
+const baseTask = { id: 't', code: 'WK-1', assistantId: 'a1', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: ['shared'], checklist: [], inputs: [], outputFileIds: [], createdAt: '2026-01-01T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-01-01T00:00:00.000Z' } satisfies Task
+const me = { id: 'u', name: '사용자', role: '', roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
+const fileMeta = { id: 'out', originTaskId: 'source', name: 'result.md', mime: 'text/markdown', size: 4, version: 1, source: 'assistant', isOutput: true, uploadedAt: '2026-01-01T00:00:00.000Z' }
+
+it('shows loading, no-results with a clear button, and the inputs caption on the shared tab', async () => {
+  let release!: (value: Response) => void
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/tasks/t/candidates') return new Promise<Response>((resolve) => { release = resolve })
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<MeContext value={me}><MaterialsPanel task={baseTask} /></MeContext>)
+  fireEvent.click(screen.getByRole('tab', { name: '공유 자료함' }))
+  const shared = screen.getByTestId('materials-shared')
+  expect(shared).toHaveTextContent('불러오는 중…')
+  expect(shared).not.toHaveTextContent('같은 태그 대화의 파일이 없습니다.')
+  expect(shared).toHaveTextContent('선택한 파일만 AI 입력에 남습니다.')
+  release(jsonResponse(200, { files: [{ file: fileMeta, sourceTaskId: 'source', sourceCode: 'WK-2', sourceTitle: '원본', viaTags: ['shared'], role: 'output' }], conversations: [] }))
+  await screen.findByTestId('candidate-file-out')
+  expect(shared).not.toHaveTextContent('불러오는 중…')
+  // 산출물 배지는 행 텍스트 순서를 유지한 채 토큰 색으로 보인다
+  expect(screen.getByTestId('candidate-file-out')).toHaveTextContent('산출물 · WK-2 · 원본 · shared')
+  expect(screen.getByText('산출물')).toHaveClass('bg-tone-violet-bg', 'text-tone-violet-fg')
+  fireEvent.change(screen.getByLabelText('공유 자료함 검색'), { target: { value: 'zzz' } })
+  expect(shared).toHaveTextContent('"zzz"에 맞는 파일이 없습니다.')
+  expect(shared).not.toHaveTextContent('같은 태그 대화의 파일이 없습니다.')
+  fireEvent.click(screen.getByRole('button', { name: '검색 지우기' }))
+  expect(screen.getByLabelText('공유 자료함 검색')).toHaveValue('')
+  expect(screen.getByTestId('candidate-file-out')).toBeInTheDocument()
+  expect(screen.getByTestId('materials-shared').innerHTML).not.toMatch(/(?:bg|text|border|fill)-(?:amber|violet|sky)-\d/)
+})
+
+it('keeps the shared tab silent about empty results while the candidate request has failed', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/tasks/t/candidates' ? jsonResponse(500, { message: 'boom' }) : jsonResponse(200, [])))
+  renderWithProviders(<MeContext value={me}><MaterialsPanel task={baseTask} /></MeContext>)
+  fireEvent.click(screen.getByRole('tab', { name: '공유 자료함' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('자료를 불러오지 못했습니다.')
+  expect(screen.getByTestId('materials-shared')).not.toHaveTextContent('같은 태그 대화의 파일이 없습니다.')
+  expect(screen.getByTestId('materials-shared')).not.toHaveTextContent('불러오는 중…')
+})
+
+it('keeps a selected input whose metadata is unavailable as a row without a toggle', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/tasks/t/candidates' ? jsonResponse(200, { files: [], conversations: [] }) : jsonResponse(200, [])))
+  const task = { ...baseTask, inputs: [{ fileId: 'ghost', weight: 'reference' as const, selectedAt: '2026-01-01T00:00:00.000Z', selectedBy: 'u' }] }
+  renderWithProviders(<MeContext value={me}><MaterialsPanel task={task} /></MeContext>)
+  const row = await screen.findByTestId('selected-file-ghost')
+  expect(row).toHaveTextContent('파일 정보를 확인할 수 없습니다. 선택은 유지됩니다.')
+  expect(within(row).queryByRole('checkbox')).not.toBeInTheDocument()
+  expect(within(row).queryByRole('button')).not.toBeInTheDocument()
+  expect(screen.queryByText('선택한 파일이 없습니다.')).not.toBeInTheDocument()
+})
+
+it('tells the uploader where the file becomes visible and shows the inputs caption on the own tab', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/files' && init?.method === 'POST') return jsonResponse(201, { ...fileMeta, id: 'new', originTaskId: 't' })
+    if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [], conversations: [] })
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<MeContext value={me}><MaterialsPanel task={baseTask} /></MeContext>)
+  fireEvent.click(screen.getByRole('tab', { name: '이 대화 파일' }))
+  const own = screen.getByTestId('materials-own')
+  expect(own).toHaveTextContent('선택한 파일만 AI 입력에 남습니다.')
+  const input = own.querySelector('input[type="file"]')!
+  fireEvent.change(input, { target: { files: [new File(['x'], 'memo.txt', { type: 'text/plain' })] } })
+  await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('1개 파일을 업로드했습니다.', { description: '같은 태그 대화에서 자료 후보로 보입니다.' }))
 })

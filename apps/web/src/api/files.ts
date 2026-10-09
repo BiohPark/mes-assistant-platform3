@@ -1,4 +1,7 @@
 import type { TaskInput } from '@mes/domain'
+import { toast } from 'sonner'
+import { HttpError } from '@/app/auth'
+import type { Translator } from '@/i18n'
 import type { Actor } from './tasks'
 import { queryClient } from './queryClient'
 
@@ -82,15 +85,24 @@ export async function switchInputVersion(_actor: Actor, taskId: string, fromFile
   await request(`/tasks/${encodeURIComponent(taskId)}/inputs/${encodeURIComponent(fromFileId)}/switch-version`, 'POST', { toFileId })
   refresh(taskId)
 }
-export async function downloadBlob(file: FileMeta): Promise<void> {
-  const response = await fetch(`/api/files/${encodeURIComponent(file.id)}/content`, { credentials: 'same-origin' })
-  if (!response.ok) throw new Error(`HTTP ${response.status}`)
-  const url = URL.createObjectURL(await response.blob())
-  const link = document.createElement('a')
-  link.href = url
-  link.download = file.name
-  link.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+/** 다운로드 피드백은 여기 한 곳 — 목록·미리보기·버전 기록이 모두 이 함수를 부른다 */
+export async function downloadBlob(file: FileMeta, t: Translator): Promise<void> {
+  try {
+    const response = await fetch(`/api/files/${encodeURIComponent(file.id)}/content`, { credentials: 'same-origin' })
+    if (!response.ok) throw new HttpError(response.status)
+    const url = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = url
+    link.download = file.name
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error) {
+    const status = error instanceof HttpError ? error.status : undefined
+    toast.error(status === 401 ? t('task.files.downloadUnauthorized')
+      : status === 403 ? t('task.files.downloadForbidden')
+      : status === 404 || status === 410 ? t('task.files.downloadMissing')
+      : t('task.files.downloadFailed', { reason: error instanceof Error ? error.message : String(error) }))
+  }
 }
 export function isTextFile(file: Pick<FileMeta, 'name' | 'mime'>): boolean {
   return /^(text\/|application\/(json|xml|x-yaml))/.test(file.mime) || /\.(md|txt|csv|json|sql|xml|ya?ml)$/i.test(file.name)

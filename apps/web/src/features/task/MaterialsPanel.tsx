@@ -5,6 +5,7 @@ import type { Task } from '@mes/domain'
 import { toast } from 'sonner'
 import { getCandidates, filesForTask, fileVersions, setInput, setOutputTag, switchInputVersion, uploadFile, type FileCandidate, type FileMeta } from '@/api/files'
 import { useActor } from '@/app/hooks'
+import { Badge } from '@/components/ui/badge'
 import { listAssistants } from '@/lib/catalog'
 import { useT } from '@/i18n'
 import { FileList } from './FileList'
@@ -40,7 +41,7 @@ export function MaterialsPanel({ task }: { task: Task }) {
     if (!list?.length) return
     try {
       for (const file of Array.from(list)) await uploadFile(actor, { taskId: task.id }, file)
-      toast.success(t('task.materials.uploaded', { count: list.length }))
+      toast.success(t('task.materials.uploaded', { count: list.length }), { description: t('task.materials.uploadShareHint') })
     } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
   }
   return <div className="space-y-3 text-xs" data-testid="materials-panel">
@@ -53,13 +54,13 @@ export function MaterialsPanel({ task }: { task: Task }) {
       {!selection.length && <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">{t('task.materials.noSelection')}</div>}
       {selection.map((input) => {
         const file = byId.get(input.fileId)
-        if (!file) return null
+        if (!file) return candidates.isPending || own.isPending ? null : <div key={input.fileId} className="rounded-xl border p-2 text-muted-foreground" data-testid={`selected-file-${input.fileId}`}>{t('task.materials.inputUnavailable')}</div>
         const candidate = candidates.data?.files.find((item) => item.file.id === file.id)
         const newerVersionId = candidate?.newerVersionId
         return <div key={file.id} className="rounded-xl border p-2" data-testid={`selected-file-${file.id}`}>
           <div className="flex items-center gap-2"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(file)}>{file.name} v{file.version}</button><InputToggle weight={input.weight} label={file.name} disabled={disabled} onChange={(weight) => void change(file.id, weight)} /></div>
           <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground"><span>{input.weight === 'main' ? t('task.mainInput') : t('task.reference')} · {file.originTaskId === task.id ? t('task.thisConversation') : <SourceLink taskId={file.originTaskId} code={candidate?.sourceCode} title={candidate?.sourceTitle} />}</span>
-            {newerVersionId && !disabled && <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-sky-300 px-1 text-sky-700" onClick={() => void switchInputVersion(actor, task.id, file.id, newerVersionId).catch((error: unknown) => toast.error(String(error)))}><ArrowUpCircle className="size-3" />{t('task.materials.newVersion')}</button>}
+            {newerVersionId && !disabled && <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-tone-info-fg/40 px-1 text-tone-info-fg" onClick={() => void switchInputVersion(actor, task.id, file.id, newerVersionId).catch((error: unknown) => toast.error(String(error)))}><ArrowUpCircle className="size-3" />{t('task.materials.newVersion')}</button>}
           </div>
         </div>
       })}
@@ -67,17 +68,22 @@ export function MaterialsPanel({ task }: { task: Task }) {
     {tab === 'inputs' && <><div className="border-t pt-2 text-xs font-medium">{t('task.materials.referenceConversations')}</div><ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} selectedOnly /></>}
     {tab === 'conversations' && <ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} />}
     {tab === 'shared' && <div data-testid="materials-shared" className="space-y-2">
+      <p className="text-muted-foreground">{t('task.materials.inputsHelp')}</p>
       <input aria-label={t('task.materials.searchShared')} placeholder={t('task.materials.searchPlaceholder')} value={search} onChange={(event) => setSearch(event.target.value)} className="w-full rounded-lg border px-2 py-1" />
-      {!shared.length && <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">{t('task.materials.noShared')}</div>}
+      {candidates.isPending ? <p className="text-muted-foreground">{t('common.loading')}</p>
+        : candidates.isError ? null
+        : !shared.length && (search ? <div className="space-y-1 rounded-xl border border-dashed p-3 text-center text-muted-foreground"><p>{t('task.materials.noSearchResults', { query: search })}</p><button type="button" className="underline" onClick={() => setSearch('')}>{t('task.materials.clearSearch')}</button></div>
+          : <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">{t('task.materials.noShared')}</div>)}
       {sortedGroups.flatMap(([assistantId, items]) => [<div key={`group-${assistantId}`} className="pt-1 font-medium" data-testid={`shared-group-${assistantId}`}>{assistantById.get(assistantId)?.name ?? assistantId}</div>, ...items.sort((a, b) => a.file.name.localeCompare(b.file.name) || a.file.version - b.file.version).map((item) => <div key={item.file.id} className="rounded-xl border p-2" data-testid={`candidate-file-${item.file.id}`}>
         <div className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(item.file)}>{item.file.name} v{item.file.version}</button><InputToggle weight={task.inputs.find((input) => input.fileId === item.file.id)?.weight} label={item.file.name} disabled={disabled} onChange={(weight) => void change(item.file.id, weight)} /></div>
-        <div className="mt-1 text-xs text-muted-foreground">{item.role === 'output' ? t('task.materials.roleOutput') : t('task.materials.roleUpload')} · <SourceLink taskId={item.sourceTaskId} code={item.sourceCode} title={item.sourceTitle} /> · {item.viaTags.join(', ')}
+        <div className="mt-1 text-xs text-muted-foreground">{item.role === 'output' ? <Badge tone="violet">{t('task.materials.roleOutput')}</Badge> : <Badge tone="neutral">{t('task.materials.roleUpload')}</Badge>} · <SourceLink taskId={item.sourceTaskId} code={item.sourceCode} title={item.sourceTitle} /> · {item.viaTags.join(', ')}
           {!!item.olderVersionIds?.length && <button type="button" className="ml-2 underline" onClick={() => setExpanded(expanded === item.file.id ? null : item.file.id)}>{t('task.materials.olderVersions', { count: item.olderVersionIds.length })}</button>}
         </div>
         {expanded === item.file.id && <OlderVersions file={item.file} task={task} disabled={disabled} onPreview={setPreview} onChange={change} />}
       </div>)])}
     </div>}
     {tab === 'own' && <div data-testid="materials-own" className="space-y-2">
+      <p className="text-muted-foreground">{t('task.materials.inputsHelp')}</p>
       <FileList files={own.data ?? []} taskId={task.id} onPreview={setPreview} onToggleOutput={disabled ? undefined : (fileId, isOutput) => void setOutputTag(actor, task.id, fileId, isOutput).catch((error: unknown) => toast.error(String(error)))} canDelete={!disabled} renderActions={(file) => <InputToggle weight={task.inputs.find((input) => input.fileId === file.id)?.weight} label={file.name} disabled={disabled} onChange={(weight) => void change(file.id, weight)} />} />
       {!disabled && <><button type="button" className="flex w-full items-center justify-center gap-1 rounded-lg border p-1.5" onClick={() => uploadRef.current?.click()}><Upload className="size-3.5" />{t('task.materials.upload')}</button><input ref={uploadRef} type="file" multiple className="hidden" onChange={(event) => { void upload(event.target.files); event.target.value = '' }} /></>}
     </div>}

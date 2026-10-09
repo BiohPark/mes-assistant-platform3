@@ -20,6 +20,6 @@ export function FilePreviewDialog({ file, onClose }: { file: FileMeta | null; on
   }, [file])
   return <Dialog open={!!file} onOpenChange={(open) => !open && onClose()}><DialogContent className="sm:max-w-2xl"><DialogHeader><DialogTitle>{file?.name}</DialogTitle></DialogHeader>
     {file && (preview?.id !== file.id ? <p className="text-sm">{t('common.loading')}</p> : preview.error ? <p role="alert">{preview.error}</p> : preview.text !== undefined ? <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap text-xs">{preview.text}</pre> : preview.url ? <img src={preview.url} alt={file.name} className="max-h-[60vh] w-full object-contain" /> : <p className="text-sm">{t('task.files.unsupportedPreview')}</p>)}
-    {file && <button type="button" className="text-left text-xs underline" onClick={() => void downloadBlob(file)}>{t('task.download')}</button>}
+    {file && <button type="button" className="text-left text-xs underline" onClick={() => void downloadBlob(file, t)}>{t('task.download')}</button>}
   </DialogContent></Dialog>
 }

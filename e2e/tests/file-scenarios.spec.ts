@@ -63,6 +63,9 @@ test('T-01/T-03 공유 자료함은 출처를 대화 코드·제목으로 보여
   await expect(row).toContainText(`업로드 · ${source.code} · 알람 이력 분석 · ${tag}`)
   await expect(row).not.toContainText(source.id) // 내부 ID는 화면에 보이지 않는다
   await expect(row.getByRole('link', { name: source.code })).toHaveAttribute('href', `/c/${source.id}`)
+  // 조작 영역은 32px 이상(S8 A6 ⑩)
+  const star = await row.getByRole('button', { name: '알람_이력_0901.csv 주 입력으로 지정' }).boundingBox()
+  expect(Math.min(star!.width, star!.height)).toBeGreaterThanOrEqual(32)
   await row.getByRole('checkbox', { name: '알람_이력_0901.csv 참고 입력으로 선택' }).click()
   await page.getByRole('tab', { name: 'AI 입력' }).click()
   await expect(page.getByTestId('materials-inputs')).toContainText(`참고 · ${source.code} · 알람 이력 분석`)
