@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
@@ -9,6 +10,26 @@ import { TaskBody } from './TaskBody'
 
 const task = { id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: [], checklist: [], inputs: [], outputFileIds: [], threadId: 'h', createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z' } satisfies Task
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.removeItem('mes-chat-attempt:h-pending') })
+
+it.each(['narrow', 'wide'] as const)('moves keyboard focus to the visible materials tab when opening materials (%s)', async (layout) => {
+  const user = userEvent.setup()
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
+    if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [], conversations: [] })
+    return jsonResponse(200, [])
+  }))
+  // jsdom does not load Tailwind: model the tablist and chat visibility at each breakpoint.
+  renderWithProviders(<><style>{layout === 'narrow'
+    ? '[role="tablist"][aria-label="보조 패널"], section.hidden { display: none; }'
+    : '[role="tablist"][aria-label="대화 화면 탭"] { display: none; }'}</style><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext></>)
+  const opener = await screen.findByRole('button', { name: '자료 열기' })
+  opener.focus()
+  await user.keyboard('{Enter}')
+  const tabs = within(screen.getByRole('tablist', { name: layout === 'narrow' ? '대화 화면 탭' : '보조 패널' }))
+  expect(tabs.getByRole('tab', { name: '자료' })).toHaveAttribute('aria-selected', 'true')
+  expect(tabs.getByRole('tab', { name: '자료' })).toHaveFocus()
+  if (layout === 'narrow') expect(opener).not.toBeVisible()
+})
 
 it('offers narrow-screen tabs, placeholders, and the activity panel', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {

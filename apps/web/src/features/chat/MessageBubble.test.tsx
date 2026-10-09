@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Message } from '@mes/domain'
 import { jsonResponse, renderWithProviders } from '@/test/render'
@@ -77,4 +78,26 @@ it('keeps intake attachments as direct download links without materials actions'
   renderWithProviders(<TooltipProvider><MessageBubble message={message} intake /></TooltipProvider>)
   expect(await screen.findByRole('link', { name: 'note.txt' })).toHaveAttribute('href', '/api/files/f1/content')
   expect(screen.queryByRole('button', { name: 'note.txt' })).not.toBeInTheDocument()
+})
+
+it.each(['Escape', 'close button'] as const)('returns focus to the keyboard attachment opener after closing with %s', async (closeWith) => {
+  const user = userEvent.setup()
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url.endsWith('/content')) return new Response('첨부 본문')
+    if (url.startsWith('/api/files/')) return jsonResponse(200, { id: url.split('/').at(-1), name: url.endsWith('/f2') ? 'second.txt' : 'first.txt', mime: 'text/plain' })
+    return jsonResponse(200, [])
+  }))
+  const message = { id: 'focus', threadId: 'h', seq: 7, role: 'user', content: '첨부 확인', status: 'done', createdAt: '2026-01-01', attachmentIds: ['f1', 'f2'] } as Message
+  renderWithProviders(<TooltipProvider><MessageBubble message={message} /></TooltipProvider>)
+  const opener = await screen.findByRole('button', { name: 'second.txt' })
+  await user.tab()
+  await user.tab()
+  expect(opener).toHaveFocus()
+  await user.keyboard('{Enter}')
+  const dialog = await screen.findByRole('dialog', { name: 'second.txt' })
+  await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement))
+  if (closeWith === 'Escape') await user.keyboard('{Escape}')
+  else await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  await waitFor(() => expect(opener).toHaveFocus())
 })
