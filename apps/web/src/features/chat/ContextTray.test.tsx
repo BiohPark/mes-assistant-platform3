@@ -65,3 +65,24 @@ it('renders nothing before the first estimate arrives', () => {
   mount({ data: undefined, pending: true, revisionChanged: false })
   expect(screen.queryByLabelText('이번 요청에 사용할 자료')).not.toBeInTheDocument()
 })
+
+it('keeps the tray and meter mounted after the last input is removed', () => {
+  const { rerender } = mount({ data, pending: false, revisionChanged: false })
+  const root = tray()
+  const meter = screen.getByRole('meter')
+  rerender({ data, pending: true, revisionChanged: true })
+  expect(tray()).toBe(root)
+  rerender({ data: { ...data, inputs: [], bytes: 100 }, pending: false, revisionChanged: false })
+  expect(tray()).toBe(root)
+  expect(screen.getByRole('meter')).toBe(meter)
+  expect(screen.getByText('이번 요청에 사용 · 0')).toBeVisible()
+  expect(screen.getByText('예상 100 B / 1000 B')).toBeVisible()
+  expect(screen.queryByText('spec.txt')).not.toBeInTheDocument()
+  expect(root).toHaveAttribute('aria-busy', 'false')
+})
+
+it('renders a normal empty estimate once data is available', () => {
+  mount({ data: { ...data, inputs: [], bytes: 100 }, pending: false, revisionChanged: false })
+  expect(tray()).toBeVisible()
+  expect(screen.getByText('이번 요청에 사용 · 0')).toBeVisible()
+})

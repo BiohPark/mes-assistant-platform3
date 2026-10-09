@@ -26,7 +26,7 @@ export function ContextTray({ task, estimate }: { task: Task; estimate: RequestE
   const inputs = info?.inputs ?? []
   const level = info ? budgetLevel(info.bytes, info.limitBytes) : 'ok'
   const expanded = open ?? true
-  if (!info || (!inputs.length && level === 'ok')) return null
+  if (!info) return null
 
   async function change(input: RequestInput, weight: 'main' | 'reference' | null) {
     try {
