@@ -208,7 +208,9 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
       await mapCodes('serviceRequests', 'SR')
       await mapCodes('tasks', 'WK')
       const srCodeBySource = new Map(codeMappings.filter((entry) => entry.kind === 'SR').map((entry) => [entry.from, entry.to]))
-      const taskTags = (task: Row): string[] => (task.tags ?? []).map((tag: string) => srCodeBySource.get(tag) ?? tag)
+      // 백업 태그는 표기(대소문자·공백·#)를 정규화해 저장한다 — 키(tagKey)는 원래 정규화돼 있어 바뀌지 않는다
+      const bundleTags = (task: Row): string[] => [...new Set(((task.tags ?? []) as unknown[]).map((tag): string => normalizeTag(String(tag))).filter((tag) => tag.length > 0))]
+      const taskTags = (task: Row): string[] => bundleTags(task).map((tag) => srCodeBySource.get(tag) ?? tag)
       const loginToUser = new Map((await tx.select({ id: s.appUser.id, loginId: s.appUser.loginId }).from(s.appUser)).filter((x) => !!x.loginId).map((x) => [x.loginId!, x.id]))
       const usedLogins = new Set(loginToUser.keys())
       const users = await existing(tx, s.appUser, s.appUser.id)
@@ -310,7 +312,7 @@ export async function importBundle(input: unknown, db: Db, storage: FileStorageS
         body: String(sr.body ?? ''), status: sr.status ?? 'draft', submittedAt: date(sr.submittedAt) ?? null, createdAt: date(sr.createdAt), updatedAt: date(sr.updatedAt),
       }))
       const srByCode = new Map<string, Row>(rows(b, 'serviceRequests').filter((sr) => sr.code).map((sr) => [String(sr.code), sr]))
-      const linkedSrs = (t: Row) => [...new Map<string, Row>((t.tags ?? []).map((tag: string) => srByCode.get(tag)).filter((sr: Row | undefined): sr is Row => !!sr).map((sr: Row) => [id(sr.id), sr])).values()]
+      const linkedSrs = (t: Row) => [...new Map<string, Row>(bundleTags(t).map((tag: string) => srByCode.get(tag)).filter((sr: Row | undefined): sr is Row => !!sr).map((sr: Row) => [id(sr.id), sr])).values()]
         .sort((a, c) => String(a.createdAt ?? '').localeCompare(String(c.createdAt ?? '')) || id(a.id).localeCompare(id(c.id)))
       const multiSr = rows(b, 'tasks').filter((t) => linkedSrs(t).length > 1)
       if (multiSr.length && !options.allowMultiSr) throw new Error(`다중 SR 업무: ${multiSr.map((t) => `${t.id} (${linkedSrs(t).map((sr) => sr.code).join(', ')})`).join('; ')} — --allow-multi-sr가 필요합니다`)

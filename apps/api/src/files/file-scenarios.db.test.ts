@@ -10,7 +10,7 @@ import type { RequestInfo } from '@mes/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createPool } from '../db/connection.js'
 import type { Db } from '../db/db.module.js'
-import { appUser, assistant, messageAttachment, taskInput } from '../db/schema.js'
+import { appUser, assistant, messageAttachment, tag, taskInput } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -150,6 +150,26 @@ describe('file scenarios (S8)', () => {
       expect(snapshot.messages[0]!.content).toContain('## 연결된 SR (1)')
       expect(snapshot.messages[0]!.content).toContain(`### ${code} 알람 개선\nSR 본문입니다`)
       expect(snapshot.messages[0]!.content).toContain(`- 태그: ${code}`)
+    })
+
+    it('T-06b 백업에서 들어온 소문자·# 표기 SR 태그 라벨도 연결 SR을 찾고, 추정과 전송의 srCodes가 같다', async () => {
+      const draft = await sr.create('member')
+      const submitted = await sr.submit('member', draft.id, { title: '수입 라벨', body: '라벨 표기와 무관하게 들어가야 한다', attachmentIds: [] })
+      const code = submitted.code!
+      try {
+        for (const label of [code.toLowerCase(), `#${code}`]) {
+          const owner = (await tasks.create('member', { assistantId, tags: [code] })).task
+          await db.update(tag).set({ label }).where(eq(tag.key, code.toLowerCase())) // 정규화 없이 저장된(수입) 라벨을 흉내 낸다
+          const threadId = (await tasks.get(owner.id)).threadId!
+          const estimate = await requests.estimate('member', threadId, { draft: '확인' })
+          expect(estimate.srCodes, label).toEqual([code])
+          const { id, info } = await completed(threadId, '확인')
+          expect(info.srCodes, label).toEqual([code])
+          const snapshot = await requests.snapshot(id) as { messages: Array<{ content: string }> }
+          expect(snapshot.messages[0]!.content, label).toContain('## 연결된 SR (1)')
+          expect(snapshot.messages[0]!.content, label).toContain('라벨 표기와 무관하게 들어가야 한다')
+        }
+      } finally { await db.update(tag).set({ label: code }).where(eq(tag.key, code.toLowerCase())) }
     })
 
     it('T-08 완료된 출처 대화의 파일은 계속 공유되고, 완료된 대화 자신은 선택·업로드를 거부한다', async () => {
