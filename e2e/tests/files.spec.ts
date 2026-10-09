@@ -33,7 +33,7 @@ test('S1 첨부를 입력에 고정하고 새 버전은 직접 전환한다', as
   await expect(page.getByTestId('materials-inputs')).toContainText('e2e-note.txt v1')
   await page.getByRole('button', { name: '새 버전 있음 · 바꾸기' }).click()
   await expect(page.getByTestId('materials-inputs')).toContainText('e2e-note.txt v2')
-  await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('새 버전으로 다시 답변해 줘')
+  await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('새 버전으로 다시 답변해 줘')
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByRole('button', { name: '사용한 자료' })).toHaveCount(2, { timeout: 15_000 }) // 두 번째 답변의 기록 버튼이 생길 때까지(live는 가짜 서버 응답이 느리다) — last()만 보면 첫 기록을 연다
   await page.getByRole('button', { name: '사용한 자료' }).last().click()
@@ -70,7 +70,7 @@ test('S3 같은 산출물 이름으로 두 번 저장하면 v2가 된다', async
   await page.goto(`/c/${task.id}`)
   let defaultName = ''
   for (let version = 1; version <= 2; version++) {
-    await page.getByRole('textbox', { name: '팀 의견 입력' }).fill(`산출물 답변 ${version}`)
+    await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill(`산출물 답변 ${version}`)
     await page.getByRole('button', { name: '전송', exact: true }).click()
     await expect(page.getByRole('button', { name: '산출물로 저장' }).last()).toBeVisible({ timeout: 15_000 }) // 답변 완료까지 — 병렬 부하에서 5초를 넘긴다
     await page.getByRole('button', { name: '산출물로 저장' }).last().click()

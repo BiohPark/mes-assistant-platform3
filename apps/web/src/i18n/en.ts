@@ -177,7 +177,7 @@ export const en = {
   chat: {
     openWebUi: 'Open in OpenWebUI',
     documentation: 'Documentation',
-    referenceConversation: 'Reference conversation · Matching tags will select it as a primary input.',
+    referenceConversation: 'On the first send, this conversation is selected as the reference conversation (primary input). Add at least one tag. You can remove it from the tray later.',
     requestStatus: { pending: 'Preparing', streaming: 'Responding', succeeded: 'Completed', failed: 'Failed', cancelled: 'Stopped', interrupted: 'Interrupted' },
     delivery: { attached: 'Attached as file', inline: 'Included in text', metadata_only: 'Name only', failed: 'Delivery failed' },
     deliveryShort: { attached: 'File', inline: 'Text', metadata_only: 'Name only', failed: 'Failed' },
@@ -210,7 +210,7 @@ export const en = {
     trayEstimate: 'Est. {bytes} / {limit}',
     requestSize: 'Request size',
     toggleMain: 'Toggle {name} as primary input',
-    removeFromRequest: 'Remove {name} from this request',
+    removeFromRequest: 'Deselect {name} as input',
     summary: 'Summary',
     messages: { one: '{count} message', other: '{count} messages' },
     overLimitAlert: 'Cannot send: request size limit exceeded.',

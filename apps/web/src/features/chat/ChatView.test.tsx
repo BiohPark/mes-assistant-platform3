@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Task } from '@mes/domain'
+import type { Assistant } from '@mes/contracts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MeContext } from '@/app/auth'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -46,7 +47,7 @@ it('keeps a discussion draft and shows an error when the message API fails', asy
     : new Response('[]', { status: 200 })))
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
-  const input = screen.getByRole('textbox', { name: '팀 의견 입력' })
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
   fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(input, { target: { value: '남길 의견' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
@@ -67,6 +68,7 @@ it('uploads a pinned attachment and stores it on the discussion message', async 
   const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
+  fireEvent.click(screen.getByText('이번 메시지만')) // 팀 의견 첨부 기본값은 '이번 메시지만'(B-2) → 고정으로 바꿔 보낸다
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(calls.some((call) => call.url === '/api/threads/h/messages' && call.method === 'POST')).toBe(true))
   expect(calls.some((call) => call.url === '/api/tasks/t/inputs/f' && call.method === 'PUT')).toBe(true)
@@ -84,7 +86,7 @@ it('sends an AI request through SSE and leaves pinning to the server', async () 
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
   const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
-  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '질문' } })
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '질문' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(calls.some((call) => call.url === '/api/threads/h/requests')).toBe(true))
   expect(calls.some((call) => call.url === '/api/tasks/t/inputs/f')).toBe(false)
@@ -112,13 +114,21 @@ it.each(['over-limit', 'estimate failure'] as const)('reuses the uploaded draft 
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
   const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
-  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '질문' } })
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '질문' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(toastError).toHaveBeenCalled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(calls.some((call) => call.url === '/api/threads/h/requests')).toBe(true))
   expect(calls.filter((call) => call.url === '/api/files')).toHaveLength(1)
   expect(JSON.parse(String(calls.find((call) => call.url === '/api/threads/h/requests')?.init?.body))).toMatchObject({ attachmentIds: ['f'] })
+})
+
+it('names the assistant in the request placeholder', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
+  const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
+  const assistant = { id: 'a', name: '분석 도우미' } as Assistant
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} assistant={assistant} /></MeContext></QueryClientProvider>)
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveAttribute('placeholder', '분석 도우미에게 요청하세요. Enter 전송, Shift+Enter 줄바꿈')
 })
 
 it('shows the phase of a request running in another tab', async () => {
@@ -141,7 +151,7 @@ it('disables AI send when the estimate exceeds the request budget', async () => 
   }))
   const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
-  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '길어진 초안' } })
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '길어진 초안' } })
   await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeDisabled())
   expect(screen.getByRole('alert')).toHaveTextContent('요청 크기 한도')
 })

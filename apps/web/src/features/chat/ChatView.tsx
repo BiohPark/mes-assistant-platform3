@@ -101,9 +101,10 @@ export function ChatView({ task, assistant }: { task: Task; assistant?: Assistan
       })} />
     {remoteStreaming && !chat.run?.phase && <p className="text-xs text-muted-foreground">{remoteRequest.data?.phase || t('chat.responding')}</p>}
   </div>{Object.values(typing).some((item) => item.until > Date.now()) && <p className="px-4 py-1 text-xs text-muted-foreground">{t('chat.typing', { names: Object.values(typing).filter((item) => item.until > Date.now()).map((item) => item.name).join(', ') })}</p>}
-  <ContextTray task={task} info={estimate} />
+  <ContextTray task={task} estimate={estimate} />
   {task.status !== 'done' && <Composer disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowPin allowDiscussion
-    blockedReason={estimate?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping}
+    blockedReason={!estimate.pending && estimate.data?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping}
+    placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}
     onSend={send} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />}
   {saveTarget && assistant && <SaveAsOutputDialog key={saveTarget.id} message={saveTarget} task={task} assistant={assistant} onClose={() => setSaveTarget(null)} />}</div>
   {infoId && <RequestInfoDialog requestId={infoId} onClose={() => setInfoId(null)} />}

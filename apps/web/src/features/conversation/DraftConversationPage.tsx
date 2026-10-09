@@ -114,16 +114,16 @@ export function DraftConversationPage() {
           {(assistant.expectedInputs.length > 0 || assistant.expectedOutputs.length > 0) && <div className="flex flex-wrap items-center gap-1.5 rounded-xl border bg-muted/30 p-3 text-xs">
             {assistant.expectedInputs.map((item) => <span key={item} className="rounded-full border bg-background px-2 py-0.5">{item}</span>)}
             {assistant.expectedInputs.length > 0 && assistant.expectedOutputs.length > 0 && <ArrowRight className="size-3.5 text-muted-foreground" />}
-            {assistant.expectedOutputs.map((item) => <span key={item} className="rounded-full border bg-violet-50 px-2 py-0.5 text-violet-800">{item}</span>)}
+            {assistant.expectedOutputs.map((item) => <span key={item} className="rounded-full border bg-tone-violet-bg px-2 py-0.5 text-tone-violet-fg">{item}</span>)}
           </div>}
           <div className="space-y-1.5"><div className="text-xs font-medium">{t('hub.tags')}</div>
             <TagInput tags={tags} suggest={suggest} onAdd={(value) => setTags((current) => current.some((item) => tagKey(item) === tagKey(value)) ? current : [...current, value])} onRemove={(value) => setTags((current) => current.filter((item) => item !== value))} placeholder={t('hub.tagPlaceholder')} />
           </div>
-          {refId && <div className="rounded-xl border border-amber-300 bg-amber-50/40 p-3 text-xs">{t('chat.referenceConversation')}</div>}
+          {refId && <div className="rounded-xl border border-tone-warning-fg/40 bg-tone-warning-bg p-3 text-xs">{t('chat.referenceConversation')}</div>}
           {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">{t('hub.retiredAssistant')} <Link to="/" className="underline">{t('hub.pickAnotherAssistant')}</Link></div>}
         </div>
       </div>
-      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer disabled={busy} streaming={false} allowAttachments allowPin allowDiscussion onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
+      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer disabled={busy} streaming={false} allowAttachments allowPin allowDiscussion placeholder={t('chat.composerPlaceholderFor', { assistant: assistant.name })} onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
     </div>
   </>
 }

@@ -21,7 +21,7 @@ test('E4 추정 한도 초과는 전송을 막고 입력 조절 동작을 보여
   await signup(page, 'limit')
   const task = await createTask(page)
   await page.goto(`/c/${task.id}`)
-  await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('x'.repeat(70_000)) // E2E 한도 64 KiB(playwright.config) 초과
+  await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('x'.repeat(70_000)) // E2E 한도 64 KiB(playwright.config) 초과
   await expect(page.getByRole('alert').filter({ hasText: '요청 크기 한도' })).toBeVisible()
   await expect(page.getByRole('button', { name: '전송', exact: true })).toBeDisabled()
   await expect(page.getByRole('link', { name: '새 대화로 이어가기' })).toHaveAttribute('href', new RegExp(`/new/.+ref=${task.id}`))
@@ -33,7 +33,7 @@ test('E6 요청 기록에서 사용한 자료와 원본 JSON을 연다', async (
   const task = await createTask(page)
   await page.goto(`/c/${task.id}`)
   await page.locator('input[type="file"]').setInputFiles({ name: `tray-${Date.now()}.txt`, mimeType: 'text/plain', buffer: Buffer.from('자료') })
-  await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('자료로 답변해 줘')
+  await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('자료로 답변해 줘')
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByRole('button', { name: '사용한 자료' })).toBeVisible()
   await expect(page.getByRole('button', { name: '중지' })).toBeHidden()
@@ -53,7 +53,7 @@ test('다른 사용자 화면에 팀 의견과 입력 중 상태가 실시간 �
     await second.goto(`/c/${task.id}`)
     await eventsReady
     await page.goto(`/c/${task.id}`)
-    await expect(second.getByRole('textbox', { name: '팀 의견 입력' })).toBeVisible()
+    await expect(second.getByRole('textbox', { name: 'AI 요청 입력' })).toBeVisible()
     await page.getByRole('button', { name: '팀 의견 (AI 미전송)' }).click()
     await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('작성 중')
     await expect(second.getByText(`${firstName} 입력 중…`)).toBeVisible()

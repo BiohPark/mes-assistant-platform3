@@ -175,7 +175,7 @@ export const ko = {
   chat: {
     openWebUi: 'OpenWebUI에서 열기',
     documentation: '설명 문서',
-    referenceConversation: '참조 대화 · 같은 태그가 있으면 주 입력으로 선택합니다.',
+    referenceConversation: '첫 전송 때 이 대화를 참조 대화(주 입력)로 선택합니다. 태그를 하나 이상 함께 써야 합니다. 이후 트레이에서 뺄 수 있습니다.',
     requestStatus: { pending: '준비 중', streaming: '응답 중', succeeded: '완료', failed: '실패', cancelled: '중지됨', interrupted: '중단됨' },
     delivery: { attached: '파일 첨부', inline: '본문 포함', metadata_only: '이름만 전달', failed: '전달 실패' },
     deliveryShort: { attached: '첨부', inline: '본문', metadata_only: '이름만', failed: '실패' },
@@ -208,7 +208,7 @@ export const ko = {
     trayEstimate: '예상 {bytes} / {limit}',
     requestSize: '요청 크기',
     toggleMain: '{name} 주 입력 전환',
-    removeFromRequest: '{name} 이번 요청에서 빼기',
+    removeFromRequest: '{name} 입력 선택 해제',
     summary: '요약',
     messages: { one: '{count}개', other: '{count}개' },
     overLimitAlert: '요청 크기 한도를 넘어 보낼 수 없습니다.',
