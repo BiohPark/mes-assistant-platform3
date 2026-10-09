@@ -384,7 +384,7 @@ export const en = {
       uploadShareHint: 'Available as a material in conversations with the same tags.',
     },
     notes: { title: 'Notes', loadFailed: 'Could not load notes.', body: 'Note text', placeholder: 'Write a note', attach: 'Attach shared files', add: 'Add note' },
-    related: { linked: 'Linked conversations {count}', sameTag: 'Conversations with the same tags', more: '+{count}' },
+    related: { linked: 'Same-tag conversations {count}', sameTag: 'Conversations with the same tags', more: '+{count}' },
     body: { materials: 'Materials', checklist: 'Checklist', notes: 'Notes', history: 'History', tabs: 'Conversation tabs', panel: 'Conversation side panel', panelTabs: 'Side panel' },
     complete: {
       done: 'Task completed. The completion report was saved to the files.', title: 'Complete task',

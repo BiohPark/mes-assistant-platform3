@@ -27,6 +27,7 @@ it('필수 체크 항목이 미완료면 완료 사유를 받아야 완료 처�
   const dialog = await screen.findByRole('dialog')
   await within(dialog).findByText('# 리포트')
   const reason = within(dialog).getByRole('textbox', { name: '완료 사유' })
+  expect(reason.closest('section')).toHaveClass('border-tone-warning-fg/40', 'bg-tone-warning-bg', 'text-tone-warning-fg')
   expect(within(dialog).getByRole('button', { name: '완료 처리' })).toBeDisabled()
   await userEvent.type(reason, ' 담당자 구두 승인 ')
   expect(within(dialog).getByRole('button', { name: '완료 처리' })).toBeEnabled()

@@ -55,21 +55,23 @@ export function TaskHeader({ task, assistant }: { task: Task; assistant: Assista
   }
 
   return <div className="border-b bg-card px-4 py-3">
-    <div className="flex flex-wrap items-center gap-2">
-      <Link to={`/?view=kanban&assistant=${encodeURIComponent(assistant.id)}`} className="inline-flex items-center gap-1.5 rounded-full border py-0.5 pr-2 pl-0.5 text-xs hover:bg-muted"><AssistantAvatar assistant={assistant} size="xs" />{assistant.name}</Link>
-      <span className="font-mono text-xs text-muted-foreground">{task.code}</span>
-      <TaskStatusBadge status={task.status} />
-      <PriorityBadge priority={task.priority} />
-      <div className="ml-auto flex items-center gap-1">
+    <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <Link to={`/?view=kanban&assistant=${encodeURIComponent(assistant.id)}`} className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border py-0.5 pr-2 pl-0.5 text-xs hover:bg-muted"><AssistantAvatar assistant={assistant} size="xs" /><span className="truncate">{assistant.name}</span></Link>
+        <span className="font-mono text-xs text-muted-foreground">{task.code}</span>
+        <TaskStatusBadge status={task.status} />
+        <PriorityBadge priority={task.priority} />
+      </div>
+      <div className="flex shrink-0 items-center gap-1 self-end sm:ml-auto">
         {task.status === 'done' ? <Button size="sm" variant="outline" onClick={() => setReopen(true)}><PlayCircle data-icon="inline-start" />{t('task.header.reopen')}</Button> : <>
           {task.status === 'on_hold' ? <Button size="sm" variant="outline" onClick={() => void changeStatus('in_progress')}><PlayCircle data-icon="inline-start" />{t('task.header.resume')}</Button> : <Button size="sm" variant="outline" onClick={() => void changeStatus('on_hold')}><PauseCircle data-icon="inline-start" />{t('task.header.hold')}</Button>}
           <Button size="sm" onClick={() => setComplete(true)}><CheckCircle2 data-icon="inline-start" />{t('task.header.complete')}</Button>
         </>}
-        <Button variant="ghost" size="icon-sm" aria-label={t('task.header.deleteConversation')} onClick={() => setConfirmDelete(true)}><Trash2 /></Button>
+        <Button variant="ghost" size="icon" aria-label={t('task.header.deleteConversation')} onClick={() => setConfirmDelete(true)}><Trash2 /></Button>
       </div>
     </div>
-    <div className="mt-2">{editingTitle ? <Input aria-label={t('task.header.titleLabel')} value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => void commitTitle()} onKeyDown={(event) => { if (event.key === 'Enter') void commitTitle(); if (event.key === 'Escape') { setTitle(task.title); setEditingTitle(false) } }} autoFocus className="h-8 text-base font-semibold" /> : <button type="button" className="text-left text-base font-semibold hover:underline" disabled={task.status === 'done'} onClick={() => { setTitle(task.title); setEditingTitle(true) }}>{task.title}</button>}
-      {task.summary && <p className="mt-0.5 text-xs text-muted-foreground">{task.summary}</p>}
+    <div className="mt-2">{editingTitle ? <Input aria-label={t('task.header.titleLabel')} value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => void commitTitle()} onKeyDown={(event) => { if (event.key === 'Enter') void commitTitle(); if (event.key === 'Escape') { setTitle(task.title); setEditingTitle(false) } }} autoFocus className="h-8 text-base font-semibold" /> : <button type="button" className="max-w-full text-left text-base font-semibold break-words hover:underline" disabled={task.status === 'done'} onClick={() => { setTitle(task.title); setEditingTitle(true) }}>{task.title}</button>}
+      {task.summary && <p className="mt-0.5 text-xs break-words text-muted-foreground">{task.summary}</p>}
     </div>
     <div className="mt-2"><TagInput tags={task.tags} suggest={suggest} readOnly={task.status === 'done'} onAdd={async (value) => { await addTag(actor, task.id, value); refresh() }} onRemove={async (value) => { await removeTag(actor, task.id, value); refresh() }} onChipClick={(value) => navigate(`/?view=kanban&tag=${encodeURIComponent(value)}`)} /></div>
     <div className="mt-2"><RelatedStrip task={task} /></div>

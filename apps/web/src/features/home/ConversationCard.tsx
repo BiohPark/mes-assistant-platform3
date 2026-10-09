@@ -43,7 +43,7 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
       <div className="pointer-events-none flex items-center gap-1.5 text-xs text-muted-foreground">
         <span className="shrink-0 font-mono whitespace-nowrap">{task.code}</span>
         <TaskStatusBadge status={task.status} className="h-5 shrink-0 px-1.5 text-[11px]" />
-        {task.titleSource === 'ai' && <Sparkles className="size-2.5 shrink-0 text-violet-500" aria-label={t('hub.aiTitle')} />}
+        {task.titleSource === 'ai' && <Sparkles className="size-2.5 shrink-0 text-tone-violet-fg" aria-label={t('hub.aiTitle')} />}
         <span className="ml-auto min-w-0 truncate">{formatRelative(task.lastActivityAt)}</span>
       </div>
       <div className="pointer-events-none mt-1 line-clamp-2 text-[13px] leading-snug font-medium">{task.title}</div>
@@ -66,7 +66,7 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
           </span>
         )}
         {task.dueDate && task.status !== 'done' && (
-          <span className={cn('pointer-events-none inline-flex items-center gap-0.5', overdue && 'font-medium text-red-600')}>
+          <span className={cn('pointer-events-none inline-flex items-center gap-0.5', overdue && 'font-medium text-tone-danger-fg')}>
             <CalendarClock className="size-3" />
             {daysLeft !== undefined && (daysLeft < 0 ? t('hub.daysOverdue', { days: -daysLeft }) : daysLeft === 0 ? t('hub.today') : `D-${daysLeft}`)}
           </span>
