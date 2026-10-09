@@ -1,4 +1,5 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Task } from '@mes/domain'
 import { MeContext } from '@/app/auth'
@@ -114,6 +115,51 @@ it('keeps the shared tab silent about empty results while the candidate request 
   expect(await screen.findByRole('alert')).toHaveTextContent('자료를 불러오지 못했습니다.')
   expect(screen.getByTestId('materials-shared')).not.toHaveTextContent('같은 태그 대화의 파일이 없습니다.')
   expect(screen.getByTestId('materials-shared')).not.toHaveTextContent('불러오는 중…')
+})
+
+it('hides cached shared candidates and their toggles after a 403 refetch until retry succeeds', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const data = { files: [{ file: fileMeta, sourceTaskId: 'source', sourceAssistantId: 'a1', viaTags: ['shared'], role: 'output' }], conversations: [] }
+  let forbidden = false
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/tasks/t/candidates') return forbidden ? jsonResponse(403, { message: 'Forbidden' }) : jsonResponse(200, data)
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<QueryClientProvider client={client}><MeContext value={me}><MaterialsPanel task={baseTask} /></MeContext></QueryClientProvider>)
+  fireEvent.click(screen.getByRole('tab', { name: '공유 자료함' }))
+  const row = await screen.findByTestId('candidate-file-out')
+  expect(within(row).getByRole('checkbox')).toBeEnabled()
+  fireEvent.change(screen.getByLabelText('공유 자료함 검색'), { target: { value: 'result' } })
+
+  forbidden = true
+  await act(async () => { await client.refetchQueries({ queryKey: ['candidates', 't'] }) })
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('자료를 불러오지 못했습니다.')
+  // React Query retains the previous data; the error state must hide it.
+  expect(client.getQueryData(['candidates', 't'])).toEqual(data)
+  expect(screen.queryByTestId('candidate-file-out')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('shared-group-a1')).not.toBeInTheDocument()
+  const shared = screen.getByTestId('materials-shared')
+  expect(within(shared).queryByRole('checkbox')).not.toBeInTheDocument()
+  expect(shared).not.toHaveTextContent('불러오는 중…')
+  fireEvent.change(screen.getByLabelText('공유 자료함 검색'), { target: { value: 'missing' } })
+  expect(shared).not.toHaveTextContent('"missing"에 맞는 파일이 없습니다.')
+  fireEvent.change(screen.getByLabelText('공유 자료함 검색'), { target: { value: '' } })
+  expect(shared).not.toHaveTextContent('같은 태그 대화의 파일이 없습니다.')
+
+  forbidden = false
+  fireEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))
+  expect(within(await screen.findByTestId('candidate-file-out')).getByRole('checkbox')).toBeEnabled()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+it('shows the shared empty state only after a successful request with no candidates', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/tasks/t/candidates' ? jsonResponse(200, { files: [], conversations: [] }) : jsonResponse(200, [])))
+  renderWithProviders(<MeContext value={me}><MaterialsPanel task={baseTask} /></MeContext>)
+  fireEvent.click(screen.getByRole('tab', { name: '공유 자료함' }))
+  expect(await screen.findByText('같은 태그 대화의 파일이 없습니다.')).toBeInTheDocument()
+  expect(screen.getByTestId('materials-shared')).not.toHaveTextContent('불러오는 중…')
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
 
 it('keeps a selected input whose metadata is unavailable as a row without a toggle', async () => {
