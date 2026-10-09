@@ -19,7 +19,7 @@ test('제안 확인 후 대화를 만들고 새 대화로 이동한다', async (
   page.on('request', (request) => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/tasks') taskWrites++ })
   await page.getByRole('button', { name: '시스템 assistant 열기' }).click()
   const drawer = page.getByRole('dialog', { name: '시스템 assistant' })
-  await drawer.getByRole('textbox', { name: '팀 의견 입력' }).fill('FDS 작성 도우미로 "테스트" 대화 시작해줘')
+  await drawer.getByRole('textbox', { name: 'AI 요청 입력' }).fill('FDS 작성 도우미로 "테스트" 대화 시작해줘')
   await drawer.getByRole('button', { name: '전송' }).click()
   if (live) {
     // 가짜 OpenWebUI는 도구 호출을 모른다 → 답변만 보이고 제안 카드는 없다(도구 미지원 모델과 같은 경로)
@@ -42,7 +42,7 @@ test('담당자의 에이전트 등록 적용은 기존 API가 거부한다', as
   await signUp(page)
   await page.getByRole('button', { name: '시스템 assistant 열기' }).click()
   const drawer = page.getByRole('dialog', { name: '시스템 assistant' })
-  await drawer.getByRole('textbox', { name: '팀 의견 입력' }).fill('에이전트 등록: ID e2e-denied, 이름 거부 확인 도우미, Record › Deviation')
+  await drawer.getByRole('textbox', { name: 'AI 요청 입력' }).fill('에이전트 등록: ID e2e-denied, 이름 거부 확인 도우미, Record › Deviation')
   await drawer.getByRole('button', { name: '전송' }).click()
   await expect(drawer.getByText(/에이전트 등록: 거부 확인 도우미/)).toBeVisible()
   await drawer.getByRole('button', { name: '적용' }).click()

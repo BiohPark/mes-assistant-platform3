@@ -113,7 +113,7 @@ export function Composer({ disabled, streaming, placeholder, inputLabel, maxAtta
         </div>
       )}
       {attachmentError && <div role="alert" className="mb-1 text-xs text-destructive">{attachmentError}</div>}
-      <div className={cn('flex items-end gap-2 rounded-xl border bg-background p-1.5 focus-within:ring-2 focus-within:ring-ring/40', discussion && 'border-amber-300 bg-amber-50/40 dark:bg-amber-950/20')}>
+      <div className={cn('flex items-end gap-2 rounded-xl border bg-background p-1.5 focus-within:ring-2 focus-within:ring-ring/40', discussion && 'border-tone-warning-fg/40 bg-tone-warning-bg')}>
         {allowAttachments && (
           <Button type="button" variant="ghost" size="icon-sm" aria-label={t('chat.attachFile')} onClick={() => inputRef.current?.click()} disabled={disabled}>
             <Paperclip />
@@ -125,14 +125,14 @@ export function Composer({ disabled, streaming, placeholder, inputLabel, maxAtta
           multiple
           className="hidden"
           onChange={(e) => {
-            const picked = Array.from(e.target.files ?? []).map((file) => ({ file, once: false }))
+            const picked = Array.from(e.target.files ?? []).map((file) => ({ file, once: discussion }))
             if (pending.length + picked.length > attachmentLimit) setAttachmentError(t('chat.attachmentLimit', { limit: String(attachmentLimit) }))
             else { setPending((p) => [...p, ...picked]); setAttachmentError('') }
             e.target.value = ''
           }}
         />
         <Textarea
-          aria-label={inputLabel ?? t('chat.composerLabel')}
+          aria-label={inputLabel ?? (discussion ? t('chat.composerLabel') : t('chat.requestLabel'))}
           value={text}
           onChange={(e) => {
             setText(e.target.value)
@@ -157,7 +157,7 @@ export function Composer({ disabled, streaming, placeholder, inputLabel, maxAtta
             aria-label={t('chat.discussionToggle')}
             aria-pressed={discussion}
             title={t('chat.discussionToggleTitle')}
-            className={cn(discussion && 'text-amber-700')}
+            className={cn(discussion && 'text-tone-warning-fg')}
             onClick={() => setDiscussion((v) => !v)}
           >
             <MessagesSquare />

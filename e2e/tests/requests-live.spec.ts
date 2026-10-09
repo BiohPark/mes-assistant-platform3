@@ -17,7 +17,7 @@ test('S5 파일 처리 완료 뒤 첨부하여 답변한다', async ({ page }) =
   expect((await page.request.put(`/api/tasks/${task.id}/inputs/${main.id}`, { data: { weight: 'main' } })).ok()).toBe(true)
   await page.goto(`/c/${task.id}`)
   await page.locator('input[type="file"]').setInputFiles({ name: 'good-e2e.txt', mimeType: 'text/plain', buffer: Buffer.from('input') })
-  await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('첨부 확인')
+  await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('첨부 확인')
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByText(/파일 처리 대기/).first()).toBeVisible()
   await expect(page.getByText(/files: 2/).first()).toBeVisible({ timeout: 15_000 }) // 가짜 서버의 느린 처리 + 병렬 부하
@@ -43,7 +43,7 @@ test('E2 파일 전달 실패 후 텍스트로 보내기를 선택해 복구한�
   await page.goto(`/c/${task.id}`)
   const beforeCalls = (await fakeRequests(page)).length
   await page.locator('input[type="file"]').setInputFiles({ name: 'fail-e2e.txt', mimeType: 'text/plain', buffer: Buffer.from('inline retry') })
-  await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('파일을 확인해 줘')
+  await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('파일을 확인해 줘')
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByText(/OpenWebUI에 전달하지 못해/).first()).toBeVisible({ timeout: 15_000 })
   expect((await fakeRequests(page)).slice(beforeCalls).filter((entry) => JSON.stringify(entry.messages).includes('파일을 확인해 줘'))).toHaveLength(0)

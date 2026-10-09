@@ -52,7 +52,7 @@ test('대화 생성, 태그와 칸반, 완료와 재개, 다른 사용자 조회
 test('새 대화의 첫 입력을 AI에 한 번 보내고 답변을 표시한다', async ({ page }) => {
   await signUp(page, `e2e-first-${Date.now()}`)
   await page.getByRole('link', { name: /새 대화/ }).first().click()
-  await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('첫 AI 질문 E2E')
+  await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('첫 AI 질문 E2E')
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page).toHaveURL(/\/c\/[^/]+$/)
   await expect(page.getByRole('paragraph').filter({ hasText: /^첫 AI 질문 E2E$/ })).toHaveCount(1) // 사용자 말풍선 1개 — 제목·답변 인용은 제외
