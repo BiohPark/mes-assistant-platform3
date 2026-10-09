@@ -53,3 +53,23 @@ it('Popover 담당자 검색·키보드 선택과 전체 해제는 서버 필터
   expect(screen.getByRole('button', { name: '담당자: 전체' })).toHaveAttribute('aria-pressed', 'false')
   await waitFor(() => expect(calls.at(-1)).toBe('/api/reports?days=30&granularity=week'))
 })
+
+it('uses semantic foregrounds for SR progress, warning signals and feedback icons', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url.startsWith('/api/reports?') ? jsonResponse(200, {
+    kpi: { done: 0, reopens: 0 }, buckets: [], assistantStats: [], userStats: [], flow: [], tags: [],
+    srDist: [{ status: 'reviewing', count: 2 }, { status: 'submitted', count: 1 }],
+    signals: [{ kind: 'reopen', taskId: 't', taskCode: 'WK-2026-0001', taskTitle: '대화', detail: '재개 사유', at: '2026-10-01T00:00:00.000Z' }],
+    digest: [{ assistantId: 'a', assistantName: '도우미', avgRating: 4, count: 1, comments: [] }],
+    assistants: [], users: [],
+  }) : jsonResponse(404)))
+  const { container } = renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ReportsPage /></TooltipProvider></MeContext>)
+  await screen.findByText('재개 사유')
+  const bars = container.querySelectorAll('div.h-full')
+  expect(bars).toHaveLength(2)
+  expect(bars[0]).toHaveClass('bg-tone-info-fg')
+  expect(bars[1]).toHaveClass('bg-tone-info-fg')
+  expect(bars[0]).toHaveStyle({ width: `${2 / 3 * 100}%` })
+  expect(bars[1]).toHaveStyle({ width: `${1 / 3 * 100}%` })
+  expect(container.querySelector('svg.lucide-triangle-alert')).toHaveClass('text-tone-warning-fg')
+  expect(container.querySelector('svg.lucide-star')).toHaveClass('text-tone-warning-fg')
+})

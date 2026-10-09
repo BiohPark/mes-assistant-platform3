@@ -85,7 +85,7 @@ export function SrConvertSheet({ sr, open, onOpenChange, onSaved }: { sr: SrDeta
       <TabsContent value="edit"><Textarea aria-label={t('sr.body')} value={body} readOnly={readOnly} rows={10} className="text-xs" onChange={(event) => { manualBody.current = true; setBody(event.target.value) }} /></TabsContent>
       <TabsContent value="preview">{body.trim() ? <Markdown content={body} className="rounded-lg border p-3 text-sm" /> : <p className="text-xs text-muted-foreground">{t('srFlow.emptyPreview')}</p>}</TabsContent>
     </Tabs>
-    {proposal && <section aria-label={t('srFlow.proposal')} className="space-y-2 rounded-lg border border-violet-200 bg-violet-50/40 p-3 text-sm dark:border-violet-900 dark:bg-violet-950/20">
+    {proposal && <section aria-label={t('srFlow.proposal')} className="space-y-2 rounded-lg border border-tone-violet-fg/40 bg-tone-violet-bg p-3 text-sm">
       <h3 className="text-xs font-semibold">{t('srFlow.proposal')}</h3>
       <p className="font-medium">{proposal.title}</p>
       <Markdown content={proposal.body} className="text-xs" />
