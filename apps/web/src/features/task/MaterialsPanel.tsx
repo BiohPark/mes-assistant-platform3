@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowUpCircle, Upload } from 'lucide-react'
 import type { Task } from '@mes/domain'
@@ -8,17 +8,22 @@ import { useActor } from '@/app/hooks'
 import { Badge } from '@/components/ui/badge'
 import { listAssistants } from '@/lib/catalog'
 import { useT } from '@/i18n'
+import { useTablistKeys } from '@/lib/useTablistKeys'
 import { FileList } from './FileList'
 import { FilePreviewDialog } from './FilePreviewDialog'
 import { InputToggle } from './InputToggle'
 import { ConversationInputs } from './ConversationInputs'
 
-type Tab = 'inputs' | 'shared' | 'conversations' | 'own'
+const tabs = ['inputs', 'shared', 'conversations', 'own'] as const
+type Tab = typeof tabs[number]
 export function MaterialsPanel({ task }: { task: Task }) {
   const actor = useActor()
   const t = useT()
   const uploadRef = useRef<HTMLInputElement>(null)
   const [tab, setTab] = useState<Tab>('inputs')
+  const tabKeys = useTablistKeys(tabs, tab, setTab)
+  const tabId = useId()
+  const panelId = `${tabId}-panel`
   const [preview, setPreview] = useState<FileMeta | null>(null)
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -45,9 +50,10 @@ export function MaterialsPanel({ task }: { task: Task }) {
     } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
   }
   return <div className="space-y-3 text-xs" data-testid="materials-panel">
-    <div role="tablist" aria-label={t('task.materials.tabs')} className="flex gap-1 border-b pb-2">
-      {([['inputs', t('task.materials.tabInputs')], ['shared', t('task.materials.tabShared')], ['conversations', t('task.conversation')], ['own', t('task.materials.tabOwn')]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`rounded-lg px-2 py-1 ${tab === value ? 'bg-muted font-medium' : ''}`}>{label}</button>)}
+    <div role="tablist" aria-label={t('task.materials.tabs')} className="flex gap-1 border-b pb-2" {...tabKeys.tablistProps}>
+      {([['inputs', t('task.materials.tabInputs')], ['shared', t('task.materials.tabShared')], ['conversations', t('task.conversation')], ['own', t('task.materials.tabOwn')]] as const).map(([value, label]) => <button key={value} type="button" id={`${tabId}-${value}`} aria-controls={panelId} {...tabKeys.tabProps(value)} onClick={() => setTab(value)} className={`rounded-lg px-2 py-1 ${tab === value ? 'bg-muted font-medium' : ''}`}>{label}</button>)}
     </div>
+    <div role="tabpanel" id={panelId} aria-labelledby={`${tabId}-${tab}`} className="space-y-3">
     {(candidates.isError || own.isError) && <div role="alert">{t('task.materials.loadFailed')} <button type="button" className="underline" onClick={() => { void candidates.refetch(); void own.refetch() }}>{t('common.retry')}</button></div>}
     {tab === 'inputs' && <div data-testid="materials-inputs" className="space-y-2">
       <p className="text-muted-foreground">{t('task.materials.inputsHelp')}</p>
@@ -87,6 +93,7 @@ export function MaterialsPanel({ task }: { task: Task }) {
       <FileList files={own.data ?? []} taskId={task.id} onPreview={setPreview} onToggleOutput={disabled ? undefined : (fileId, isOutput) => void setOutputTag(actor, task.id, fileId, isOutput).catch((error: unknown) => toast.error(String(error)))} canDelete={!disabled} renderActions={(file) => <InputToggle weight={task.inputs.find((input) => input.fileId === file.id)?.weight} label={file.name} disabled={disabled} onChange={(weight) => void change(file.id, weight)} />} />
       {!disabled && <><button type="button" className="flex w-full items-center justify-center gap-1 rounded-lg border p-1.5" onClick={() => uploadRef.current?.click()}><Upload className="size-3.5" />{t('task.materials.upload')}</button><input ref={uploadRef} type="file" multiple className="hidden" onChange={(event) => { void upload(event.target.files); event.target.value = '' }} /></>}
     </div>}
+    </div>
     <FilePreviewDialog file={preview} onClose={() => setPreview(null)} />
   </div>
 }

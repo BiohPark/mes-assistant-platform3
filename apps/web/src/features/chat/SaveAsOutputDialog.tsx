@@ -15,7 +15,7 @@ export function defaultOutputName(own: (Pick<FileMeta, 'name' | 'source' | 'uplo
   return latest?.name ?? `${level2.replace(/\s+/g, '')}_${code}.md`
 }
 
-export function SaveAsOutputDialog({ message, task, assistant, onClose }: { message: Message; task: Task; assistant: Assistant; onClose: () => void }) {
+export function SaveAsOutputDialog({ message, task, assistant, onClose, onOpenMaterials }: { message: Message; task: Task; assistant: Assistant; onClose: () => void; onOpenMaterials?: () => void }) {
   const t = useT()
   const actor = useActor()
   const own = useQuery({ queryKey: ['files', task.id], queryFn: () => filesForTask(task.id) })
@@ -28,7 +28,9 @@ export function SaveAsOutputDialog({ message, task, assistant, onClose }: { mess
     setSaving(true)
     try {
       const result = await saveAssistantOutput(actor, task.id, name.trim(), message.content)
-      toast.success(t('chat.outputSaved', { name: result.name, version: String(result.version) }))
+      toast.success(t('chat.outputSaved', { name: result.name, version: String(result.version) }), {
+        action: onOpenMaterials ? { label: t('chat.viewInMaterials'), onClick: onOpenMaterials } : undefined,
+      })
       onClose()
     } catch (error) { toast.error(t('chat.outputSaveFailed'), { description: error instanceof Error ? error.message : String(error) }) }
     finally { setSaving(false) }

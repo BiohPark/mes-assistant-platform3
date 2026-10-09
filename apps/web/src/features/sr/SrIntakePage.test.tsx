@@ -258,6 +258,8 @@ it('요청이 하나도 없으면 접수 에이전트 카드(이름·설명·예
   expect(screen.queryByRole('button', { name: '완료' })).not.toBeInTheDocument()
   expect(container).not.toHaveTextContent('SR이 없습니다')
   expect(container).not.toHaveTextContent('요청 내용을 대화로 정리해 접수합니다')
+  expect(screen.queryByRole('button', { name: '자료 열기' })).not.toBeInTheDocument()
+  expect(container).not.toHaveTextContent('같은 태그 대화')
   await userEvent.click(screen.getByRole('button', { name: '새 요청' }))
   // Composer 제안도 같은 추출 결과만 — 머리글·비인용 줄이 AI로 전송되지 않는다.
   expect(screen.getByRole('button', { name: '설비 알람 확인' })).toBeInTheDocument()
@@ -266,6 +268,8 @@ it('요청이 하나도 없으면 접수 에이전트 카드(이름·설명·예
   expect(screen.queryByRole('button', { name: '첨부 파일을 올리세요' })).not.toBeInTheDocument()
   expect(container).not.toHaveTextContent('사용법')
   expect(container).not.toHaveTextContent(/\d+건/)
+  expect(screen.queryByRole('button', { name: '자료 열기' })).not.toBeInTheDocument()
+  expect(container).not.toHaveTextContent('같은 태그 대화')
 })
 
 it('에이전트 설명·예시가 비어 있으면 이름만 보이고 플랫폼이 지은 예시는 넣지 않는다', async () => {
