@@ -54,10 +54,11 @@ export function MaterialsPanel({ task }: { task: Task }) {
       {selection.map((input) => {
         const file = byId.get(input.fileId)
         if (!file) return null
-        const newerVersionId = candidates.data?.files.find((item) => item.file.id === file.id)?.newerVersionId
+        const candidate = candidates.data?.files.find((item) => item.file.id === file.id)
+        const newerVersionId = candidate?.newerVersionId
         return <div key={file.id} className="rounded-xl border p-2" data-testid={`selected-file-${file.id}`}>
           <div className="flex items-center gap-2"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(file)}>{file.name} v{file.version}</button><InputToggle weight={input.weight} label={file.name} disabled={disabled} onChange={(weight) => void change(file.id, weight)} /></div>
-          <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground"><span>{input.weight === 'main' ? t('task.mainInput') : t('task.reference')} · {file.originTaskId === task.id ? t('task.thisConversation') : file.originTaskId}</span>
+          <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground"><span>{input.weight === 'main' ? t('task.mainInput') : t('task.reference')} · {file.originTaskId === task.id ? t('task.thisConversation') : <SourceLink taskId={file.originTaskId} code={candidate?.sourceCode} title={candidate?.sourceTitle} />}</span>
             {newerVersionId && !disabled && <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-sky-300 px-1 text-sky-700" onClick={() => void switchInputVersion(actor, task.id, file.id, newerVersionId).catch((error: unknown) => toast.error(String(error)))}><ArrowUpCircle className="size-3" />{t('task.materials.newVersion')}</button>}
           </div>
         </div>
@@ -70,7 +71,7 @@ export function MaterialsPanel({ task }: { task: Task }) {
       {!shared.length && <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">{t('task.materials.noShared')}</div>}
       {sortedGroups.flatMap(([assistantId, items]) => [<div key={`group-${assistantId}`} className="pt-1 font-medium" data-testid={`shared-group-${assistantId}`}>{assistantById.get(assistantId)?.name ?? assistantId}</div>, ...items.sort((a, b) => a.file.name.localeCompare(b.file.name) || a.file.version - b.file.version).map((item) => <div key={item.file.id} className="rounded-xl border p-2" data-testid={`candidate-file-${item.file.id}`}>
         <div className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(item.file)}>{item.file.name} v{item.file.version}</button><InputToggle weight={task.inputs.find((input) => input.fileId === item.file.id)?.weight} label={item.file.name} disabled={disabled} onChange={(weight) => void change(item.file.id, weight)} /></div>
-        <div className="mt-1 text-xs text-muted-foreground">{item.role === 'output' ? t('task.materials.roleOutput') : t('task.materials.roleUpload')} · <a href={`/c/${item.sourceTaskId}`} className="underline">{item.sourceTaskId}</a> · {item.viaTags.join(', ')}
+        <div className="mt-1 text-xs text-muted-foreground">{item.role === 'output' ? t('task.materials.roleOutput') : t('task.materials.roleUpload')} · <SourceLink taskId={item.sourceTaskId} code={item.sourceCode} title={item.sourceTitle} /> · {item.viaTags.join(', ')}
           {!!item.olderVersionIds?.length && <button type="button" className="ml-2 underline" onClick={() => setExpanded(expanded === item.file.id ? null : item.file.id)}>{t('task.materials.olderVersions', { count: item.olderVersionIds.length })}</button>}
         </div>
         {expanded === item.file.id && <OlderVersions file={item.file} task={task} disabled={disabled} onPreview={setPreview} onChange={change} />}
@@ -82,6 +83,13 @@ export function MaterialsPanel({ task }: { task: Task }) {
     </div>}
     <FilePreviewDialog file={preview} onClose={() => setPreview(null)} />
   </div>
+}
+
+/** 출처 대화 표시 — 내부 ID는 링크 주소에만 쓰고 화면에는 코드·제목을 보여 준다 */
+function SourceLink({ taskId, code, title }: { taskId?: string; code?: string; title?: string }) {
+  const t = useT()
+  if (!taskId) return null
+  return <><a href={`/c/${taskId}`} className="font-mono underline">{code ?? t('task.conversation')}</a>{title && <> · {title}</>}</>
 }
 
 function OlderVersions({ file, task, disabled, onPreview, onChange }: { file: FileMeta; task: Task; disabled: boolean; onPreview: (file: FileMeta) => void; onChange: (fileId: string, weight: 'main' | 'reference' | null) => Promise<void> }) {

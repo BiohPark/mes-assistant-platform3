@@ -14,8 +14,8 @@ it('shows a selected older version, offers an explicit switch, and keeps indirec
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push([url, init])
     if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [
-      { file: old, sourceTaskId: 'source', viaTags: ['direct'], role: 'upload', selected: 'main', newerVersionId: 'v2' },
-      { file: fresh, sourceTaskId: 'source', viaTags: ['direct'], role: 'upload', olderVersionIds: ['v1'] },
+      { file: old, sourceTaskId: 'source', sourceCode: 'WK-2026-0002', sourceTitle: '원본 대화', viaTags: ['direct'], role: 'upload', selected: 'main', newerVersionId: 'v2' },
+      { file: fresh, sourceTaskId: 'source', sourceCode: 'WK-2026-0002', sourceTitle: '원본 대화', viaTags: ['direct'], role: 'upload', olderVersionIds: ['v1'] },
     ], conversations: [] })
     if (url === '/api/tasks/t/files') return jsonResponse(200, [])
     if (url === '/api/files/v2/versions') return jsonResponse(200, [fresh, old])
@@ -26,10 +26,16 @@ it('shows a selected older version, offers an explicit switch, and keeps indirec
   renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={task} /></MeContext>)
   expect(await screen.findByText('새 버전 있음 · 바꾸기')).toBeInTheDocument()
   expect(screen.getByText(/report.md v1/)).toBeInTheDocument()
+  // 출처는 내부 ID가 아니라 대화 코드·제목으로 보인다
+  expect(screen.getByTestId('selected-file-v1')).toHaveTextContent('WK-2026-0002 · 원본 대화')
+  expect(screen.getByTestId('selected-file-v1')).not.toHaveTextContent('source')
   fireEvent.click(screen.getByText('새 버전 있음 · 바꾸기'))
   await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t/inputs/v1/switch-version' && init?.method === 'POST')).toBe(true))
   fireEvent.click(screen.getByRole('tab', { name: '공유 자료함' }))
   expect(screen.getByText(/report.md v2/)).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'WK-2026-0002' })).toHaveAttribute('href', '/c/source')
+  expect(screen.getByTestId('candidate-file-v2')).toHaveTextContent('업로드 · WK-2026-0002 · 원본 대화 · direct')
+  expect(screen.getByTestId('candidate-file-v2')).not.toHaveTextContent(/·\s*source/)
   fireEvent.click(screen.getByRole('button', { name: '이전 버전 1' }))
   expect(await screen.findByText('report.md v1')).toBeInTheDocument()
 })

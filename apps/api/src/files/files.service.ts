@@ -211,8 +211,8 @@ export class DbFilesService {
     if (actor) await assertTaskAccess(this.db, actor, taskId)
     const { rows, chainRows, selected, via } = await this.candidateRows(taskId)
     const originIds = [...new Set(rows.map((row) => row.originTaskId).filter((id): id is string => !!id))]
-    const origins = originIds.length ? await this.db.select({ id: task.id, assistantId: task.assistantId }).from(task).where(inArray(task.id, originIds)) : []
-    const assistantByTask = new Map(origins.map((origin) => [origin.id, origin.assistantId]))
+    const origins = originIds.length ? await this.db.select({ id: task.id, code: task.code, title: task.title, assistantId: task.assistantId }).from(task).where(inArray(task.id, originIds)) : []
+    const originById = new Map(origins.map((origin) => [origin.id, origin]))
     const selectedById = new Map(selected.map((item) => [item.fileId, item.weight]))
     const byId = new Map(chainRows.map((row) => [row.id, row]))
     const rootOf = (row: FileRow) => { let current = row; const seen = new Set<string>(); while (current.previousId && byId.has(current.previousId) && !seen.has(current.id)) { seen.add(current.id); current = byId.get(current.previousId)! } return current.id }
@@ -225,7 +225,9 @@ export class DbFilesService {
       const head = heads.get(rootOf(row))!.id
       const olderVersionIds: string[] = []
       if (head === row.id) { let previous = row.previousId; while (previous && byId.has(previous)) { if (!byId.get(previous)!.deletedAt) olderVersionIds.push(previous); previous = byId.get(previous)!.previousId } }
-      return { file: fileMeta(row), sourceTaskId: row.originTaskId, sourceAssistantId: assistantByTask.get(row.originTaskId!), viaTags: via.get(row.originTaskId!) ?? [], role: row.isOutput || row.source === 'assistant' ? 'output' : 'upload',
+      const origin = originById.get(row.originTaskId!)
+      // 출처는 내부 ID가 아니라 대화 코드·제목으로 보여 준다
+      return { file: fileMeta(row), sourceTaskId: row.originTaskId, sourceCode: origin?.code, sourceTitle: origin?.title, sourceAssistantId: origin?.assistantId, viaTags: via.get(row.originTaskId!) ?? [], role: row.isOutput || row.source === 'assistant' ? 'output' : 'upload',
         ...(selectedById.has(row.id) && { selected: selectedById.get(row.id) }),
         ...(head !== row.id && { newerVersionId: head }), ...(olderVersionIds.length && { olderVersionIds }) }
     })
@@ -241,7 +243,7 @@ export class DbFilesService {
     if (actor) await assertTaskAccess(this.db, actor, taskId)
     const rows = await this.db.select({ taskId: task.id, file: fileObject }).from(task)
       .leftJoin(fileObject, and(eq(fileObject.originTaskId, task.id), isNull(fileObject.deletedAt)))
-      .where(and(eq(task.id, taskId), isNull(task.deletedAt)))
+      .where(and(eq(task.id, taskId), isNull(task.deletedAt))).orderBy(fileObject.uploadedAt)
     if (!rows.length) throw new NotFoundException('대화를 찾을 수 없습니다')
     return rows.flatMap((row) => row.file ? [fileMeta(row.file)] : [])
   }

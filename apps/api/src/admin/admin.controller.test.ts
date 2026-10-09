@@ -13,7 +13,7 @@ import { DbCatalogReader } from '../catalog/catalog.service.js'
 
 const config = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
 const admin = { getSettings: vi.fn(async () => ({})), settings: vi.fn(async () => ({})), createAssistant: vi.fn(async () => ({ id: 'new-agent' })),
-  order: vi.fn(async () => undefined), codes: vi.fn(async () => []), updateAssistant: vi.fn(async () => ({})), deleteAssistant: vi.fn(async () => undefined) }
+  order: vi.fn(async () => undefined), codes: vi.fn(async () => []), updateAssistant: vi.fn(async () => ({})), deleteAssistant: vi.fn(async () => undefined), image: vi.fn(async () => undefined) }
 const accounts = { profile: vi.fn(async (_id: string, input: unknown) => input), users: vi.fn(async () => []), role: vi.fn(async () => undefined), active: vi.fn(async () => undefined), name: vi.fn(async (_id: string, name: string) => ({ name })), temporaryPassword: vi.fn(async () => ({ temporaryPassword: 'secret' })), changePassword: vi.fn(async () => undefined) }
 
 describe('관리 API 서버 권한', () => {
@@ -31,6 +31,10 @@ describe('관리 API 서버 권한', () => {
   })
   afterEach(async () => { await app.close(); vi.clearAllMocks() })
 
+  it('에이전트 이미지 업로드는 UTF-8 파일 이름을 그대로 넘긴다', async () => {
+    await request(app.getHttpServer()).post('/api/assistants/new-agent/image').set('Cookie', 'mes_session=so').attach('file', Buffer.from('png'), { filename: '아이콘 🙂.png', contentType: 'image/png' }).expect(201)
+    expect(admin.image).toHaveBeenCalledWith('so', 'new-agent', expect.objectContaining({ originalname: '아이콘 🙂.png', mimetype: 'image/png' }))
+  })
   it('설정 조회는 로그인 사용자, 변경과 사용자 목록은 SO만 허용한다', async () => {
     await request(app.getHttpServer()).get('/api/settings').set('Cookie', 'mes_session=member').expect(200)
     await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=member').send({ fileDelivery: 'inline' }).expect(403)

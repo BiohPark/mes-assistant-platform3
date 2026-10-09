@@ -260,6 +260,28 @@ describe('demo bundle DB import', () => {
     } finally { await legacyClient.end(); await legacyDb.drop() }
   })
 
+  it('normalizes imported tag labels (lower-case · # prefix · spaces) without changing keys, links the SR, and reruns idempotently', async () => {
+    const isolated = await createTempDb('import_tags')
+    const pool = createPool(isolated.url)
+    try {
+      await runMigrations(isolated.url)
+      const db = drizzle(pool)
+      const fixture = structuredClone(base) as any
+      fixture.tables.tasks[0].tags = ['#sr-2099-0001', ' Change Control ']
+      fixture.tables.tasks[1].tags = ['sr-2099-0001', '#change-control']
+      const first = await importBundle(fixture, db, new FileStorageService(root))
+      expect(first.report['tasks.tags → tag/task_tag']).toMatchObject({ imported: 4 })
+      expect((await db.select().from(s.tag).orderBy(s.tag.key)).map((row) => [row.key, row.label, row.kind])).toEqual([['change-control', 'Change-Control', 'keyword'], ['sr-2099-0001', 'SR-2099-0001', 'sr']])
+      expect((await db.select().from(s.taskTag).orderBy(s.taskTag.taskId, s.taskTag.tagKey)).map((row) => [row.taskId, row.tagKey])).toEqual([
+        ['fixture-source-task', 'change-control'], ['fixture-source-task', 'sr-2099-0001'], ['fixture-task', 'change-control'], ['fixture-task', 'sr-2099-0001']])
+      expect((await db.select().from(s.task).orderBy(s.task.id)).map((row) => row.srId)).toEqual(['fixture-sr', 'fixture-sr'])
+      expect((await new DbTasksService(db).get('fixture-task')).tags.sort()).toEqual(['Change-Control', 'SR-2099-0001'])
+      const second = await importBundle(fixture, db, new FileStorageService(root)) // 같은 번들 재수입 — 충돌이면 여기서 던진다
+      expect(second.report['tasks.tags → tag/task_tag']).toMatchObject({ imported: 0, skipped: 4 })
+      expect((await db.select({ n: count() }).from(s.tag))[0]!.n).toBe(2)
+    } finally { await pool.end(); await isolated.drop() }
+  })
+
   it('restores missing default assistants when importing a v1 bundle into an empty DB', async () => {
     const isolated = await createTempDb('import_v1_defaults')
     const pool = createPool(isolated.url)

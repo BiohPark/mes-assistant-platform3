@@ -1016,8 +1016,12 @@ components:
       properties:
         file: { $ref: '#/components/schemas/FileMeta' }
         sourceTaskId: { type: string }
+        sourceCode: { type: string, description: '출처 대화 코드 (화면 표시용 — 내부 ID를 보여 주지 않는다)' }
+        sourceTitle: { type: string }
+        sourceAssistantId: { type: string }
         viaTags: { type: array, items: { type: string } }
         role: { enum: [output, upload] }
+        selected: { $ref: '#/components/schemas/InputWeight' }
         newerVersionId: { type: string }
         olderVersionIds: { type: array, items: { type: string } }
     ConversationCandidate:

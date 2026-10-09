@@ -119,6 +119,19 @@ describe('buildChatRequest — files', () => {
   })
 })
 
+describe('buildChatRequest — linked SR by tag', () => {
+  it('normalizes lower-case and #-prefixed SR tag labels before looking up the SR, and reports the canonical code', async () => {
+    const sr = await startSrConversation(dev)
+    await db.serviceRequests.update(sr.id, { code: 'SR-2026-0001', status: 'submitted', title: '알람', body: 'SR-BODY' })
+    const me = await startConversation(dev, { assistantId: 'fds', tags: ['#sr-2026-0001', 'sr-2026-0001', 'plain'] })
+    const { scope, thread } = await scopeOf(me.task.id)
+    const built = await buildChatRequest(scope, thread, [])
+    expect(built.info.srCodes).toEqual(['SR-2026-0001'])
+    expect(built.messages[0].content).toContain('## 연결된 SR (1)')
+    expect(built.messages[0].content).toContain('SR-BODY')
+  })
+})
+
 describe('buildChatRequest — conversations', () => {
   it('includes selected conversation snapshots and records them', async () => {
     const src = await startConversation(dev, { assistantId: 'urs', tags: ['t'] })

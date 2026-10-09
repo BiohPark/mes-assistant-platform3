@@ -1,7 +1,7 @@
 import type { LlmPorts } from './ports.js'
 import { resolveModel } from '@mes/domain'
 import { DEFAULT_REQUEST_BUDGET_BYTES, byteLength, requestBytes } from '@mes/domain'
-import { isSrTag } from '@mes/domain'
+import { isSrTag, normalizeTag } from '@mes/domain'
 import type {
   Assistant,
   ConversationRequestInput,
@@ -191,7 +191,8 @@ async function loadConversations(taskId: ID, users: UserMap, ports: LlmPorts): P
 async function buildTaskRequest(scope: Extract<ChatScope, { kind: 'task' }>, settings: Settings, users: UserMap, history: Message[], opts: BuildOptions, ports: LlmPorts) {
   // 전송 시점의 최신 대화 상태로 만든다 (입력 선택이 방금 바뀌었을 수 있음)
   const task = (await ports.getTask(scope.task.id)) ?? scope.task
-  const srCodes = task.tags.filter(isSrTag)
+  // 태그 표기를 정규화해 SR 코드를 뽑는다(소문자·'#' 라벨도 인식) — SR 코드는 binary 정렬로 비교되므로 표기 그대로 쓰면 못 찾는다
+  const srCodes = [...new Set(task.tags.map(normalizeTag).filter(isSrTag))]
   const [entries, conversations, linkedSrs] = await Promise.all([
     loadFileEntries(task, opts.oneShotFileIds ?? [], ports),
     loadConversations(task.id, users, ports),
