@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { readFileSync, readdirSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 import { render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NotificationBell } from './app/NotificationBell'
@@ -31,7 +31,7 @@ describe('design tokens', () => {
     for (const entry of readdirSync(import.meta.dirname, { recursive: true, withFileTypes: true })) {
       if (!entry.isFile() || /\.test\./.test(entry.name)) continue
       const path = resolve(entry.parentPath, entry.name)
-      const name = relative(import.meta.dirname, path)
+      const name = relative(import.meta.dirname, path).split(sep).join('/') // Windows는 역슬래시
       if (rawColorAllowlist.has(name)) continue
       for (const match of readFileSync(path, 'utf8').matchAll(rawColor)) violations.push(`${name}: ${match[0]}`)
     }
