@@ -76,3 +76,21 @@ it('does not replace a Korean composition draft when a delayed URL update arrive
   expect(input).toHaveValue('old한글')
   expect(screen.getByTestId('submitted')).toHaveTextContent('old한글')
 })
+
+it('scrolls filter chips in one mobile row and keeps count and reset outside that row', () => {
+  renderWithProviders(<CardMapFilterBar
+    level1Options={[{ id: 'l1', label: '긴 상위 분류' }]} level2Options={[{ id: 'l2', label: '긴 하위 분류' }]}
+    filters={{ ...emptyHomeFilters(), level1CodeIds: ['l1'], level2CodeIds: ['l2'] }} onChange={() => {}} onReset={() => {}} />)
+  const first = screen.getByRole('button', { name: '긴 상위 분류' }).parentElement!
+  const second = screen.getByRole('button', { name: '긴 하위 분류' }).parentElement!
+  const scroller = first.parentElement!
+  expect(scroller).toBe(second.parentElement)
+  expect(scroller).toHaveClass('min-w-0', 'max-w-full', 'flex-nowrap', 'overflow-x-auto', 'sm:flex-wrap')
+  expect(first).toHaveClass('shrink-0', 'flex-nowrap', 'sm:flex-wrap')
+  expect(second).toHaveClass('shrink-0', 'flex-nowrap', 'sm:flex-wrap')
+  const controls = screen.getByRole('button', { name: '초기화' }).parentElement!
+  expect(controls).toContainElement(screen.getByText('선택됨 2'))
+  expect(scroller).not.toContainElement(controls)
+  expect(controls).toHaveClass('w-full', 'sm:w-auto')
+  expect(scroller.parentElement).toHaveClass('min-w-0')
+})
