@@ -90,3 +90,21 @@ it('selects a message range with shift-click on the message checkboxes', async (
   expect(second).toBeChecked()
   expect(screen.getByText(/2\/2개/)).toBeInTheDocument()
 })
+
+it('모드 탭은 방향키로 옮기고 포커스를 따라간다', async () => {
+  const calls: Array<[string, RequestInit | undefined]> = []
+  renderPicker(calls)
+  await waitFor(() => expect(calls.some(([url]) => url === '/api/threads/h/messages')).toBe(true))
+  const full = screen.getByRole('tab', { name: '전체 원문' })
+  expect(full).toHaveAttribute('tabindex', '0')
+  expect(screen.getByRole('tab', { name: '메시지 선택' })).toHaveAttribute('tabindex', '-1')
+  full.focus()
+  fireEvent.keyDown(full, { key: 'ArrowRight' })
+  const messages = screen.getByRole('tab', { name: '메시지 선택' })
+  expect(messages).toHaveAttribute('aria-selected', 'true')
+  expect(messages).toHaveFocus()
+  expect(await screen.findByRole('checkbox', { name: '1번째 메시지 선택' })).toBeInTheDocument()
+  fireEvent.keyDown(messages, { key: 'ArrowLeft' })
+  expect(full).toHaveAttribute('aria-selected', 'true')
+  expect(full).toHaveFocus()
+})
