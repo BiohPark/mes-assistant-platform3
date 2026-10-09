@@ -25,7 +25,7 @@ export function NotificationBell() {
     <DropdownMenuTrigger asChild>
       <Button variant="ghost" size="icon-sm" aria-label={unread ? t('app.notificationsUnread', { count: number(unread) }) : t('app.notifications')} className="relative">
         <Bell />
-        {unread > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-semibold text-white">{unread > 99 ? '99+' : number(unread)}</span>}
+        {unread > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-semibold text-primary-foreground">{unread > 99 ? '99+' : number(unread)}</span>}
       </Button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end" className="w-80">

@@ -24,11 +24,11 @@ export function ChecklistPanel({ task }: { task: Task }) {
     finally { setBusy(false) }
   }
   return <section className="space-y-3 text-xs" data-testid="checklist-panel">
-    <div className="font-semibold">{t('task.checklist.title', { done, total: task.checklist.length })}{missing > 0 && <span className="ml-2 font-normal text-amber-700">{t('task.checklist.missingRequired', { count: missing })}</span>}</div>
-    <div className="h-1 rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{ width: task.checklist.length ? `${done / task.checklist.length * 100}%` : '0%' }} /></div>
+    <div className="font-semibold">{t('task.checklist.title', { done, total: task.checklist.length })}{missing > 0 && <span className="ml-2 font-normal text-tone-warning-fg">{t('task.checklist.missingRequired', { count: missing })}</span>}</div>
+    <div className="h-1 rounded-full bg-muted"><div className="h-full rounded-full bg-tone-success-fg" style={{ width: task.checklist.length ? `${done / task.checklist.length * 100}%` : '0%' }} /></div>
     <ul className="space-y-1">{task.checklist.map((item) => <li key={item.id} className="flex items-start gap-2 rounded-xl border p-2">
       <Checkbox className="mt-0.5" aria-label={item.label} checked={item.checked} disabled={readOnly || busy} onCheckedChange={() => void run(() => toggleChecklist(task.id, item.id))} />
-      <div className="min-w-0 flex-1"><div className={item.checked ? 'text-muted-foreground line-through' : ''}>{item.label}{item.required && <span className="ml-1 text-amber-700">{t('task.checklist.required')}</span>}</div>
+      <div className="min-w-0 flex-1"><div className={item.checked ? 'text-muted-foreground line-through' : ''}>{item.label}{item.required && <span className="ml-1 text-tone-warning-fg">{t('task.checklist.required')}</span>}</div>
         {item.checkedAt && <div className="text-xs text-muted-foreground">{users.get(item.checkedBy ?? '')?.name ?? item.checkedBy} · {formatDateTime(item.checkedAt)}</div>}
       </div>
       {!readOnly && <Button variant="ghost" size="xs" aria-label={t('task.checklist.deleteItem', { label: item.label })} disabled={busy} onClick={() => void run(() => removeChecklistItem(task.id, item.id))}>{t('task.delete')}</Button>}

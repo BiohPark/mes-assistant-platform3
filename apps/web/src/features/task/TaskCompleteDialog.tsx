@@ -28,7 +28,7 @@ export function TaskCompleteDialog({ task, open, onOpenChange }: { task: Task; o
   }
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
     <DialogHeader><DialogTitle>{t('task.complete.title')}</DialogTitle><DialogDescription>{t('task.complete.description')}</DialogDescription></DialogHeader>
-    {!!missing.length && <section className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+    {!!missing.length && <section className="space-y-2 rounded-xl border border-tone-warning-fg/40 bg-tone-warning-bg p-2 text-xs text-tone-warning-fg">
       <p>{t('task.complete.missing', { count: missing.length, items: missing.map((item) => item.label).join(', ') })} {t('taskComplete.reasonRequired')}</p>
       <Textarea aria-label={t('taskComplete.reasonLabel')} rows={2} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t('taskComplete.reasonPlaceholder')} className="bg-background" />
     </section>}
