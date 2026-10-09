@@ -108,6 +108,7 @@ it('임시 비밀번호는 취소·Escape에는 발급하지 않고 확인 후 �
   await user.click(trigger)
   await user.click(screen.getByRole('button', { name: '확인' }))
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('temporary-123'))
+  expect(screen.getByRole('alert')).toHaveClass('border-tone-warning-fg/40', 'bg-tone-warning-bg', 'text-tone-warning-fg')
   expect(issued).toEqual(['/api/users/other/temporary-password'])
 })
 

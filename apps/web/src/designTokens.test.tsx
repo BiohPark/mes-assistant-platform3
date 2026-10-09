@@ -1,15 +1,51 @@
 /// <reference types="node" />
 import { readFileSync, readdirSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { render } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { relative, resolve } from 'node:path'
+import { render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { NotificationBell } from './app/NotificationBell'
+import { jsonResponse, renderWithProviders } from './test/render'
 import { AssistantStatusBadge, PriorityBadge, SrStatusBadge, TaskStatusBadge } from './components/StatusBadges'
 import { PRIORITY_CLASS } from './lib/labels'
 
 const css = readFileSync(resolve(import.meta.dirname, 'index.css'), 'utf8')
 const tones = ['neutral', 'info', 'violet', 'teal', 'warning', 'success', 'danger'] as const
+// Wave 1 files owned by A3, A4 and A6; A7 removes this temporary allowlist.
+const rawColorAllowlist = new Set([
+  'features/chat/Composer.tsx',
+  'features/chat/ContextTray.tsx',
+  'features/conversation/DraftConversationPage.tsx',
+  'features/chat/ModelPicker.tsx',
+  'features/task/MaterialsPanel.tsx',
+  'features/task/FileList.tsx',
+  'features/chat/MessageBubble.tsx',
+  'features/task/InputToggle.tsx',
+])
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('design tokens', () => {
+  it('uses semantic colors throughout application sources outside the eight Wave 1 files', () => {
+    const violations: string[] = []
+    const rawColor = /(bg|text|border|ring|fill|stroke)-(amber|violet|sky|emerald|rose|red|green|blue|yellow|orange|indigo|purple|pink|teal|cyan|lime|slate|zinc|gray|neutral|stone)-\d{2,3}/g
+    for (const entry of readdirSync(import.meta.dirname, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || /\.test\./.test(entry.name)) continue
+      const path = resolve(entry.parentPath, entry.name)
+      const name = relative(import.meta.dirname, path)
+      if (rawColorAllowlist.has(name)) continue
+      for (const match of readFileSync(path, 'utf8').matchAll(rawColor)) violations.push(`${name}: ${match[0]}`)
+    }
+    expect(violations).toEqual([])
+  })
+
+  it.each([1, 100])('pairs the unread notification badge tokens for %i notifications', async (count) => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { count })))
+    renderWithProviders(<NotificationBell />)
+    const badge = await screen.findByText(count > 99 ? '99+' : String(count))
+    expect(badge).toHaveClass('bg-destructive', 'text-primary-foreground')
+    expect(badge.closest('button')).toHaveAccessibleName(`알림 ${count}건 미읽음`)
+  })
+
   it('keeps .dark after the only :root block and computes dark tokens on the root', () => {
     const blocks = [...css.matchAll(/(?:^|\n)(:root|\.dark)\s*\{[^}]*\}/g)].map((match) => match[0])
     expect(blocks).toHaveLength(2)

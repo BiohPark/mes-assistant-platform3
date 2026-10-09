@@ -56,7 +56,7 @@ function UsersSection() {
           catch (error) { toast.error(error instanceof Error ? error.message : t('admin.settings.issueFailed')) }
         } else await change(pending.user.id, pending.field, false)
       }} />
-    {issued && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3">{t('admin.settings.issuedPassword')}<code className="select-all font-mono">{issued.password}</code><Button className="ml-2" size="sm" onClick={() => setIssued(null)}>{t('common.close')}</Button></div>}
+    {issued && <div role="alert" className="rounded-xl border border-tone-warning-fg/40 bg-tone-warning-bg text-tone-warning-fg p-3">{t('admin.settings.issuedPassword')}<code className="select-all font-mono">{issued.password}</code><Button className="ml-2" size="sm" onClick={() => setIssued(null)}>{t('common.close')}</Button></div>}
   </section>
 }
 export function UsersPage() {

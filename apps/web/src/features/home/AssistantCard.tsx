@@ -41,7 +41,7 @@ export function AssistantCardBody({ row, owner, dimmed }: { row: AssistantRow; o
       <div className="pointer-events-none mt-auto flex items-center justify-between text-xs group-hover:invisible group-focus-within:invisible [@media(hover:none)]:invisible">
         <span className="inline-flex items-center gap-1 text-muted-foreground">
           <span className="font-medium text-foreground">{row.activeCount}</span> {t('hub.active')}
-          {row.overdueCount > 0 && <span className="text-red-600">{t('hub.overdue', { count: row.overdueCount })}</span>}
+          {row.overdueCount > 0 && <span className="text-tone-danger-fg">{t('hub.overdue', { count: row.overdueCount })}</span>}
           {!a.modelId && <span className="ml-1 rounded-full border px-1 text-[11px]">{t('hub.defaultModel')}</span>}
         </span>
         {owner && <UserAvatar user={owner} size="xs" />}
