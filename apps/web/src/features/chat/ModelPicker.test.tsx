@@ -34,3 +34,19 @@ it('shows the server default model when neither task nor assistant selects one',
   await waitFor(() => expect(screen.getByTitle('이 대화의 모델 변경')).toHaveTextContent('server-default'))
   expect(screen.getByTitle('이 대화의 모델 변경')).toHaveTextContent('공통 기본 모델')
 })
+
+it('constrains long model names and opens a viewport-bound mobile popup with themed warnings', async () => {
+  const modelId = 'missing-model-with-a-very-long-provider-and-version-name'
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/llm/models'
+    ? jsonResponse(200, { models: ['available-model'] }) : jsonResponse(200, {})))
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><ModelPicker task={{ ...task, modelId }} assistant={assistant} /></MeContext>)
+  const trigger = screen.getByTitle('이 대화의 모델 변경')
+  await waitFor(() => expect(trigger).toHaveClass('text-tone-warning-fg'))
+  expect(trigger).toHaveClass('max-w-[60vw]', 'truncate', 'border-tone-warning-fg')
+  expect(screen.getByText(modelId)).toHaveClass('truncate')
+  fireEvent.click(trigger)
+  const popup = screen.getByRole('button', { name: '모델 목록 새로고침' }).parentElement!.parentElement!
+  expect(popup).toHaveClass('fixed', 'inset-x-4', 'w-auto', 'sm:absolute', 'sm:inset-x-auto', 'sm:left-0', 'sm:w-[22rem]')
+  expect(screen.getByText(/^이 대화:/).parentElement).toHaveClass('bg-muted')
+  expect(screen.getByText(/이\(가\) 서버 모델 목록에 없습니다/)).toHaveClass('bg-tone-warning-bg', 'text-tone-warning-fg')
+})

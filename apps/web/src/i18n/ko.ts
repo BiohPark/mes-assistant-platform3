@@ -382,7 +382,7 @@ export const ko = {
       uploadShareHint: '같은 태그 대화에서 자료 후보로 보입니다.',
     },
     notes: { title: '노트', loadFailed: '노트를 불러오지 못했습니다.', body: '노트 본문', placeholder: '노트 작성', attach: '자료함 파일 첨부', add: '노트 추가' },
-    related: { linked: '연결된 대화 {count}', sameTag: '같은 태그를 가진 대화', more: '+{count}' },
+    related: { linked: '같은 태그 대화 {count}', sameTag: '같은 태그를 가진 대화', more: '+{count}' },
     body: { materials: '자료', checklist: '체크', notes: '노트', history: '이력', tabs: '대화 화면 탭', panel: '대화 보조 패널', panelTabs: '보조 패널' },
     complete: {
       done: '업무를 완료했습니다. 완료 리포트가 파일함에 저장되었습니다.', title: '업무 완료',

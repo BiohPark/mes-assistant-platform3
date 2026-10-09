@@ -42,3 +42,17 @@ it('keeps the reopen reason available when the server rejects the change', async
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(screen.getByPlaceholderText('사유를 입력하세요')).toHaveValue('추가 작업')
 })
+
+it('places metadata and actions in separate mobile rows and constrains a long assistant name', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><MemoryRouter><TaskHeader task={task} assistant={{ ...assistant, name: '아주 긴 이름을 가진 도우미' }} /></MemoryRouter></MeContext></QueryClientProvider>)
+  const metadata = screen.getByText(task.code).parentElement!
+  const actions = screen.getByRole('button', { name: '업무 완료' }).parentElement!
+  expect(metadata).not.toBe(actions)
+  expect(metadata.parentElement).toBe(actions.parentElement)
+  expect(metadata.parentElement).toHaveClass('flex-col', 'sm:flex-row')
+  expect(metadata).toHaveClass('min-w-0', 'flex-wrap')
+  expect(actions).toHaveClass('self-end', 'sm:ml-auto')
+  expect(screen.getByText('아주 긴 이름을 가진 도우미')).toHaveClass('truncate')
+  expect(screen.getByRole('button', { name: '대화 삭제' })).toHaveClass('size-8')
+})
