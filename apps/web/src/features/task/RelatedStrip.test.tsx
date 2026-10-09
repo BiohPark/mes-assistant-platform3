@@ -28,13 +28,20 @@ it('finds conversations sharing either tag and removes the current conversation'
 it('limits the summary to three avatars and a remainder while keeping every related link', async () => {
   const rows = Array.from({ length: 5 }, (_, index) => ({ ...base, id: `other-${index}`, code: `WK-2026-000${index + 2}`, title: `관련 ${index}`, tags: ['첫째'] }))
   vi.stubGlobal('fetch', vi.fn(async (url: string) => jsonResponse(200, url === '/api/assistants'
-    ? [{ id: 'a', name: '도우미', color: '#123456', summary: '', level1: '상위', level2: '하위', level1CodeId: 'l1', level2CodeId: 'l2', order: 0, ownerId: 'u', status: 'open', expectedInputs: [], expectedOutputs: [], usageExample: '', checklistTemplate: [], createdBy: 'u', createdAt: base.createdAt, updatedAt: base.createdAt, revision: 0 }] : [base, ...rows])))
+    ? [{ id: 'a', name: 'URS Analyst', color: 'var(--primary)', summary: '', level1: '상위', level2: '하위', level1CodeId: 'l1', level2CodeId: 'l2', order: 0, ownerId: 'u', status: 'open', expectedInputs: [], expectedOutputs: [], usageExample: '', checklistTemplate: [], createdBy: 'u', createdAt: base.createdAt, updatedAt: base.createdAt, revision: 0 }] : [base, ...rows])))
   renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><RelatedStrip task={base} /></MeContext>)
   const summary = (await screen.findByText('같은 태그 대화 5')).closest('summary')!
   expect(summary.querySelectorAll('.ring-2.ring-background')).toHaveLength(3)
+  for (const avatar of summary.querySelectorAll('.ring-2.ring-background')) {
+    expect(avatar).toHaveTextContent(/^U$/)
+    expect(avatar).toHaveClass('size-5')
+  }
   expect(screen.getByText('+2')).toBeInTheDocument()
   fireEvent.click(summary)
   expect(screen.getAllByRole('link')).toHaveLength(5)
+  for (const link of screen.getAllByRole('link')) {
+    expect(link.firstElementChild).toHaveTextContent(/^URS$/)
+  }
   const popup = screen.getByText('같은 태그를 가진 대화').parentElement!
   expect(popup).toHaveClass('fixed', 'inset-x-4', 'w-auto', 'sm:absolute', 'sm:inset-x-auto', 'sm:left-0', 'sm:w-[22rem]')
 })

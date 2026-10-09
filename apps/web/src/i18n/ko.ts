@@ -340,7 +340,11 @@ export const ko = {
   },
   task: {
     conversation: '대화', delete: '삭제', download: '다운로드', mainInput: '주 입력', reference: '참고', thisConversation: '이 대화',
-    activity: { count: { one: '{count}건', other: '{count}건' }, system: '시스템', empty: '이력이 없습니다.', loadFailed: '이력을 불러오지 못했습니다.' },
+    activity: {
+      count: { one: '{count}건', other: '{count}건' }, system: '시스템', empty: '이력이 없습니다.', loadFailed: '이력을 불러오지 못했습니다.',
+      request: { started: 'AI 요청 시작', completed: 'AI 요청 완료', cancelled: 'AI 요청 취소', failed: 'AI 요청 실패' },
+      other: '기타 활동',
+    },
     checklist: {
       title: '체크리스트 {done}/{total}', missingRequired: '중요 {count}개 미체크', required: '중요', deleteItem: '{label} 삭제',
       newItem: '체크리스트 새 항목', addPlaceholder: '항목 추가', add: '추가', aiReview: 'AI 달성도', achieved: '{met}/{total} 달성', ruleBased: ' · 규칙 판단',
