@@ -18,6 +18,9 @@ import { useAssistantRows } from './useAssistantStats'
 import { useQuery } from '@tanstack/react-query'
 import { getSettings } from '@/api/admin'
 import { useT } from '@/i18n'
+import { useTablistKeys } from '@/lib/useTablistKeys'
+
+const views = ['cards', 'kanban'] as const
 
 export function HomePage() {
   const t = useT()
@@ -96,13 +99,14 @@ export function HomePage() {
     return next
   })
   const filterCount = filters.level1CodeIds.length + filters.level2CodeIds.length + Number(filters.showRetired)
+  const viewKeys = useTablistKeys(views, view, switchView)
 
   return <>
     <TopBar title={t('nav.hub')} actions={me.roles.includes('system_owner') && <Button size="sm" variant="outline" asChild><Link to="/assistants/manage">{t('hub.manageAgents')}</Link></Button>} />
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 lg:p-6">
-      <div role="tablist" aria-label={t('hub.viewSwitch')} className="inline-flex self-start rounded-xl border bg-muted p-1 shadow-xs">
-        <button type="button" role="tab" aria-selected={view === 'cards'} onClick={() => switchView('cards')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><LayoutGrid className="size-4" />{t('hub.assistantCards')}</button>
-        <button type="button" role="tab" aria-selected={view === 'kanban'} onClick={() => switchView('kanban')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'kanban' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><KanbanSquare className="size-4" />{t('hub.conversationKanban')}</button>
+      <div role="tablist" aria-label={t('hub.viewSwitch')} className="inline-flex self-start rounded-xl border bg-muted p-1 shadow-xs" {...viewKeys.tablistProps}>
+        <button type="button" {...viewKeys.tabProps('cards')} onClick={() => switchView('cards')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><LayoutGrid className="size-4" />{t('hub.assistantCards')}</button>
+        <button type="button" {...viewKeys.tabProps('kanban')} onClick={() => switchView('kanban')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'kanban' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><KanbanSquare className="size-4" />{t('hub.conversationKanban')}</button>
       </div>
       {view === 'kanban' ? <ConversationKanban pendingSearch={pendingKanbanSearch} /> : <>
       <section aria-label={t('hub.myActiveConversations')} className="flex flex-wrap items-center gap-2 text-xs">
