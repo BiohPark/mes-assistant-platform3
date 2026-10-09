@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import type { Assistant } from '@mes/contracts'
 import { EMPTY_FILTER, filterFromParams, filterToParams } from '@mes/domain'
 import { emptyHomeFilters } from '@/app/uiStore'
-import { homeFiltersFromParams, homeFiltersToParams, matchesAssistant, classificationOptions, validHomeFilters } from './filters'
+import { homeFiltersFromParams, homeFiltersToParams, matchesAssistant, classificationOptions, sameParams, validHomeFilters } from './filters'
 
 const paths = [
   { level1: 'One', level2: 'Alpha', level1CodeId: 'l1', level2CodeId: 's1' },
@@ -36,4 +36,10 @@ it('keeps card and conversation searches independent in both serialization direc
   expect(homeFiltersFromParams(next).q).toBe('agent')
   expect(homeFiltersToParams(emptyHomeFilters(), next).get('q')).toBe('changed')
   expect(homeFiltersFromParams(new URLSearchParams('q=conversation')).q).toBe('')
+})
+
+it('treats reordered parameters as the same URL and detects content differences', () => {
+  expect(sameParams(new URLSearchParams('l1=one&view=kanban'), new URLSearchParams('view=kanban&l1=one'))).toBe(true)
+  expect(sameParams(new URLSearchParams('l1=one&l1=one'), new URLSearchParams('l1=one'))).toBe(false)
+  expect(sameParams(new URLSearchParams('aq='), new URLSearchParams(''))).toBe(false)
 })
