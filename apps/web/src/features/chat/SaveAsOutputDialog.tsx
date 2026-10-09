@@ -33,9 +33,9 @@ export function SaveAsOutputDialog({ message, task, assistant, onClose }: { mess
     } catch (error) { toast.error(t('chat.outputSaveFailed'), { description: error instanceof Error ? error.message : String(error) }) }
     finally { setSaving(false) }
   }
-  return <Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent><DialogHeader><DialogTitle>{t('chat.saveAsOutput')}</DialogTitle><DialogDescription>{t('chat.saveAsOutputDescription')}</DialogDescription></DialogHeader>
+  return <Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent><DialogHeader><DialogTitle>{t('chat.saveAsOutput')}</DialogTitle><DialogDescription>{t('chat.outputShareHint')}</DialogDescription></DialogHeader>
     <label htmlFor="out-name" className="text-xs">{t('chat.fileName')}</label><Input id="out-name" value={name} onChange={(event) => setEdited(event.target.value)} />
-    <p className="text-xs text-muted-foreground">{previous ? t('chat.nextVersion', { version: String(previous.version), next: String(previous.version + 1) }) : t('chat.newFile')}</p>
+    <p className="text-xs text-muted-foreground">{own.isPending ? t('common.loading') : own.isError ? t('chat.versionUnknown') : previous ? t('chat.nextVersion', { version: String(previous.version), next: String(previous.version + 1) }) : t('chat.newFile')}</p>
     <DialogFooter><Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button><Button onClick={() => void save()} disabled={!name.trim() || saving}>{t('chat.save')}</Button></DialogFooter>
   </DialogContent></Dialog>
 }
