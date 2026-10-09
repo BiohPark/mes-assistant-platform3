@@ -7,6 +7,7 @@ import { setInput, uploadFile } from '@/api/files'
 import { estimateRequest, getRequest, type RequestRecord } from '@/api/requests'
 import { subscribeEvent } from '@/app/useEvents'
 import { useActor, useCurrentUserId } from '@/app/hooks'
+import { Button } from '@/components/ui/button'
 import { Composer, type PendingAttachment } from './Composer'
 import { ChatMessages } from './ChatMessages'
 import { SaveAsOutputDialog } from './SaveAsOutputDialog'
@@ -18,7 +19,7 @@ import { useRequestEstimate } from './useRequestEstimate'
 import { toast } from 'sonner'
 import { useT } from '@/i18n'
 
-export function ChatView({ task, assistant }: { task: Task; assistant?: Assistant }) {
+export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; assistant?: Assistant; onOpenMaterials?: () => void }) {
   const t = useT()
   const actor = useActor()
   const selfId = useCurrentUserId()
@@ -91,7 +92,7 @@ export function ChatView({ task, assistant }: { task: Task; assistant?: Assistan
     catch { toast.error(t('chat.requestLoadFailed')) }
   }
   return <><div className="flex min-h-0 flex-1 flex-col"><div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-    <ChatMessages messages={messages.data ?? []} run={chat.run} empty={<div className="mx-auto mt-10 max-w-md text-center text-sm text-muted-foreground">{t('chat.startConversation')}</div>}
+    <ChatMessages messages={messages.data ?? []} run={chat.run} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
       actions={(item) => ({
         onSaveAsOutput: item.role === 'assistant' && assistant && item.status === 'done' ? () => setSaveTarget(item) : undefined,
         onRequestInfo: item.requestId ? () => setInfoId(item.requestId!) : undefined,
@@ -106,7 +107,7 @@ export function ChatView({ task, assistant }: { task: Task; assistant?: Assistan
     blockedReason={estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping}
     placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}
     onSend={send} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />}
-  {saveTarget && assistant && <SaveAsOutputDialog key={saveTarget.id} message={saveTarget} task={task} assistant={assistant} onClose={() => setSaveTarget(null)} />}</div>
+  {saveTarget && assistant && <SaveAsOutputDialog key={saveTarget.id} message={saveTarget} task={task} assistant={assistant} onOpenMaterials={onOpenMaterials} onClose={() => setSaveTarget(null)} />}</div>
   {infoId && <RequestInfoDialog requestId={infoId} onClose={() => setInfoId(null)} />}
   {retryChoice && <RetryFilesDialog record={retryChoice.record} mode={retryChoice.mode} onClose={() => setRetryChoice(null)}
     onSubmit={(ids) => retry(retryChoice!.record.id, retryChoice!.mode === 'exclude' ? { excludeFileIds: ids } : { forceInlineFileIds: ids })} />}</>

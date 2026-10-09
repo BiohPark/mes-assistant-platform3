@@ -10,22 +10,12 @@ import { PRIORITY_CLASS } from './lib/labels'
 
 const css = readFileSync(resolve(import.meta.dirname, 'index.css'), 'utf8')
 const tones = ['neutral', 'info', 'violet', 'teal', 'warning', 'success', 'danger'] as const
-// Wave 1 files owned by A3, A4 and A6; A7 removes this temporary allowlist.
-const rawColorAllowlist = new Set([
-  'features/chat/Composer.tsx',
-  'features/chat/ContextTray.tsx',
-  'features/conversation/DraftConversationPage.tsx',
-  'features/chat/ModelPicker.tsx',
-  'features/task/MaterialsPanel.tsx',
-  'features/task/FileList.tsx',
-  'features/chat/MessageBubble.tsx',
-  'features/task/InputToggle.tsx',
-])
+const rawColorAllowlist = new Set<string>([])
 
 afterEach(() => vi.unstubAllGlobals())
 
 describe('design tokens', () => {
-  it('uses semantic colors throughout application sources outside the eight Wave 1 files', () => {
+  it('uses semantic colors throughout all application sources', () => {
     const violations: string[] = []
     const rawColor = /(bg|text|border|ring|fill|stroke)-(amber|violet|sky|emerald|rose|red|green|blue|yellow|orange|indigo|purple|pink|teal|cyan|lime|slate|zinc|gray|neutral|stone)-\d{2,3}/g
     for (const entry of readdirSync(import.meta.dirname, { recursive: true, withFileTypes: true })) {

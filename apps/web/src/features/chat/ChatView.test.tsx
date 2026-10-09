@@ -241,3 +241,39 @@ it.each(['star', 'remove'] as const)('shows calculating and dims references duri
   expect(root).toHaveAttribute('aria-busy', 'false')
   expect(screen.getByRole('list')).not.toHaveClass('opacity-60')
 })
+
+const emptyHint = '같은 태그 대화의 파일·대화를 자료 탭에서 골라 AI 입력으로 쓸 수 있습니다.'
+
+it('offers materials only after messages load empty and opening adds no requests or selections', async () => {
+  let finish!: (response: Response) => void
+  const calls: Array<{ url: string; method?: string }> = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, method: init?.method })
+    if (url === '/api/threads/h/messages') return new Promise<Response>((resolve) => { finish = resolve })
+    return Response.json([])
+  }))
+  const open = vi.fn()
+  const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><ChatView task={task} onOpenMaterials={open} /></MeContext></QueryClientProvider>)
+  expect(screen.queryByText(emptyHint)).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '자료 열기' })).not.toBeInTheDocument()
+  await act(async () => finish(Response.json([])))
+  expect(await screen.findByText(emptyHint)).toBeVisible()
+  const before = [...calls]
+  fireEvent.click(screen.getByRole('button', { name: '자료 열기' }))
+  expect(open).toHaveBeenCalledOnce()
+  expect(calls).toEqual(before)
+  expect(calls.some(({ url }) => /candidates|inputs/.test(url))).toBe(false)
+})
+
+it.each(['error', 'nonempty'] as const)('does not offer empty-conversation materials for %s messages', async (result) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/threads/h/messages'
+    ? result === 'error' ? Response.json({ message: '실패' }, { status: 500 }) : Response.json([{ id: 'm', threadId: 'h', seq: 1, role: 'user', content: '기존 대화', status: 'done', createdAt: '2026-01-01', attachmentIds: [] }])
+    : Response.json([])))
+  const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
+  render(<QueryClientProvider client={client}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ChatView task={task} onOpenMaterials={() => undefined} /></TooltipProvider></MeContext></QueryClientProvider>)
+  await waitFor(() => expect(client.getQueryState(['messages', 'h'])?.status).toBe(result === 'error' ? 'error' : 'success'))
+  expect(screen.queryByText(emptyHint)).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '자료 열기' })).not.toBeInTheDocument()
+})

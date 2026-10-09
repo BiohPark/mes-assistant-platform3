@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
@@ -9,6 +10,26 @@ import { TaskBody } from './TaskBody'
 
 const task = { id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: [], checklist: [], inputs: [], outputFileIds: [], threadId: 'h', createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z' } satisfies Task
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.removeItem('mes-chat-attempt:h-pending') })
+
+it.each(['narrow', 'wide'] as const)('moves keyboard focus to the visible materials tab when opening materials (%s)', async (layout) => {
+  const user = userEvent.setup()
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
+    if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [], conversations: [] })
+    return jsonResponse(200, [])
+  }))
+  // jsdom does not load Tailwind: model the tablist and chat visibility at each breakpoint.
+  renderWithProviders(<><style>{layout === 'narrow'
+    ? '[role="tablist"][aria-label="보조 패널"], section.hidden { display: none; }'
+    : '[role="tablist"][aria-label="대화 화면 탭"] { display: none; }'}</style><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext></>)
+  const opener = await screen.findByRole('button', { name: '자료 열기' })
+  opener.focus()
+  await user.keyboard('{Enter}')
+  const tabs = within(screen.getByRole('tablist', { name: layout === 'narrow' ? '대화 화면 탭' : '보조 패널' }))
+  expect(tabs.getByRole('tab', { name: '자료' })).toHaveAttribute('aria-selected', 'true')
+  expect(tabs.getByRole('tab', { name: '자료' })).toHaveFocus()
+  if (layout === 'narrow') expect(opener).not.toBeVisible()
+})
 
 it('offers narrow-screen tabs, placeholders, and the activity panel', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -36,7 +57,7 @@ it('방향키로 보조 패널 탭을 옮기고 단일 tabpanel이 활성 탭을
   expect(history).toHaveAttribute('id', 'task-tab-history')
   expect(history).toHaveAttribute('tabindex', '0')
   expect(panelTabs.getByRole('tab', { name: '자료' })).toHaveAttribute('tabindex', '-1')
-  const panel = screen.getByRole('tabpanel')
+  const panel = screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })
   expect(panel).toHaveAttribute('id', 'task-panel')
   expect(panel).toHaveAttribute('aria-labelledby', 'task-tab-history')
   expect(history).toHaveAttribute('aria-controls', 'task-panel')
@@ -46,7 +67,7 @@ it('방향키로 보조 패널 탭을 옮기고 단일 tabpanel이 활성 탭을
   const materials = panelTabs.getByRole('tab', { name: '자료' })
   expect(materials).toHaveAttribute('aria-selected', 'true')
   expect(materials).toHaveFocus()
-  expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'task-tab-materials')
+  expect(screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })).toHaveAttribute('aria-labelledby', 'task-tab-materials')
   fireEvent.keyDown(materials, { key: 'End' })
   expect(panelTabs.getByRole('tab', { name: '이력' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.getAllByRole('tabpanel')).toHaveLength(1)
@@ -58,7 +79,7 @@ it('방향키로 보조 패널 탭을 옮기고 단일 tabpanel이 활성 탭을
   fireEvent.keyDown(chat, { key: 'ArrowRight' })
   expect(mobileTabs.getByRole('tab', { name: '자료' })).toHaveAttribute('aria-selected', 'true')
   expect(mobileTabs.getByRole('tab', { name: '자료' })).toHaveFocus()
-  expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'task-tab-materials')
+  expect(screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })).toHaveAttribute('aria-labelledby', 'task-tab-materials')
   expect(screen.getByRole('region', { name: '대화' })).toBeInTheDocument()
   fireEvent.keyDown(mobileTabs.getByRole('tab', { name: '자료' }), { key: 'Home' })
   expect(chat).toHaveAttribute('aria-selected', 'true')
@@ -128,4 +149,31 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
       expectComposerPreserved()
     }
   }
+})
+
+it('keeps history as the default and opens materials on both layouts without remounting chat or selecting inputs', async () => {
+  const calls: Array<{ url: string; method?: string }> = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, method: init?.method })
+    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
+    if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [], conversations: [] })
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
+  const desktop = within(screen.getByRole('tablist', { name: '보조 패널' }))
+  const mobile = within(screen.getByRole('tablist', { name: '대화 화면 탭' }))
+  expect(desktop.getByRole('tab', { name: '이력' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.queryByTestId('materials-panel')).not.toBeInTheDocument()
+  expect(calls.some(({ url }) => url.includes('candidates'))).toBe(false)
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  fireEvent.change(input, { target: { value: '유지할 입력' } })
+  fireEvent.click(await screen.findByRole('button', { name: '자료 열기' }))
+  expect(desktop.getByRole('tab', { name: '자료' })).toHaveAttribute('aria-selected', 'true')
+  expect(mobile.getByRole('tab', { name: '자료' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByTestId('materials-panel')).toBeInTheDocument()
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력', hidden: true })).toBe(input)
+  expect(input).toHaveValue('유지할 입력')
+  await waitFor(() => expect(calls.filter(({ url }) => url === '/api/tasks/t/candidates')).toHaveLength(1))
+  expect(calls.some(({ url }) => /\/(?:conversation-)?inputs(?:\/|$)/.test(url) && calls.find(call => call.url === url)?.method !== 'GET')).toBe(false)
+  expect(task.inputs).toEqual([])
 })

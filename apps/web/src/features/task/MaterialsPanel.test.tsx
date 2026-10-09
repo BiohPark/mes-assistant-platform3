@@ -187,3 +187,30 @@ it('tells the uploader where the file becomes visible and shows the inputs capti
   fireEvent.change(input, { target: { files: [new File(['x'], 'memo.txt', { type: 'text/plain' })] } })
   await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('1개 파일을 업로드했습니다.', { description: '같은 태그 대화에서 자료 후보로 보입니다.' }))
 })
+
+it('moves focus and active contents with arrows and Home/End through one labelled materials tabpanel', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/tasks/t/candidates' ? jsonResponse(200, { files: [], conversations: [] }) : jsonResponse(200, [])))
+  renderWithProviders(<MeContext value={me}><MaterialsPanel task={baseTask} /></MeContext>)
+  const tabs = within(screen.getByRole('tablist', { name: '자료 탭' }))
+  const inputs = tabs.getByRole('tab', { name: 'AI 입력' })
+  const panel = screen.getByRole('tabpanel', { name: 'AI 입력' })
+  expect(inputs).toHaveAttribute('tabindex', '0')
+  expect(inputs).toHaveAttribute('aria-controls', panel.id)
+  for (const [from, key, to, testId] of [
+    ['AI 입력', 'ArrowRight', '공유 자료함', 'materials-shared'],
+    ['공유 자료함', 'End', '이 대화 파일', 'materials-own'],
+    ['이 대화 파일', 'ArrowRight', 'AI 입력', 'materials-inputs'],
+    ['AI 입력', 'ArrowLeft', '이 대화 파일', 'materials-own'],
+    ['이 대화 파일', 'Home', 'AI 입력', 'materials-inputs'],
+  ]) {
+    fireEvent.keyDown(tabs.getByRole('tab', { name: from }), { key })
+    const active = tabs.getByRole('tab', { name: to })
+    expect(active).toHaveFocus()
+    expect(active).toHaveAttribute('aria-selected', 'true')
+    expect(active).toHaveAttribute('tabindex', '0')
+    expect(tabs.getAllByRole('tab').filter(tab => tab.tabIndex === 0)).toHaveLength(1)
+    expect(screen.getByRole('tabpanel', { name: to })).toBe(panel)
+    expect(panel).toHaveAttribute('aria-labelledby', active.id)
+    expect(within(panel).getByTestId(testId)).toBeInTheDocument()
+  }
+})
