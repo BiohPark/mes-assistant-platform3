@@ -342,7 +342,11 @@ export const en = {
   },
   task: {
     conversation: 'Conversation', delete: 'Delete', download: 'Download', mainInput: 'Main input', reference: 'Reference', thisConversation: 'This conversation',
-    activity: { count: { one: '{count} entry', other: '{count} entries' }, system: 'System', empty: 'No history yet.', loadFailed: 'Could not load history.' },
+    activity: {
+      count: { one: '{count} entry', other: '{count} entries' }, system: 'System', empty: 'No history yet.', loadFailed: 'Could not load history.',
+      request: { started: 'AI request started', completed: 'AI request completed', cancelled: 'AI request cancelled', failed: 'AI request failed' },
+      other: 'Other activity',
+    },
     checklist: {
       title: 'Checklist {done}/{total}', missingRequired: '{count} required unchecked', required: 'Required', deleteItem: 'Delete {label}',
       newItem: 'New checklist item', addPlaceholder: 'Add item', add: 'Add', aiReview: 'AI completion check', achieved: '{met}/{total} met', ruleBased: ' · Rule-based',
