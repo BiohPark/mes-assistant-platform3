@@ -291,3 +291,53 @@ it.each([
     router.dispose()
   }
 })
+
+function renderRoutedHome(route: string, loader?: () => Promise<null>) {
+  const router = createMemoryRouter([{ path: '/', hydrateFallbackElement: null, loader, element: <MeContext value={{ id: 'u', name: 'User', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><Navigation /><HomePage /></TooltipProvider></MeContext> }], { initialEntries: [route] })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const committed = [route.slice(route.indexOf('?'))]
+  router.subscribe(state => { if (state.navigation.state === 'idle' && state.location.search !== committed.at(-1)) committed.push(state.location.search) })
+  render(<QueryClientProvider client={client}><ProfileProvider><RouterProvider router={router} /></ProfileProvider></QueryClientProvider>)
+  let updates = 0
+  // Query notifications are batched on a timer; wait for them so each update re-renders inside act.
+  const stats = async () => { client.setQueryData(['assistant-stats'], [{ assistantId: 'a', open: ++updates, inProgress: 0, onHold: 0, done: 0 }]); await new Promise(resolve => setTimeout(resolve, 0)) }
+  return { router, committed, stats }
+}
+
+it('navigates once per view switch and never from data updates', async () => {
+  const { router, committed, stats } = renderRoutedHome('/?l1=one')
+  try {
+    await screen.findByText('Multi agent')
+    fireEvent.click(screen.getByRole('tab', { name: '전체 대화 칸반' }))
+    await screen.findByRole('region', { name: 'Multi agent 열' })
+    for (let i = 0; i < 3; i++) await act(() => stats())
+    expect(committed).toEqual(['?l1=one', '?l1=one&view=kanban'])
+    fireEvent.click(screen.getByRole('tab', { name: '에이전트 카드' }))
+    await screen.findByRole('button', { name: 'One' })
+    for (let i = 0; i < 3; i++) await act(() => stats())
+    expect(committed).toEqual(['?l1=one', '?l1=one&view=kanban', '?l1=one'])
+  } finally { router.dispose() }
+})
+
+it('keeps a view switch that is still committing while data updates re-render the previous view', async () => {
+  // CI condition: router commits in a transition while other users' events keep updating queries (S8 hub loop).
+  let release: (() => void) | undefined
+  let holding = false
+  const { router, committed, stats } = renderRoutedHome('/?l1=one', async () => { if (holding) await new Promise<void>(resolve => { release = resolve }); return null })
+  try {
+    await screen.findByText('Multi agent')
+    holding = true
+    fireEvent.click(screen.getByRole('tab', { name: '전체 대화 칸반' }))
+    expect(router.state.navigation.state).toBe('loading')
+    await act(async () => { release!() })
+    await screen.findByRole('region', { name: 'Multi agent 열' })
+    fireEvent.click(screen.getByRole('tab', { name: '에이전트 카드' }))
+    expect(router.state.navigation.state).toBe('loading')
+    for (let i = 0; i < 3; i++) await act(() => stats())
+    await act(async () => { release!() })
+    await waitFor(() => expect(router.state.navigation.state).toBe('idle'))
+    expect(router.state.location.search).toBe('?l1=one')
+    expect(await screen.findByRole('button', { name: 'One' })).toHaveAttribute('aria-pressed', 'true')
+    expect(committed).toEqual(['?l1=one', '?l1=one&view=kanban', '?l1=one'])
+  } finally { release?.(); router.dispose() }
+})

@@ -13,6 +13,12 @@ export function homeFiltersToParams(filters: HomeFilters, base: URLSearchParams)
   if (filters.showRetired) next.set('retired', '1')
   return next
 }
+/** Same parameters regardless of order. Reordering alone must not trigger a URL rewrite. */
+export function sameParams(a: URLSearchParams, b: URLSearchParams): boolean {
+  const sorted = (params: URLSearchParams) => [...params.entries()].sort(([keyA, valueA], [keyB, valueB]) => keyA.localeCompare(keyB) || valueA.localeCompare(valueB))
+  const left = sorted(a), right = sorted(b)
+  return left.length === right.length && left.every(([key, value], index) => right[index][0] === key && right[index][1] === value)
+}
 export function classificationOptions(assistants: Assistant[], level1Ids: string[]) {
   const paths = assistants.flatMap(assistant => assistant.classifications ?? [assistant])
   return {

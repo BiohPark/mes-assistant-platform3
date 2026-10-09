@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigationType } from 'react-router'
 import { useMe } from '@/app/auth'
 import { listTasks } from '@/api/tasks'
 import { emptyHomeFilters, type HomeFilters } from '@/app/uiStore'
-import { classificationOptions, homeFiltersFromParams, homeFiltersToParams, matchesAssistant, validHomeFilters } from './filters'
+import { classificationOptions, homeFiltersFromParams, homeFiltersToParams, matchesAssistant, sameParams, validHomeFilters } from './filters'
 import { Bot, KanbanSquare, LayoutGrid } from 'lucide-react'
 import { useSearchParams } from 'react-router'
 import { TopBar } from '@/app/TopBar'
@@ -66,18 +66,20 @@ export function HomePage() {
   options.level2 = [...options.level2, ...allLevel2.filter(option => filters.level2CodeIds.includes(option.id) && !options.level2.some(current => current.id === option.id))]
   const filtered = all.filter(row => matchesAssistant(row.assistant, filters))
   const canonical = homeFiltersToParams(filters, activeParams).toString()
-  const currentUrl = params.toString()
+  // Rewrite only when the content differs. The updater receives the render-time URL, and the router commits
+  // navigations in a transition, so a rewrite issued from an older render would overwrite a newer navigation.
+  const normalized = sameParams(new URLSearchParams(canonical), params)
   useEffect(() => {
     const restore = !started.current
     started.current = true
-    if (canonical !== currentUrl) setParams(prev => {
+    if (!normalized) setParams(prev => {
       const base = withPendingKanbanSearch(restore ? homeFiltersToParams(homeFiltersFromParams(initial), prev) : prev)
       const latest = homeFiltersFromParams(base)
       const next = { ...latest, q: pendingSearch.current ?? latest.q }
       return homeFiltersToParams(rows ? validHomeFilters(next, rows.map(row => row.assistant)) : next, base)
     }, { replace: true })
     useUiStore.getState().setHomeFilters(homeFiltersFromParams(new URLSearchParams(canonical)))
-  }, [canonical, currentUrl, initial, rows, setParams])
+  }, [canonical, normalized, initial, rows, setParams])
   const update = (patch: Partial<HomeFilters>) => {
     if (patch.q !== undefined) pendingSearch.current = patch.q
     setParams(prev => homeFiltersToParams({ ...latestFilters(prev), ...patch }, withPendingKanbanSearch(prev)), { replace: patch.q !== undefined })
