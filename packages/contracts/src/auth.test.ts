@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { AuthModeSchema, CredentialsSchema, LoginIdSchema, MeSchema, PasswordSchema, ProfilePatchSchema, RoleSchema } from './auth.js'
 
 describe('auth contracts', () => {
+  it.each(['example-.com', '-example.com', `${'a'.repeat(64)}.com`, 'example..com', 'exam_ple.com'])('이메일 도메인 %s의 잘못된 구간을 거부한다', (domain) => {
+    expect(ProfilePatchSchema.safeParse({ email: `u@${domain}` }).success).toBe(false)
+  })
+  it.each(['a.co', 'EXAMPLE.COM', 'my-company.example.com', `${'a'.repeat(63)}.com`])('이메일 도메인 %s의 유효한 구간을 허용한다', (domain) => {
+    expect(ProfilePatchSchema.parse({ email: `u@${domain}` })).toEqual({ email: `u@${domain}` })
+  })
   it('이메일은 빈 값·null을 해제하고 형식과 191자 경계를 검증한다', () => {
     const boundary = `${'a'.repeat(64)}@${'b'.repeat(63)}.${'c'.repeat(58)}.com`
     expect(boundary).toHaveLength(191)

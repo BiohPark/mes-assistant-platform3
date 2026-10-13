@@ -18,6 +18,12 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...base, DEFAULT_EMAIL_DOMAIN: ' example.com ' }).defaultEmailDomain).toBe('example.com')
     for (const domain of ['a@example.com', 'https://example.com', 'example.com/path']) expect(() => loadConfig({ ...base, DEFAULT_EMAIL_DOMAIN: domain })).toThrow(/DEFAULT_EMAIL_DOMAIN/)
   })
+  it.each(['example-.com', '-example.com', `${'a'.repeat(64)}.com`, 'example..com', 'exam_ple.com', `${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(62)}`])('잘못된 기본 이메일 도메인 %s는 기동 시 설정 오류를 낸다', (domain) => {
+    expect(() => loadConfig({ ...base, DEFAULT_EMAIL_DOMAIN: domain })).toThrow(/설정 오류 — DEFAULT_EMAIL_DOMAIN:/)
+  })
+  it.each(['a.co', 'EXAMPLE.COM', 'my-company.example.com', `${'a'.repeat(63)}.com`, `${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(61)}`])('유효한 기본 이메일 도메인 %s는 허용한다', (domain) => {
+    expect(loadConfig({ ...base, DEFAULT_EMAIL_DOMAIN: domain }).defaultEmailDomain).toBe(domain)
+  })
   it('기본값을 채우고 목록형 값을 나눈다', () => {
     const c = loadConfig({ ...base, AUTH_MODE: 'oidc', INITIAL_SYSTEM_OWNERS: ' dev-owner , other ,' })
     expect(c.port).toBe(3000)

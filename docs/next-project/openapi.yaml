@@ -860,7 +860,7 @@ components:
     Theme: { type: string, enum: [system, light, dark], default: system }
     Locale: { type: string, enum: [ko, en], default: ko }
     EmailPatch:
-      description: 유효한 이메일을 저장하거나 빈 문자열·null로 해제. 기본 이메일은 DB에 저장하지 않는다
+      description: 유효한 이메일을 저장하거나 빈 문자열·null로 해제. 도메인은 전체 253자 이하이며 각 구간은 1–63자의 영숫자·하이픈만 허용하고 앞뒤 하이픈은 금지한다. 최상위 도메인은 영문 2자 이상. 기본 이메일은 DB에 저장하지 않는다
       oneOf:
         - { type: string, format: email, maxLength: 191 }
         - { type: string, const: '' }
