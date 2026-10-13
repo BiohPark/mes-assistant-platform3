@@ -1,5 +1,5 @@
 import { useT } from '@/i18n'
-import { ChevronDown, LogOut, KeyRound, Sparkles, UserRound } from 'lucide-react'
+import { ChevronDown, LogOut, KeyRound, UserRound } from 'lucide-react'
 import { Link, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { useQuery } from '@tanstack/react-query'
@@ -20,7 +20,6 @@ import { logout, useMe } from './auth'
 import { localeOptions, themeOptions, useProfile } from './profile'
 import type { Locale, Theme } from '@mes/contracts'
 import { NotificationBell } from './NotificationBell'
-import { useUiStore } from './uiStore'
 import { clearDrafts } from '@/features/chat/drafts'
 
 interface TopBarProps {
@@ -38,7 +37,6 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
   const navigate = useNavigate()
   const isOwner = me.roles.includes('system_owner')
   const requesterOnly = me.roles.includes('requester') && !isOwner
-  const setAssistantOpen = useUiStore((state) => state.setAssistantOpen)
   const llmStatus = useQuery({
     queryKey: ['llm', 'status'],
     enabled: isOwner && !me.mustChangePassword,
@@ -53,7 +51,6 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
     <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-background px-4">
       <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{title}</h1>
       {actions}
-      {!requesterOnly && <Button variant="ghost" size="icon-sm" aria-label={t('common.openAssistant')} onClick={() => setAssistantOpen(true)}><Sparkles /></Button>}
       {!requesterOnly && <NotificationBell />}
       {isOwner && llmStatus.data && <Link to="/admin/diagnostics" aria-label={t('admin.diagnostics.badge', { mode: llmStatus.data.mode === 'mock' ? 'Mock' : 'Live' })} className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">{llmStatus.data.mode === 'mock' ? 'Mock' : 'Live'}</Link>}
       <DropdownMenu>

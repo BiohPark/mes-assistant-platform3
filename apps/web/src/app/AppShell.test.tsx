@@ -26,7 +26,7 @@ it('요청자(BO)는 메뉴 1개뿐이고 구획 머리말이 없다', async () 
   for (const heading of ['업무', '요청', '관리']) expect(screen.queryByText(heading)).not.toBeInTheDocument()
   expect(screen.queryByRole('link', { name: '리포트' })).not.toBeInTheDocument()
   expect(screen.queryByRole('link', { name: '에이전트 허브' })).not.toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: '시스템 assistant 열기' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'AI 도우미 열기' })).not.toBeInTheDocument()
 })
 
 it('일반 담당자는 업무 4개 + 요청 1개 = 메뉴 5개, 머리말 2개', async () => {
@@ -41,6 +41,7 @@ it('일반 담당자는 업무 4개 + 요청 1개 = 메뉴 5개, 머리말 2개'
   expect(within(nav).getByText('업무')).toBeInTheDocument()
   expect(within(nav).getByText('요청')).toBeInTheDocument()
   expect(within(nav).queryByText('관리')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'AI 도우미 열기' })).toBeInTheDocument() // 상단 버튼 대신 알약(U4)
 })
 
 it('SO는 업무·요청·관리 3구획 메뉴 9개를 본다', async () => {

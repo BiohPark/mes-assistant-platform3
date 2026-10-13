@@ -12,7 +12,7 @@ import { TopBar } from './TopBar'
 
 vi.mock('./NotificationBell', () => ({ NotificationBell: () => null }))
 vi.mock('./useEvents', () => ({ useEvents: () => undefined }))
-vi.mock('@/features/system-assistant/SystemAssistantDrawer', () => ({ SystemAssistantDrawer: () => null }))
+vi.mock('@/features/assistant-pill/AssistantPill', () => ({ AssistantPill: () => null }))
 
 const me = { id: 'owner', name: 'Kim', roles: ['member', 'system_owner'], role: '', email: null, emailIsDefault: false, theme: 'system', locale: 'ko' }
 const task: Task = { id: 't1', code: 'WK-1', title: 'Example', titleSource: 'manual', summary: '', assistantId: 'a1', ownerId: 'owner', createdBy: 'owner', assigneeIds: [], status: 'todo', priority: 'normal', tags: [], inputs: [], outputFileIds: [], checklist: [], createdAt: '2026-10-06T12:00:00Z', lastActivityAt: '2026-10-06T12:00:00Z' }
