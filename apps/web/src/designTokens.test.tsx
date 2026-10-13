@@ -12,9 +12,104 @@ const css = readFileSync(resolve(import.meta.dirname, 'index.css'), 'utf8')
 const tones = ['neutral', 'info', 'violet', 'teal', 'warning', 'success', 'danger'] as const
 const rawColorAllowlist = new Set<string>([])
 
+type Oklch = readonly [lightness: number, chroma: number, hue: number]
+
+// Same OKLCH -> OKLab -> linear sRGB conversion as contrast.test.ts.
+function luminance([lightness, chroma, hue]: Oklch): number {
+  const radians = hue * Math.PI / 180
+  const a = chroma * Math.cos(radians), b = chroma * Math.sin(radians)
+  const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3
+  const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3
+  const s = (lightness - 0.0894841775 * a - 1.2914855480 * b) ** 3
+  const clamp = (value: number) => Math.min(1, Math.max(0, value))
+  return 0.2126 * clamp(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s)
+    + 0.7152 * clamp(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s)
+    + 0.0722 * clamp(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s)
+}
+
+function contrast(first: Oklch, second: Oklch): number {
+  const a = luminance(first), b = luminance(second)
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+}
+
+function declarations(selector: string): Record<string, string> {
+  const values: Record<string, string> = {}
+  for (const [, selectors, body] of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!selectors!.trim().split(/,\s*/).includes(selector)) continue
+    for (const declaration of body!.split(';')) {
+      const colon = declaration.indexOf(':')
+      if (colon !== -1) values[declaration.slice(0, colon).trim()] = declaration.slice(colon + 1).trim()
+    }
+  }
+  return values
+}
+
+function resolveColor(value: string, variables: Record<string, string>): Oklch {
+  // Resolve actual CSS aliases and opaque OKLCH surfaces, including shorter hue
+  // interpolation and powerless hue for achromatic primary foreground tokens.
+  const variable = value.match(/^var\((--[\w-]+)/)
+  if (variable) {
+    const token = variables[variable[1]!]
+    if (!token) throw new Error(`Missing color token: ${variable[1]}`)
+    return resolveColor(token, variables)
+  }
+  const mix = value.match(/^color-mix\(in oklch, (var\(--[\w-]+\)) ([\d.]+)%, (var\(--[\w-]+\))\)$/)
+  if (mix) {
+    const first = resolveColor(mix[1]!, variables), second = resolveColor(mix[3]!, variables)
+    const weight = Number(mix[2]) / 100
+    const firstHue = first[1] === 0 ? second[2] : first[2]
+    const secondHue = second[1] === 0 ? firstHue : second[2]
+    const hueDelta = ((firstHue - secondHue + 540) % 360) - 180
+    return [first[0] * weight + second[0] * (1 - weight), first[1] * weight + second[1] * (1 - weight), secondHue + hueDelta * weight]
+  }
+  const color = value.match(/^oklch\(([\d.]+) ([\d.]+) ([\d.]+)\)$/)
+  if (!color) throw new Error(`Unsupported color: ${value}`)
+  return [Number(color[1]), Number(color[2]), Number(color[3])]
+}
+
 afterEach(() => vi.unstubAllGlobals())
 
 describe('design tokens', () => {
+  it('calibrates Markdown contrast conversion with neutral and chromatic sRGB samples', () => {
+    expect(contrast([1, 0, 0], [0, 0, 0])).toBeCloseTo(21, 7)
+    expect(luminance([0.5, 0, 0])).toBeCloseTo(0.125, 7)
+    expect(luminance([0.6279553606, 0.2576833077, 29.2338851923])).toBeCloseTo(0.2126, 6)
+  })
+
+  describe.each([':root', '.dark'] as const)('Markdown contrast in %s', (theme) => {
+    it.each([
+      ['primary', 'primary', 'primary-foreground'],
+      ['warning', 'tone-warning-bg', 'tone-warning-fg'],
+      ['card', 'card', 'card-foreground'],
+    ] as const)('keeps %s bubble text, rich content and borders above 4.5:1', (tone, background, foreground) => {
+      const styles = { ...declarations('.md-body'), ...declarations('.md-body[data-tone]'), ...declarations(`.md-body[data-tone="${tone}"]`) }
+      const variables = { ...declarations(':root'), ...(theme === '.dark' ? declarations('.dark') : {}), ...styles }
+      const color = (value: string) => resolveColor(value, variables)
+      const bg = color(`var(--${background})`)
+      expect(color('var(--md-background)')).toEqual(bg)
+      expect(color('var(--md-foreground)')).toEqual(color(`var(--${foreground})`))
+      const surface = (selector: string) => color(declarations(selector).background!)
+      const text = color(styles.color!)
+      const link = color(declarations('.md-body a').color!)
+      const border = (selector: string, property = 'border') => color(declarations(selector)[property]!.replace(/^\d+px solid /, ''))
+      const inlineCode = surface('.md-body code'), codeBlock = surface('.md-body pre'), header = surface('.md-body th')
+      const pairs: Array<[string, Oklch, Oklch]> = [
+        ['body', text, bg], ['link', link, bg],
+        ['inline code', text, inlineCode], ['linked inline code', link, inlineCode], ['code block', text, codeBlock],
+        ['quote', color(declarations('.md-body blockquote').color!), bg],
+        ['quote border', border('.md-body blockquote', 'border-left'), bg],
+        ['table cell border', border('.md-body td'), bg],
+        ['table header', text, header], ['table header border', border('.md-body th'), header],
+      ]
+      for (const [element, fg, backdrop] of pairs) {
+        const ratio = contrast(fg, backdrop)
+        expect(ratio, `${theme} ${tone} ${element}: ${ratio.toFixed(3)}:1`).toBeGreaterThanOrEqual(4.5)
+      }
+      expect(declarations('.md-body a')['text-decoration']).toBe('underline')
+      expect(declarations('.md-body pre code').background).toBe('transparent')
+    })
+  })
+
   it('uses semantic colors throughout all application sources', () => {
     const violations: string[] = []
     const rawColor = /(bg|text|border|ring|fill|stroke)-(amber|violet|sky|emerald|rose|red|green|blue|yellow|orange|indigo|purple|pink|teal|cyan|lime|slate|zinc|gray|neutral|stone)-\d{2,3}/g
