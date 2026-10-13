@@ -62,6 +62,14 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { id, object: 'chat.completion', model: payload.model, choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }] })
     }
     res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' })
+    if (/\[reasoning\]/i.test(lastUserText(payload.messages))) {
+      for (const thought of ['PRIVATE_REASONING: 요청을 검토합니다. ', '자료를 비교합니다. ', '답변을 준비합니다.']) {
+        if (res.destroyed) return
+        res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: { reasoning_content: thought } }] })}\n\n`)
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+      if (res.destroyed) return
+    }
     for (const piece of text.match(/.{1,8}/gsu) ?? []) {
       res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: { content: piece } }] })}\n\n`)
     }

@@ -98,7 +98,7 @@ pnpm setup:env
 | `LLM_DEFAULT_MODEL` | 전역 설정 미지정 시 폴백 모델 ID(선택) | 비움 |
 | `FILE_STORAGE_ROOT` | 파일 저장 루트(상대 경로면 api 실행 폴더 기준). 드라이브·UNC 경로 가능 | `./storage` |
 | `FILE_MAX_BYTES` · `FILE_MAX_PER_REQUEST` | 파일 하나 최대 크기(바이트)·요청당 첨부 개수 — PRD §6 제안값, 확정 시 기본값만 갱신 | `52428800`(50 MB) · `20` |
-| `REQUEST_FIRST_TOKEN_MS` · `REQUEST_FILES_FIRST_TOKEN_MS` · `REQUEST_IDLE_MS` | AI 요청 시간 제한 — 첫 토큰(첨부 없음/있음)·토큰 사이 (FR-33) | `60000` · `360000` · `60000` |
+| `REQUEST_FIRST_TOKEN_MS` · `REQUEST_FILES_FIRST_TOKEN_MS` · `REQUEST_IDLE_MS` | AI 요청 시간 제한 — 첫 응답(첨부 없음 5분/있음 10분)·본문/생각 청크 사이 무응답(5분) (FR-33) | `300000` · `600000` · `300000` |
 | `REQUEST_LEASE_MS` · `REQUEST_KEEPALIVE_MS` · `REQUEST_SWEEP_MS` · `REQUEST_FLUSH_MS` | 생존 신호 유효 시간·갱신 주기·끊긴 요청 정리 주기·답변 DB 반영 주기 | `30000` · `10000` · `30000` · `250` |
 | `REQUEST_BUDGET_BYTES` | 요청 본문 크기 한도(바이트, 첨부 파일 바이트 제외) — 초과 시 전송 차단. SO 전역 설정이 있으면 그 값 | `262144`(256 KiB) |
 
@@ -388,3 +388,9 @@ WHERE status IN ('succeeded','failed','cancelled','interrupted')
 
 선택 설정 `DEFAULT_EMAIL_DOMAIN=example.com`은 이메일 미설정 계정의 응답에 `{loginId}@{도메인}`을 기본값으로 표시하며 DB에 저장·백필하지 않는다. 설정을 비우면 기본 이메일은 `null`이다.
 도메인은 전체 253자 이하이며 각 구간은 1–63자의 영숫자·하이픈만 허용하고 앞뒤 하이픈은 금지한다. 최상위 도메인은 영문 2자 이상이어야 한다. 잘못된 값이면 기동 시 `DEFAULT_EMAIL_DOMAIN` 설정 오류를 낸다.
+
+### 응답 대기·생각 과정 (S10)
+
+첫 응답은 기본 5분, 첨부가 있으면 10분을 기다린다. 이후 본문 또는 생각 청크가 올 때마다 무응답 제한(기본 5분)을 갱신한다. `REQUEST_FIRST_TOKEN_MS`·`REQUEST_FILES_FIRST_TOKEN_MS`·`REQUEST_IDLE_MS`는 밀리초이며, 기존 `.env`의 명시된 값이 새 기본값보다 우선한다. 값을 바꾸면 API를 재시작한다.
+
+업그레이드할 때 `pnpm db:migrate`로 nullable `message.reasoning` text 컬럼을 추가한다(MariaDB 10.4 호환, 기존 데이터 변경 없음). 생각 과정은 접힌 영역에서 펼쳐 볼 수 있고 완료되면 다시 접혀 보존된다. 생각 텍스트는 다음 요청·참조 대화·트레이 크기 추정·요약에 포함하지 않는다. mock과 가짜 OpenWebUI에서 `[reasoning]`이 들어간 질문을 보내면 3초간 생각을 스트리밍한 뒤 답한다.

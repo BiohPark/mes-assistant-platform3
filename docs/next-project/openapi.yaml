@@ -527,7 +527,8 @@ paths:
       responses:
         '200':
           description: |
-            text/event-stream. 이벤트: `started`({requestId, replyMessageId}), `phase`({text}), `delta`({text}),
+            text/event-stream. 이벤트: `started`({requestId, replyMessageId, createdAt, resumedText?, resumedReasoning?}), `phase`({text}), `reasoning`({text}), `delta`({text}),
+            phase는 파일 처리/생각 중/답변 중을 표시한다. 본문과 생각 청크 모두 무응답 타이머를 갱신한다.
             `completed`({requestInfo}), `failed`({error, requestInfo}) — failed의 requestInfo.inputs에 전달 실패 항목
           content: { text/event-stream: { schema: { type: string } } }
         '409': { $ref: '#/components/responses/Problem' }
@@ -1108,6 +1109,7 @@ components:
         role: { enum: [system, user, assistant] }
         kind: { enum: [discussion] }
         content: { type: string }
+        reasoning: { type: [string, 'null'], description: '표시·보존 전용 생각 과정. 다음 요청·참조 문맥·크기 추정·요약에서 제외' }
         authorId: { type: string }
         status: { enum: [streaming, done, error] }
         error: { type: string }
