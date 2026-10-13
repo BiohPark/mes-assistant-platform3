@@ -1,5 +1,6 @@
+import { useId, useState } from 'react'
 import { Link } from 'react-router'
-import { BookOpen, ExternalLink, MessageSquarePlus } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronUp, ExternalLink, MessageSquarePlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { useMe } from '@/app/auth'
@@ -7,6 +8,7 @@ import { AssistantStatusBadge, IoBadges } from '@/components/StatusBadges'
 import { UserAvatar } from '@/components/UserAvatar'
 import { assistantLink1 } from '@/lib/links'
 import { cn } from '@/lib/utils'
+import type { ReactNode } from 'react'
 import type { CatalogUser } from '@mes/contracts'
 import type { AssistantRow } from './useAssistantStats'
 import { useT } from '@/i18n'
@@ -19,9 +21,11 @@ interface AssistantCardProps {
 }
 
 /** 카드 본문(표시 전용). 일반 카드와 편집 모드 카드가 같이 쓴다. */
-export function AssistantCardBody({ row, owner, dimmed }: { row: AssistantRow; owner?: CatalogUser; dimmed?: boolean }) {
+export function AssistantCardBody({ row, owner, dimmed, actions }: { row: AssistantRow; owner?: CatalogUser; dimmed?: boolean; actions?: ReactNode }) {
   const t = useT()
   const a = row.assistant
+  const [expanded, setExpanded] = useState(false)
+  const summaryId = useId()
   return (
     <>
       <div className={cn('pointer-events-none flex items-start justify-between', dimmed && 'opacity-60')}>
@@ -35,10 +39,18 @@ export function AssistantCardBody({ row, owner, dimmed }: { row: AssistantRow; o
         <div className="truncate font-semibold" title={a.name}>
           {a.name}
         </div>
-        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{a.summary}</p>
+        {a.summary && <div className="mt-1 flex items-start gap-1">
+          <p id={summaryId} className={cn('min-w-0 flex-1 text-xs text-muted-foreground', !expanded && 'line-clamp-2')}>{a.summary}</p>
+          {/* 요약 토글: 카드 링크 위(z-10)에 있어 눌러도 이동하지 않는다. 시각 32px, 터치 영역 44px(D47) */}
+          <button type="button" aria-expanded={expanded} aria-controls={summaryId} aria-label={t(expanded ? 'hub.collapseSummary' : 'hub.expandSummary', { name: a.name })} onClick={() => setExpanded((value) => !value)}
+            className="relative z-10 -mt-1.5 -mr-1.5 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none pointer-events-auto hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-1.5">
+            {expanded ? <ChevronUp aria-hidden className="size-4" /> : <ChevronDown aria-hidden className="size-4" />}
+          </button>
+        </div>}
       </div>
       <div className="relative z-10 min-w-0"><IoBadges inputs={a.expectedInputs} outputs={a.expectedOutputs} compact /></div>
-      <div className="pointer-events-none mt-auto flex items-center justify-between text-xs group-hover:invisible group-focus-within:invisible [@media(hover:none)]:invisible">
+      {actions}
+      <div className="pointer-events-none mt-auto flex items-center justify-between text-xs">
         <span className="inline-flex items-center gap-1 text-muted-foreground">
           <span className="font-medium text-foreground">{row.activeCount}</span> {t('hub.active')}
           {row.overdueCount > 0 && <span className="text-tone-danger-fg">{t('hub.overdue', { count: row.overdueCount })}</span>}
@@ -55,6 +67,7 @@ export const CARD_CLASS = 'group relative flex min-h-56 flex-col gap-3 rounded-2
 /**
  * 카드 클릭 = 바로 대화할 준비(초안). 첫 전송 때 대화가 만들어진다.
  * stretched-link 패턴: 본문 위에 투명 Link, hover 액션은 그 위(z-10). <a> 중첩을 피한다.
+ * 액션 줄은 흐름 안에 자리를 잡아 두고(invisible) hover·포커스·터치에서만 보인다 — 진행 수 줄을 덮지 않는다(S9-8 U2).
  */
 export function AssistantCard({ row, owner, baseUrl, link1Rule }: AssistantCardProps) {
   const t = useT()
@@ -69,8 +82,7 @@ export function AssistantCard({ row, owner, baseUrl, link1Rule }: AssistantCardP
       ) : (
         <Link to={`/new/${encodeURIComponent(a.id)}`} className="absolute inset-0 rounded-2xl" aria-label={t('hub.newConversationWith', { name: a.name })} />
       )}
-      <AssistantCardBody row={row} owner={owner} dimmed={retired} />
-      <div className="absolute inset-x-3 bottom-3 z-10 hidden flex-wrap gap-1 group-hover:flex group-focus-within:flex [@media(hover:none)]:flex">
+      <AssistantCardBody row={row} owner={owner} dimmed={retired} actions={<div className="relative z-10 flex flex-wrap gap-1 invisible group-hover:visible group-focus-within:visible [@media(hover:none)]:visible">
         {!retired && (
           <Button size="xs" variant="secondary" asChild>
             <Link to={`/new/${encodeURIComponent(a.id)}`}>
@@ -94,7 +106,7 @@ export function AssistantCard({ row, owner, baseUrl, link1Rule }: AssistantCardP
           </Button>
         )}
         {isOwner && <Button size="xs" variant="outline" asChild><Link to={`/assistants/manage?edit=${encodeURIComponent(a.id)}`} aria-label={t('hub.editAgentLabel', { name: a.name })}>{t('hub.editAgent')}</Link></Button>}
-      </div>
+      </div>} />
     </div>
   )
 }

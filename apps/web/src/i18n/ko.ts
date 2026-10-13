@@ -73,6 +73,7 @@ export const ko = {
     active: '진행', overdue: '· 지연 {count}', defaultModel: '기본 모델',
     retiredAssistantLabel: '{name} (폐기)', newConversationWith: '{name}와 새 대화', conversation: '대화',
     openWebUi: 'OpenWebUI에서 열기', descriptionPage: '설명 페이지', description: '설명',
+    expandSummary: '{name} 요약 펼치기', collapseSummary: '{name} 요약 접기',
     openConversation: '{code} {title} 열기', aiTitle: 'AI 제목', selectedInputs: '선택한 입력',
     daysOverdue: '{days}일 지연', today: '오늘', changeStatus: '상태 변경', status: '상태',
     statusChanged: "상태를 '{status}'(으)로 바꿨습니다.", statusChangeFailed: '상태를 바꾸지 못했습니다',
