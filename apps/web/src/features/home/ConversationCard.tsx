@@ -11,6 +11,7 @@ import { primarySrTag, srTagColor, TASK_STATUSES, type Task, type TaskStatus } f
 import { daysUntil, useDates } from '@/lib/dates'
 import { TASK_STATUS_KEY } from '@/lib/labels'
 import { cn } from '@/lib/utils'
+import { AiRequestChip } from './AiRequestChip'
 
 const MAX_TAGS = 3
 
@@ -43,6 +44,7 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
       <div className="pointer-events-none flex items-center gap-1.5 text-xs text-muted-foreground">
         <span className="shrink-0 font-mono whitespace-nowrap">{task.code}</span>
         <TaskStatusBadge status={task.status} className="h-5 shrink-0 px-1.5 text-[11px]" />
+        {task.aiRequest && <AiRequestChip aiRequest={task.aiRequest} className="h-5 shrink-0 px-1.5 text-[11px]" />}
         {task.titleSource === 'ai' && <Sparkles className="size-2.5 shrink-0 text-tone-violet-fg" aria-label={t('hub.aiTitle')} />}
         <span className="ml-auto min-w-0 truncate">{formatRelative(task.lastActivityAt)}</span>
       </div>

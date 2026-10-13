@@ -125,3 +125,13 @@ codex-critic은 커밋 뒤에 부른다. 리뷰 brief가 `git diff main...HEAD`�
 병렬 워커(worktree)는 단위·DB 테스트까지만 돌리게 하고 E2E는 오케스트레이터가 한 번에 하나씩 돌린다. 워커 테스트와 E2E가 겹치면 부하 플레이크가 나 실패 판독이 흐려진다 — 실패 spec은 `--workers=1`로 재확인한 뒤 판정.
 **근거**: s6-u10-polish — Codex 테스트 실행과 겹친 전체 E2E 25/30, 직렬 재실행 11/11
 **worker**: orchestrator
+
+## [2026-10-13] [parallel-branch-merge-check]
+병렬 브랜치를 연달아 main에 병합할 때는 병합 커밋마다 typecheck·단위 테스트를 **종료 코드로** 확인한 뒤 push한다(`cmd | tail`은 종료 코드를 가린다 — `set -o pipefail` 또는 파이프 없이). 각 브랜치 CI가 녹색이어도, 한 브랜치가 공용 타입에 필수 필드를 추가하면 다른 브랜치의 새 테스트 픽스처가 깨지는 의미 충돌이 난다.
+**근거**: s9 — email(Me.email 추가)·dnd·my-work 각각 CI 녹색, 병합 후 main typecheck 실패 3건
+**worker**: orchestrator
+
+## [2026-10-13] [gate-exit-code]
+게이트(`gate.sh`) 결과를 `| tail | cut && 실행`으로 판정하지 말 것 — 파이프의 종료 코드는 마지막 명령이라 거부돼도 워커가 실행된다. `if bash gate.sh brief > out; then …` 형태로 판정한다.
+**근거**: s9-sr-simplify — G4 거부(258단어)였으나 codex-main이 실행됨, 즉시 중지(변경 없음)
+**worker**: orchestrator

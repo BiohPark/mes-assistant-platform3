@@ -7,6 +7,7 @@ import { AuthGate } from './AuthGate'
 import { MeContext } from './auth'
 import { TopBar } from './TopBar'
 import { useProfile } from './profile'
+import { getDraft, setDraft } from '@/features/chat/drafts'
 
 vi.mock('./NotificationBell', () => ({ NotificationBell: () => null }))
 
@@ -36,9 +37,11 @@ describe('TopBar', () => {
     expect(await screen.findByText('Mock')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /김운영/ }))
     expect(await screen.findByText('System Owner')).toBeInTheDocument()
+    setDraft('t', { text: '보내지 않은 초안', pending: [], discussion: false })
     await userEvent.click(screen.getByRole('menuitem', { name: '로그아웃' }))
     await waitFor(() => expect(afterLogout).toHaveBeenCalledOnce())
     expect(fetchMock).toHaveBeenCalledWith('/api/auth/logout', expect.objectContaining({ method: 'POST' }))
+    expect(getDraft('t')).toBeUndefined() // 로그아웃하면 전환 초안을 폐기한다
   })
 
   it.each([204, 500])('로그아웃 응답 %s에서 성공한 경우에만 화면·두 캐시를 system·ko로 초기화한다', async (status) => {

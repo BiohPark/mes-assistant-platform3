@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { Message } from '@mes/domain'
 import { AlertCircle, ArrowDown, List } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -23,8 +24,8 @@ export function failedQuestionIds(messages: Message[]) {
 }
 
 /** 업무와 SR 접수에서 공용 메시지 표시·스트리밍·자동 스크롤을 사용한다. */
-export function ChatMessages({ messages, run, waitingSince, empty, actions }: {
-  messages: Message[]; run?: ChatRun | null; waitingSince?: number; empty?: ReactNode; actions?: (message: Message) => BubbleActions
+export function ChatMessages({ messages, run, waitingSince, empty, actions, questionIndexContainer }: {
+  messages: Message[]; run?: ChatRun | null; waitingSince?: number; empty?: ReactNode; actions?: (message: Message) => BubbleActions; questionIndexContainer?: HTMLElement | null
 }) {
   const t = useT()
   const { formatDateTime } = useDates()
@@ -91,8 +92,7 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions }: {
     const last = messages.at(-1)
     if (last) messageElement(last.id)?.focus({ preventScroll: true })
   }
-  return <div ref={root} className="space-y-4">
-    {questions.length > 0 && <div className="sticky top-0 z-10 flex justify-end">
+  const questionIndex = questions.length > 0 && <div className="flex justify-end">
       <Popover open={indexOpen} onOpenChange={setIndexOpen}><PopoverTrigger asChild>
         <button type="button" className="inline-flex min-h-11 items-center gap-1 rounded-lg border bg-card px-3 text-xs text-card-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><List aria-hidden="true" className="size-4" />{t('chat.questionIndex')}</button>
       </PopoverTrigger><PopoverContent align="end" aria-label={t('chat.questionIndex')} className="max-h-80 overflow-y-auto"
@@ -105,7 +105,9 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions }: {
             {failed.has(item.id) && <span className="inline-flex items-center gap-1 text-tone-danger-fg"><AlertCircle aria-hidden="true" className="size-3" />{t('chat.questionFailed')}</span>}</span>
         </button>)}</nav>
       </PopoverContent></Popover>
-    </div>}
+    </div>
+  return <div ref={root} className="space-y-4">
+    {questionIndexContainer ? createPortal(questionIndex, questionIndexContainer) : questionIndex}
     {visibleMessages.length ? visibleMessages.map(item => <MessageBubble key={item.id}
       message={run?.replyId === item.id ? { ...item, status: 'streaming', content: run.text || item.content, reasoning: run.reasoning || item.reasoning } : item}
       {...(item === currentReply || item.id !== replyId ? actions?.(item) : undefined)}

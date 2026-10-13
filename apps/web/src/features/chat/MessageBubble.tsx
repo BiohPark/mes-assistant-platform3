@@ -41,6 +41,7 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
   const { formatDateTime } = useDates()
   const user = useUserMap(!intake).get(message.authorId ?? '')
   const assistant = message.role === 'assistant'
+  const tone = assistant ? 'card' : !intake && message.kind === 'discussion' ? 'warning' : 'primary'
   const attachments = useQueries({ queries: message.attachmentIds.map((id) => ({ queryKey: ['file', id], queryFn: async () => {
     const response = await fetch(`/api/files/${encodeURIComponent(id)}`, { credentials: 'same-origin' })
     if (!response.ok) throw new HttpError(response.status)
@@ -68,7 +69,7 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
         }} className="min-h-11 cursor-pointer rounded-lg px-3 py-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('chat.reasoning')}</summary>
       <div ref={reasoningScroll} aria-live="off" className="max-h-64 overflow-y-auto scroll-auto whitespace-pre-wrap break-words px-3 pb-3 text-sm">{message.reasoning}</div>
     </details>}
-    {(!assistant || hasContent) && <div className={`rounded-2xl px-3.5 py-2.5 ${assistant ? 'border bg-card' : !intake && message.kind === 'discussion' ? 'rounded-tr-sm border border-dashed border-tone-warning-fg/40 bg-tone-warning-bg' : 'rounded-tr-sm bg-primary text-primary-foreground'}`}><Markdown content={message.content} /></div>}
+    {(!assistant || hasContent) && <div className={`rounded-2xl px-3.5 py-2.5 ${tone === 'card' ? 'border bg-card' : tone === 'warning' ? 'rounded-tr-sm border border-dashed border-tone-warning-fg/40 bg-tone-warning-bg' : 'rounded-tr-sm bg-primary text-primary-foreground'}`}><Markdown content={message.content} tone={tone} /></div>}
     {!assistant && attachments.length > 0 && <div className="flex flex-wrap justify-end gap-1 text-xs">{attachments.map((attachment, index) => <span key={message.attachmentIds[index]} className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5"><Paperclip className="size-3" />{intake ? <a href={`/api/files/${encodeURIComponent(message.attachmentIds[index]!)}/content`} className="underline">{attachment.data?.name ?? t('sr.attachment', { number: index + 1 })}</a> : attachment.data ? <button type="button" className="hover:underline" onClick={(event) => { previewOpener.current = event.currentTarget; setPreview(attachment.data) }}>{attachment.data.name}</button> : (attachment.isError ? attachmentFallback(attachment.error) : t('chat.checkingFile'))}</span>)}</div>}
     <div className="flex items-center gap-1 text-foreground">
       <div role="group" aria-label={t('chat.messageActions')} className="hidden md:flex md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100 motion-safe:transition-opacity">

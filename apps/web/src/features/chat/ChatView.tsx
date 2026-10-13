@@ -18,6 +18,7 @@ import { RetryFilesDialog } from './RetryFilesDialog'
 import { useChat } from './useChat'
 import { ContextTray } from './ContextTray'
 import { useRequestEstimate } from './useRequestEstimate'
+import { getDraft } from './drafts'
 import { toast } from 'sonner'
 import { useT } from '@/i18n'
 
@@ -27,7 +28,8 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   const selfId = useCurrentUserId()
   const query = useQueryClient()
   const [sending, setSending] = useState(false)
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(() => getDraft(task.id)?.text ?? '')
+  const [questionIndexContainer, setQuestionIndexContainer] = useState<HTMLDivElement | null>(null)
   const [askTarget, setAskTarget] = useState<Message | null>(null)
   const [prefilled, setPrefilled] = useState(false)
   const askOpener = useRef<HTMLElement | null>(null)
@@ -122,8 +124,10 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
     try { setRetryChoice({ record: await getRequest(requestId), mode }) }
     catch { toast.error(t('chat.requestLoadFailed')) }
   }
-  return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={task.status === 'done'} onFiles={(files) => composer.current?.dropFiles(files)}><div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-    <ChatMessages messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
+  return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={task.status === 'done'} onFiles={(files) => composer.current?.dropFiles(files)}>
+    <div ref={setQuestionIndexContainer} data-testid="chat-question-toolbar" className="shrink-0 border-b px-4 py-2 empty:hidden" />
+    <div data-testid="chat-message-scroll" className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+    <ChatMessages messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince} questionIndexContainer={questionIndexContainer} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
       actions={(item) => ({
         onAskAgain: item.role === 'user' && item.kind !== 'discussion' ? () => askAgain(item) : undefined,
         askAgainDisabled,
@@ -138,7 +142,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   {prefilled && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.askAgainHint')}</p>}
   {pendingAttempt && !sending && !chat.sending && task.status !== 'done' && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.pendingAttemptHint')}</p>}
   {task.status !== 'done' && <Composer ref={composer} disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowPin allowDiscussion
-    blockedReason={estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping}
+    blockedReason={estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping} draftKey={task.id}
     placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}
     onSend={send} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />}
   {saveTarget && assistant && <SaveAsOutputDialog key={saveTarget.id} message={saveTarget} task={task} assistant={assistant} onOpenMaterials={onOpenMaterials} onClose={() => setSaveTarget(null)} />}</FileDropZone>

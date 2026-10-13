@@ -22,6 +22,7 @@ import { listAssistants } from '@/lib/catalog'
 import { EmptyState } from '@/components/EmptyState'
 import { FILTER_TOGGLE_CLASS } from './CardMapFilterBar'
 import { ConversationCard } from './ConversationCard'
+import { AI_FILTERS, aiFilterFromParams, aiFilterToParams, matchesAiFilter, type AiFilter } from './filters'
 import { useSearchText } from './useSearchText'
 
 const colId = (assistantId: string) => `kanban-col-${assistantId}`
@@ -35,6 +36,7 @@ export function ConversationKanban({ pendingSearch }: { pendingSearch: RefObject
   const catalog = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
   const assistants = catalog.data ?? []
   const filter = filterFromParams(params, catalog.data)
+  const aiFilter = aiFilterFromParams(params)
   const latestFilter = (prev: URLSearchParams) => {
     const latest = filterFromParams(prev, catalog.data)
     return { ...latest, q: pendingSearch.current ?? latest.q }
@@ -61,16 +63,18 @@ export function ConversationKanban({ pendingSearch }: { pendingSearch: RefObject
     if (patch.q !== undefined) pendingSearch.current = patch.q.trim()
     setParams(prev => filterToParams({ ...latestFilter(prev), ...patch }, prev), { replace: patch.q !== undefined })
   }
+  const updateAi = (values: AiFilter[]) => setParams(prev => filterToParams(latestFilter(prev), aiFilterToParams(values, prev)))
   const search = useSearchText(filter.q, q => update({ q }), value => value.trim())
-  const clearFilters = () => setParams(prev => filterToParams({ stages: [], statuses: [], tags: [], mine: false, q: latestFilter(prev).q }, prev))
+  const clearFilters = () => setParams(prev => filterToParams({ stages: [], statuses: [], tags: [], mine: false, q: latestFilter(prev).q }, aiFilterToParams([], prev)))
   const reset = () => {
     pendingSearch.current = ''
-    setParams(prev => filterToParams({ stages: [], statuses: [], tags: [], mine: false, q: '' }, prev))
+    setParams(prev => filterToParams({ stages: [], statuses: [], tags: [], mine: false, q: '' }, aiFilterToParams([], prev)))
   }
-  const columns = kanbanColumns(assistants, tasks.data ?? [], filter, actor.userId)
+  const filtering = isFiltering(filter) || aiFilter.length > 0
+  const columns = kanbanColumns(assistants, tasks.data ?? [], filter, actor.userId).map(column => ({ ...column, tasks: column.tasks.filter(task => matchesAiFilter(task, aiFilter)) }))
   const stages = stageOptions(assistants)
   const focused = filter.assistantId ? assistants.find((a) => a.id === filter.assistantId) : undefined
-  const selectedCount = filter.stages.length + filter.statuses.length + filter.tags.length + Number(filter.mine) + Number(!!filter.assistantId)
+  const selectedCount = filter.stages.length + filter.statuses.length + filter.tags.length + Number(filter.mine) + Number(!!filter.assistantId) + aiFilter.length
   const total = columns.reduce((count, column) => count + column.tasks.length, 0)
   const toggleStage = (key: string) => update({ stages: filter.stages.includes(key) ? filter.stages.filter((value) => value !== key) : [...filter.stages, key] })
   const addFilterTag = (tag: string) => { if (!filter.tags.some((value) => tagKey(value) === tagKey(tag))) update({ tags: [...filter.tags, tag] }) }
@@ -84,15 +88,16 @@ export function ConversationKanban({ pendingSearch }: { pendingSearch: RefObject
       <div className="relative w-full sm:w-56"><Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" /><Input {...search} placeholder={t('hub.searchConversations')} className="h-8 pl-8" /></div>
       <details className="relative"><summary className={cn('flex h-8 cursor-pointer items-center gap-1 rounded-lg border px-2 text-xs', filter.stages.length > 0 && 'border-primary text-primary')}><Filter className="size-3.5" />{t('hub.stage')}{filter.stages.length > 0 && ` ${filter.stages.length}`}</summary><div className="absolute z-20 mt-1 w-72 space-y-2 rounded-xl border bg-popover p-3 shadow-md"><div className="text-xs font-medium">{t('hub.stagesTitle')}</div>{stages.map((group) => <div key={group.level1} className="space-y-1"><div className="text-xs text-muted-foreground">{group.level1}</div><div className="flex flex-wrap gap-1">{group.stages.map((stage) => <button key={stage.key} type="button" aria-pressed={filter.stages.includes(stage.key)} onClick={() => toggleStage(stage.key)} className={cn('rounded-full border px-2 py-0.5 text-xs border-muted-foreground/30 hover:border-foreground disabled:opacity-50', filter.stages.includes(stage.key) && 'bg-primary text-primary-foreground font-semibold')}>{filter.stages.includes(stage.key) && <Check aria-hidden className="mr-1 inline size-3" />}{stage.level2}</button>)}</div></div>)}</div></details>
       <ToggleGroup type="multiple" variant="outline" size="sm" value={filter.statuses} onValueChange={(values) => update({ statuses: values as TaskStatus[] })} aria-label={t('hub.statusFilter')} className="flex-wrap">{TASK_STATUSES.map((status) => <ToggleGroupItem key={status} value={status} className={`${FILTER_TOGGLE_CLASS} text-xs`}>{filter.statuses.includes(status) && <Check aria-hidden className="size-3" />}{t(TASK_STATUS_KEY[status])}</ToggleGroupItem>)}</ToggleGroup>
+      <ToggleGroup type="multiple" variant="outline" size="sm" value={aiFilter} onValueChange={(values) => updateAi(values as AiFilter[])} aria-label={t('hub.aiFilter')} className="flex-wrap">{AI_FILTERS.map((value) => <ToggleGroupItem key={value} value={value} className={`${FILTER_TOGGLE_CLASS} text-xs`}>{aiFilter.includes(value) && <Check aria-hidden className="size-3" />}{t(value === 'responding' ? 'hub.aiResponding' : 'hub.aiFailedFilter')}</ToggleGroupItem>)}</ToggleGroup>
       <Label className="flex items-center gap-1.5 text-xs"><Switch checked={filter.mine} onCheckedChange={(mine) => update({ mine })} />{t('hub.mine')}</Label>
       <TagInput tags={filter.tags} suggest={suggest} onAdd={addFilterTag} onRemove={(tag) => update({ tags: filter.tags.filter((value) => value !== tag) })} placeholder={t('hub.tagFilter')} />
       {focused && <span className="inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs"><AssistantAvatar assistant={focused} size="xs" className="size-5 rounded-full text-xs" />{focused.name}<button type="button" aria-label={t('hub.clearAssistantFilter')} onClick={() => update({ assistantId: undefined })}><X className="size-3" /></button></span>}
-      <div className="ml-auto flex items-center gap-2"><Label className="flex items-center gap-1.5 text-xs text-muted-foreground"><Switch checked={collapseEmpty} onCheckedChange={setCollapseEmpty} />{t('hub.collapseEmpty')}</Label><span className="text-xs text-muted-foreground">{t('hub.selectedCount', { count: selectedCount })}</span>{isFiltering(filter) && <Button size="sm" variant="ghost" onClick={reset}><RotateCcw data-icon="inline-start" />{t('hub.reset')}</Button>}</div>
+      <div className="ml-auto flex items-center gap-2"><Label className="flex items-center gap-1.5 text-xs text-muted-foreground"><Switch checked={collapseEmpty} onCheckedChange={setCollapseEmpty} />{t('hub.collapseEmpty')}</Label><span className="text-xs text-muted-foreground">{t('hub.selectedCount', { count: selectedCount })}</span>{filtering && <Button size="sm" variant="ghost" onClick={reset}><RotateCcw data-icon="inline-start" />{t('hub.reset')}</Button>}</div>
     </div>
     {tasks.isPending && <div className="text-sm text-muted-foreground">{t('common.loading')}</div>}
     {tasks.isError && <div role="alert" className="text-sm">{t('hub.listFailed')} <Button size="sm" variant="outline" onClick={() => void tasks.refetch()}>{t('common.retry')}</Button></div>}
     {!tasks.isError && <>
-      {tasks.data && total === 0 && isFiltering(filter) && <EmptyState icon={Filter} title={t('hub.noMatchingConversations')} action={<div className="flex gap-2">
+      {tasks.data && total === 0 && filtering && <EmptyState icon={Filter} title={t('hub.noMatchingConversations')} action={<div className="flex gap-2">
         {!!filter.q && <Button size="sm" variant="outline" onClick={() => update({ q: '' })}>{t('hub.clearSearch')}</Button>}
         {selectedCount > 0 && <Button size="sm" variant="outline" onClick={clearFilters}>{t('hub.clearFilters', { count: selectedCount })}</Button>}
       </div>} />}
