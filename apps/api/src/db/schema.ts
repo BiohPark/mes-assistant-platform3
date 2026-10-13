@@ -407,6 +407,7 @@ export const chatRequest = mysqlTable(
     check('chat_request_transport_check', inList(t.transport, ['inline', 'openwebui'])),
     uniqueIndex('chat_request_one_active').on(t.activeThreadId),
     unique('chat_request_thread_id_idempotency_key_key').on(t.threadId, t.idempotencyKey),
+    index('chat_request_thread_created').on(t.threadId, t.createdAt),
   ],
 )
 
