@@ -54,6 +54,7 @@ export const en = {
     tagInputHint: 'SR number or keyword. Enter or comma adds what you typed; use ↑↓ to pick a suggestion',
     srAccepted: 'SR',
     srUnaccepted: 'SR not filed',
+    srUnknown: 'SR not visible',
     tagSaveFailed: 'Could not save the tag',
     delete: 'Delete',
     reasonPlaceholder: 'Enter a reason',

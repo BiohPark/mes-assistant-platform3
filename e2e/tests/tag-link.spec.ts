@@ -13,12 +13,15 @@ async function signup(page: Page, suffix: string) {
   await expect(page).toHaveURL(/\/$/)
   return id
 }
-async function firstAssistantId(page: Page) {
-  const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
-  return assistants[0]!.id
+/** 목록 순서·첫 항목에 기대지 않고 활성(폐기 아님) 에이전트를 고른다. 없으면 이 spec은 검증 대상이 없으므로 건너뛴다 */
+async function activeAssistantId(page: Page) {
+  const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string; status: string }>
+  const active = assistants.find((item) => item.status === 'open')
+  test.skip(!active, '활성 에이전트가 없어 대화를 만들 수 없습니다')
+  return active!.id
 }
 async function createTask(page: Page, tags: string[] = []) {
-  const response = await page.request.post('/api/tasks', { data: { assistantId: await firstAssistantId(page), tags } })
+  const response = await page.request.post('/api/tasks', { data: { assistantId: await activeAssistantId(page), tags } })
   expect(response.ok()).toBe(true)
   return (await response.json()) as { id: string; code: string; threadId: string }
 }
@@ -72,7 +75,7 @@ test('초안에서 입력한 태그를 쓰는 대화 수를 미리 보여 주되
   const stamp = Date.now().toString(36)
   const existing = await createTask(page, [`draft-${stamp}`])
   const before = (await (await page.request.get('/api/tasks')).json() as unknown[]).length
-  await page.goto(`/new/${await firstAssistantId(page)}`)
+  await page.goto(`/new/${await activeAssistantId(page)}`)
   await tagInput(page).fill(`draft-${stamp}`)
   await tagInput(page).press('Enter')
   await page.getByText('같은 태그 대화 1').click()

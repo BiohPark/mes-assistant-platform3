@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link2 } from 'lucide-react'
 import { Link } from 'react-router'
 import { tagKey } from '@mes/domain'
@@ -22,9 +22,10 @@ export function RelatedStrip({ tags, excludeTaskId }: { tags: string[]; excludeT
   const related = useQuery({ queryKey: ['tasks', 'related', tags], queryFn: async () => {
     const pages = await Promise.all(tags.map((tag) => listTasks({ tags: [tag] })))
     return [...new Map(pages.flat().map((item) => [item.id, item])).values()].sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
-  }, enabled: tags.length > 0, placeholderData: keepPreviousData })
+  }, enabled: tags.length > 0 })
   if (tags.length === 0) return null
   if (related.isError) return <span role="alert" className={pill}><Link2 className="size-3" />{t('task.related.loadFailed')}<button type="button" className="underline" onClick={() => void related.refetch()}>{t('task.related.retry')}</button></span>
+  // 태그가 바뀐 직후(새 쿼리 키)는 이전 결과를 쓰지 않는다 — 이전 데이터를 새 태그로 걸러 '없음'이 뜨는 오표시 방지
   if (!related.data) return <span className={pill} aria-busy="true"><Link2 className="size-3" />{t('task.related.loading')}</span>
   const ownTags = new Set(tags.map(tagKey))
   const rows = related.data.filter((item) => item.id !== excludeTaskId).map((item) => ({

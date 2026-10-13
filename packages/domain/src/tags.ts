@@ -31,13 +31,16 @@ export function primarySrTag(tags: string[]): string | undefined {
   return tags.find(isSrTag)
 }
 
+/** SR 번호 태그의 접수 판정: 접수됨 / 미접수(보는 범위가 전체인데 없음) / 확인 불가(열람 범위 밖일 수 있음) */
+export type SrTagStatus = 'accepted' | 'unfiled' | 'unknown'
+
 export interface TagSuggestion {
   tag: string
   count: number
   /** SR 번호 형식 */
   isSr: boolean
-  /** 접수된(코드가 부여된) SR이 실제로 있음. 형식만 맞고 접수가 없으면 false → 'SR 미접수' */
-  srAccepted: boolean
+  /** isSr일 때만. 'unknown'은 권한으로 안 보이는 SR을 미접수로 단정하지 않기 위한 상태 */
+  srStatus?: SrTagStatus
 }
 
 /**
@@ -54,8 +57,11 @@ export function rankTagSuggestions<T extends { tag: string; count: number }>(ite
     .sort((a, b) => a.tier - b.tier || b.item.count - a.item.count || a.item.tag.localeCompare(b.item.tag)).map((x) => x.item)
 }
 
-/** 자동완성 후보: 사용 태그 + 접수된 SR 코드(srCodes — 열람 범위는 호출 측이 적용). 이미 붙은 태그는 제외. */
-export function tagSuggestions(tasks: Task[], srCodes: string[], prefix: string, exclude: string[] = []): TagSuggestion[] {
+/**
+ * 자동완성 후보: 사용 태그 + 접수된 SR 코드(srCodes — 열람 범위는 호출 측이 적용). 이미 붙은 태그는 제외.
+ * srScope: srCodes가 전체 접수 SR이면 'all'(없는 번호 = 미접수), 일부만 보는 뷰어면 'partial'(없는 번호 = 확인 불가).
+ */
+export function tagSuggestions(tasks: Task[], srCodes: string[], prefix: string, exclude: string[] = [], srScope: 'all' | 'partial' = 'all'): TagSuggestion[] {
   const excluded = new Set(exclude.map(tagKey))
   const accepted = new Set(srCodes.map(tagKey))
   const byKey = new Map<string, TagSuggestion>()
@@ -63,7 +69,9 @@ export function tagSuggestions(tasks: Task[], srCodes: string[], prefix: string,
     const key = tagKey(tag)
     if (!key || excluded.has(key)) return
     const cur = byKey.get(key)
-    byKey.set(key, { tag: cur?.tag ?? normalizeTag(tag), count: (cur?.count ?? 0) + n, isSr: isSrTag(tag), srAccepted: accepted.has(key) })
+    const isSr = isSrTag(tag)
+    const srStatus: SrTagStatus = accepted.has(key) ? 'accepted' : srScope === 'all' ? 'unfiled' : 'unknown'
+    byKey.set(key, { tag: cur?.tag ?? normalizeTag(tag), count: (cur?.count ?? 0) + n, isSr, ...(isSr && { srStatus }) })
   }
   for (const t of tasks) for (const tag of t.tags) add(tag, 1)
   for (const code of srCodes) if (code) add(code, 0)

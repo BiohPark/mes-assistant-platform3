@@ -1,7 +1,11 @@
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router'
+import { ThemeProvider } from 'next-themes'
 import type { Task } from '@mes/domain'
 import { MeContext } from '@/app/auth'
+import { ProfileProvider } from '@/app/profile'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { RelatedStrip } from './RelatedStrip'
@@ -76,6 +80,27 @@ it('tells apart no related conversations, loading, and a failed lookup with retr
   await screen.findByText('같은 태그 대화 없음')
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   expect(container.querySelector('details')).toBeNull()
+})
+
+it('shows loading, not "none", while a changed tag set is still being looked up', async () => {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const other = { ...base, id: 'other', code: 'WK-2026-0002', title: '관련 대화', tags: ['첫째'] }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/assistants') return jsonResponse(200, [])
+    if (url.includes('%EB%91%98%EC%A7%B8')) { await gate; return jsonResponse(200, [base]) }
+    return jsonResponse(200, [base, other])
+  }))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const tree = (tags: string[]) => <QueryClientProvider client={client}><ThemeProvider attribute="class" defaultTheme="system" storageKey="mes-theme" disableTransitionOnChange><ProfileProvider><MeContext value={me}><TooltipProvider><MemoryRouter><RelatedStrip tags={tags} excludeTaskId="t" /></MemoryRouter></TooltipProvider></MeContext></ProfileProvider></ThemeProvider></QueryClientProvider>
+  const view = render(tree(['첫째']))
+  await screen.findByText('같은 태그 대화 1')
+  view.rerender(tree(['둘째']))
+  expect(screen.getByText('같은 태그 대화 찾는 중…')).toBeInTheDocument()
+  expect(screen.queryByText('같은 태그 대화 없음')).not.toBeInTheDocument()
+  expect(screen.queryByText('같은 태그 대화 1')).not.toBeInTheDocument()
+  release()
+  await screen.findByText('같은 태그 대화 없음')
 })
 
 it('renders nothing without tags and performs no lookup', () => {

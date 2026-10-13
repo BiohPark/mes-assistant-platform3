@@ -90,13 +90,19 @@ describe('tagSuggestions', () => {
     const tasks = [task('a', 'x', ['item-cc']), task('b', 'x', ['item-cc']), task('c', 'x', ['cc-x']), task('d', 'x', ['cc-y']), task('e', 'x', ['cc-y'])]
     expect(tagSuggestions(tasks, [], 'cc').map((s) => s.tag)).toEqual(['cc-y', 'cc-x', 'item-cc'])
   })
-  it('marks SR-pattern tags as accepted only when an accepted SR code exists', () => {
+  it('marks SR-pattern tags accepted / unfiled when the viewer sees every SR, and never marks plain tags', () => {
     const tasks = [task('a', 'x', ['SR-2026-0001', 'SR-2026-0002', 'plain'])]
     const out = tagSuggestions(tasks, ['SR-2026-0001', 'SR-2026-0003'], '')
-    expect(out.find((s) => s.tag === 'SR-2026-0001')).toMatchObject({ isSr: true, srAccepted: true, count: 1 })
-    expect(out.find((s) => s.tag === 'SR-2026-0002')).toMatchObject({ isSr: true, srAccepted: false, count: 1 })
-    expect(out.find((s) => s.tag === 'SR-2026-0003')).toMatchObject({ isSr: true, srAccepted: true, count: 0 })
-    expect(out.find((s) => s.tag === 'plain')).toMatchObject({ isSr: false, srAccepted: false })
+    expect(out.find((s) => s.tag === 'SR-2026-0001')).toMatchObject({ isSr: true, srStatus: 'accepted', count: 1 })
+    expect(out.find((s) => s.tag === 'SR-2026-0002')).toMatchObject({ isSr: true, srStatus: 'unfiled', count: 1 })
+    expect(out.find((s) => s.tag === 'SR-2026-0003')).toMatchObject({ isSr: true, srStatus: 'accepted', count: 0 })
+    expect(out.find((s) => s.tag === 'plain')).toEqual({ tag: 'plain', count: 1, isSr: false })
+  })
+  it('marks SR tags outside a partial view as unknown instead of unfiled', () => {
+    const tasks = [task('a', 'x', ['SR-2026-0001', 'SR-2026-0002'])]
+    const out = tagSuggestions(tasks, ['SR-2026-0001'], '', [], 'partial')
+    expect(out.find((s) => s.tag === 'SR-2026-0001')?.srStatus).toBe('accepted')
+    expect(out.find((s) => s.tag === 'SR-2026-0002')?.srStatus).toBe('unknown')
   })
 })
 

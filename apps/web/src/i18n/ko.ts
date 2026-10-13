@@ -52,6 +52,7 @@ export const ko = {
     tagInputHint: 'SR 번호나 키워드. Enter·쉼표로 입력값 추가, ↑↓로 후보 선택',
     srAccepted: 'SR',
     srUnaccepted: 'SR 미접수',
+    srUnknown: 'SR 확인 불가',
     tagSaveFailed: '태그를 저장하지 못했습니다',
     delete: '삭제',
     reasonPlaceholder: '사유를 입력하세요',

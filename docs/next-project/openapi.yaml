@@ -472,7 +472,7 @@ paths:
       summary: 태그 자동완성 — 보이는 대화의 태그 + 보이는 접수 SR 코드(열람 범위는 서버. BO는 본인 SR만). 정렬은 완전 일치 > 앞부분 > 부분, 그 안에서 사용 수(S9-4)
       parameters: [{ name: prefix, in: query, schema: { type: string } }, { name: exclude, in: query, schema: { type: array, items: { type: string } } }]
       responses:
-        '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: object, required: [tag, count, isSr, srAccepted], properties: { tag: { type: string }, count: { type: integer, description: 이 태그를 쓰는 보이는 대화 수 }, isSr: { type: boolean, description: SR 번호 형식 }, srAccepted: { type: boolean, description: '접수된(코드 부여) SR이 실제로 있음. isSr인데 false면 화면은 SR 미접수로 구분' } } } } } } }
+        '200': { description: 'items + srScope(접수 SR 열람 범위 — all: 전체, partial: 본인 것만(BO). 목록에 없는 SR 번호는 all이면 미접수, partial이면 확인 불가)', content: { application/json: { schema: { type: object, required: [items, srScope], properties: { srScope: { enum: [all, partial] }, items: { type: array, items: { type: object, required: [tag, count, isSr], properties: { tag: { type: string }, count: { type: integer, description: 이 태그를 쓰는 보이는 대화 수 }, isSr: { type: boolean, description: SR 번호 형식 }, srStatus: { enum: [accepted, unfiled, unknown], description: 'isSr일 때만. accepted=접수된 SR 있음, unfiled=전체를 보는데 없음(SR 미접수), unknown=열람 범위 밖일 수 있어 단정 불가(SR 확인 불가)' } } } } } } } } }
   /tasks/{taskId}/activity:
     get:
       tags: [tasks]
