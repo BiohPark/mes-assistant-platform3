@@ -27,7 +27,9 @@ const read = (condition: { queryChunks: { value?: unknown }[] }) => {
 }
 const reads = { select: () => ({ from: () => ({ where: (condition: { queryChunks: { value?: unknown }[] }) => Object.assign(Promise.resolve(read(condition)), { for: async () => read(condition) }) }) }) }
 const tx = { ...reads, update: writes, delete: writes, insert: (table: unknown) => { if (table !== dbLock) writes(); return { values: () => ({ onDuplicateKeyUpdate: async () => undefined }) } } }
-const db = { ...reads, insert: writes, update: writes, delete: writes, transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx) }
+/** admit의 전역 용량 트랜잭션 앞에 끼우는 관문 — 대기 중 연결 종료 시나리오용 */
+let txGate: () => Promise<void> = async () => undefined
+const db = { ...reads, insert: writes, update: writes, delete: writes, transaction: async (fn: (t: typeof tx) => Promise<unknown>) => { await txGate(); return fn(tx) } }
 /** provider가 중단 신호를 받을 때까지 멈춰 있는 호출 — 신호를 돌려준다 */
 function hangingProvider() {
   let started!: (signal: AbortSignal) => void
@@ -74,6 +76,32 @@ describe('system assistant HTTP', () => {
     first.abort()
     await pending
     await vi.waitFor(() => expect(signal.aborted).toBe(true))
+  })
+
+  it('admit 대기 중 연결이 닫히면 모델을 부르지 않고 슬롯을 돌려준다 (U4 리뷰 P2)', async () => {
+    await app.close()
+    await boot(loadConfig({ ...env, REQUEST_MAX_ACTIVE: '1' }))
+    const streamed = vi.fn()
+    provider = { kind: 'live', ping: async () => ({ ok: true, detail: '' }), listModels: async () => [], async *stream() { streamed(); yield { type: 'done' } } }
+    let openGate!: () => void
+    let started!: () => void
+    const gateOpened = new Promise<void>((resolve) => { openGate = resolve })
+    const txStarted = new Promise<void>((resolve) => { started = resolve })
+    txGate = async () => { started(); await gateOpened }
+    try {
+      const call = request(app.getHttpServer()).post('/api/system-assistant/messages').set('Cookie', 'mes_session=member').send({ messages: [{ role: 'user', content: '대기' }] })
+      const pending = call.then(() => undefined, () => undefined)
+      await txStarted
+      call.abort()
+      await pending
+      await new Promise((resolve) => setTimeout(resolve, 30)) // 서버가 close를 받을 시간
+      openGate()
+      const requests = app.get(RequestsService, { strict: false })
+      const release = await vi.waitFor(() => requests.admit('test'))
+      release()
+      expect(streamed).not.toHaveBeenCalled()
+      expect(writes).not.toHaveBeenCalled()
+    } finally { txGate = async () => undefined }
   })
 
   it('도우미 호출은 전역 동시 상한에 들어가고, 클라이언트가 끊으면 슬롯을 돌려준다 (U4)', async () => {

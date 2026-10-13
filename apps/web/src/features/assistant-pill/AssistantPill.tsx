@@ -69,6 +69,7 @@ export function AssistantPill() {
 
   useEffect(() => {
     const reclamp = () => { const current = useUiStore.getState().pillPos; if (current) setPos(clampPos(current)) }
+    reclamp() // 마운트·persist 복원 때도 — 더 큰 화면에서 저장한 좌표가 화면 밖에 남지 않게
     window.addEventListener('resize', reclamp)
     window.addEventListener('orientationchange', reclamp)
     return () => { window.removeEventListener('resize', reclamp); window.removeEventListener('orientationchange', reclamp) }
@@ -124,7 +125,7 @@ export function AssistantPill() {
       title={movable ? t('pill.moveHint') : undefined} style={placed ? { left: pos.x, top: pos.y } : { right: 16, bottom: 16 }}
       className={cn('fixed z-40 flex size-12 touch-none items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-2 ring-background select-none hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none', movable && 'cursor-grab active:cursor-grabbing')}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd} onKeyDown={onKeyDown} onClick={onClick}>
-      {image ? <img src={`/api/files/${encodeURIComponent(image)}/content`} alt={t('pill.characterAlt')} draggable={false} className="size-full rounded-full object-cover" /> : <Sparkles className="size-5" aria-hidden />}
+      {image ? <img src={`/api/settings/assistant-image?v=${encodeURIComponent(image)}`} alt={t('pill.characterAlt')} draggable={false} className="size-full rounded-full object-cover" /> : <Sparkles className="size-5" aria-hidden />}
     </button>
     {desktop ? <AssistantWindow open={open} chat={chat} pillRef={pillRef} pos={pos} onClose={close} /> : <SystemAssistantSheet open={open} chat={chat} onClose={() => setOpen(false)} returnFocus={() => pillRef.current?.focus()} />}
   </>

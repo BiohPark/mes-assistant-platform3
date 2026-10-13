@@ -84,6 +84,14 @@ it('창 크기가 바뀌면 저장된 위치를 다시 clamp한다', () => {
   expect(useUiStore.getState().pillPos).toEqual({ x: 800 - 48 - 8, y: 600 - 48 - 8 })
 })
 
+it('더 큰 화면에서 저장한 좌표는 처음 마운트할 때(persist 복원 포함) clamp한다 (리뷰 P2)', () => {
+  stubViewport(1280, 720)
+  useUiStore.setState({ pillPos: { x: 1800, y: 950 } })
+  renderWithProviders(<AssistantPill />)
+  expect(useUiStore.getState().pillPos).toEqual({ x: 1280 - 48 - 8, y: 720 - 48 - 8 })
+  expect(pill()).toHaveStyle({ left: `${1280 - 56}px`, top: `${720 - 56}px` })
+})
+
 it('<768에서는 우하단 고정이고 끌기·키 이동이 꺼지며 시트로 연다', async () => {
   stubViewport(600)
   useUiStore.getState().setPillPos({ x: 10, y: 10 })
@@ -101,6 +109,6 @@ it('SO가 올린 캐릭터 이미지를 대체 텍스트와 함께 보여 주고
   vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url === '/api/settings' ? { assistantImageFileId: 'img-9' } : { mode: 'mock', model: 'mock' })))
   renderWithProviders(<AssistantPill />)
   const image = await screen.findByRole('img', { name: 'AI 도우미 캐릭터' })
-  expect(image).toHaveAttribute('src', '/api/files/img-9/content')
+  expect(image).toHaveAttribute('src', '/api/settings/assistant-image?v=img-9') // 로그인 사용자 전용 조회 경로, 파일 ID로 캐시 구분
   expect(pill()).toContainElement(image)
 })

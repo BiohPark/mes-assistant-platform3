@@ -36,17 +36,19 @@ export class SystemAssistantController {
     const limit = typeof budgetSetting?.value === 'number' ? budgetSetting.value : this.config.request.budgetBytes
     if (parsed.data.messages.reduce((bytes, message) => bytes + Buffer.byteLength(message.content), 0) > limit) throw new HttpException('요청 크기 한도 초과', HttpStatus.PAYLOAD_TOO_LARGE)
     if (Buffer.byteLength(JSON.stringify({ model, messages, tools: SYSTEM_TOOLS, stream: true })) > limit) throw new HttpException('요청 크기 한도 초과', HttpStatus.PAYLOAD_TOO_LARGE)
-    const release = await this.requests.admit('assistant')
     let text = ''
     const toolCalls: ToolCall[] = []
     const controller = new AbortController()
     const onRequestClose = () => { if (!req.complete) controller.abort() }
     const onResponseClose = () => { if (!res.writableEnded) controller.abort() }
-    req.on('close', onRequestClose)
+    req.on('close', onRequestClose) // admit 대기보다 먼저 등록 — 대기 중 종료를 놓치지 않는다
     res.on('close', onResponseClose)
+    let release: (() => void) | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
     const armTimer = (ms: number) => { if (timer) clearTimeout(timer); timer = setTimeout(() => controller.abort(), ms) }
     try {
+      release = await this.requests.admit('assistant')
+      if (controller.signal.aborted) throw new Error('응답 중단') // 대기 중 연결이 닫힘 — 모델을 부르지 않고 finally에서 슬롯 반환
       await this.requests.runAuxiliary(req.user!.id, 'assistant', async (signal) => {
         armTimer(this.config.request.firstTokenMs ?? 60_000)
         for await (const chunk of this.provider.stream({ model, messages, tools: SYSTEM_TOOLS, signal, meta: { systemAssistant: true } })) {
@@ -65,7 +67,7 @@ export class SystemAssistantController {
       if (timer) clearTimeout(timer)
       req.off('close', onRequestClose)
       res.off('close', onResponseClose)
-      release()
+      release?.()
     }
     return { text, toolCalls }
   }

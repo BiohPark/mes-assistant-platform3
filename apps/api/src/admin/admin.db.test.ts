@@ -242,10 +242,15 @@ describe('SR 접수 에이전트 보호 (데모 테스트 4건)', () => {
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')
     const upload = (name: string, buffer: Buffer, mimetype = 'image/png') => ({ originalname: name, mimetype, buffer, size: buffer.length })
     const root = await mkdtemp(join(tmpdir(), 'assistant-image-'))
+    const { crc32 } = await import('./imageProbe.js')
+    const chunk = (type: string, data: Buffer) => { const length = Buffer.alloc(4); length.writeUInt32BE(data.length); const body = Buffer.concat([Buffer.from(type, 'latin1'), data]); const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body)); return Buffer.concat([length, body, crc]) }
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(513, 0); ihdr.writeUInt32BE(1, 4); ihdr[8] = 8; ihdr[9] = 6
+    const wide = Buffer.concat([png.subarray(0, 8), chunk('IHDR', ihdr), chunk('IDAT', Buffer.from([0x78, 0x9c, 0x63, 0x00])), chunk('IEND', Buffer.alloc(0))]) // 구조·CRC는 정상, 513px
     const service = new AdminService(db, new FileStorageService(root))
+    const readAll = async (stream: NodeJS.ReadableStream) => { const chunks: Buffer[] = []; for await (const part of stream) chunks.push(Buffer.from(part)); return Buffer.concat(chunks) }
     try {
+      await expect(service.assistantImageContent()).rejects.toMatchObject({ status: 404 })
       await expect(service.assistantImage('owner', upload('fake.png', Buffer.from('not a png')))).rejects.toMatchObject({ status: 400 })
-      const wide = Buffer.from(png); wide.writeUInt32BE(513, 16)
       await expect(service.assistantImage('owner', upload('wide.png', wide))).rejects.toMatchObject({ status: 400 })
       await expect(service.assistantImage('owner', upload('big.png', Buffer.concat([png, Buffer.alloc(1024 * 1024)])))).rejects.toMatchObject({ status: 413 })
       expect((await service.getSettings()).assistantImageFileId).toBeUndefined()
@@ -253,11 +258,27 @@ describe('SR 접수 에이전트 보호 (데모 테스트 4건)', () => {
       expect(first).toEqual(expect.any(String))
       const [firstRow] = await db.select().from(fileObject).where(eq(fileObject.id, first))
       expect(firstRow).toMatchObject({ kind: 'assistant_image', mime: 'image/png', deletedAt: null })
+      const content = await service.assistantImageContent() // 현재 설정이 가리키는 파일만 — 호출자 권한 검사 없이 로그인 사용자 공용(리뷰 P2)
+      expect(content).toMatchObject({ mime: 'image/png', size: png.length })
+      expect((await readAll(content.stream)).equals(png)).toBe(true)
       const second = (await service.assistantImage('owner', upload('two.png', png))).assistantImageFileId as string
       expect(second).not.toBe(first)
       expect((await db.select().from(fileObject).where(eq(fileObject.id, first)))[0]?.deletedAt).toBeInstanceOf(Date)
       expect((await service.assistantImage('owner', null)).assistantImageFileId).toBeUndefined()
       expect((await db.select().from(fileObject).where(eq(fileObject.id, second)))[0]?.deletedAt).toBeInstanceOf(Date)
+      await expect(service.assistantImageContent()).rejects.toMatchObject({ status: 404 })
     } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
+  it('AI 도우미 캐릭터: 저장소 쓰기가 실패하면 부분 파일을 지우고 설정·파일 행은 바꾸지 않는다 (U4 리뷰 P2)', async () => {
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')
+    const removed: string[] = []
+    const storage = { write: async () => { throw new Error('ENOSPC after partial write') }, remove: async (key: string) => { removed.push(key) } } as unknown as import('../files/fileStorage.service.js').FileStorageService
+    const service = new AdminService(db, storage)
+    const before = await db.select({ id: fileObject.id }).from(fileObject).where(eq(fileObject.kind, 'assistant_image'))
+    await expect(service.assistantImage('owner', { originalname: 'c.png', mimetype: 'image/png', buffer: png, size: png.length })).rejects.toThrow('ENOSPC')
+    expect(removed).toHaveLength(1)
+    expect((await service.getSettings()).assistantImageFileId).toBeUndefined()
+    expect(await db.select({ id: fileObject.id }).from(fileObject).where(eq(fileObject.kind, 'assistant_image'))).toHaveLength(before.length)
   })
 })

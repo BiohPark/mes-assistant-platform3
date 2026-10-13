@@ -66,8 +66,10 @@ test('캐릭터 이미지는 SO만 올리고, 확장자만 PNG인 파일은 거�
     await page.reload()
     const image = page.getByRole('button', { name: 'AI 도우미 열기' }).getByRole('img', { name: 'AI 도우미 캐릭터' })
     await expect(image).toBeVisible()
-    await expect(image).toHaveAttribute('src', `/api/files/${fileId}/content`)
-    expect((await page.request.get(`/api/files/${fileId}/content`)).status()).toBe(200) // 로그인 사용자 열람
+    await expect(image).toHaveAttribute('src', `/api/settings/assistant-image?v=${fileId}`)
+    const content = await page.request.get('/api/settings/assistant-image') // 로그인 사용자 열람 — 현재 설정의 파일만, 권한 검사 없이
+    expect(content.status()).toBe(200)
+    expect(content.headers()['content-type']).toMatch(/^image\/png/)
   } finally {
     expect((await api.delete(IMAGE)).status()).toBe(204)
     await api.dispose()

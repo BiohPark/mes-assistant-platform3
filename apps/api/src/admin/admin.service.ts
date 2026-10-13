@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common'
-import { and, asc, eq, or, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, or, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appSetting, appUser, assistant, assistantChecklistTemplate, assistantClassification, assistantExpectedIo, checklistItem, code, codeGroup, fileObject, task } from '../db/schema.js'
 import { lockAssistantCodes, resolveCode, resolveClassifications, writeClassifications, type ClassificationIds } from '../db/classifications.js'
@@ -196,8 +196,8 @@ export class AdminService {
       if (!this.storage) throw new Error('파일 저장소가 없습니다')
     }
     const storageKey = file ? createStorageKey(file.originalname) : null
-    if (file && storageKey) await this.storage!.write(storageKey, file.buffer)
     try {
+      if (file && storageKey) await this.storage!.write(storageKey, file.buffer) // 쓰기 실패(부분 파일)도 아래 정리 범위
       await this.db.transaction(async (tx) => {
         const [current] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'assistantImageFileId')).for('update')
         if (file && storageKey && info) {
@@ -213,6 +213,13 @@ export class AdminService {
       throw error
     }
     return this.getSettings()
+  }
+  /** 현재 설정이 가리키는 캐릭터 이미지 — 로그인 사용자 누구나(요청자 포함) 이 파일만 열람한다. 없으면 404 (U4 리뷰 P2) */
+  async assistantImageContent() {
+    const [setting] = await this.db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'assistantImageFileId'))
+    const [row] = typeof setting?.value === 'string' ? await this.db.select().from(fileObject).where(and(eq(fileObject.id, setting.value), isNull(fileObject.deletedAt))) : []
+    if (!row || !this.storage) throw new NotFoundException('캐릭터 이미지가 없습니다')
+    return { mime: row.mime, size: row.sizeBytes, stream: await this.storage.createReadStream(row.storageKey) }
   }
   async order(ids: string[], revisions: Record<string, number>) {
     if (new Set(ids).size !== ids.length) throw new BadRequestException('중복된 에이전트 ID입니다')

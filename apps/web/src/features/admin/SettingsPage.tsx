@@ -120,7 +120,7 @@ function AssistantImageForm({ fileId }: { fileId: string | null | undefined }) {
     <h2 id={headingId} className="font-semibold">{t('admin.settings.assistantImage')}</h2>
     <div className="flex flex-wrap items-center gap-3">
       <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-primary-foreground">
-        {fileId ? <img src={`/api/files/${encodeURIComponent(fileId)}/content`} alt={t('pill.characterAlt')} className="size-full object-cover" /> : <Sparkles className="size-5" aria-hidden />}
+        {fileId ? <img src={`/api/settings/assistant-image?v=${encodeURIComponent(fileId)}`} alt={t('pill.characterAlt')} className="size-full object-cover" /> : <Sparkles className="size-5" aria-hidden />}
       </span>
       <Field label={t('admin.settings.assistantImageChoose')} className="[&>label]:cursor-pointer [&>label]:rounded-lg [&>label]:border [&>label]:px-2 [&>label]:py-1">
         <input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void save(file) }} />

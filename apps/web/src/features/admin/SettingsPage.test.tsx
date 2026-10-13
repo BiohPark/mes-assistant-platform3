@@ -267,7 +267,7 @@ it('AI 도우미 캐릭터는 별도 multipart로 올리고 제거는 DELETE —
   expect(calls[0]).toMatchObject({ url: '/api/settings/assistant-image', method: 'POST' })
   expect(calls[0]!.body).toBeInstanceOf(FormData)
   expect((calls[0]!.body as FormData).get('file')).toBeInstanceOf(File)
-  expect(within(section).getByRole('img')).toHaveAttribute('src', '/api/files/img-1/content')
+  expect(within(section).getByRole('img')).toHaveAttribute('src', '/api/settings/assistant-image?v=img-1')
   await user.click(within(section).getByRole('button', { name: '캐릭터 제거' }))
   await waitFor(() => expect(within(section).queryByRole('img')).not.toBeInTheDocument())
   expect(calls[1]).toMatchObject({ url: '/api/settings/assistant-image', method: 'DELETE' })
