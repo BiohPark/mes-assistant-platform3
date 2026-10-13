@@ -60,6 +60,48 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     expect(await sr.list('staff')).toHaveLength(2)
   })
 
+  const draftService = () => {
+    const provider = { kind: 'mock' as const, ping: async () => ({ ok: true, detail: '' }), listModels: async () => ['glm-5.2'], async *stream() { yield { type: 'done' as const } } }
+    const requests = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' }), provider)
+    const suggestTitle = vi.spyOn(requests, 'suggestSrTitle').mockResolvedValue('AI 초안 제목')
+    return { service: new SrService(db, new DbTasksService(db), new EventsService(), undefined, requests), suggestTitle }
+  }
+
+  it.each(['other', 'staff', 'owner'])('denies %s another requester draft before suggesting an AI title', async (actor) => {
+    const draft = await sr.create('requester')
+    await new DbTasksService(db).appendMessage('requester', draft.threadId, { content: '비공개 접수 전 상담', kind: 'discussion' })
+    const { service, suggestTitle } = draftService()
+    await expect(service.draft(actor, draft.id)).rejects.toMatchObject({ status: 403, message: '요청자만 초안을 만들 수 있습니다' })
+    expect(suggestTitle).not.toHaveBeenCalled()
+  })
+
+  it.each(['requester', 'other', 'staff', 'owner'])('does not reveal missing SRs to %s through draft errors', async (actor) => {
+    const { service, suggestTitle } = draftService()
+    await expect(service.draft(actor, 'missing-sr')).rejects.toMatchObject({ status: 403, message: '요청자만 초안을 만들 수 있습니다' })
+    expect(suggestTitle).not.toHaveBeenCalled()
+  })
+
+  it.each(['requester', 'staff', 'owner'])('allows %s to draft their own conversation and suggest its title', async (actor) => {
+    const draft = await sr.create(actor)
+    await new DbTasksService(db).appendMessage(actor, draft.threadId, { content: '본인 접수 전 상담', kind: 'discussion' })
+    const { service, suggestTitle } = draftService()
+    expect(await service.draft(actor, draft.id)).toMatchObject({ title: 'AI 초안 제목', body: expect.stringContaining('본인 접수 전 상담') })
+    expect(suggestTitle).toHaveBeenCalledExactlyOnceWith(actor, draft.threadId)
+    await sr.delete(actor, draft.id)
+  })
+
+  it.each(['other', 'staff'])('denies %s draft saving, content editing and submission without changing the SR', async (actor) => {
+    const draft = await sr.create('requester')
+    const input = { title: '침범 제목', body: '침범 본문', attachmentIds: [] }
+    await expect(sr.title(actor, draft.id, input.title)).rejects.toMatchObject({ status: 403 })
+    await expect(sr.content(actor, draft.id, input)).rejects.toMatchObject({ status: 403 })
+    await expect(sr.submit(actor, draft.id, input)).rejects.toMatchObject({ status: 403 })
+    expect((await db.select().from(serviceRequest).where(eq(serviceRequest.id, draft.id)))[0])
+      .toMatchObject({ title: '', body: '', status: 'draft', code: null })
+    expect(await db.select().from(activityLog).where(eq(activityLog.srId, draft.id))).toEqual([])
+    expect(await new DbTasksService(db).messages(draft.threadId, 'requester')).toEqual([])
+  })
+
   it('종료된 응답 기록이 있는 접수 전 초안은 삭제하지 않는다', async () => {
     const draft = await sr.create('requester')
     const provider = { kind: 'mock' as const, ping: async () => ({ ok: true, detail: '' }), listModels: async () => ['glm-5.2'],
@@ -146,6 +188,34 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     const requester = await open(cursor, 'requester')
     expect(requester.write.mock.calls.flat().join('')).toContain('secret')
     requester.emit('close')
+  })
+
+  it.each(['other', 'staff', 'requester', 'owner'].flatMap((actor) => ['live', 'replay'].map((delivery) => ({ actor, delivery }))))(
+    'filters SR typing for $actor on $delivery delivery while preserving ordinary typing', async ({ actor, delivery }) => {
+    const draft = await sr.create('requester')
+    const ordinary = await new DbTasksService(db).create('staff', { assistantId })
+    const events = new EventsService(), controller = new EventsController(events, db)
+    const open = async (lastId: string) => {
+      const stream = new EventEmitter() as EventEmitter & { status: ReturnType<typeof vi.fn>; set: ReturnType<typeof vi.fn>;
+        flushHeaders: ReturnType<typeof vi.fn>; write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> }
+      stream.status = vi.fn(() => stream); stream.set = vi.fn(() => stream); stream.flushHeaders = vi.fn()
+      stream.write = vi.fn(() => true); stream.end = vi.fn()
+      await controller.stream({ user: { id: actor } } as never, stream as unknown as Response, lastId)
+      return stream
+    }
+    const cursor = events.cursor()
+    let stream = delivery === 'live' ? await open(cursor) : undefined
+    const canReadSr = actor === 'requester' || actor === 'owner'
+    try {
+      events.typing(draft.threadId, 'requester', '비공개 입력자')
+      events.typing(ordinary.task.threadId!, 'staff', '일반 입력자')
+      stream ??= await open(cursor)
+      // Delivery is ordered: seeing the ordinary event means the SR event has been processed.
+      await vi.waitFor(() => expect(stream!.write.mock.calls.flat().join('')).toContain('일반 입력자'))
+      const chunks = stream.write.mock.calls.flat().join('')
+      expect(chunks.includes(draft.threadId)).toBe(canReadSr)
+      expect(chunks.includes('비공개 입력자')).toBe(canReadSr)
+    } finally { stream?.emit('close') }
   })
 
   it('notifies requester for status and result; rejects draft and empty share', async () => {
