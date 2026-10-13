@@ -4,14 +4,14 @@ import { SR_MANUAL_STATUSES } from '@mes/domain'
 import type { AuthedRequest } from '../auth/guards.js'
 import { SrService } from './sr.service.js'
 
-const submitSchema = z.object({ title: z.string(), titleSource: z.enum(['ai', 'manual']).optional(), body: z.string(), attachmentIds: z.array(z.string()).optional() }).strict()
+const submitSchema = z.object({ title: z.string(), titleSource: z.enum(['ai', 'manual']).optional(), body: z.string(), attachmentIds: z.array(z.string()).optional(), updatedAt: z.iso.datetime().optional() }).strict()
 const titleSchema = z.object({ title: z.string() }).strict()
 /** 수동 변경은 완료·반려·다시 열기(in_progress)만. 접수됨·결과 공유는 자동 전환으로만 들어간다. */
 const statusSchema = z.object({ status: z.enum(SR_MANUAL_STATUSES), reason: z.string().max(500).optional() }).strict()
 const refineSchema = z.object({ title: z.string(), body: z.string() }).strict()
 const taskSchema = z.object({ assistantId: z.string().min(1), forceNew: z.boolean().optional() }).strict()
 const resultSchema = z.object({ taskId: z.string().optional(), text: z.string().optional(), fileIds: z.array(z.string()).optional() }).strict()
-const contentSchema = z.object({ title: z.string(), body: z.string(), attachmentIds: z.array(z.string()), titleSource: z.enum(['ai', 'manual']).optional() }).strict()
+const contentSchema = z.object({ title: z.string(), body: z.string(), attachmentIds: z.array(z.string()), titleSource: z.enum(['ai', 'manual']).optional(), updatedAt: z.iso.datetime().optional() }).strict()
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value)
   if (!result.success) throw new BadRequestException('요청 형식이 올바르지 않습니다')

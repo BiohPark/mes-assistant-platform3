@@ -46,4 +46,26 @@ describe('events HTTP stream', () => {
     events.publish('task.updated', { taskId: 'again' })
     expect(stream.write).toHaveBeenCalledTimes(writes)
   })
+
+  it('no duplicate after resync for an event already covered by the resync cursor', async () => {
+    const events = new EventsService(), controller = new EventsController(events, unusedDb)
+    const replay = events.replay.bind(events)
+    vi.spyOn(events, 'replay').mockImplementationOnce((cursor) => {
+      events.publish('task.updated', { taskId: 'covered' })
+      return replay(cursor)
+    })
+    const stream = response()
+    await controller.stream(actor, stream as unknown as Response, 'old-boot:1')
+    expect(stream.write.mock.calls.flat().join('')).toContain('event: resync')
+    expect(stream.write.mock.calls.flat().join('')).not.toContain('covered')
+    const cursor = (stream.write.mock.calls[0]![0] as string).match(/^id: (.+)$/m)![1]!
+    stream.emit('close')
+    const reconnect = response()
+    await controller.stream(actor, reconnect as unknown as Response, cursor)
+    expect(reconnect.write).not.toHaveBeenCalled()
+    events.publish('task.updated', { taskId: 'new' })
+    await vi.waitFor(() => expect(reconnect.write).toHaveBeenCalledTimes(1))
+    reconnect.emit('close')
+  })
+
 })

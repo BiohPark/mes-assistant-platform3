@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { SrDetail } from '@/api/sr'
@@ -12,8 +13,44 @@ const draft: SrDetail = { id: 'sr', code: '', requesterId: 'u', title: '', title
 const files: Record<string, unknown> = { f1: { id: 'f1', name: '알람.txt', version: 1, size: 10, source: 'upload' }, f2: { id: 'f2', name: '화면.png', version: 1, size: 10, source: 'upload' } }
 afterEach(() => vi.unstubAllGlobals())
 
+it.each(['status', 'version'] as const)('discards a pending draft when the SR %s changes', async (change) => {
+  let release!: (value: Response) => void
+  let current = draft
+  const writes: unknown[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/draft')) return new Promise<Response>((resolve) => { release = resolve })
+    if (url.startsWith('/api/files/')) return jsonResponse(200, files[url.split('/')[3]!])
+    if (init?.method === 'PATCH') writes.push(JSON.parse(String(init.body)))
+    return jsonResponse(200, current)
+  }))
+  let refresh!: (value: SrDetail) => void
+  function Harness() {
+    const [value, setValue] = useState(draft)
+    refresh = setValue
+    return <TooltipProvider><SrConvertSheet sr={value} open onOpenChange={() => undefined} onSaved={() => undefined} /></TooltipProvider>
+  }
+  renderWithProviders(<Harness />)
+  const sheet = await screen.findByRole('dialog')
+  expect(within(sheet).getByRole('status')).toBeInTheDocument()
+  current = { ...draft, title: '다른 창의 제목', body: '다른 창의 본문', titleSource: 'manual', attachmentIds: ['f1'],
+    status: change === 'status' ? 'submitted' : 'draft', updatedAt: change === 'version' ? '2026-10-02' : draft.updatedAt }
+  act(() => refresh(current))
+  expect(within(sheet).queryByRole('status')).not.toBeInTheDocument()
+  await act(async () => { release(jsonResponse(200, { title: '늦은 AI 제목', body: '늦은 AI 본문' })) })
+  expect(within(sheet).queryByRole('status')).not.toBeInTheDocument()
+  if (change === 'status') {
+    expect(within(sheet).getByRole('textbox', { name: 'SR 제목' })).toHaveValue(current.title)
+    expect(within(sheet).getByRole('textbox', { name: 'SR 본문' })).toHaveValue(current.body)
+    await userEvent.click(within(sheet).getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(writes).toEqual([{ title: current.title, body: current.body, titleSource: 'manual', attachmentIds: ['f1'], updatedAt: current.updatedAt }]))
+  } else {
+    expect(within(sheet).getByRole('textbox', { name: 'SR 제목' })).toHaveValue('')
+    expect(within(sheet).getByRole('textbox', { name: 'SR 본문' })).toHaveValue('')
+  }
+})
+
 function mount(sr: SrDetail, fetchImpl: (url: string, init?: RequestInit) => Promise<Response>) {
-  vi.stubGlobal('fetch', vi.fn(fetchImpl))
+  vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => url === '/api/service-requests/sr' && init?.method === 'GET' ? Promise.resolve(jsonResponse(200, sr)) : fetchImpl(url, init)))
   const onSaved = vi.fn()
   renderWithProviders(<TooltipProvider><SrConvertSheet sr={sr} open onOpenChange={() => undefined} onSaved={onSaved} /></TooltipProvider>)
   return onSaved
@@ -55,7 +92,7 @@ it('첨부는 기본 전부 선택이고 해제한 파일은 접수에서 빠지
   await userEvent.click(within(sheet).getByRole('tab', { name: '미리보기' }))
   expect(await within(sheet).findByText('굵게', { selector: 'strong' })).toBeInTheDocument()
   await userEvent.click(within(sheet).getByRole('button', { name: '접수 제출' }))
-  await waitFor(() => expect(bodies).toEqual([{ title: 'AI 제목', titleSource: 'ai', body: '**굵게** 본문', attachmentIds: ['f1'] }]))
+  await waitFor(() => expect(bodies).toEqual([{ title: 'AI 제목', titleSource: 'ai', body: '**굵게** 본문', attachmentIds: ['f1'], updatedAt: draft.updatedAt }]))
 })
 
 it('AI로 다듬기는 제안만 보여 주고, 사람이 적용을 눌러야 제목·본문에 반영된다', async () => {
@@ -96,7 +133,7 @@ it('접수 내용 수정은 후보 전체를 나열하되 저장된 선택만 �
   await userEvent.click(second)
   expect(second).toBeChecked()
   await userEvent.click(within(sheet).getByRole('button', { name: '저장' }))
-  await waitFor(() => expect(bodies).toEqual([{ title: '접수 제목', titleSource: 'manual', body: '접수 본문', attachmentIds: ['f1', 'f2'] }]))
+  await waitFor(() => expect(bodies).toEqual([{ title: '접수 제목', titleSource: 'manual', body: '접수 본문', attachmentIds: ['f1', 'f2'], updatedAt: draft.updatedAt }]))
   expect(fetch).not.toHaveBeenCalledWith('/api/service-requests/sr/draft', expect.anything())
 })
 
@@ -129,4 +166,49 @@ it('처리가 시작된 접수 내용은 읽기 전용으로 보여 주고 제�
   expect(within(sheet).queryByRole('button', { name: '저장' })).not.toBeInTheDocument()
   expect(within(sheet).queryByRole('button', { name: 'AI로 다듬기' })).not.toBeInTheDocument()
   expect(fetch).not.toHaveBeenCalledWith('/api/service-requests/sr/draft', expect.anything())
+})
+
+
+it('dirty sheet survives list refresh and warns before saving a stale updatedAt', async () => {
+  const sr: SrDetail = { ...draft, title: '접수 제목', body: '원본 본문', status: 'submitted', attachmentIds: ['f1'] }
+  const writes = vi.fn()
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.startsWith('/api/files/')) return jsonResponse(200, files[url.split('/')[3]!])
+    if (init?.method === 'PATCH') writes()
+    return jsonResponse(200, { ...sr, updatedAt: '2026-10-02' })
+  }))
+  const onSaved = vi.fn()
+  const view = (value: SrDetail) => <TooltipProvider><SrConvertSheet sr={value} open onOpenChange={() => undefined} onSaved={onSaved} /></TooltipProvider>
+  let refresh!: (value: SrDetail) => void
+  function Harness() { const [value, setValue] = useState(sr); refresh = setValue; return view(value) }
+  renderWithProviders(<Harness />)
+  const sheet = await screen.findByRole('dialog')
+  await userEvent.type(within(sheet).getByRole('textbox', { name: 'SR 제목' }), ' 내 수정')
+  await userEvent.type(within(sheet).getByRole('textbox', { name: 'SR 본문' }), ' 내 본문')
+  await userEvent.click(await within(sheet).findByRole('checkbox', { name: '화면.png' }))
+  act(() => refresh({ ...sr, title: '외부 변경', body: '외부 본문', attachmentIds: [], candidateAttachmentIds: [...sr.candidateAttachmentIds], updatedAt: '2026-10-02' }))
+  expect(within(sheet).getByRole('textbox', { name: 'SR 제목' })).toHaveValue('접수 제목 내 수정')
+  expect(within(sheet).getByRole('textbox', { name: 'SR 본문' })).toHaveValue('원본 본문 내 본문')
+  expect(within(sheet).getByRole('checkbox', { name: '알람.txt' })).toBeChecked()
+  expect(within(sheet).getByRole('checkbox', { name: '화면.png' })).toBeChecked()
+  await userEvent.click(within(sheet).getByRole('button', { name: '저장' }))
+  expect(await within(sheet).findByRole('alert')).toHaveTextContent('다른 변경')
+  expect(writes).not.toHaveBeenCalled()
+  expect(onSaved).not.toHaveBeenCalled()
+})
+
+
+it('warns on a server 409 after the preflight GET and preserves local input', async () => {
+  const sr: SrDetail = { ...draft, title: '원래 제목', status: 'submitted' }
+  const onSaved = mount(sr, async (url) => {
+    if (url.startsWith('/api/files/')) return jsonResponse(200, files[url.split('/')[3]!])
+    if (url.endsWith('/content')) return jsonResponse(409, { message: '다른 변경이 있습니다' })
+    return jsonResponse(200, sr)
+  })
+  const sheet = await screen.findByRole('dialog')
+  await userEvent.type(within(sheet).getByRole('textbox', { name: 'SR 제목' }), ' 수정')
+  await userEvent.click(within(sheet).getByRole('button', { name: '저장' }))
+  expect(await within(sheet).findByRole('alert')).toHaveTextContent('입력은 유지됩니다')
+  expect(within(sheet).getByRole('textbox', { name: 'SR 제목' })).toHaveValue('원래 제목 수정')
+  expect(onSaved).not.toHaveBeenCalled()
 })

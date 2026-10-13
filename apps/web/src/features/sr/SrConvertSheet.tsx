@@ -1,9 +1,10 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useT } from '@/i18n'
 import { srStage } from '@mes/domain'
 import { useEffect, useRef, useState } from 'react'
 import { Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
-import { contentSr, draftSr, refineSr, submitSr, type SrDetail } from '@/api/sr'
+import { contentSr, draftSr, getSr, refineSr, submitSr, SrApiError, type SrDetail } from '@/api/sr'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -20,6 +21,7 @@ import { useSrFiles } from './SrAttachments'
  */
 export function SrConvertSheet({ sr, open, onOpenChange, onSaved }: { sr: SrDetail; open: boolean; onOpenChange: (open: boolean) => void; onSaved: () => void }) {
   const t = useT()
+  const query = useQueryClient()
   // 접수됨(옛 reviewing 포함)까지 수정, 처리 중부터 읽기 전용 — 서버 content() 규칙과 같다
   const mode = sr.status === 'draft' ? 'convert' : srStage(sr.status) === 'submitted' ? 'edit' : 'view'
   const readOnly = mode === 'view'
@@ -33,23 +35,42 @@ export function SrConvertSheet({ sr, open, onOpenChange, onSaved }: { sr: SrDeta
   const [proposal, setProposal] = useState<{ title: string; body: string } | null>(null)
   // 사람이 고친 칸은 늦게 도착한 AI 초안이 덮어쓰지 않는다(데모 manualRef).
   const manualTitle = useRef(false), manualBody = useRef(false)
+  const dirty = useRef(false)
+  const baseline = useRef(sr.updatedAt)
+  const latest = useRef(sr)
+  latest.current = sr
+  const cancelDraft = useRef<(() => void) | null>(null)
+  const [conflict, setConflict] = useState(false)
   // 후보(이 SR의 파일 전체)를 나열하고 선택만 보낸다. 초안은 전부 선택이 기본, 수정·보기는 저장된 선택(attachmentIds)을 복원한다(데모 SrConvertDialog).
   const candidates = sr.candidateAttachmentIds
   const files = useSrFiles(candidates)
+  // 열린 Sheet의 SR 상태·버전이 바뀌면 이전 초안 요청을 폐기한다. 초기화는 열기·SR 전환 때만 한다.
+  useEffect(() => { cancelDraft.current?.() }, [sr.id, sr.status, sr.updatedAt])
   useEffect(() => {
     if (!open) return
+    const sr = latest.current
+    const candidates = sr.candidateAttachmentIds
+    dirty.current = false; baseline.current = sr.updatedAt; setConflict(false)
     manualTitle.current = false; manualBody.current = false
-    setProposal(null); setSelected(sr.status === 'draft' ? candidates : sr.attachmentIds)
+    setLoading(false); setProposal(null); setSelected(sr.status === 'draft' ? candidates : sr.attachmentIds)
     if (sr.status !== 'draft') { setTitle(sr.title); setBody(sr.body); setSource(sr.titleSource === 'manual' ? 'manual' : 'ai'); return }
     setTitle(''); setBody(''); setSource('ai'); setLoading(true)
     let cancelled = false
+    const isCurrent = () => !cancelled && latest.current.id === sr.id && latest.current.status === sr.status && latest.current.updatedAt === sr.updatedAt
+    cancelDraft.current = () => { cancelled = true; setLoading(false) }
     void draftSr(sr.id).then((draft) => {
-      if (cancelled) return
+      if (!isCurrent()) return
       if (!manualTitle.current) setTitle(draft.title)
       if (!manualBody.current) setBody(draft.body)
-    }).catch((error) => { if (!cancelled) toast.error(String(error)) }).finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [open, sr.id, sr.status, sr.title, sr.body, sr.titleSource, sr.attachmentIds, candidates])
+    }).catch((error) => { if (isCurrent()) toast.error(String(error)) }).finally(() => { if (isCurrent()) setLoading(false) })
+    return () => { cancelled = true; cancelDraft.current = null }
+  }, [open, sr.id])
+  useEffect(() => {
+    if (!open || dirty.current) return
+    baseline.current = sr.updatedAt
+    if (sr.status === 'draft') { setSelected(sr.candidateAttachmentIds); return }
+    setTitle(sr.title); setBody(sr.body); setSource(sr.titleSource === 'manual' ? 'manual' : 'ai'); setSelected(sr.attachmentIds)
+  }, [open, sr.id, sr.status, sr.title, sr.body, sr.titleSource, sr.attachmentIds, sr.candidateAttachmentIds, sr.updatedAt])
   async function refine() {
     setRefining(true)
     try { setProposal(await refineSr(sr.id, { title, body })) }
@@ -58,33 +79,43 @@ export function SrConvertSheet({ sr, open, onOpenChange, onSaved }: { sr: SrDeta
   }
   function applyProposal() {
     if (!proposal) return
-    manualTitle.current = true; manualBody.current = true
+    dirty.current = true; manualTitle.current = true; manualBody.current = true
     setTitle(proposal.title); setBody(proposal.body); setSource('ai'); setProposal(null)
+  }
+  function showConflict() {
+    setConflict(true)
+    void query.invalidateQueries({ queryKey: ['sr'] })
   }
   async function submit() {
     setBusy(true)
     try {
-      const input = { title, titleSource: source, body, attachmentIds: selected }
+      const current = await getSr(sr.id)
+      if (current.updatedAt !== baseline.current) { showConflict(); return }
+      const input = { title, titleSource: source, body, attachmentIds: selected, updatedAt: baseline.current }
       const saved = mode === 'convert' ? await submitSr(sr.id, input) : await contentSr(sr.id, input)
       toast.success(mode === 'convert' ? t('sr.submitted', { code: saved.code }) : t('sr.contentSaved'))
       onOpenChange(false)
       onSaved()
-    } catch (error) { toast.error(String(error)) } finally { setBusy(false) }
+    } catch (error) {
+      if (error instanceof SrApiError && error.status === 409) showConflict()
+      else toast.error(String(error))
+    } finally { setBusy(false) }
   }
   const fileName = (id: string) => files.find((file) => file.id === id)?.name ?? t('sr.attachment', { number: candidates.indexOf(id) + 1 })
   return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent className="w-full sm:max-w-xl">
     <SheetHeader><SheetTitle>{t(mode === 'convert' ? 'sr.convert' : mode === 'edit' ? 'sr.editContent' : 'sr.viewContent')}</SheetTitle>
       <SheetDescription>{t(mode === 'convert' ? 'sr.convertDescription' : mode === 'edit' ? 'sr.editDescription' : 'srFlow.readOnlyDescription')}</SheetDescription></SheetHeader>
+    {conflict && <p role="alert" className="text-sm text-destructive">{t('sr.contentConflict')}</p>}
     {loading && <p role="status" className="text-xs text-muted-foreground">{t('srFlow.loadingDraft')}</p>}
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2"><Label htmlFor="sr-sheet-title">{t('sr.title')}</Label>
         <span className="text-xs text-muted-foreground">{t(source === 'manual' ? 'srFlow.manualTitle' : 'srFlow.aiTitle')}</span></div>
-      <Input id="sr-sheet-title" aria-label={t('sr.title')} value={title} readOnly={readOnly} onChange={(event) => { manualTitle.current = true; setSource('manual'); setTitle(event.target.value) }} />
+      <Input id="sr-sheet-title" aria-label={t('sr.title')} value={title} readOnly={readOnly} onChange={(event) => { dirty.current = true; setConflict(false); manualTitle.current = true; setSource('manual'); setTitle(event.target.value) }} />
     </div>
     <Tabs defaultValue="edit" className="gap-2">
       <div className="flex items-center justify-between gap-2"><TabsList><TabsTrigger value="edit">{t('srFlow.edit')}</TabsTrigger><TabsTrigger value="preview">{t('srFlow.preview')}</TabsTrigger></TabsList>
         {!readOnly && <Button type="button" size="xs" variant="ghost" onClick={() => void refine()} disabled={refining || loading || (!title.trim() && !body.trim())}><Sparkles data-icon="inline-start" />{t(refining ? 'srFlow.refining' : 'srFlow.refine')}</Button>}</div>
-      <TabsContent value="edit"><Textarea aria-label={t('sr.body')} value={body} readOnly={readOnly} rows={10} className="text-xs" onChange={(event) => { manualBody.current = true; setBody(event.target.value) }} /></TabsContent>
+      <TabsContent value="edit"><Textarea aria-label={t('sr.body')} value={body} readOnly={readOnly} rows={10} className="text-xs" onChange={(event) => { dirty.current = true; setConflict(false); manualBody.current = true; setBody(event.target.value) }} /></TabsContent>
       <TabsContent value="preview">{body.trim() ? <Markdown content={body} className="rounded-lg border p-3 text-sm" /> : <p className="text-xs text-muted-foreground">{t('srFlow.emptyPreview')}</p>}</TabsContent>
     </Tabs>
     {proposal && <section aria-label={t('srFlow.proposal')} className="space-y-2 rounded-lg border border-tone-violet-fg/40 bg-tone-violet-bg p-3 text-sm">
@@ -96,7 +127,7 @@ export function SrConvertSheet({ sr, open, onOpenChange, onSaved }: { sr: SrDeta
     </section>}
     <section className="space-y-1.5"><h3 className="text-sm font-medium">{t('sr.attachments')}</h3>
       {candidates.length ? <><p className="text-xs text-muted-foreground">{t('srFlow.attachmentsHint')}</p><ul className="space-y-1">{candidates.map((id) => <li key={id} className="flex items-center gap-2 rounded-lg border px-2 py-1 text-xs">
-        <Checkbox id={`sr-attachment-${id}`} aria-label={fileName(id)} checked={selected.includes(id)} disabled={readOnly} onCheckedChange={() => setSelected((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id])} />
+        <Checkbox id={`sr-attachment-${id}`} aria-label={fileName(id)} checked={selected.includes(id)} disabled={readOnly} onCheckedChange={() => { dirty.current = true; setConflict(false); setSelected((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id]) }} />
         <label htmlFor={`sr-attachment-${id}`} className="min-w-0 flex-1 cursor-pointer truncate">{fileName(id)}</label>
       </li>)}</ul></> : <p className="text-xs text-muted-foreground">{t('srFlow.noAttachments')}</p>}
     </section>

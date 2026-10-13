@@ -632,7 +632,7 @@ paths:
   /service-requests:
     get:
       tags: [service-requests]
-      summary: SR 목록 — mine은 본인 요청, inbox는 초안 제외. BO는 scope와 무관하게 mine 강제. 생략 시 기존 범위 유지.
+      summary: SR 목록 — mine은 본인 요청, inbox는 초안 제외. BO는 scope와 무관하게 mine 강제. 생략 시 기존 범위 유지. 항목에 taskCount(삭제되지 않은 연결 업무 수)·elapsedDays(접수 시각부터 지난 온전한 24시간 수)를 추가한다.
       parameters: [{ name: scope, in: query, required: false, schema: { type: string, enum: [mine, inbox] } }]
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ServiceRequest' } } } } }
@@ -675,9 +675,10 @@ paths:
   /service-requests/{srId}/content:
     patch:
       tags: [service-requests]
-      summary: 접수 내용 수정 (요청자·SO만, 제목·본문·첨부 선택)
+      summary: 접수 내용 수정 (요청자·SO만, 제목·본문·첨부 선택). updatedAt을 보내면 잠근 현재 행과 비교하여 불일치 시 409 (기존 클라이언트는 생략 가능)
       parameters: [{ $ref: '#/components/parameters/srId' }]
-      responses: { '204': { description: 변경 }, '403': { $ref: '#/components/responses/Problem' } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [title, body, attachmentIds], properties: { title: { type: string }, body: { type: string }, attachmentIds: { type: array, items: { type: string } }, titleSource: { enum: [ai, manual] }, updatedAt: { type: string, format: date-time, description: 편집 시작 시 응답의 updatedAt } } } } } }
+      responses: { '200': { description: 변경, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }, '403': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' } }
   /service-requests/{srId}/status:
     patch:
       tags: [service-requests]
@@ -695,12 +696,13 @@ paths:
   /service-requests/{srId}/submit:
     post:
       tags: [service-requests]
-      summary: 접수로 전환 (요청자·SO만, SR-YYYY-NNNN 발급·태그·접수 에이전트 소유자 알림)
+      summary: 접수로 전환 (요청자·SO만, SR-YYYY-NNNN 발급·태그·접수 에이전트 소유자 알림). updatedAt은 선택이며 잠근 행과 불일치 시 409
       parameters: [{ $ref: '#/components/parameters/srId' }]
-      requestBody: { content: { application/json: { schema: { type: object, required: [title, body], properties: { title: { type: string }, titleSource: { enum: [ai, manual] }, body: { type: string }, attachmentIds: { type: array, items: { type: string } } } } } } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [title, body], properties: { title: { type: string }, titleSource: { enum: [ai, manual] }, body: { type: string }, attachmentIds: { type: array, items: { type: string } }, updatedAt: { type: string, format: date-time } } } } } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }
         '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /service-requests/{srId}/tasks:
     post:
       tags: [service-requests]
@@ -819,7 +821,7 @@ paths:
   /events:
     get:
       tags: [misc]
-      summary: 변경 알림 SSE (세션 인증). 이벤트 task.created · task.updated · message.appended · request.updated(status·phase) · file.updated · input.updated · context.updated · presence.typing(until, 저장 없음) · notification.created(S4) · resync. id는 `{bootId}:{seq}`, 15 s 하트비트, 5분/1000건 재전송 버퍼. Last-Event-ID가 범위 밖·bootId 불일치·첫 연결(커서 없음)이면 현재 커서를 담은 resync를 먼저 보낸다(클라이언트는 전체 무효화). 느린 클라이언트(배압)는 연결을 끊는다 — 재접속으로 복구. S3 ③ · S3-design §3.3
+      summary: 변경 알림 SSE (세션 인증). 이벤트 task.created · task.updated · message.appended · request.updated(status·phase) · file.updated · input.updated · context.updated · presence.typing(until, 저장 없음) · notification.created(S4) · sr.updated({srId}만 — 요청자·연결 업무 담당자·SO에게만 실시간/재전송, BO는 본인 SR만; 수신 후 SR 쿼리 무효화·GET 재조회로 권한 재적용) · resync. id는 `{bootId}:{seq}`, 15 s 하트비트, 5분/1000건 재전송 버퍼. Last-Event-ID가 범위 밖·bootId 불일치·첫 연결(커서 없음)이면 현재 커서를 담은 resync를 먼저 보낸다(클라이언트는 전체 무효화). 느린 클라이언트(배압)는 연결을 끊는다 — 재접속으로 복구. S3 ③ · S3-design §3.3
       description: |
         message.appended · request.updated · presence.typing은 스레드에 연결된 SR의 열람 권한을 실시간·재전송 모두에서 검사한다. 일반 대화 스레드의 수신 동작은 유지한다. notification.created는 수신자(userId)에게만 보낸다.
         나머지 공개 이벤트 점검: task.created는 taskId·assistantId, task.updated · file.updated · input.updated · context.updated는 taskId만 담는다. SR 코드·제목·본문·사용자 이름은 담지 않지만, SR 연계 업무의 식별자와 활동 사실은 모든 구독자에게 전달된다. resync의 data는 빈 객체다.
@@ -1224,6 +1226,12 @@ components:
         body: { type: string }
         status: { enum: [draft, submitted, reviewing, in_progress, responded, done, rejected] }
         threadId: { type: string }
+        taskCount: { type: integer, minimum: 0, description: 삭제되지 않은 연결 업무 수 }
+        elapsedDays: { type: integer, minimum: 0, description: 접수 시각 기준 floor((now - submittedAt) / 86400000). 미접수는 0이며 갱신·다시 열기로 리셋하지 않음 }
+        submittedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        conversations: { type: array, description: BO는 빈 배열. 내부 사용자에게 연결 대화 코드와 소유자·담당자 ID 제공, items: { type: object, properties: { id: { type: string }, code: { type: string }, title: { type: string }, status: { type: string }, threadId: { type: [string, 'null'] }, ownerId: { type: string }, assigneeIds: { type: array, items: { type: string } } } } }
         attachmentIds: { type: array, items: { type: string }, description: 접수 첨부 정본 — 접수 본문 메시지의 첨부. submit·content에서 사람이 고른 것만(초안은 빈 배열) }
         candidateAttachmentIds: { type: array, items: { type: string }, description: 첨부 후보 — 이 SR에 업로드된 파일 전체(채팅 메시지 첨부 포함, 업로드순). 전환·수정 Sheet가 나열하고 선택은 attachmentIds로 보낸다 (U9) }
         results: { type: array, items: { type: object, properties: { id: { type: string }, taskId: { type: string }, text: { type: string }, fileIds: { type: array, items: { type: string } }, by: { type: string }, byName: { type: string }, at: { type: string, format: date-time } } } }
