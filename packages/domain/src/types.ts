@@ -260,7 +260,10 @@ export interface RequestInfo {
   bytes: number
   limitBytes: number
   inputs: RequestInput[]
+  /** 태그에서 뽑은 SR 번호(접수 여부 무관) */
   srCodes: string[]
+  /** 본문이 프롬프트에 실제로 들어간 SR — 태그 중 접수된 것만. 트레이(estimate)와 전송이 같은 조립 결과를 본다 */
+  srs: Array<{ code: string; title: string }>
   /** 다시 시도한 이전 답변 */
   retryOf?: ID
 }
