@@ -8,6 +8,7 @@ import type { LlmSettings } from '@mes/domain'
 const MODELS_TIMEOUT_MS = 15_000
 const MODELS_MAX_BYTES = 4 * 1024 * 1024
 const FRAME_TOO_LARGE = '응답 프레임 크기 초과'
+const TOOL_REQUEST_REJECTED = new Set([400, 404, 405, 415, 422])
 
 function joinUrl(base: string, path: string): string {
   return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
@@ -97,7 +98,6 @@ export class OpenAICompatibleProvider implements ChatProvider {
       const delivery = enhanced ? { mode: 'tools' as const, ...extras } : { mode: attempt ? 'fallback' as const : 'basic' as const }
       if (req.signal?.aborted) { yield { type: 'error', message: '요청이 취소되었습니다.' }; return }
       await req.onDispatch?.(delivery, body)
-      let firstFrame = false
       let res: Response | undefined
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
       try {
@@ -106,7 +106,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
         }, { timeoutMs: limits.timeoutMs, maxResponseBytes: limits.maxResponseBytes, signal: req.signal })
         if (!res.ok || !res.body) {
           await res.body?.cancel().catch(() => undefined)
-          if (enhanced && res.status >= 400 && res.status < 600 && !req.signal?.aborted) continue
+          if (enhanced && TOOL_REQUEST_REJECTED.has(res.status) && !req.signal?.aborted) continue
           yield { type: 'error', message: `LLM 서비스 오류 (HTTP ${res.status})` }
           return
         }
@@ -123,7 +123,6 @@ export class OpenAICompatibleProvider implements ChatProvider {
           const { events, rest } = parseSseLines(buffer)
           buffer = rest
           for (const ev of events) {
-            firstFrame = true
             if (ev === '[DONE]') continue
             if (Number.isFinite(maxFrameBytes) && encoder.encode(ev).byteLength > maxFrameBytes) {
               await reader.cancel().catch(() => undefined)
@@ -162,7 +161,8 @@ export class OpenAICompatibleProvider implements ChatProvider {
         yield { type: 'done' }
         return
       } catch (e) {
-        if (enhanced && !firstFrame && !req.signal?.aborted && toLimitedFetchError(e).code === 'network') continue
+        // 응답·스트림이 시작되었거나 실행 여부가 불명확하면 자동 재전송하지 않는다.
+        if (enhanced && !res && !req.signal?.aborted && toLimitedFetchError(e).requestNotSent) continue
         yield { type: 'error', message: errorMessage(e) }
         return
       } finally {

@@ -121,8 +121,9 @@ function AiSummary() {
 export function SettingsPage() {
   const t = useT()
   const query = useQuery({ queryKey: ['settings'], queryFn: getSettings })
+  const { owuiTools: _owuiTools, ...generalSettings } = query.data ?? {}
   return <><TopBar title={t('nav.settings')} /><div className="flex-1 overflow-auto p-4"><div className="mx-auto grid max-w-5xl items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-    {query.data ? <div className="space-y-4"><SettingsForm key={JSON.stringify(query.data)} initial={query.data} /><OwuiToolsForm key={query.data.owuiTools ?? 'auto'} initial={query.data} /></div> : <p>{t('admin.settings.loading')}</p>}
+    {query.data ? <div className="space-y-4"><SettingsForm key={JSON.stringify(generalSettings)} initial={query.data} /><OwuiToolsForm key={query.data.owuiTools ?? 'auto'} initial={query.data} /></div> : <p>{t('admin.settings.loading')}</p>}
     <AiSummary />
   </div></div></>
 }

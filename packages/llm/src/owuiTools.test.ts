@@ -60,7 +60,7 @@ describe('OpenWebUI automatic tool delivery', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect(bodies(fetcher)[0]).toEqual({ ...req, tools, stream: true })
   })
-  it.each(['timeout', 'redirect', 'response_too_large'] as const)('never retries a local limit/policy error: %s', async code => {
+  it.each(['timeout', 'redirect', 'response_too_large', 'aborted'] as const)('never retries a local limit/policy error: %s', async code => {
     const fetcher = upstream(() => { throw new LimitedFetchError(code) })
     expect((await collect(new OpenAICompatibleProvider(settings))).at(-1)).toMatchObject({ type: 'error' })
     expect(bodies(fetcher)).toHaveLength(1)
@@ -104,7 +104,7 @@ describe('OpenWebUI automatic tool delivery', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/models') ? new Response('', { status: 500 }) : ok()))
     expect(await collect(new OpenAICompatibleProvider(settings))).toEqual([{ type: 'delta', text: 'OK' }, { type: 'done' }])
   })
-  it.each([400, 401, 422, 500, 503])('retries HTTP %i exactly once with the original files and messages', async status => {
+  it.each([400, 404, 405, 415, 422])('retries HTTP %i exactly once with the original files and messages', async status => {
     const fetcher = upstream((_, count) => count === 1 ? new Response('private error', { status }) : ok())
     const onDispatch = vi.fn()
     expect(await collect(new OpenAICompatibleProvider(settings), { ...req, onDispatch })).toEqual([{ type: 'delta', text: 'OK' }, { type: 'done' }])
@@ -112,20 +112,50 @@ describe('OpenWebUI automatic tool delivery', () => {
     expect(onDispatch.mock.calls.map(([delivery]) => delivery.mode)).toEqual(['tools', 'fallback'])
     expect(onDispatch.mock.calls[1]![0]).toEqual({ mode: 'fallback' })
   })
+  it.each([401, 403, 408, 409, 429, 500, 502, 503, 504])('never retries HTTP %i when execution is not ruled out', async status => {
+    const fetcher = upstream(() => new Response('private error', { status }))
+    const onDispatch = vi.fn()
+    expect(await collect(new OpenAICompatibleProvider(settings), { ...req, onDispatch })).toEqual([{ type: 'error', message: `LLM 서비스 오류 (HTTP ${status})` }])
+    expect(bodies(fetcher)).toHaveLength(1)
+    expect(onDispatch.mock.calls.map(([delivery]) => delivery.mode)).toEqual(['tools'])
+  })
   it('does not retry the fallback when it fails too', async () => {
-    const fetcher = upstream(() => new Response('', { status: 500 }))
+    const fetcher = upstream((_, count) => new Response('', { status: count === 1 ? 400 : 500 }))
     expect(await collect(new OpenAICompatibleProvider(settings))).toEqual([{ type: 'error', message: 'LLM 서비스 오류 (HTTP 500)' }])
     expect(bodies(fetcher)).toHaveLength(2)
   })
-  it.each(['headers', 'partial-frame'])('retries a network failure before the first frame (%s)', async where => {
+  it.each(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH'])('retries a proven pre-connection failure (%s) with the original files and messages', async code => {
+    const fetcher = upstream((_, count) => {
+      if (count === 1) throw new TypeError('fetch failed', { cause: Object.assign(new Error('private upstream'), { code }) })
+      return ok()
+    })
+    const onDispatch = vi.fn()
+    expect(await collect(new OpenAICompatibleProvider(settings), { ...req, onDispatch })).toEqual([{ type: 'delta', text: 'OK' }, { type: 'done' }])
+    expect(bodies(fetcher)).toEqual([expect.objectContaining({ tool_ids: ['lookup', 'server:mcp:search'] }), { ...req, stream: true }])
+    expect(onDispatch.mock.calls.map(([delivery]) => delivery.mode)).toEqual(['tools', 'fallback'])
+  })
+  it('does not retry a pre-connection failure again after falling back', async () => {
+    const fetcher = upstream(() => { throw new TypeError('fetch failed', { cause: Object.assign(new Error('private'), { code: 'ECONNREFUSED' }) }) })
+    expect(await collect(new OpenAICompatibleProvider(settings))).toEqual([{ type: 'error', message: 'LLM 서비스 연결 오류' }])
+    expect(bodies(fetcher)).toHaveLength(2)
+  })
+  it.each(['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET', 'ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT'])('never retries ambiguous transport errors (%s) before response headers', async code => {
+    const fetcher = upstream(() => { throw new TypeError('fetch failed', { cause: Object.assign(new Error('private'), { code }) }) })
+    expect(await collect(new OpenAICompatibleProvider(settings))).toEqual([{ type: 'error', message: 'LLM 서비스 연결 오류' }])
+    expect(bodies(fetcher)).toHaveLength(1)
+  })
+  it.each(['headers', 'before-frame', 'partial-frame'])('never retries an unproven failure before the first frame (%s)', async where => {
     const fetcher = upstream((_, count) => {
       if (count > 1) return ok()
       if (where === 'headers') throw new TypeError('secret connection failure')
       let read = false
-      return new Response(new ReadableStream({ pull(c) { if (!read) { read = true; c.enqueue(new TextEncoder().encode('data: {')); } else c.error(new TypeError('secret')) } }))
+      return new Response(new ReadableStream({ pull(c) {
+        if (where === 'partial-frame' && !read) { read = true; c.enqueue(new TextEncoder().encode('data: {')) }
+        else c.error(new TypeError('secret', { cause: Object.assign(new Error('private'), { code: 'ECONNREFUSED' }) }))
+      } }))
     })
-    expect(await collect(new OpenAICompatibleProvider(settings))).toEqual([{ type: 'delta', text: 'OK' }, { type: 'done' }])
-    expect(bodies(fetcher)).toHaveLength(2)
+    expect(await collect(new OpenAICompatibleProvider(settings))).toEqual([{ type: 'error', message: 'LLM 서비스 연결 오류' }])
+    expect(bodies(fetcher)).toHaveLength(1)
   })
   it.each([{ sources: [] }, { choices: [{ delta: { reasoning_content: 'thinking' } }] }, { choices: [{ delta: { content: 'partial' } }] }])('never retries after the first frame: %j', async frame => {
     let read = false
