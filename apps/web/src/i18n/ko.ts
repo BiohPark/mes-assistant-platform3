@@ -75,6 +75,7 @@ export const ko = {
     openWebUi: 'OpenWebUI에서 열기', descriptionPage: '설명 페이지', description: '설명',
     expandSummary: '{name} 요약 펼치기', collapseSummary: '{name} 요약 접기',
     openConversation: '{code} {title} 열기', aiTitle: 'AI 제목', selectedInputs: '선택한 입력',
+    aiResponding: 'AI 응답 중', aiFailed: 'AI 실패', aiInterrupted: 'AI 중단', aiFilter: 'AI 상태 필터',
     daysOverdue: '{days}일 지연', today: '오늘', changeStatus: '상태 변경', status: '상태',
     statusChanged: "상태를 '{status}'(으)로 바꿨습니다.", statusChangeFailed: '상태를 바꾸지 못했습니다',
     searchConversations: '코드 · 제목 · 태그 검색', stage: '단계', stagesTitle: '업무 단계 (여러 개 선택)',
@@ -428,6 +429,7 @@ export const ko = {
       complete: '업무 완료', deleteConversation: '대화 삭제', titleLabel: '대화 제목', reopenTitle: '완료된 업무를 다시 열까요?',
       reopenDescription: '재개 사유를 이력에 기록합니다.', reopenConfirm: '재개 확인', deleteTitle: '대화를 삭제할까요?',
       deleteDescription: '메시지와 이 대화에서 만든 자료가 삭제됩니다.',
+      quickSwitch: '빠른 전환', quickSwitchResponding: '응답 중 {count}',
     },
   },
   systemAssistant: {
