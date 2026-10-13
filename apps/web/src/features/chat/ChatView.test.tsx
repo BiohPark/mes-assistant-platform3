@@ -314,7 +314,7 @@ it('confirms draft replacement, preserves current attachments and sends prefill 
     if (url === '/api/threads/h/messages') return Response.json([originalQuestion])
     if (url === '/api/files') return Response.json({ id: 'current-file', name: 'current.txt' })
     if (init?.method === 'POST' && typeof init.body === 'string') requests.push({ url, body: JSON.parse(init.body) })
-    if (url.endsWith('/estimate')) return Response.json({ bytes: 100, limitBytes: 1000, inputs: [], srCodes: [], overLimit: false })
+    if (url.endsWith('/estimate')) return Response.json({ bytes: 100, limitBytes: 1000, inputs: [], srCodes: [], srs: [], overLimit: false })
     if (url === '/api/threads/h/requests') return new Response('event: started\ndata: {"requestId":"new","replyMessageId":"new-answer"}\n\nevent: completed\ndata: {}\n\n', { status: 201 })
     return Response.json([])
   }))
