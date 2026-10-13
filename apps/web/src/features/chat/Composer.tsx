@@ -1,4 +1,4 @@
-import { useImperativeHandle, useRef, useState, type Ref } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { MessagesSquare, Paperclip, Pin, PinOff, Send, Square, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -8,6 +8,7 @@ import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
 import { useQuery } from '@tanstack/react-query'
 import { getSettings } from '@/api/admin'
 import { useT } from '@/i18n'
+import { getDraft, setDraft, type ComposerDraft } from './drafts'
 
 /** 보낼 첨부 1건. once=true면 이번 메시지에만 쓰고 대화 입력으로 고정하지 않는다 */
 export interface PendingAttachment {
@@ -47,13 +48,33 @@ interface ComposerProps {
   /** 작성 중인 글 (요청 크기 미리 계산용) */
   onDraftChange?: (text: string) => void
   clearOnSubmit?: boolean
+  /** 대화별 초안 보존 키(taskId). 있으면 텍스트·첨부·팀 의견 모드를 메모리에 두고 다시 마운트될 때 복원한다 */
+  draftKey?: string
 }
 
-export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, onSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange, clearOnSubmit = false }: ComposerProps) {
+export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, onSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange, clearOnSubmit = false, draftKey }: ComposerProps) {
   const t = useT()
-  const [discussion, setDiscussion] = useState(false)
-  const [text, setTextState] = useState('')
-  const [pending, setPending] = useState<PendingAttachment[]>([])
+  const [saved] = useState(() => (draftKey ? getDraft(draftKey) : undefined))
+  const [discussion, setDiscussionState] = useState(saved?.discussion ?? false)
+  const [text, setTextState] = useState(saved?.text ?? '')
+  const [pending, setPendingState] = useState<PendingAttachment[]>(saved?.pending ?? [])
+  // 초안은 상태 갱신과 같은 틱에 Map에 쓴다. effect로 미루면 같은 배치에서 재마운트될 때 새 인스턴스가 옛 값을 읽어 첨부가 사라진다
+  const latest = useRef<ComposerDraft>({ text, pending, discussion })
+  const resolve = <T,>(next: T | ((current: T) => T), current: T): T => (typeof next === 'function' ? (next as (current: T) => T)(current) : next)
+  // 전송 중인 내용. 초안에는 넣지 않는다 — 응답 중 다른 대화로 갔다 돌아왔을 때 보낸 질문·첨부가 되살아나 중복 요청이 되는 것을 막는다
+  const sent = useRef<{ text: string; pending: PendingAttachment[] } | null>(null)
+  // 언마운트 뒤(전환 후 늦게 끝난 전송)의 commit은 새 인스턴스가 쓰는 초안을 지우므로 막는다
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const commit = (patch: Partial<ComposerDraft>) => {
+    latest.current = { ...latest.current, ...patch }
+    if (!draftKey || !mounted.current) return
+    const inFlight = sent.current
+    setDraft(draftKey, inFlight ? { ...latest.current, text: latest.current.text === inFlight.text ? '' : latest.current.text, pending: latest.current.pending.filter((item) => !inFlight.pending.includes(item)) } : latest.current)
+  }
+  const setDiscussion = (next: boolean | ((current: boolean) => boolean)) => { const value = resolve(next, latest.current.discussion); commit({ discussion: value }); setDiscussionState(value) }
+  const setPending = (next: PendingAttachment[] | ((current: PendingAttachment[]) => PendingAttachment[])) => { const value = resolve(next, latest.current.pending); commit({ pending: value }); setPendingState(value) }
+  const writeText = (next: string | ((current: string) => string)) => { const value = resolve(next, latest.current.text); commit({ text: value }); setTextState(value) }
   const [attachmentError, setAttachmentError] = useState('')
   const settings = useQuery({ queryKey: ['settings'], queryFn: getSettings, enabled: maxAttachments === undefined }).data
   const attachmentLimit = maxAttachments ?? settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST
@@ -64,7 +85,7 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
   const canSend = !disabled && !blocked && (discussion || !streaming) && (text.trim().length > 0 || pending.length > 0)
 
   const setText = (v: string) => {
-    setTextState(v)
+    writeText(v)
     onDraftChange?.(v)
   }
 
@@ -94,11 +115,14 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
     const submittedText = text
     const f = pending
     if (clearOnSubmit) { setText(''); setPending([]) }
+    else { sent.current = { text: submittedText, pending: f }; commit({}) }
     try {
       await onSend(submittedText, f, discussion)
-      if (!clearOnSubmit) { setText(''); setPending([]) }
+      // 보낸 것만 지운다 — 응답이 화면에서 끝난 뒤 onSend가 풀리기까지 사용자가 다음 메시지(텍스트·첨부)를 준비했을 수 있다
+      if (!clearOnSubmit) { sent.current = null; writeText((current) => (current === submittedText ? '' : current)); setPending((current) => current.filter((item) => !f.includes(item))); if (latest.current.text === '') onDraftChange?.('') }
     } catch (e) {
-      if (clearOnSubmit) { setTextState((current) => current || submittedText); setPending((current) => current.length ? current : f) }
+      if (clearOnSubmit) { writeText((current) => current || submittedText); setPending((current) => current.length ? current : f) }
+      else { sent.current = null; commit({}) } // 실패한 초안은 다시 보존 대상
       toast.error(t('chat.sendFailed'), { description: e instanceof Error ? e.message : String(e) })
     } finally { submitting.current = false }
   }

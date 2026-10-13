@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useT } from '@/i18n'
 import { assistantLink1 } from '@/lib/links'
+import { QuickSwitch } from './QuickSwitch'
 import { RelatedStrip } from './RelatedStrip'
 import { TaskCompleteDialog } from './TaskCompleteDialog'
 
@@ -68,6 +69,7 @@ export function TaskHeader({ task, assistant }: { task: Task; assistant: Assista
         <span className="font-mono text-xs text-muted-foreground">{task.code}</span>
         <TaskStatusBadge status={task.status} />
         <PriorityBadge priority={task.priority} />
+        <QuickSwitch currentTaskId={task.id} />
       </div>
       <div className="flex shrink-0 items-center gap-1 self-end sm:ml-auto">
         {task.status === 'done' ? <Button size="sm" variant="outline" onClick={() => setReopen(true)}><PlayCircle data-icon="inline-start" />{t('task.header.reopen')}</Button> : <>

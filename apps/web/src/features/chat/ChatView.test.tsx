@@ -8,11 +8,12 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { ChatView } from './ChatView'
 import { queueFirstRequest } from './useChat'
 import { queryClient } from '@/api/queryClient'
+import { clearDrafts } from './drafts'
 
 const toastError = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: toastError, success: toastSuccess, warning: vi.fn() } }))
-afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear(); toastSuccess.mockClear(); queryClient.clear() })
+afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear(); toastSuccess.mockClear(); queryClient.clear(); clearDrafts() })
 
 it('reloads messages after the first AI request when the initial message fetch returns empty late', async () => {
   let finishInitialFetch!: (response: Response) => void
@@ -396,4 +397,30 @@ it('moves keyboard focus from the mobile reask menu into the composer after it c
   const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
   await waitFor(() => expect(input).toHaveValue(originalQuestion.content))
   expect(input).toHaveFocus()
+})
+
+it('keeps the staged attachment and draft across a task refetch and a chat remount, then prefills on top of them', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/threads/h/messages') return Response.json([originalQuestion])
+    if (url.endsWith('/estimate')) return Response.json({ bytes: 100, limitBytes: 1000, inputs: [], srCodes: [], srs: [], overLimit: false })
+    return Response.json([])
+  }))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const view = (key: string, task: Task) => <QueryClientProvider client={client}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ChatView key={key} task={task} /></TooltipProvider></MeContext></QueryClientProvider>
+  const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
+  const { container, rerender } = render(view('1', task))
+  await screen.findByRole('button', { name: '다시 묻기' })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['current'], 'current.txt')] } })
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '지킬 초안' } })
+  rerender(view('1', { ...task, lastActivityAt: '2026-10-13T00:00:01.000Z' } as Task)) // 재조회: 같은 대화의 새 객체
+  expect(screen.getByText('current.txt')).toBeVisible()
+  rerender(view('2', { ...task })) // 재마운트: TaskBody의 key 격리와 같은 경로
+  expect(screen.getByText('current.txt')).toBeVisible()
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  expect(input).toHaveValue('지킬 초안')
+  fireEvent.click(await screen.findByRole('button', { name: '다시 묻기' }))
+  fireEvent.click(await screen.findByRole('button', { name: '텍스트 바꾸기' }))
+  await waitFor(() => expect(input).toHaveValue(originalQuestion.content))
+  expect(screen.getByText('current.txt')).toBeVisible()
+  expect(screen.getByRole('button', { name: '첨부 제거' })).toBeInTheDocument()
 })

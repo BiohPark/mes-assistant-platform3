@@ -18,6 +18,7 @@ import { RetryFilesDialog } from './RetryFilesDialog'
 import { useChat } from './useChat'
 import { ContextTray } from './ContextTray'
 import { useRequestEstimate } from './useRequestEstimate'
+import { getDraft } from './drafts'
 import { toast } from 'sonner'
 import { useT } from '@/i18n'
 
@@ -27,7 +28,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   const selfId = useCurrentUserId()
   const query = useQueryClient()
   const [sending, setSending] = useState(false)
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(() => getDraft(task.id)?.text ?? '')
   const [askTarget, setAskTarget] = useState<Message | null>(null)
   const [prefilled, setPrefilled] = useState(false)
   const askOpener = useRef<HTMLElement | null>(null)
@@ -135,7 +136,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   {prefilled && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.askAgainHint')}</p>}
   {pendingAttempt && !sending && !chat.sending && task.status !== 'done' && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.pendingAttemptHint')}</p>}
   {task.status !== 'done' && <Composer ref={composer} disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowPin allowDiscussion
-    blockedReason={estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping}
+    blockedReason={estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping} draftKey={task.id}
     placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}
     onSend={send} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />}
   {saveTarget && assistant && <SaveAsOutputDialog key={saveTarget.id} message={saveTarget} task={task} assistant={assistant} onOpenMaterials={onOpenMaterials} onClose={() => setSaveTarget(null)} />}</FileDropZone>
