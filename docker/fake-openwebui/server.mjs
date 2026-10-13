@@ -3,10 +3,14 @@ import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 
 const port = Number(process.env.PORT ?? 8080)
+// fake-general은 OpenWebUI의 모델 편집 기록(info.meta·info.params)을 흉내 낸다 — OpenWebUI 진단(S10-5)용
 const MODELS = [
-  { id: 'fake-general', name: '가짜 범용 에이전트' },
+  { id: 'fake-general', name: '가짜 범용 에이전트', info: {
+    meta: { toolIds: ['fake_tool'], defaultFeatureIds: ['web_search'], capabilities: { vision: false, file_upload: true, citations: true }, knowledge: [{ id: 'fake-kb', name: '가짜 지식' }] },
+    params: { function_calling: 'native' } } },
   { id: 'fake-writer', name: '가짜 문서 작성 에이전트' },
 ]
+const rejectToolIds = process.env.FAKE_OWUI_REJECT_TOOL_IDS === '1'
 const uploads = new Map()
 const requests = []
 const captureRequests = process.env.FAKE_OWUI_E2E === '1'
@@ -32,6 +36,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost')
   if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: true })
   if (captureRequests && req.method === 'GET' && url.pathname === '/__e2e/requests') return json(res, 200, requests)
+  if (req.method === 'GET' && url.pathname === '/api/version') return json(res, 200, { version: '0.0.0-fake' })
   if (req.method === 'GET' && url.pathname === '/api/models') {
     return json(res, 200, { data: MODELS.map((m) => ({ ...m, object: 'model', owned_by: 'fake' })) })
   }
@@ -56,12 +61,15 @@ const server = createServer(async (req, res) => {
       requests.push(payload)
       if (requests.length > 200) requests.shift()
     }
+    if (rejectToolIds && 'tool_ids' in payload) return json(res, 400, { detail: 'tool_ids is not allowed (fake reject mode)' })
     const text = `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${lastUserText(payload.messages)} [files: ${payload.files?.length ?? 0}]`
     const id = `chatcmpl-${randomUUID()}`
     if (!payload.stream) {
       return json(res, 200, { id, object: 'chat.completion', model: payload.model, choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }] })
     }
     res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' })
+    // legacy 도구 호출은 OpenWebUI처럼 sources 프레임을 먼저 보낸다
+    if (payload.params?.function_calling === 'legacy' && payload.tool_ids?.length) res.write(`data: ${JSON.stringify({ sources: [{ source: { id: 'fake-kb' } }] })}\n\n`)
     if (/\[reasoning\]/i.test(lastUserText(payload.messages))) {
       for (const thought of ['PRIVATE_REASONING: 요청을 검토합니다. ', '자료를 비교합니다. ', '답변을 준비합니다.']) {
         if (res.destroyed) return

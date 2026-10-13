@@ -2,10 +2,10 @@ import { expect, test, type Page } from '@playwright/test'
 import { createPool } from '../../apps/api/src/db/connection.js'
 
 const password = 'e2e-password-1234'
+// 로그인 먼저 — 회원가입 409도 로그인 시도 제한(IP당 10회/10분)에 실패로 집계되어, 전체 E2E에서 뒤쪽 spec의 가입이 막힌다
 async function owner(page: Page) {
-  const signup = await page.request.post('/api/auth/signup', { data: { loginId: 'dev-owner', password } })
-  if (signup.status() === 409) await page.request.post('/api/auth/login', { data: { loginId: 'dev-owner', password } }).then((response) => expect(response.ok()).toBe(true))
-  else expect(signup.ok()).toBe(true)
+  const login = await page.request.post('/api/auth/login', { data: { loginId: 'dev-owner', password } })
+  if (!login.ok()) expect((await page.request.post('/api/auth/signup', { data: { loginId: 'dev-owner', password } })).ok()).toBe(true)
   expect((await (await page.request.get('/api/me')).json()).roles).toContain('system_owner')
 }
 
@@ -59,6 +59,40 @@ test('SO 연결 진단: 배지 링크 → AI 연결 카드 → 연결 시험 2�
   expect((await request.post('/api/admin/llm/test', { data: { messages: [{ role: 'user', content: 'x' }] } })).status()).toBe(403)
   expect((await request.post('/api/admin/llm/test-connection', { data: {} })).status()).toBe(403)
   expect((await request.get('/api/llm/models')).ok()).toBe(true)
+})
+
+test('SO OpenWebUI 진단: 모델 하나로 버튼 → 요약 카드·복사, 본문·키·주소 비노출, mock은 막힘, 비SO 403', async ({ page, request }) => {
+  await owner(page)
+  await page.goto('/admin/diagnostics')
+  const card = page.getByRole('region', { name: 'OpenWebUI 진단' })
+  const button = card.getByRole('button', { name: 'OpenWebUI 진단' })
+  const live = (await (await page.request.get('/api/admin/diagnostics')).json()).llm.mode === 'live'
+  if (!live) {
+    await expect(button).toBeDisabled()
+    await expect(card).toContainText('Live 모드에서만')
+    expect((await page.request.post('/api/admin/diagnostics/openwebui', { data: { model: 'fake-general' } })).status()).toBe(400)
+  } else {
+    await card.getByRole('combobox', { name: '진단 모델' }).click()
+    await page.getByRole('option', { name: 'fake-general', exact: true }).click()
+    const probed = page.waitForResponse((response) => response.url().endsWith('/api/admin/diagnostics/openwebui'))
+    await button.click()
+    const response = await probed
+    expect(response.status()).toBe(200)
+    expect(response.request().postDataJSON()).toEqual({ model: 'fake-general' })
+    // 가짜 OpenWebUI 답변은 받은 질문을 되풀이한다 — 질문·답변·키·주소 어느 것도 결과에 없어야 한다
+    expect(JSON.stringify(await response.json())).not.toMatch(/e2e-fake-key|Bearer|127\.0\.0\.1|localhost|http|받은 메시지|가짜 OpenWebUI|Reply with/)
+    const summary = card.getByRole('status')
+    await expect(summary).toContainText('0.0.0-fake')
+    await expect(summary).toContainText('fake_tool')
+    await expect(summary).toContainText('function_callingnative')
+    await expect(summary).toContainText('HTTP 200 · 첫 바이트')
+    await expect(summary).toContainText('sources → choices.delta.content')
+    await expect(card.getByRole('button', { name: '진단 결과 복사' })).toBeEnabled()
+  }
+  expect((await page.request.post('/api/admin/diagnostics/openwebui', { data: { model: 'fake-general', prompt: 'x' } })).status()).toBe(400)
+  const loginId = `e2e-probe-${Date.now().toString(36)}`
+  expect((await request.post('/api/auth/signup', { data: { loginId, password } })).ok()).toBe(true)
+  expect((await request.post('/api/admin/diagnostics/openwebui', { data: { model: 'fake-general' } })).status()).toBe(403)
 })
 
 test('SO 전역 기본 모델: 저장·해제 즉시 반영, 목록 실패 시 기존 값 유지, 비SO·구형 키 거부', async ({ page, request }) => {

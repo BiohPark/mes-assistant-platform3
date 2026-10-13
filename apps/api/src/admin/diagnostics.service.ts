@@ -1,12 +1,15 @@
-import { Inject, Injectable } from '@nestjs/common'
+import { BadRequestException, HttpException, Inject, Injectable, Logger } from '@nestjs/common'
 import { access, statfs } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { arch, platform, release } from 'node:os'
 import type { Pool } from 'mysql2/promise'
+import { OwuiProbeResultSchema, type OwuiProbeReport } from '@mes/contracts'
+import { OwuiProbeUnknownModelError, probeOpenWebUi } from '@mes/llm'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, DB_CLIENT, type Db } from '../db/db.module.js'
 import { buildInfo } from '../health/build-info.js'
 import { effectiveDefaultModel, readEffectiveDefaultModel } from '../llm/effectiveDefaultModel.js'
+import { toLlmSettings } from '../llm/presets.js'
 import { RequestsService } from '../requests/requests.service.js'
 
 type ServerError = { at: string; path: string; status: number; message: string }
@@ -25,8 +28,12 @@ export function recordServerError(path: string, status: number) {
   if (recentErrors.length > 50) recentErrors.shift()
 }
 
+/** 진단 전체 상한(3분) 위의 여유 — 시험 자체는 probeOpenWebUi의 마감이 끊는다 */
+const PROBE_GUARD_MS = 185_000
+
 @Injectable()
 export class DiagnosticsService {
+  private readonly logger = new Logger(DiagnosticsService.name)
   constructor(
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(DB_CLIENT) private readonly dbClient: Pool,
@@ -91,5 +98,25 @@ export class DiagnosticsService {
     }
     return redact(result, [dbPassword, this.config.sessionSecret, this.config.llm.apiKey,
       this.config.oidc?.clientSecret ?? '', process.env.DEV_USER_PASSWORD ?? ''].filter(Boolean))
+  }
+
+  /**
+   * OpenWebUI 진단(S10-5) — 전역 응답 상한(admit)과 사용자별 보조 요청 단일 진행 아래에서 돈다.
+   * 결과는 저장하지 않고, 로그는 상태 코드·소요 시간만 남긴다. 키·호스트는 한 번 더 가린다.
+   */
+  async probeOpenWebUi(actor: string, model: string, signal?: AbortSignal): Promise<OwuiProbeReport> {
+    if (this.config.llm.mode !== 'live') throw new BadRequestException('Live 모드에서만 진단할 수 있습니다')
+    const release = await this.requests.admit('test')
+    try {
+      const settings = toLlmSettings(this.config.llm)
+      const result = await this.requests.runAuxiliary(actor, 'test', (auxSignal) => probeOpenWebUi(settings, model, { signal: auxSignal }), { timeoutMs: PROBE_GUARD_MS, signal })
+      this.logger.log(`openwebui-probe ${result.attempts.map((a) => a.status ?? 'none').join('/')} ${result.ms}ms`)
+      const host = URL.canParse(settings.baseUrl) ? new URL(settings.baseUrl).host : ''
+      return OwuiProbeResultSchema.parse(redact(result, [this.config.llm.apiKey, host].filter(Boolean)))
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      if (error instanceof OwuiProbeUnknownModelError) throw new BadRequestException('모델 목록에 없는 모델입니다')
+      throw new HttpException('OpenWebUI 진단을 마치지 못했습니다', 504)
+    } finally { release() }
   }
 }
