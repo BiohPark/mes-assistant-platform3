@@ -17,10 +17,10 @@ async function member(page: Page) {
 const nav = (page: Page) => page.getByRole('navigation')
 const headings = (page: Page) => nav(page).locator('p')
 
-test('SO 사이드바: 업무·요청·관리 3구획 8개 메뉴, 사용자 관리와 전역 설정이 분리돼 있다', async ({ page }) => {
+test('SO 사이드바: 업무·요청·관리 3구획 9개 메뉴, 사용자 관리와 전역 설정이 분리돼 있다', async ({ page }) => {
   await owner(page)
   await page.goto('/')
-  await expect(nav(page).getByRole('link')).toHaveText(['에이전트 허브', 'SR 처리', '리포트', '내 SR 요청', '에이전트 관리', '전역 설정', '사용자 관리', '연결 진단'])
+  await expect(nav(page).getByRole('link')).toHaveText(['에이전트 허브', '내 작업', 'SR 처리', '리포트', '내 SR 요청', '에이전트 관리', '전역 설정', '사용자 관리', '연결 진단'])
   await expect(headings(page)).toHaveText(['업무', '요청', '관리'])
 
   await nav(page).getByRole('link', { name: '사용자 관리' }).click()
@@ -43,10 +43,10 @@ test('SO 사이드바: 업무·요청·관리 3구획 8개 메뉴, 사용자 관
   await expect(page.getByRole('button', { name: '다시 확인' })).toBeVisible()
 })
 
-test('담당자 사이드바: 업무 3개 + 요청 1개, 관리 구획 없음, /admin/users는 허브로 돌린다', async ({ page }) => {
+test('담당자 사이드바: 업무 4개 + 요청 1개, 관리 구획 없음, /admin/users는 허브로 돌린다', async ({ page }) => {
   await member(page)
   await page.goto('/')
-  await expect(nav(page).getByRole('link')).toHaveText(['에이전트 허브', 'SR 처리', '리포트', '내 SR 요청'])
+  await expect(nav(page).getByRole('link')).toHaveText(['에이전트 허브', '내 작업', 'SR 처리', '리포트', '내 SR 요청'])
   await expect(headings(page)).toHaveText(['업무', '요청'])
   await page.goto('/admin/users')
   await expect(page).toHaveURL(/localhost:5173\/$/)
