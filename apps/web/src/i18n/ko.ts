@@ -85,6 +85,17 @@ export const ko = {
     draftLeft: '대화 {code}가 남았습니다. 첨부를 다시 전송할 수 있습니다.',
     tags: '태그', tagPlaceholder: 'SR 번호·키워드', retiredAssistant: '폐기된 에이전트입니다.', pickAnotherAssistant: '다른 에이전트 고르기',
   },
+  myWork: {
+    description: '내가 담당하거나 참여하는 대화를 최근 활동 순으로 확인하세요.',
+    includeCompleted: '완료 포함',
+    list: '내 작업 대화',
+    recentActivity: '최근 활동',
+    empty: '내 작업이 없습니다',
+    emptyDescription: '새 대화는 에이전트 허브에서 시작하세요.',
+    goToHub: '에이전트 허브로 이동',
+    loadFailed: '내 작업을 불러오지 못했습니다.',
+    unknownAssistant: '알 수 없는 에이전트',
+  },
   reports: {
     owner: '담당자', ownerFilter: '담당자: {name}',
     periodLabel: '리포트 기간과 단위', days: { one: '{count}일', other: '{count}일' }, day: '일', week: '주',
@@ -102,6 +113,7 @@ export const ko = {
     noChartData: '표시할 데이터가 없습니다.',
   },
   admin: {
+    email: '이메일', emailDefaultLabel: '기본값', emailDefault: '기본 이메일입니다. 다른 주소를 입력해 저장할 수 있습니다.', emailClearHint: '빈 값으로 저장하면 기본 이메일을 사용합니다. 기본 도메인이 없으면 미설정 상태가 됩니다.', emailUnset: '이메일 미설정', profileSaved: '프로필을 저장했습니다',
     owner: '담당자', ownerRequired: '담당자를 선택하세요', assistantStatus: '상태', checklistRequired: '필수', requiredItem: '{name} 필수',
     fileDelivery: '입력 파일 전달 방식', deliveryInline: '텍스트로 붙이기', deliveryOpenWebUi: 'OpenWebUI 파일 첨부',
     intakeAssistant: 'SR 접수 에이전트', noAssistant: '지정 안 함', active: '활성', userFlag: '{name} {flag}',
@@ -483,6 +495,7 @@ export const ko = {
   nav: {
     requests: '요청', work: '업무', admin: '관리',
     hub: '에이전트 허브',
+    myWork: '내 작업',
     sr: '내 SR 요청',
     reports: '리포트',
     srManage: 'SR 처리',
@@ -548,6 +561,12 @@ export const ko = {
   },
   u10Admin: {
     codeActive: '{name} 활성',
+  },
+  dropzone: {
+    toAttach: '놓으면 첨부 대기에 추가',
+    toUpload: '놓으면 이 대화 파일로 저장',
+    attached: { one: '{count}개 파일을 첨부 대기에 추가했습니다.', other: '{count}개 파일을 첨부 대기에 추가했습니다.' },
+    rejected: { one: '폴더·빈 파일 {count}개는 올릴 수 없어 제외했습니다.', other: '폴더·빈 파일 {count}개는 올릴 수 없어 제외했습니다.' },
   },
 } as const
 

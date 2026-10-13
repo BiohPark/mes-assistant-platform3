@@ -38,7 +38,7 @@ function UsersSection() {
     return setUserFlag(id, field, enabled).then(() => void query.refetch(), (error: unknown) => toast.error(error instanceof Error ? error.message : t('admin.changeFailed')))
   }
   return <section className="space-y-3 rounded-xl border bg-card p-4 text-sm"><h2 className="font-semibold">{t('admin.settings.usersRoles')}</h2>
-    {query.data?.map((user) => <div key={user.id} className="flex flex-wrap items-center gap-3 border-b py-2"><span className="min-w-36">{user.name}<small className="block text-muted-foreground">{user.loginId ?? 'SSO'}</small></span>
+    {query.data?.map((user) => <div key={user.id} className="flex flex-wrap items-center gap-3 border-b py-2"><span className="min-w-36">{user.name}<small className="block text-muted-foreground">{user.loginId ?? 'SSO'}</small><small className="block text-muted-foreground">{user.email ? <>{user.email}{user.emailIsDefault && <> · {t('admin.emailDefaultLabel')}</>}</> : t('admin.emailUnset')}</small></span>
       <UserNameEditor user={user} onSaved={() => { void query.refetch(); if (user.id === me.id) void client.invalidateQueries({ queryKey: ['me'] }) }} />
       <Field label={'SO'} className="flex-row items-center gap-1 [&>label]:order-last"><Switch aria-label={t('admin.userFlag', { name: user.name, flag: 'SO' })} checked={user.isSystemOwner} onCheckedChange={enabled => { if (!enabled) confirmChange(user, 'system-owner'); else void change(user.id, 'system-owner', true) }} /></Field>
       <Field label={'BO'} className="flex-row items-center gap-1 [&>label]:order-last"><Switch aria-label={t('admin.userFlag', { name: user.name, flag: 'BO' })} checked={user.isBusinessOwner} onCheckedChange={enabled => void change(user.id, 'business-owner', enabled)} /></Field>

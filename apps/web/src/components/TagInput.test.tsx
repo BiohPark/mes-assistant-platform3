@@ -8,7 +8,7 @@ const toastError = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: toastError } }))
 afterEach(() => toastError.mockClear())
 
-const me = { id: 'u', name: '사용자', role: '', roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
+const me = { id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
 const pool: TagSuggestion[] = [
   { tag: 'CC-2099-0010', count: 3, isSr: false },
   { tag: 'SR-2026-0001', count: 1, isSr: true, srStatus: 'accepted' },

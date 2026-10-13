@@ -1,5 +1,6 @@
 import type { ActivityLog, ChecklistItem, ChecklistReview, Message, Note, Task, TaskStatus, Thread } from '@mes/domain'
 import type { TagSuggestion } from '@mes/domain'
+import { HttpError } from '@/app/auth'
 import { queryClient } from './queryClient'
 
 export interface Actor { userId: string }
@@ -8,7 +9,7 @@ export interface TaskFilter { assistantId?: string; status?: TaskStatus[]; tags?
 
 async function request<T>(path: string, method = 'GET', body?: unknown, idempotencyKey?: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api${path}`, { method, credentials: 'same-origin', signal, ...(body !== undefined && { headers: { 'content-type': 'application/json', ...(idempotencyKey && { 'Idempotency-Key': idempotencyKey }) }, body: JSON.stringify(body) }) })
-  if (!response.ok) throw new Error((await response.json().catch(() => null))?.message ?? `HTTP ${response.status}`)
+  if (!response.ok) throw new HttpError(response.status, (await response.json().catch(() => null))?.message ?? `HTTP ${response.status}`)
   return response.status === 204 ? undefined as T : response.json() as Promise<T>
 }
 

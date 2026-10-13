@@ -14,7 +14,7 @@ vi.mock('./NotificationBell', () => ({ NotificationBell: () => null }))
 vi.mock('./useEvents', () => ({ useEvents: () => undefined }))
 vi.mock('@/features/system-assistant/SystemAssistantDrawer', () => ({ SystemAssistantDrawer: () => null }))
 
-const me = { id: 'owner', name: 'Kim', roles: ['member', 'system_owner'], role: '', theme: 'system', locale: 'ko' }
+const me = { id: 'owner', name: 'Kim', roles: ['member', 'system_owner'], role: '', email: null, emailIsDefault: false, theme: 'system', locale: 'ko' }
 const task: Task = { id: 't1', code: 'WK-1', title: 'Example', titleSource: 'manual', summary: '', assistantId: 'a1', ownerId: 'owner', createdBy: 'owner', assigneeIds: [], status: 'todo', priority: 'normal', tags: [], inputs: [], outputFileIds: [], checklist: [], createdAt: '2026-10-06T12:00:00Z', lastActivityAt: '2026-10-06T12:00:00Z' }
 
 beforeEach(() => localStorage.clear())
@@ -23,7 +23,7 @@ afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
 it('/me locale renders the sidebar in English', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/me' ? jsonResponse(200, { ...me, locale: 'en' }) : jsonResponse(200, [])))
   renderWithProviders(<AppShell />)
-  for (const name of ['Agent Hub', 'My SR requests', 'Reports', 'SR inbox', 'Manage agents', 'Global settings', 'User management', 'Connection check']) {
+  for (const name of ['Agent Hub', 'My work', 'My SR requests', 'Reports', 'SR inbox', 'Manage agents', 'Global settings', 'User management', 'Connection check']) {
     expect(await screen.findByRole('link', { name })).toBeInTheDocument()
   }
   for (const heading of ['Work', 'Requests', 'Admin']) expect(screen.getByText(heading)).toBeInTheDocument()

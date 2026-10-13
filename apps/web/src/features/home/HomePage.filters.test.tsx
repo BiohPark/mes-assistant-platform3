@@ -21,7 +21,7 @@ function Navigation() {
   return <><output data-testid="url">{location.search}</output><button onClick={() => void navigate(-1)}>Back</button><button onClick={() => void navigate(1)}>Forward</button></>
 }
 function renderHome(route = '/', owner = false) {
-  return renderWithProviders(<MeContext value={{ id: 'u', name: 'User', role: '', roles: [owner ? 'system_owner' : 'member'], theme: 'system', locale: 'ko' }}><TooltipProvider><Navigation /><HomePage /></TooltipProvider></MeContext>, { route })
+  return renderWithProviders(<MeContext value={{ id: 'u', name: 'User', role: '', email: null, emailIsDefault: false, roles: [owner ? 'system_owner' : 'member'], theme: 'system', locale: 'ko' }}><TooltipProvider><Navigation /><HomePage /></TooltipProvider></MeContext>, { route })
 }
 beforeEach(() => {
   catalog = [a, b]; tasks = []
@@ -255,7 +255,7 @@ it.each([
       if (!params.has(searchKey) && params.get(filterKey) === new URLSearchParams(route.split('?')[1]).get(filterKey)) await pendingReplace
       return null
     },
-    element: <MeContext value={{ id: 'u', name: 'User', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><Navigation /><HomePage /></TooltipProvider></MeContext>,
+    element: <MeContext value={{ id: 'u', name: 'User', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><Navigation /><HomePage /></TooltipProvider></MeContext>,
   }], { initialEntries: [route] })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={client}><ProfileProvider><RouterProvider router={router} /></ProfileProvider></QueryClientProvider>)
@@ -293,7 +293,7 @@ it.each([
 })
 
 function renderRoutedHome(route: string, loader?: () => Promise<null>) {
-  const router = createMemoryRouter([{ path: '/', hydrateFallbackElement: null, loader, element: <MeContext value={{ id: 'u', name: 'User', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><Navigation /><HomePage /></TooltipProvider></MeContext> }], { initialEntries: [route] })
+  const router = createMemoryRouter([{ path: '/', hydrateFallbackElement: null, loader, element: <MeContext value={{ id: 'u', name: 'User', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><Navigation /><HomePage /></TooltipProvider></MeContext> }], { initialEntries: [route] })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const committed = [route.slice(route.indexOf('?'))]
   router.subscribe(state => { if (state.navigation.state === 'idle' && state.location.search !== committed.at(-1)) committed.push(state.location.search) })

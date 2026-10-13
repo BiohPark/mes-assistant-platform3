@@ -12,7 +12,7 @@ export type AuthedRequest = Request & { user?: AuthUser }
 function allowedBusinessOwnerRoute(method: string, path: string): boolean {
   if (method === 'GET' && (path === '/api/me' || path === '/api/service-requests/intake-assistant')) return true
   if (method === 'POST' && (path === '/api/auth/logout' || path === '/api/auth/password')) return true
-  if (method === 'PATCH' && path === '/api/users/me') return true
+  if (method === 'PATCH' && (path === '/api/me' || path === '/api/users/me')) return true
   if (path === '/api/service-requests') return method === 'GET' || method === 'POST'
   if (/^\/api\/service-requests\/[^/]+$/.test(path)) return method === 'GET' || method === 'DELETE'
   if (/^\/api\/service-requests\/[^/]+\/draft$/.test(path)) return method === 'GET'
@@ -42,7 +42,7 @@ export class SessionGuard implements CanActivate {
     const user = typeof token === 'string' && token ? await this.sessions.resolve(token) : null
     if (!user) throw new UnauthorizedException('로그인이 필요합니다')
     req.user = user
-    if (user.mustChangePassword && !['/api/me', '/api/auth/password', '/api/auth/logout'].includes(req.path)) {
+    if (user.mustChangePassword && !(req.method === 'GET' && req.path === '/api/me') && !['/api/auth/password', '/api/auth/logout'].includes(req.path)) {
       throw new ForbiddenException({ code: 'PASSWORD_CHANGE_REQUIRED', message: '비밀번호 변경이 필요합니다' })
     }
     if (user.isBusinessOwner && !user.isSystemOwner && !allowedBusinessOwnerRoute(req.method, req.path)) {

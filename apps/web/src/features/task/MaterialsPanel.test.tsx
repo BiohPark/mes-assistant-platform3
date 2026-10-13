@@ -7,7 +7,7 @@ import { jsonResponse, renderWithProviders } from '@/test/render'
 import { MaterialsPanel } from './MaterialsPanel'
 
 const toastSuccess = vi.hoisted(() => vi.fn())
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: toastSuccess } }))
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: toastSuccess, warning: vi.fn() } }))
 afterEach(() => { vi.unstubAllGlobals(); toastSuccess.mockClear() })
 
 it('shows a selected older version, offers an explicit switch, and keeps indirect files out of the pool', async () => {
@@ -17,8 +17,8 @@ it('shows a selected older version, offers an explicit switch, and keeps indirec
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push([url, init])
     if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [
-      { file: old, sourceTaskId: 'source', sourceCode: 'WK-2026-0002', sourceTitle: '원본 대화', viaTags: ['direct'], role: 'upload', selected: 'main', newerVersionId: 'v2' },
-      { file: fresh, sourceTaskId: 'source', sourceCode: 'WK-2026-0002', sourceTitle: '원본 대화', viaTags: ['direct'], role: 'upload', olderVersionIds: ['v1'] },
+      { file: old, sourceTaskId: 'source', sourceCode: 'WK-2026-0002', sourceTitle: '원본 대화', viaTags: ['direct'], role: 'upload', email: null, emailIsDefault: false, selected: 'main', newerVersionId: 'v2' },
+      { file: fresh, sourceTaskId: 'source', sourceCode: 'WK-2026-0002', sourceTitle: '원본 대화', viaTags: ['direct'], role: 'upload', email: null, emailIsDefault: false, olderVersionIds: ['v1'] },
     ], conversations: [] })
     if (url === '/api/tasks/t/files') return jsonResponse(200, [])
     if (url === '/api/files/v2/versions') return jsonResponse(200, [fresh, old])
@@ -26,7 +26,7 @@ it('shows a selected older version, offers an explicit switch, and keeps indirec
     return jsonResponse(200, [])
   }))
   const task = { id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: ['direct'], checklist: [], inputs: [{ fileId: 'v1', weight: 'main', selectedAt: '2026-01-01T00:00:00.000Z', selectedBy: 'u' }], outputFileIds: [], createdAt: '2026-01-01T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-01-01T00:00:00.000Z' } satisfies Task
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={task} /></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={task} /></MeContext>)
   expect(await screen.findByText('새 버전 있음 · 바꾸기')).toBeInTheDocument()
   expect(screen.getByText(/report.md v1/)).toBeInTheDocument()
   // 출처는 내부 ID가 아니라 대화 코드·제목으로 보인다
@@ -54,7 +54,7 @@ it('shows directly shared conversations and selects the full snapshot without re
     return jsonResponse(200, [])
   }))
   const task = { id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: ['direct'], checklist: [], inputs: [], outputFileIds: [], createdAt: '2026-01-01T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-01-01T00:00:00.000Z' } satisfies Task
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={task} /></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={task} /></MeContext>)
   fireEvent.click(screen.getByRole('tab', { name: '대화' }))
   expect(await screen.findByTestId('conversation-source')).toHaveTextContent('WK-2026-0002 · 원본')
   fireEvent.click(screen.getByLabelText('WK-2026-0002 참고 입력으로 선택'))
@@ -71,14 +71,14 @@ it('groups shared files by assistant order and sorts names within each group', a
     return jsonResponse(200, [])
   }))
   const task = { id: 't', code: 'WK-1', assistantId: 'a1', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: ['shared'], checklist: [], inputs: [], outputFileIds: [], createdAt: '2026-01-01T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-01-01T00:00:00.000Z' } satisfies Task
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={task} /></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={task} /></MeContext>)
   fireEvent.click(screen.getByRole('tab', { name: '공유 자료함' }))
   await screen.findByTestId('candidate-file-z')
   await waitFor(() => expect(screen.getByTestId('materials-shared').textContent).toMatch(/에이전트 1.*a\.txt.*b\.txt.*에이전트 2.*z\.txt/s))
 })
 
 const baseTask = { id: 't', code: 'WK-1', assistantId: 'a1', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: ['shared'], checklist: [], inputs: [], outputFileIds: [], createdAt: '2026-01-01T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-01-01T00:00:00.000Z' } satisfies Task
-const me = { id: 'u', name: '사용자', role: '', roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
+const me = { id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
 const fileMeta = { id: 'out', originTaskId: 'source', name: 'result.md', mime: 'text/markdown', size: 4, version: 1, source: 'assistant', isOutput: true, uploadedAt: '2026-01-01T00:00:00.000Z' }
 
 it('shows loading, no-results with a clear button, and the inputs caption on the shared tab', async () => {
@@ -213,4 +213,34 @@ it('moves focus and active contents with arrows and Home/End through one labelle
     expect(panel).toHaveAttribute('aria-labelledby', active.id)
     expect(within(panel).getByTestId(testId)).toBeInTheDocument()
   }
+})
+
+it('uploads a file dropped on the own-files tab through the regular upload request', async () => {
+  const uploads: FormData[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/files' && init?.method === 'POST') { uploads.push(init.body as FormData); return jsonResponse(201, { ...fileMeta, id: 'new', originTaskId: 't' }) }
+    if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [], conversations: [] })
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<MeContext value={me}><MaterialsPanel task={baseTask} /></MeContext>)
+  fireEvent.click(screen.getByRole('tab', { name: '이 대화 파일' }))
+  const own = screen.getByTestId('materials-own')
+  const file = new File(['x'], 'dropped.txt', { type: 'text/plain' })
+  const drag = { dataTransfer: { types: ['Files'], files: [file], items: [] } }
+  fireEvent.dragEnter(own, drag)
+  expect(screen.getByText('놓으면 이 대화 파일로 저장')).toHaveAttribute('aria-hidden', 'true')
+  fireEvent.drop(own, drag)
+  await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('1개 파일을 업로드했습니다.', { description: '같은 태그 대화에서 자료 후보로 보입니다.' }))
+  expect(uploads).toHaveLength(1)
+  expect(uploads[0]!.get('originTaskId')).toBe('t')
+  expect((uploads[0]!.get('file') as File).name).toBe('dropped.txt')
+  expect(screen.queryByText('놓으면 이 대화 파일로 저장')).not.toBeInTheDocument()
+})
+
+it('ignores drops on the own-files tab of a completed conversation', () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/tasks/t/candidates' ? jsonResponse(200, { files: [], conversations: [] }) : jsonResponse(200, [])))
+  renderWithProviders(<MeContext value={me}><MaterialsPanel task={{ ...baseTask, status: 'done' }} /></MeContext>)
+  fireEvent.click(screen.getByRole('tab', { name: '이 대화 파일' }))
+  fireEvent.dragEnter(screen.getByTestId('materials-own'), { dataTransfer: { types: ['Files'], files: [], items: [] } })
+  expect(screen.queryByText('놓으면 이 대화 파일로 저장')).not.toBeInTheDocument()
 })

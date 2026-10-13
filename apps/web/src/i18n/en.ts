@@ -87,6 +87,17 @@ export const en = {
     draftLeft: 'Conversation {code} was kept. You can resend the attachments.',
     tags: 'Tags', tagPlaceholder: 'SR number · keyword', retiredAssistant: 'This agent is retired.', pickAnotherAssistant: 'Choose another agent',
   },
+  myWork: {
+    description: 'Conversations you own or participate in, ordered by recent activity.',
+    includeCompleted: 'Include completed',
+    list: 'My work conversations',
+    recentActivity: 'Recent activity',
+    empty: 'No work assigned to you',
+    emptyDescription: 'Start a new conversation in the agent hub.',
+    goToHub: 'Go to agent hub',
+    loadFailed: 'Could not load your work.',
+    unknownAssistant: 'Unknown agent',
+  },
   reports: {
     owner: 'Assignee', ownerFilter: 'Assignee: {name}',
     periodLabel: 'Report period and interval', days: { one: '{count} day', other: '{count} days' }, day: 'Day', week: 'Week',
@@ -104,6 +115,7 @@ export const en = {
     noChartData: 'No data to display.',
   },
   admin: {
+    email: 'Email', emailDefaultLabel: 'Default', emailDefault: 'This is your default email. Enter and save another address to change it.', emailClearHint: 'Save an empty value to use the default email. Without a default domain, no email is set.', emailUnset: 'Email not set', profileSaved: 'Profile saved',
     owner: 'Owner', ownerRequired: 'Choose an owner', assistantStatus: 'Status', checklistRequired: 'Required', requiredItem: '{name} required',
     fileDelivery: 'Input file delivery', deliveryInline: 'Paste as text', deliveryOpenWebUi: 'Attach files in OpenWebUI',
     intakeAssistant: 'SR intake agent', noAssistant: 'Unassigned', active: 'Active', userFlag: '{name} {flag}',
@@ -485,6 +497,7 @@ export const en = {
   nav: {
     requests: 'Requests', work: 'Work', admin: 'Admin',
     hub: 'Agent Hub',
+    myWork: 'My work',
     sr: 'My SR requests',
     reports: 'Reports',
     srManage: 'SR inbox',
@@ -550,5 +563,11 @@ export const en = {
   },
   u10Admin: {
     codeActive: '{name} Active',
+  },
+  dropzone: {
+    toAttach: 'Drop to add as pending attachments',
+    toUpload: 'Drop to save as this conversation\'s files',
+    attached: { one: 'Added {count} file to the pending attachments.', other: 'Added {count} files to the pending attachments.' },
+    rejected: { one: 'Skipped {count} item: folders and empty files cannot be uploaded.', other: 'Skipped {count} items: folders and empty files cannot be uploaded.' },
   },
 } as const satisfies Messages

@@ -69,7 +69,7 @@ it('서랍은 이름 있는 dialog로 열리고 Esc로 닫힌다', async () => {
 
 it('TopBar 버튼으로 연 서랍을 닫으면 포커스가 그 버튼으로 돌아간다', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ mode: 'mock', model: 'mock' })))
-  const me = { id: 'u', name: '사용자', role: '', roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
+  const me = { id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
   renderWithProviders(<MeContext value={me}><TooltipProvider><TopBar /><SystemAssistantDrawer /></TooltipProvider></MeContext>)
   const opener = screen.getByRole('button', { name: '시스템 assistant 열기' })
   opener.focus()
