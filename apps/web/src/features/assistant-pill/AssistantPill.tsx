@@ -120,9 +120,11 @@ export function AssistantPill() {
   }
 
   const placed = movable && pos
+  // 기본 위치는 사이드바 열 하단(왼쪽) — 우하단은 입력창 전송 버튼·메뉴와 겹쳐 클릭을 가로챈다(CI 390px). 사이드바는 모든 폭에 있고 하단이 비어 있다(AppShell aside pb-16)
+  const docked = { left: desktop ? 16 : 4, bottom: 16 }
   return <>
     <button ref={pillRef} type="button" data-testid="assistant-pill" aria-label={open ? t('pill.close') : t('pill.open')} aria-expanded={open} aria-haspopup="dialog"
-      title={movable ? t('pill.moveHint') : undefined} style={placed ? { left: pos.x, top: pos.y } : { right: 16, bottom: 16 }}
+      title={movable ? t('pill.moveHint') : undefined} style={placed ? { left: pos.x, top: pos.y } : docked}
       className={cn('fixed z-40 flex size-12 touch-none items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-2 ring-background select-none hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none', movable && 'cursor-grab active:cursor-grabbing')}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd} onKeyDown={onKeyDown} onClick={onClick}>
       {image ? <img src={`/api/settings/assistant-image?v=${encodeURIComponent(image)}`} alt={t('pill.characterAlt')} draggable={false} className="size-full rounded-full object-cover" /> : <Sparkles className="size-5" aria-hidden />}

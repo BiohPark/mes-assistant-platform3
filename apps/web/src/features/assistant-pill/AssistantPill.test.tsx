@@ -72,7 +72,8 @@ it('화살표 키 10px·Shift 50px로 옮기고 Home으로 원위치, 화면 밖
   expect(useUiStore.getState().pillPos).toEqual({ x: 8, y: 150 }) // clamp
   fireEvent.keyDown(pill(), { key: 'Home' })
   expect(useUiStore.getState().pillPos).toBeNull()
-  expect(pill()).toHaveStyle({ right: '16px', bottom: '16px' })
+  expect(pill()).toHaveStyle({ left: '16px', bottom: '16px' }) // 기본 위치 = 사이드바 하단(왼쪽), 우하단 입력창 전송 버튼과 겹치지 않는다
+  expect(pill().style.right).toBe('')
 })
 
 it('창 크기가 바뀌면 저장된 위치를 다시 clamp한다', () => {
@@ -92,11 +93,13 @@ it('더 큰 화면에서 저장한 좌표는 처음 마운트할 때(persist 복
   expect(pill()).toHaveStyle({ left: `${1280 - 56}px`, top: `${720 - 56}px` })
 })
 
-it('<768에서는 우하단 고정이고 끌기·키 이동이 꺼지며 시트로 연다', async () => {
+it('<768에서는 사이드바 열 하단(왼쪽)에 고정 — 우하단 입력창·메뉴를 가리지 않고(CI 390px) — 끌기·키 이동이 꺼지며 시트로 연다', async () => {
   stubViewport(600)
   useUiStore.getState().setPillPos({ x: 10, y: 10 })
   renderWithProviders(<AssistantPill />)
-  expect(pill()).toHaveStyle({ right: '16px', bottom: '16px' })
+  expect(pill()).toHaveStyle({ left: '4px', bottom: '16px' }) // 사이드바 w-14(56px) 안
+  expect(pill().style.right).toBe('')
+  expect(pill().style.top).toBe('')
   expect(pill()).not.toHaveAttribute('title')
   fireEvent.keyDown(pill(), { key: 'ArrowRight' })
   expect(useUiStore.getState().pillPos).toEqual({ x: 10, y: 10 })
