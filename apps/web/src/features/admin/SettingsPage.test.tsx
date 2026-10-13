@@ -212,3 +212,31 @@ it('영문 화면은 도메인 기본값의 출처와 설정 해제를 표시한
   expect(screen.getByText('Source: Domain default')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Clear override (use .env)' })).toBeInTheDocument()
 })
+
+it('OpenWebUI 도구 전달은 별도로 저장하고 변경한 경우에만 전송한다', async () => {
+  const saved: Record<string, unknown>[] = []
+  let current = { defaultModel: 'env-model', owuiTools: 'auto', fileMaxPerRequest: 10 }
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/settings') {
+      if (init?.method === 'PATCH') { const body = JSON.parse(String(init.body)); saved.push(body); current = { ...current, ...body } }
+      return jsonResponse(200, current)
+    }
+    return jsonResponse(200, [])
+  }))
+  const user = userEvent.setup()
+  renderPage()
+  expect(await screen.findByRole('radio', { name: '자동 (기본)' })).toBeChecked()
+  expect(screen.getAllByRole('button', { name: /설정 저장/ })).toHaveLength(1)
+  const toolsForm = screen.getByRole('form', { name: 'OpenWebUI 도구 전달' })
+  expect(within(toolsForm).getByRole('heading', { level: 2, name: 'OpenWebUI 도구 전달' })).toBeInTheDocument()
+  expect(within(toolsForm).getByRole('button', { name: '도구 전달 저장' })).toBeDisabled()
+  await user.click(screen.getByRole('radio', { name: '끔' }))
+  await user.click(screen.getByRole('button', { name: '설정 저장' }))
+  await waitFor(() => expect(saved).toHaveLength(1))
+  expect(saved[0]).not.toHaveProperty('owuiTools')
+  await user.click(screen.getByRole('radio', { name: '끔' }))
+  await user.click(screen.getByRole('button', { name: '도구 전달 저장' }))
+  await waitFor(() => expect(saved).toHaveLength(2))
+  expect(saved[1]).toEqual({ owuiTools: 'off' })
+  await waitFor(() => expect(screen.getByRole('button', { name: '도구 전달 저장' })).toBeDisabled())
+})

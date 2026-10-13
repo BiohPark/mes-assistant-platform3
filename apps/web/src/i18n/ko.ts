@@ -186,6 +186,7 @@ export const ko = {
       modelNoMatch: '일치하는 모델이 없습니다. 입력한 값을 그대로 씁니다.',
     },
     settings: {
+      owuiTools: 'OpenWebUI 도구 전달', owuiAuto: '자동 (기본)', owuiOff: '끔', saveOwuiTools: '도구 전달 저장', owuiHint: 'OpenWebUI Live 대화에 모델의 도구와 기본 기능을 전달합니다. 첫 프레임 전에 거부되거나 연결이 실패하면 기본 방식으로 한 번 다시 보냅니다.',
       saved: '설정을 저장했습니다', global: '전역 설정', requestBudget: '요청 크기 한도 (바이트)',
       defaultModelEnvHint: '저장하면 재시작 없이 다음 요청부터 적용됩니다. 설정을 해제하면 서버 .env의 LLM_DEFAULT_MODEL을 사용하고, 없으면 도메인 기본값을 사용합니다.',
       modelLoadFailed: '모델 목록을 불러오지 못했습니다.',
@@ -202,6 +203,7 @@ export const ko = {
     },
   },
   chat: {
+    owuiTools: '도구 전달', owuiBasic: '기본 방식', owuiFallback: '폴백 (기본 방식)',
     copyMessage: '복사', copiedMessage: '메시지를 복사했습니다.', copyMessageFailed: '복사하지 못했습니다. 다시 시도해 주세요.',
     messageActions: '메시지 동작', messageMenu: '메시지 메뉴', askAgain: '다시 묻기',
     askAgainHint: '현재 자료·모델로 새 요청, 이전 문답 포함',

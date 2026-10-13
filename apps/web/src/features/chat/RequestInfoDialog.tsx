@@ -10,6 +10,11 @@ export function RequestInfoDialog({ requestId, onClose }: { requestId: string; o
   return <Dialog open onOpenChange={(open) => { if (!open) onClose() }}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{t('chat.requestInfo')}</DialogTitle></DialogHeader>
     {record.data ? <div className="space-y-2 text-sm">
       <p>{statusLabel[record.data.status] ? t(statusLabel[record.data.status]!) : record.data.status} · {record.data.model} · {record.data.bytes ?? t('chat.calculating')} / {record.data.limitBytes} bytes</p>
+      {record.data.owuiTools && <div className="rounded-xl border p-2">
+        <p>{t(record.data.owuiTools.mode === 'tools' ? 'chat.owuiTools' : record.data.owuiTools.mode === 'fallback' ? 'chat.owuiFallback' : 'chat.owuiBasic')}</p>
+        {record.data.owuiTools.tool_ids && <p className="break-all">tool_ids: {JSON.stringify(record.data.owuiTools.tool_ids)}</p>}
+        {record.data.owuiTools.features && <p className="break-all">features: {JSON.stringify(record.data.owuiTools.features)}</p>}
+      </div>}
       {record.data.retryOf && <p>{t('chat.retryOf', { id: record.data.retryOf })}</p>}
       {record.data.error && <p role="alert" className="text-destructive">{record.data.error}</p>}
       <ul className="space-y-1">{record.data.inputs.map((input, index) => <li key={index} className="rounded-xl border p-2">
