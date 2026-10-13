@@ -4,7 +4,7 @@ import type { Pool } from 'mysql2/promise'
 import { createPool } from '../db/connection.js'
 import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { appUser, assistant, assistantChecklistTemplate, checklistItem, checklistReview, fileObject, message, messageAttachment, noteAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
+import { appSetting, appUser, assistant, assistantChecklistTemplate, checklistItem, checklistReview, fileObject, message, messageAttachment, noteAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -125,11 +125,19 @@ describe('tasks DB', () => {
       await extras.addChecklist('member', created.id, '점검 항목')
       await extras.review('member', created.id)
       expect(models).toEqual(['env-model'])
+      for (const model of ['setting-a', 'setting-b']) {
+        await db.insert(appSetting).values({ key: 'defaultModelOverride', value: model }).onDuplicateKeyUpdate({ set: { value: model } })
+        await extras.review('member', created.id)
+        expect(models.at(-1)).toBe(model)
+      }
+      await db.delete(appSetting).where(eq(appSetting.key, 'defaultModelOverride'))
+      await extras.review('member', created.id)
+      expect(models.at(-1)).toBe('env-model')
       // 대화에 모델이 지정되면 그 값이 우선한다
       await service.update('member', created.id, { modelId: 'task-model' })
       await extras.review('member', created.id)
-      expect(models).toEqual(['env-model', 'task-model'])
-    } finally { await rm(root, { recursive: true, force: true }) }
+      expect(models.at(-1)).toBe('task-model')
+    } finally { await db.delete(appSetting).where(eq(appSetting.key, 'defaultModelOverride')); await rm(root, { recursive: true, force: true }) }
   })
 
   it('stores note file references and completes with a report, feedback and locked edits', async () => {

@@ -14,13 +14,14 @@ import { LLM_PROVIDER } from './provider.token.js'
 const config = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' })
 const sessions: SessionStore = { create: vi.fn(async () => ({ token: '', expiresAt: new Date() })), resolve: vi.fn(async (token: string) => token === 'member' ? { id: 'm', name: 'Member', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false } : null), destroy: vi.fn(async () => undefined) }
 let settings: Array<{ value: unknown }> = []
-const db = { select: () => ({ from: () => ({ where: async () => settings }) }) }
+let modelOverride: string | undefined
+const db = { select: () => ({ from: () => ({ where: async (condition: unknown) => (condition as { queryChunks: { value?: unknown }[] }).queryChunks.some(chunk => chunk.value === 'defaultModelOverride') ? (modelOverride ? [{ value: modelOverride }] : []) : settings }) }) }
 
 describe('system assistant HTTP', () => {
   let app: INestApplication
   let provider: ChatProvider
   beforeEach(async () => {
-    settings = []
+    settings = []; modelOverride = undefined
     provider = new MockProvider()
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CONFIG).useValue(config)
@@ -53,6 +54,17 @@ describe('system assistant HTTP', () => {
     expect(seen).toEqual(['glm-5.2'])
   })
 
+  it('재기동 없이 다음 모델 조회·메시지 호출이 override 변경과 해제를 반영한다', async () => {
+    const seen: string[] = []
+    provider = { kind: 'live', ping: async () => ({ ok: true, detail: '' }), listModels: async () => [], async *stream(req) { seen.push(req.model); yield { type: 'done' } } }
+    for (const value of ['setting-a', 'setting-b', undefined]) {
+      modelOverride = value
+      const expected = value ?? 'glm-5.2'
+      expect((await request(app.getHttpServer()).get('/api/system-assistant/model').set('Cookie', 'mes_session=member')).body.model).toBe(expected)
+      await request(app.getHttpServer()).post('/api/system-assistant/messages').set('Cookie', 'mes_session=member').send({ messages: [{ role: 'user', content: 'hi' }] }).expect(201)
+      expect(seen.at(-1)).toBe(expected)
+    }
+  })
   it('인증, 형식, 설정된 요청 크기 한도를 강제한다', async () => {
     const url = '/api/system-assistant/messages'
     const model = await request(app.getHttpServer()).get('/api/system-assistant/model').set('Cookie', 'mes_session=member').expect(200)
