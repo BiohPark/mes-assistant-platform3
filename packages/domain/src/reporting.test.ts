@@ -98,11 +98,11 @@ describe('sr', () => {
     { id: 's1', status: 'draft' },
     { id: 's2', status: 'submitted' },
     { id: 's3', status: 'done', submittedAt: iso(10) },
+    { id: 's4', status: 'reviewing' },
   ] as ServiceRequest[]
-  it('distribution excludes draft', () => {
+  it('distribution excludes draft and folds reviewing into submitted', () => {
     expect(srStatusDistribution(srs)).toEqual([
-      { status: 'submitted', count: 1 },
-      { status: 'reviewing', count: 0 },
+      { status: 'submitted', count: 2 },
       { status: 'in_progress', count: 0 },
       { status: 'responded', count: 0 },
       { status: 'done', count: 1 },
