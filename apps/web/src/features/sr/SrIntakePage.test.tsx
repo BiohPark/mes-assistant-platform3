@@ -303,3 +303,21 @@ it('필터에 맞는 요청이 없으면 안내와 필터 초기화를 보이고
   expect(screen.getByRole('button', { name: '진행 중' })).toHaveAttribute('aria-pressed', 'true')
   expect(screen.queryByRole('button', { name: '필터 초기화' })).not.toBeInTheDocument()
 })
+
+
+it.each([
+  { roles: ['requester'] as const, count: 1 },
+  { roles: ['member'] as const, count: 0 },
+  { roles: ['requester', 'system_owner'] as const, count: 0 },
+])('opens requester SSE only when the shell does not subscribe: $roles', async ({ roles, count }) => {
+  const close = vi.fn(), addEventListener = vi.fn(), removeEventListener = vi.fn()
+  const source = vi.fn(function () { return { close, addEventListener, removeEventListener } })
+  vi.stubGlobal('EventSource', source)
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/intake-assistant' ? jsonResponse(200, { srIntakeAssistantId: null }) : jsonResponse(200, [])))
+  const { unmount } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: [...roles], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>)
+  await screen.findByRole('status')
+  expect(source).toHaveBeenCalledTimes(count)
+  if (count) expect(addEventListener).toHaveBeenCalledWith('sr.updated', expect.any(Function))
+  unmount()
+  expect(close).toHaveBeenCalledTimes(count)
+})
