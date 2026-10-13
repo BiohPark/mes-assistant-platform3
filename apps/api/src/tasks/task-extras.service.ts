@@ -10,7 +10,7 @@ import { EventsService } from '../events/events.service.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { FILE_STORAGE } from '../files/files.service.js'
 import { createStorageKey, FileStorageService, sha256 } from '../files/fileStorage.service.js'
-import { effectiveDefaultModel } from '../llm/effectiveDefaultModel.js'
+import { readEffectiveDefaultModel } from '../llm/effectiveDefaultModel.js'
 import { LLM_PROVIDER } from '../llm/provider.token.js'
 import { RequestsService } from '../requests/requests.service.js'
 import { assertFileAccess, assertTaskAccess } from '../sr/access.js'
@@ -88,8 +88,8 @@ export class TaskExtrasService {
     const history: Message[] = rows.map((row) => ({ id: row.id, threadId: row.threadId, seq: row.seq,
       role: row.role as Message['role'], kind: row.kind as Message['kind'], content: row.content, status: row.status as Message['status'],
       createdAt: row.createdAt.toISOString(), attachmentIds: [], ...(row.authorId && { authorId: row.authorId }) }))
-    const result = await this.requests.runAuxiliary(actor, 'checklist', (signal) => reviewChecklist(this.provider,
-      current.modelId ?? agent?.modelId ?? effectiveDefaultModel(this.config ?? { llm: { defaultModel: undefined } }), current.checklist, history, actor, signal)) // 기본 모델은 .env 유효값 (S7 C2)
+    const result = await this.requests.runAuxiliary(actor, 'checklist', async (signal) => reviewChecklist(this.provider,
+      current.modelId ?? agent?.modelId ?? await readEffectiveDefaultModel(this.db, this.config ?? { llm: { defaultModel: undefined } }), current.checklist, history, actor, signal))
     await this.db.transaction(async (tx) => {
       await this.editable(tx, taskId)
       const latest = await tx.select({ id: checklistItem.id }).from(checklistItem).where(eq(checklistItem.taskId, taskId))

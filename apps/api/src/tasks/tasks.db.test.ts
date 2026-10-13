@@ -4,7 +4,7 @@ import type { Pool } from 'mysql2/promise'
 import { createPool } from '../db/connection.js'
 import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { appUser, assistant, assistantChecklistTemplate, checklistItem, checklistReview, fileObject, message, messageAttachment, noteAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
+import { appSetting, appUser, assistant, assistantChecklistTemplate, chatRequest, checklistItem, checklistReview, fileObject, message, messageAttachment, noteAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -125,11 +125,19 @@ describe('tasks DB', () => {
       await extras.addChecklist('member', created.id, '점검 항목')
       await extras.review('member', created.id)
       expect(models).toEqual(['env-model'])
+      for (const model of ['setting-a', 'setting-b']) {
+        await db.insert(appSetting).values({ key: 'defaultModelOverride', value: model }).onDuplicateKeyUpdate({ set: { value: model } })
+        await extras.review('member', created.id)
+        expect(models.at(-1)).toBe(model)
+      }
+      await db.delete(appSetting).where(eq(appSetting.key, 'defaultModelOverride'))
+      await extras.review('member', created.id)
+      expect(models.at(-1)).toBe('env-model')
       // 대화에 모델이 지정되면 그 값이 우선한다
       await service.update('member', created.id, { modelId: 'task-model' })
       await extras.review('member', created.id)
-      expect(models).toEqual(['env-model', 'task-model'])
-    } finally { await rm(root, { recursive: true, force: true }) }
+      expect(models.at(-1)).toBe('task-model')
+    } finally { await db.delete(appSetting).where(eq(appSetting.key, 'defaultModelOverride')); await rm(root, { recursive: true, force: true }) }
   })
 
   it('stores note file references and completes with a report, feedback and locked edits', async () => {
@@ -347,7 +355,8 @@ describe('tasks DB', () => {
     let queries = 0
     const counted = new DbTasksService(drizzle(client, { logger: { logQuery: () => { queries++ } } }))
     await counted.list()
-    expect(queries).toBeLessThanOrEqual(4)
+    // 행 + assemble(상세·자료·부가·AI 요청 상태) — S9-8 U3에서 AI 요청 상태 1회가 늘었다.
+    expect(queries).toBeLessThanOrEqual(5)
   })
 
   it('keeps the thread when a task has no assignees', async () => {
@@ -362,5 +371,152 @@ describe('tasks DB', () => {
     await db.update(task).set({ lastActivityAt: before }).where(eq(task.id, created.id))
     await service.removeTag('member', created.id, 'remove-me')
     expect(new Date((await service.get(created.id)).lastActivityAt).getTime()).toBeGreaterThan(before.getTime())
+  })
+
+  // ── S9-8 U3: 대화별 AI 요청 상태(aiRequest) ─────────────────────────────
+  let requestSeq = 0
+  const addRequest = async (threadId: string, status: string, at: string, extra: { id?: string; phase?: string; finishedAt?: string } = {}) => {
+    const n = ++requestSeq
+    const requestId = extra.id ?? `ai-req-${n}`
+    await db.insert(message).values([
+      { id: `${requestId}-u`, threadId, seq: 10_000 + n * 2, role: 'user', content: '질문', authorId: 'member', status: 'done' },
+      { id: `${requestId}-r`, threadId, seq: 10_001 + n * 2, role: 'assistant', content: '', status: 'done' },
+    ])
+    await db.insert(chatRequest).values({ id: requestId, threadId, userMessageId: `${requestId}-u`, replyMessageId: `${requestId}-r`, requestedBy: 'member',
+      status, phase: extra.phase ?? null, provider: 'mock', transport: 'inline', model: 'm', bytes: 0, limitBytes: 1,
+      createdAt: new Date(at), finishedAt: extra.finishedAt ? new Date(extra.finishedAt) : null })
+    return requestId
+  }
+
+  it('aiRequest: 활성(pending·streaming) 우선, 없으면 최신 1건이 failed·interrupted일 때만, cancelled·성공은 null (S9-8 U3)', async () => {
+    const make = async () => (await service.create('member', { assistantId })).task
+    const none = await make()
+    const succeeded = await make()
+    await addRequest(succeeded.threadId!, 'failed', '2026-10-01T00:00:00.000Z', { finishedAt: '2026-10-01T00:00:01.000Z' })
+    await addRequest(succeeded.threadId!, 'succeeded', '2026-10-01T00:01:00.000Z', { finishedAt: '2026-10-01T00:01:05.000Z' })
+    const cancelled = await make()
+    await addRequest(cancelled.threadId!, 'failed', '2026-10-01T00:00:00.000Z', { finishedAt: '2026-10-01T00:00:01.000Z' })
+    await addRequest(cancelled.threadId!, 'cancelled', '2026-10-01T00:01:00.000Z', { finishedAt: '2026-10-01T00:01:02.000Z' })
+    const failed = await make()
+    await addRequest(failed.threadId!, 'succeeded', '2026-10-01T00:00:00.000Z', { finishedAt: '2026-10-01T00:00:01.000Z' })
+    await addRequest(failed.threadId!, 'failed', '2026-10-01T00:01:00.000Z', { finishedAt: '2026-10-01T00:01:07.000Z' })
+    const interrupted = await make()
+    await addRequest(interrupted.threadId!, 'interrupted', '2026-10-01T00:02:00.000Z')
+    const streaming = await make()
+    await addRequest(streaming.threadId!, 'streaming', '2026-10-01T00:00:00.000Z', { phase: '파일 처리 대기 1/2 · a.txt' })
+    await addRequest(streaming.threadId!, 'failed', '2026-10-01T00:05:00.000Z', { finishedAt: '2026-10-01T00:05:01.000Z' })
+    const pending = await make()
+    await addRequest(pending.threadId!, 'failed', '2026-10-01T00:00:00.000Z', { finishedAt: '2026-10-01T00:00:01.000Z' })
+    await addRequest(pending.threadId!, 'pending', '2026-10-01T00:03:00.000Z')
+    // 같은 created_at이면 id 내림차순이 최신이다.
+    const tieNull = await make()
+    await addRequest(tieNull.threadId!, 'failed', '2026-10-01T00:04:00.000Z', { id: 'ai-tie1-a', finishedAt: '2026-10-01T00:04:01.000Z' })
+    await addRequest(tieNull.threadId!, 'succeeded', '2026-10-01T00:04:00.000Z', { id: 'ai-tie1-b', finishedAt: '2026-10-01T00:04:01.000Z' })
+    const tieShown = await make()
+    await addRequest(tieShown.threadId!, 'succeeded', '2026-10-01T00:04:00.000Z', { id: 'ai-tie2-a', finishedAt: '2026-10-01T00:04:01.000Z' })
+    await addRequest(tieShown.threadId!, 'interrupted', '2026-10-01T00:04:00.000Z', { id: 'ai-tie2-b', finishedAt: '2026-10-01T00:04:09.000Z' })
+
+    const listed = await service.list()
+    const pick = (id: string) => listed.find((item) => item.id === id)!.aiRequest
+    expect(pick(none.id)).toBeNull()
+    expect(pick(succeeded.id)).toBeNull()
+    expect(pick(cancelled.id)).toBeNull()
+    expect(pick(tieNull.id)).toBeNull()
+    // updatedAt = coalesce(finished_at, created_at)
+    expect(pick(failed.id)).toStrictEqual({ status: 'failed', updatedAt: '2026-10-01T00:01:07.000Z' })
+    expect(pick(interrupted.id)).toStrictEqual({ status: 'interrupted', updatedAt: '2026-10-01T00:02:00.000Z' })
+    expect(pick(tieShown.id)).toStrictEqual({ status: 'interrupted', updatedAt: '2026-10-01T00:04:09.000Z' })
+    expect(pick(streaming.id)).toStrictEqual({ status: 'streaming', phase: '파일 처리 대기 1/2 · a.txt', updatedAt: '2026-10-01T00:00:00.000Z' })
+    expect(pick(pending.id)).toStrictEqual({ status: 'pending', updatedAt: '2026-10-01T00:03:00.000Z' })
+    // 단건도 같은 판정
+    for (const item of [none, failed, streaming]) expect((await service.get(item.id)).aiRequest).toStrictEqual(pick(item.id))
+  })
+
+  it('aiRequest 목록은 기존 권한 필터를 유지한다 — BO는 관련 대화만, SO·일반 멤버는 전체 (S9-8 U3)', async () => {
+    await db.insert(appUser).values([
+      { id: 'ai-bo-outsider', name: 'BO 1', initials: 'B', color: '#123456', isBusinessOwner: true },
+      { id: 'ai-bo-assignee', name: 'BO 2', initials: 'B', color: '#123456', isBusinessOwner: true },
+      { id: 'ai-so', name: 'SO', initials: 'S', color: '#123456', isSystemOwner: true, isBusinessOwner: true },
+    ])
+    const { task: created } = await service.create('member', { assistantId, assigneeIds: ['member', 'ai-bo-assignee'] })
+    await addRequest(created.threadId!, 'failed', '2026-10-02T00:00:00.000Z', { finishedAt: '2026-10-02T00:00:03.000Z' })
+    const expected = { status: 'failed', updatedAt: '2026-10-02T00:00:03.000Z' }
+    expect((await service.list({}, 'ai-bo-outsider')).some((item) => item.id === created.id)).toBe(false)
+    await expect(service.get(created.id, 'ai-bo-outsider')).rejects.toMatchObject({ status: 403 })
+    for (const viewer of ['ai-bo-assignee', 'ai-so', 'member']) {
+      expect((await service.list({}, viewer)).find((item) => item.id === created.id)?.aiRequest).toStrictEqual(expected)
+      expect((await service.get(created.id, viewer)).aiRequest).toStrictEqual(expected)
+    }
+  })
+
+  it('대화 500건 목록에서도 AI 요청 상태는 쿼리 1회로 모은다 (S9-8 U3)', async () => {
+    const statuses = ['pending', 'streaming', 'failed', 'succeeded', 'cancelled', 'interrupted'] as const
+    const ids = Array.from({ length: 500 }, (_, index) => `ai-bulk-${String(index).padStart(3, '0')}`)
+    await db.insert(task).values(ids.map((taskId, index) => ({ id: taskId, code: `BULK-${index}`, assistantId, title: taskId, titleSource: 'default', status: 'in_progress',
+      ownerId: 'member', priority: 'normal', createdBy: 'member' })))
+    await db.insert(thread).values(ids.map((taskId) => ({ id: `${taskId}-th`, taskId, title: '대화', createdBy: 'member' })))
+    await db.insert(message).values(ids.flatMap((taskId) => [
+      { id: `${taskId}-u`, threadId: `${taskId}-th`, seq: 1, role: 'user', content: '질문', authorId: 'member', status: 'done' },
+      { id: `${taskId}-r`, threadId: `${taskId}-th`, seq: 2, role: 'assistant', content: '', status: 'done' },
+    ]))
+    await db.insert(chatRequest).values(ids.map((taskId, index) => ({ id: `${taskId}-req`, threadId: `${taskId}-th`, userMessageId: `${taskId}-u`, replyMessageId: `${taskId}-r`,
+      requestedBy: 'member', status: statuses[index % statuses.length]!, provider: 'mock', transport: 'inline', model: 'm', bytes: 0, limitBytes: 1,
+      createdAt: new Date('2026-10-03T00:00:00.000Z') })))
+    const queries: string[] = []
+    const counted = new DbTasksService(drizzle(client, { logger: { logQuery: (query) => { queries.push(query) } } }))
+    const listed = (await counted.list()).filter((item) => item.id.startsWith('ai-bulk-'))
+    expect(listed).toHaveLength(500)
+    expect(queries.filter((query) => query.includes('chat_request'))).toHaveLength(1)
+    expect(queries.length).toBeLessThanOrEqual(5)
+    const counts = Object.fromEntries(statuses.map((status) => [status, listed.filter((item) => item.aiRequest?.status === status).length]))
+    expect(counts).toEqual({ pending: 84, streaming: 84, failed: 83, succeeded: 0, cancelled: 0, interrupted: 83 })
+    expect(listed.filter((item) => item.aiRequest === null)).toHaveLength(166)
+  })
+
+  it('대화 200건 × 요청 50건 이력에서도 판정이 규칙과 같고 쿼리 1회다 (S9-8 U3 리뷰 P2)', async () => {
+    const finished = ['succeeded', 'failed', 'cancelled', 'interrupted'] as const
+    const base = Date.parse('2026-10-04T00:00:00.000Z')
+    const ids = Array.from({ length: 200 }, (_, index) => `ai-hist-${String(index).padStart(3, '0')}`)
+    type Row = { id: string; taskId: string; status: string; phase: string | null; createdAt: Date; finishedAt: Date | null }
+    const rows: Row[] = ids.flatMap((taskId, i) => Array.from({ length: 50 }, (_, j) => {
+      // 활성: 3의 배수 대화의 10번째 요청(오래된 활성도 최신 실패보다 우선). 동률: 5의 배수 대화는 마지막 둘의 created_at이 같다(id 내림차순).
+      // 시각 역전: 4로 나눠 1이 남는 대화는 20번째 요청이 가장 늦다(id가 아니라 created_at이 먼저).
+      const active = i % 3 === 0 && j === 10
+      const status = active ? (i % 6 === 0 ? 'pending' : 'streaming') : finished[(i * 7 + j) % finished.length]!
+      const at = i % 4 === 1 && j === 20 ? base + 100_000 : i % 5 === 0 && j === 49 ? base + 48_000 : base + j * 1000
+      return { id: `${taskId}-${String(j).padStart(2, '0')}`, taskId, status, phase: active ? `단계 ${i}` : null, createdAt: new Date(at), finishedAt: active ? null : new Date(at + 500) }
+    }))
+    await db.insert(task).values(ids.map((taskId, index) => ({ id: taskId, code: `HIST-${index}`, assistantId, title: taskId, titleSource: 'default', status: 'in_progress',
+      ownerId: 'member', priority: 'normal', createdBy: 'member' })))
+    await db.insert(thread).values(ids.map((taskId) => ({ id: `${taskId}-th`, taskId, title: '대화', createdBy: 'member' })))
+    for (let start = 0; start < rows.length; start += 1000) {
+      const chunk = rows.slice(start, start + 1000)
+      await db.insert(message).values(chunk.flatMap((row) => {
+        const j = Number(row.id.slice(-2))
+        return [{ id: `${row.id}-u`, threadId: `${row.taskId}-th`, seq: j * 2 + 1, role: 'user', content: '질문', authorId: 'member', status: 'done' },
+          { id: `${row.id}-r`, threadId: `${row.taskId}-th`, seq: j * 2 + 2, role: 'assistant', content: '', status: 'done' }]
+      }))
+      await db.insert(chatRequest).values(chunk.map((row) => ({ id: row.id, threadId: `${row.taskId}-th`, userMessageId: `${row.id}-u`, replyMessageId: `${row.id}-r`,
+        requestedBy: 'member', status: row.status, phase: row.phase, provider: 'mock', transport: 'inline', model: 'm', bytes: 0, limitBytes: 1,
+        createdAt: row.createdAt, finishedAt: row.finishedAt })))
+    }
+    const expected = new Map(ids.map((taskId) => {
+      const own = rows.filter((row) => row.taskId === taskId)
+      const picked = own.find((row) => row.status === 'pending' || row.status === 'streaming')
+        ?? own.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1))[0]!
+      return [taskId, ['pending', 'streaming', 'failed', 'interrupted'].includes(picked.status)
+        ? { status: picked.status, ...(picked.phase && { phase: picked.phase }), updatedAt: (picked.finishedAt ?? picked.createdAt).toISOString() } : null]
+    }))
+    const queries: string[] = []
+    const counted = new DbTasksService(drizzle(client, { logger: { logQuery: (query) => { queries.push(query) } } }))
+    const started = performance.now()
+    const listed = (await counted.list()).filter((item) => item.id.startsWith('ai-hist-'))
+    const elapsed = performance.now() - started
+    console.info(`[S9-8 U3] list() 200 대화 × 50 요청: ${elapsed.toFixed(0)} ms (전체 목록 ${queries.length}쿼리)`)
+    expect(listed).toHaveLength(200)
+    expect(Object.fromEntries(listed.map((item) => [item.id, item.aiRequest]))).toStrictEqual(Object.fromEntries(expected))
+    expect(queries.filter((query) => query.includes('chat_request'))).toHaveLength(1)
+    // 규칙의 모든 분기가 데이터에 있는지(활성·실패·중단·null) 확인
+    expect(new Set([...expected.values()].map((value) => value?.status ?? null))).toEqual(new Set(['pending', 'streaming', 'failed', 'interrupted', null]))
   })
 })

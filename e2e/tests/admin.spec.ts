@@ -15,16 +15,16 @@ async function member(page: Page) {
   return { loginId, id: (await response.json()).id as string }
 }
 
-type ManagedAgent = { api: APIRequestContext; id: string; level1: string; level2: string; orderChanged: boolean; settingsChanged: boolean; defaultModel: string }
+type ManagedAgent = { api: APIRequestContext; id: string; level1: string; level2: string; orderChanged: boolean; settingsChanged: boolean }
 const test = base.extend<{ managedAgent: ManagedAgent }>({
   managedAgent: [async ({ playwright, baseURL }, use) => {
     // 페이지나 본문 timeout에 묶이지 않는 API 컨텍스트와 fixture teardown 예산을 쓴다.
     const api = await playwright.request.newContext({ baseURL, timeout: 5_000 })
     try {
       await owner(api)
-      const previous = (await (await api.get('/api/settings')).json()) as { defaultModel: string; fileMaxPerRequest?: number }
+      const previous = (await (await api.get('/api/settings')).json()) as { fileMaxPerRequest?: number }
       const originalOrder = ((await (await api.get('/api/assistants')).json()) as Assistant[]).map(row => row.id)
-      const state = { api, id: '', level1: `E2E 분류 ${Date.now()}`, level2: `E2E 하위 ${Date.now()}`, orderChanged: false, settingsChanged: false, defaultModel: previous.defaultModel }
+      const state = { api, id: '', level1: `E2E 분류 ${Date.now()}`, level2: `E2E 하위 ${Date.now()}`, orderChanged: false, settingsChanged: false }
       const errors: unknown[] = []
       try { await use(state) }
       finally {
@@ -163,15 +163,14 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
   await page.getByRole('button', { name: '저장', exact: true }).last().click()
   await expect(page.getByText('순서를 저장했습니다')).toBeVisible()
   await page.goto('/settings')
-  // 기본 모델은 .env 정본 — 읽기 전용이며 쓰기 DTO에서는 거부한다 (S7 C2).
-  await expect(page.locator('form').getByText(managedAgent.defaultModel, { exact: true })).toBeVisible()
-  await expect(page.getByLabel('기본 모델')).toHaveCount(0)
+  // 전역 기본 모델은 표시만 확인한다. 변경 시나리오는 llm-admin.spec.ts에서 검증한다.
+  await expect(page.locator('form').getByText(/^현재 적용 모델: /)).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '기본 모델', exact: true })).toBeVisible()
   expect((await page.request.patch('/api/settings', { data: { defaultModel: 'e2e-model' } })).status()).toBe(400)
   await page.getByLabel('첨부 개수 한도').fill('7')
   managedAgent.settingsChanged = true
   await page.getByRole('button', { name: '설정 저장' }).click()
   await expect.poll(async () => (await (await page.request.get('/api/settings')).json()).fileMaxPerRequest).toBe(7)
-  expect((await (await page.request.get('/api/settings')).json()).defaultModel).toBe(managedAgent.defaultModel)
 })
 
 test('담당자는 관리 화면과 쓰기 API에 접근할 수 없다', async ({ page }) => {

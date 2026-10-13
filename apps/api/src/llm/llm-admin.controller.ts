@@ -10,7 +10,7 @@ import { DB, type Db } from '../db/db.module.js'
 import { appSetting } from '../db/schema.js'
 import { RequestsService } from '../requests/requests.service.js'
 import { LLM_PROVIDER } from './provider.token.js'
-import { effectiveDefaultModel } from './effectiveDefaultModel.js'
+import { readEffectiveDefaultModel } from './effectiveDefaultModel.js'
 
 /** 시험 호출 상한 — 총 60 s, 응답 64 KB, SSE 프레임 64 KB. 넘으면 절단 없이 실패 */
 const TEST_LIMITS: Required<ChatLimits> = { timeoutMs: 60_000, maxResponseBytes: 64 * 1024, maxFrameBytes: 64 * 1024 }
@@ -39,7 +39,7 @@ export class LlmAdminController {
   constructor(@Inject(RequestsService) private readonly requests: RequestsService, @Inject(LLM_PROVIDER) private readonly provider: ChatProvider,
     @Inject(CONFIG) private readonly config: AppConfig, @Inject(DB) private readonly db: Db) {}
 
-  private get defaultModel() { return effectiveDefaultModel(this.config) }
+  private defaultModel() { return readEffectiveDefaultModel(this.db, this.config) }
 
   private async complete(model: string, messages: ChatMessageInput[], signal: AbortSignal): Promise<string> {
     let text = ''
@@ -69,7 +69,7 @@ export class LlmAdminController {
   @HttpCode(200)
   @Roles('system_owner')
   async testConnection(@Req() req: AuthedRequest, @Res({ passthrough: true }) res: Response): Promise<LlmTestConnection> {
-    const model = this.defaultModel
+    const model = await this.defaultModel()
     const listStarted = performance.now()
     const models = await this.provider.listModels().then(
       (ids) => ({ ok: true, count: ids.length, ms: elapsed(listStarted) }),
@@ -88,7 +88,7 @@ export class LlmAdminController {
   async test(@Body() body: unknown, @Req() req: AuthedRequest, @Res({ passthrough: true }) res: Response): Promise<LlmTestResult> {
     const parsed = LlmTestRequestSchema.safeParse(body)
     if (!parsed.success || parsed.data.messages.at(-1)?.role !== 'user') throw new BadRequestException('요청 형식이 올바르지 않습니다')
-    const model = parsed.data.model ?? this.defaultModel
+    const model = parsed.data.model ?? await this.defaultModel()
     const messages: ChatMessageInput[] = parsed.data.messages
     const [budgetSetting] = await this.db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
     const limit = typeof budgetSetting?.value === 'number' ? budgetSetting.value : this.config.request.budgetBytes
