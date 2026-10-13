@@ -1,4 +1,5 @@
 import type { Assistant } from '@mes/contracts'
+import type { Task, TaskAiRequestStatus } from '@mes/domain'
 import type { HomeFilters } from '@/app/uiStore'
 
 export function homeFiltersFromParams(params: URLSearchParams): HomeFilters {
@@ -36,4 +37,23 @@ export function matchesAssistant(assistant: Assistant, filters: HomeFilters): bo
   const paths = assistant.classifications ?? [assistant]
   if (!paths.some(path => (!filters.level1CodeIds.length || filters.level1CodeIds.includes(path.level1CodeId)) && (!filters.level2CodeIds.length || filters.level2CodeIds.includes(path.level2CodeId)))) return false
   return `${assistant.name} ${assistant.summary} ${paths.map(path => `${path.level1} ${path.level2}`).join(' ')}`.toLowerCase().includes(filters.q.trim().toLowerCase())
+}
+
+/** 칸반 AI 상태 필터 — URL `ai=responding|failed`. 도메인 KanbanFilter와 별개 키라 filterToParams가 그대로 보존한다 */
+export const AI_FILTERS = ['responding', 'failed'] as const
+export type AiFilter = (typeof AI_FILTERS)[number]
+const AI_FILTER_STATUSES: Record<AiFilter, TaskAiRequestStatus[]> = { responding: ['pending', 'streaming'], failed: ['failed', 'interrupted'] }
+export function aiFilterFromParams(params: URLSearchParams): AiFilter[] {
+  return [...new Set(params.getAll('ai'))].filter((value): value is AiFilter => (AI_FILTERS as readonly string[]).includes(value))
+}
+export function aiFilterToParams(values: AiFilter[], base: URLSearchParams): URLSearchParams {
+  const next = new URLSearchParams(base)
+  next.delete('ai')
+  values.forEach(value => next.append('ai', value))
+  return next
+}
+export function matchesAiFilter(task: Task, values: AiFilter[]): boolean {
+  if (!values.length) return true
+  const status = task.aiRequest?.status
+  return !!status && values.some(value => AI_FILTER_STATUSES[value].includes(status))
 }

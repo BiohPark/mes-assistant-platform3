@@ -1,8 +1,9 @@
 import { expect, it } from 'vitest'
 import type { Assistant } from '@mes/contracts'
+import type { Task, TaskAiRequestStatus } from '@mes/domain'
 import { EMPTY_FILTER, filterFromParams, filterToParams } from '@mes/domain'
 import { emptyHomeFilters } from '@/app/uiStore'
-import { homeFiltersFromParams, homeFiltersToParams, matchesAssistant, classificationOptions, sameParams, validHomeFilters } from './filters'
+import { aiFilterFromParams, aiFilterToParams, homeFiltersFromParams, homeFiltersToParams, matchesAiFilter, matchesAssistant, classificationOptions, sameParams, validHomeFilters } from './filters'
 
 const paths = [
   { level1: 'One', level2: 'Alpha', level1CodeId: 'l1', level2CodeId: 's1' },
@@ -42,4 +43,28 @@ it('treats reordered parameters as the same URL and detects content differences'
   expect(sameParams(new URLSearchParams('l1=one&view=kanban'), new URLSearchParams('view=kanban&l1=one'))).toBe(true)
   expect(sameParams(new URLSearchParams('l1=one&l1=one'), new URLSearchParams('l1=one'))).toBe(false)
   expect(sameParams(new URLSearchParams('aq='), new URLSearchParams(''))).toBe(false)
+})
+
+it('reads AI filter values from the URL, drops unknown or repeated ones and writes them back beside other parameters', () => {
+  const params = new URLSearchParams('view=kanban&ai=responding&ai=bogus&ai=responding&tag=keep')
+  expect(aiFilterFromParams(params)).toEqual(['responding'])
+  const next = aiFilterToParams(['failed'], params)
+  expect(next.getAll('ai')).toEqual(['failed'])
+  expect(next.get('tag')).toBe('keep')
+  expect(next.get('view')).toBe('kanban')
+  expect(aiFilterToParams([], next).has('ai')).toBe(false)
+  expect(sameParams(aiFilterToParams(['responding', 'failed'], new URLSearchParams('tag=a')), new URLSearchParams('ai=failed&tag=a&ai=responding'))).toBe(true)
+})
+it('matches responding (pending·streaming) and failed (failed·interrupted) AI states; no selection matches everything', () => {
+  const withAi = (status: TaskAiRequestStatus | null) => ({ aiRequest: status ? { status, updatedAt: '2026-10-13T00:00:00.000Z' } : null }) as Task
+  expect(matchesAiFilter(withAi(null), [])).toBe(true)
+  expect(matchesAiFilter(withAi('pending'), ['responding'])).toBe(true)
+  expect(matchesAiFilter(withAi('streaming'), ['responding'])).toBe(true)
+  expect(matchesAiFilter(withAi('failed'), ['responding'])).toBe(false)
+  expect(matchesAiFilter(withAi(null), ['responding'])).toBe(false)
+  expect(matchesAiFilter(withAi('failed'), ['failed'])).toBe(true)
+  expect(matchesAiFilter(withAi('interrupted'), ['failed'])).toBe(true)
+  expect(matchesAiFilter(withAi('streaming'), ['failed'])).toBe(false)
+  expect(matchesAiFilter(withAi('streaming'), ['responding', 'failed'])).toBe(true)
+  expect(matchesAiFilter({ aiRequest: undefined } as Task, ['failed'])).toBe(false)
 })

@@ -77,6 +77,7 @@ export const en = {
     openWebUi: 'Open in OpenWebUI', descriptionPage: 'Description page', description: 'Docs',
     expandSummary: 'Expand summary of {name}', collapseSummary: 'Collapse summary of {name}',
     openConversation: 'Open {code} {title}', aiTitle: 'AI title', selectedInputs: 'Selected inputs',
+    aiResponding: 'AI responding', aiFailed: 'AI failed', aiInterrupted: 'AI interrupted', aiFailedFilter: 'AI failed·interrupted', aiFilter: 'AI state filter',
     daysOverdue: '{days}d overdue', today: 'Today', changeStatus: 'Change status', status: 'Status',
     statusChanged: "Status changed to '{status}'.", statusChangeFailed: 'Could not change the status',
     searchConversations: 'Search code · title · tag', stage: 'Stage', stagesTitle: 'Work stages (multi-select)',
@@ -430,6 +431,7 @@ export const en = {
       complete: 'Complete task', deleteConversation: 'Delete conversation', titleLabel: 'Conversation title', reopenTitle: 'Reopen this completed task?',
       reopenDescription: 'The reason is recorded in the history.', reopenConfirm: 'Reopen', deleteTitle: 'Delete this conversation?',
       deleteDescription: 'Messages and materials created in this conversation will be deleted.',
+      quickSwitch: 'Quick switch', quickSwitchResponding: 'Responding {count}',
     },
   },
   systemAssistant: {

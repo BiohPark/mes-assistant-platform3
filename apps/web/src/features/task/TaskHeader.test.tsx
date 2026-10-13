@@ -16,7 +16,7 @@ it('saves edited title as manual and requires a reason when reopening', async ()
   const calls: Array<[string, RequestInit | undefined]> = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push([url, init])
-    return new Response(JSON.stringify({}), { status: 200 })
+    return new Response(url === '/api/tasks' ? '[]' : JSON.stringify({}), { status: 200 })
   }))
   const wrap = (value: Task) => <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MemoryRouter><TaskHeader task={value} assistant={assistant} /></MemoryRouter></MeContext></QueryClientProvider>
   const view = render(wrap(task))
