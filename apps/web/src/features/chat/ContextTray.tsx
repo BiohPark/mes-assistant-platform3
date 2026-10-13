@@ -28,8 +28,8 @@ export function ContextTray({ task, estimate }: { task: Task; estimate: RequestE
   const level = info ? budgetLevel(info.bytes, info.limitBytes) : 'ok'
   const expanded = open ?? true
   const toggleRef = useRef<HTMLButtonElement>(null)
-  // 도우미 말풍선(U6) — 레벨이 올라갈 때 1회, 클릭하면 트레이를 펼치고 토글에 포커스
-  useBudgetBubble(task.id, level, () => { setOpen(true); toggleRef.current?.focus() })
+  // 도우미 말풍선(U6) — 레벨이 올라갈 때 1회(추정 로딩 중에는 비교하지 않음), 클릭하면 트레이를 펼치고 토글에 포커스
+  useBudgetBubble(task.id, info ? level : undefined, () => { setOpen(true); toggleRef.current?.focus() })
   if (!info) return null
 
   async function change(input: RequestInput, weight: 'main' | 'reference' | null) {

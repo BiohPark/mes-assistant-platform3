@@ -16,6 +16,8 @@ export const SLOW_REQUEST_MS = 30_000
 export interface Bubble {
   id: number
   source: BubbleSource
+  /** budget.* — 이 대화에서만 뜻이 있다. 대화를 떠나면 제거된다 */
+  key?: string
   /** request.slow — 클릭 시 이 요청의 정보를 연다 */
   requestId?: string
   /** budget.* — 클릭 시 트레이를 펼친다(ContextTray가 등록) */
@@ -28,6 +30,8 @@ interface BubbleState {
   queued: Bubble | null
   push: (bubble: Omit<Bubble, 'id'>) => void
   dismiss: () => void
+  /** 그 대화의 말풍선을 현재·대기에서 지운다 */
+  drop: (key: string) => void
 }
 
 let nextId = 1
@@ -36,6 +40,10 @@ export const useBubbleStore = create<BubbleState>()((set) => ({
   queued: null,
   push: (bubble) => set((state) => state.current ? { queued: { ...bubble, id: nextId++ } } : { current: { ...bubble, id: nextId++ } }),
   dismiss: () => set((state) => ({ current: state.queued, queued: null })),
+  drop: (key) => set((state) => {
+    const queued = state.queued?.key === key ? null : state.queued
+    return state.current?.key === key ? { current: queued, queued: null } : { queued }
+  }),
 }))
 
 const RANK: Record<BudgetLevel, number> = { ok: 0, warn: 1, over: 2 }
@@ -50,33 +58,33 @@ export function resetBubbles() {
   slowNotified.clear()
 }
 
-/** budgetLevel이 올라갈 때(ok→warn·warn→over·ok→over) 대화당 한 번 말풍선 */
-export function useBudgetBubble(key: string, level: BudgetLevel, onOpen: () => void) {
+/**
+ * budgetLevel이 올라갈 때(ok→warn·warn→over·ok→over) 대화당 한 번 말풍선.
+ * level이 없으면(추정 로딩 중) 기록·비교를 건너뛴다 — 돌아온 대화에서 'ok'가 끼어들어 같은 warn이 다시 뜨지 않게.
+ * 대화를 떠나면(key 변경·언마운트) 그 대화의 말풍선은 제거한다 — 클릭해도 열 트레이가 없다
+ */
+export function useBudgetBubble(key: string, level: BudgetLevel | undefined, onOpen: () => void) {
   const open = useRef(onOpen)
   open.current = onOpen
   useEffect(() => {
+    if (!level) return
     const previous = seenLevels.get(key) ?? 'ok'
     seenLevels.set(key, level)
-    if (RANK[level] > RANK[previous]) useBubbleStore.getState().push({ source: `budget.${level}` as BubbleSource, onOpen: () => open.current() })
+    if (RANK[level] > RANK[previous]) useBubbleStore.getState().push({ source: `budget.${level}` as BubbleSource, key, onOpen: () => open.current() })
   }, [key, level])
+  useEffect(() => () => useBubbleStore.getState().drop(key), [key])
 }
 
-/** run 시작 뒤 30초 동안 본문·reasoning delta가 모두 없으면 요청당 한 번 말풍선(S10: reasoning도 생존 신호). delta·종료가 먼저 오면 없다 */
+/** 마지막 본문·reasoning delta(없으면 run 시작) 뒤 30초 동안 아무것도 오지 않으면 요청당 한 번 말풍선(S10: reasoning도 생존 신호). delta마다 다시 센다 */
 export function useSlowRequestBubble(run: { requestId: string; text: string; reasoning?: string } | null) {
   const requestId = run?.requestId
-  const text = run ? `${run.text}\u0000${run.reasoning ?? ''}` : undefined
-  const baseline = useRef<string | undefined>(undefined)
+  const progress = run ? `${run.text}\u0000${run.reasoning ?? ''}` : undefined
   useEffect(() => {
     if (!requestId || slowNotified.has(requestId)) return
-    baseline.current = text
     const timer = setTimeout(() => {
-      if (slowNotified.has(requestId)) return // delta가 먼저 왔다
       slowNotified.add(requestId)
       useBubbleStore.getState().push({ source: 'request.slow', requestId })
     }, SLOW_REQUEST_MS)
     return () => clearTimeout(timer)
-  }, [requestId])
-  useEffect(() => {
-    if (requestId && text !== baseline.current) slowNotified.add(requestId) // delta 도착 — 이 요청은 더 기다리지 않는다
-  }, [requestId, text])
+  }, [requestId, progress])
 }

@@ -63,6 +63,31 @@ it('warn fires once per level rise — not on repeats, falls, or when returning 
   expect(onOpen).toHaveBeenCalledTimes(1)
 })
 
+it('skips recording while the estimate is loading, so returning to a warn conversation does not repeat the bubble', () => {
+  const { rerender } = renderHook(({ key, level }) => useBudgetBubble(key, level, () => {}), { initialProps: { key: 't1', level: undefined as BudgetLevel | undefined } })
+  rerender({ key: 't1', level: 'warn' })
+  expect(sources()).toEqual(['budget.warn', undefined])
+  act(() => useBubbleStore.getState().dismiss())
+  rerender({ key: 't2', level: undefined })
+  rerender({ key: 't2', level: 'ok' })
+  rerender({ key: 't1', level: undefined }) // 돌아옴 — 추정 로딩 중
+  rerender({ key: 't1', level: 'warn' })
+  expect(sources()).toEqual([undefined, undefined])
+})
+
+it('a budget bubble belongs to its conversation — leaving the conversation (key change or unmount) removes it from current and queue', () => {
+  const { rerender, unmount } = renderHook(({ key, level }) => useBudgetBubble(key, level, () => {}), { initialProps: { key: 't1', level: 'warn' as BudgetLevel | undefined } })
+  rerender({ key: 't1', level: 'over' })
+  expect(sources()).toEqual(['budget.warn', 'budget.over'])
+  rerender({ key: 't2', level: 'ok' })
+  expect(sources()).toEqual([undefined, undefined])
+  useBubbleStore.getState().push({ source: 'request.slow', requestId: 'r1' }) // 대화에 묶이지 않은 말풍선은 남는다
+  rerender({ key: 't2', level: 'warn' })
+  expect(sources()).toEqual(['request.slow', 'budget.warn'])
+  unmount()
+  expect(sources()).toEqual(['request.slow', undefined])
+})
+
 it('request.slow fires once per request after 30 s without a delta, and never when a delta or the end arrives first', () => {
   vi.useFakeTimers()
   const { rerender } = renderHook(({ run }) => useSlowRequestBubble(run), { initialProps: { run: null as { requestId: string; text: string } | null } })
@@ -81,9 +106,12 @@ it('request.slow fires once per request after 30 s without a delta, and never wh
 
   rerender({ run: { requestId: 'r2', text: '' } })
   act(() => { vi.advanceTimersByTime(SLOW_REQUEST_MS / 2) })
-  rerender({ run: { requestId: 'r2', text: '답' } }) // delta 도착 — 타이머 취소
-  act(() => { vi.advanceTimersByTime(SLOW_REQUEST_MS) })
+  rerender({ run: { requestId: 'r2', text: '답' } }) // delta 도착 — 30초를 다시 센다
+  act(() => { vi.advanceTimersByTime(SLOW_REQUEST_MS - 1) })
   expect(useBubbleStore.getState().current).toBeNull()
+  act(() => { vi.advanceTimersByTime(1) }) // 마지막 delta 뒤 30초 무진행 — 뜬다
+  expect(useBubbleStore.getState().current).toMatchObject({ source: 'request.slow', requestId: 'r2' })
+  act(() => useBubbleStore.getState().dismiss())
 
   rerender({ run: { requestId: 'r3', text: '' } })
   act(() => { vi.advanceTimersByTime(SLOW_REQUEST_MS / 2) })
@@ -96,11 +124,16 @@ it('reasoning streaming counts as progress — no slow bubble while only reasoni
   vi.useFakeTimers()
   type Run = { requestId: string; text: string; reasoning?: string } | null
   const { rerender } = renderHook(({ run }) => useSlowRequestBubble(run), { initialProps: { run: { requestId: 'r4', text: '', reasoning: '' } as Run } })
-  act(() => { vi.advanceTimersByTime(SLOW_REQUEST_MS / 2) })
-  rerender({ run: { requestId: 'r4', text: '', reasoning: '검토 중' } }) // reasoning delta만 — 진행으로 친다
-  act(() => { vi.advanceTimersByTime(SLOW_REQUEST_MS * 2) })
+  for (let step = 1; step <= 6; step++) { // 10초마다 reasoning delta만 60초 — 진행으로 치므로 뜨지 않는다
+    act(() => { vi.advanceTimersByTime(10_000) })
+    rerender({ run: { requestId: 'r4', text: '', reasoning: '검토 중'.repeat(step) } })
+  }
   expect(useBubbleStore.getState().current).toBeNull()
-  rerender({ run: null })
+  act(() => { vi.advanceTimersByTime(SLOW_REQUEST_MS - 1) })
+  expect(useBubbleStore.getState().current).toBeNull()
+  rerender({ run: null }) // 완료 — 마지막 reasoning 뒤 30초가 차기 전에 끝났으니 영영 없다
+  act(() => { vi.advanceTimersByTime(SLOW_REQUEST_MS) })
+  expect(useBubbleStore.getState().current).toBeNull()
   rerender({ run: { requestId: 'r5', text: '', reasoning: '이어서' } }) // 재개 시 복원된 reasoning은 기준선 — 그 뒤 아무것도 없으면 뜬다
   act(() => { vi.advanceTimersByTime(SLOW_REQUEST_MS) })
   expect(useBubbleStore.getState().current).toMatchObject({ source: 'request.slow', requestId: 'r5' })
