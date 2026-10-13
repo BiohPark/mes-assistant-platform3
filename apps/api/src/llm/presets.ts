@@ -8,6 +8,7 @@ export function toLlmSettings(config: AppConfig['llm']): LlmSettings {
     : config.baseUrl
   return {
     mode: config.mode,
+    preset: config.preset,
     baseUrl,
     apiKey: config.apiKey,
     model: effectiveDefaultModel({ llm: config }),

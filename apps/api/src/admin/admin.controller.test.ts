@@ -49,6 +49,16 @@ describe('관리 API 서버 권한', () => {
     await request(app.getHttpServer()).post('/api/assistants/new-agent/image').set('Cookie', 'mes_session=so').attach('file', Buffer.from('png'), { filename: '아이콘 🙂.png', contentType: 'image/png' }).expect(201)
     expect(admin.image).toHaveBeenCalledWith('so', 'new-agent', expect.objectContaining({ originalname: '아이콘 🙂.png', mimetype: 'image/png' }))
   })
+  it('도구 전달 설정은 auto/off만 SO가 변경하고 누락 시 다른 설정에 섞이지 않는다', async () => {
+    for (const owuiTools of ['auto', 'off']) {
+      await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ owuiTools }).expect(200)
+      expect(admin.settings).toHaveBeenLastCalledWith({ owuiTools })
+      await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=member').send({ owuiTools }).expect(403)
+    }
+    for (const owuiTools of ['on', null, true]) await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ owuiTools }).expect(400)
+    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ fileMaxPerRequest: 7 }).expect(200)
+    expect(admin.settings).toHaveBeenLastCalledWith({ fileMaxPerRequest: 7 })
+  })
   it('설정 조회는 로그인 사용자, 변경과 사용자 목록은 SO만 허용한다', async () => {
     await request(app.getHttpServer()).get('/api/settings').set('Cookie', 'mes_session=member').expect(200)
     await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=member').send({ fileDelivery: 'inline' }).expect(403)

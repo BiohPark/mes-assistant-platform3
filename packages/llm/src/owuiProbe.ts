@@ -84,6 +84,26 @@ export function looksLikeSecret(value: string): boolean {
   return (value.match(/[A-Za-z0-9]{24,}/g) ?? []).some((run) => /[A-Za-z]/.test(run) && /\d/.test(run))
 }
 
+/** 진단과 실제 전달이 같은 식별자 허용 목록을 사용한다. invalid 항목은 실행 경로에서 제외한다. */
+export function owuiMetaIds(value: unknown, apiKey = '', masked = false): string[] {
+  return Array.isArray(value) ? value.slice(0, MAX_IDS).flatMap(id =>
+    typeof id === 'string' && SHORT_ID.test(id) && !looksLikeSecret(id) && !(apiKey && id.includes(apiKey))
+      ? [id] : masked ? [OWUI_PROBE_MASKED] : []) : []
+}
+
+/** 모델 편집 기록은 info에서만 읽는다. 진단과 전송 경로의 공통 파싱. */
+function modelInfo(entry: unknown): Record<string, unknown> | undefined {
+  return isObject(entry) && isObject(entry.info) ? entry.info : undefined
+}
+
+/** /api/models의 해당 모델 info.meta만 해석한다. */
+export function owuiModelTools(body: unknown, model: string, apiKey = '') {
+  const entry = isObject(body) && Array.isArray(body.data) ? body.data.find(item => isObject(item) && item.id === model) : undefined
+  const info = modelInfo(entry)
+  const meta = info && isObject(info.meta) ? info.meta : undefined
+  return { tool_ids: owuiMetaIds(meta?.toolIds, apiKey), features: Object.fromEntries(owuiMetaIds(meta?.defaultFeatureIds, apiKey).map(id => [id, true as const])) }
+}
+
 /** 입력 모델이 OpenWebUI 모델 목록에 없다 — 시험 호출 전에 멈춘다(API 400) */
 export class OwuiProbeUnknownModelError extends Error {
   constructor() { super('모델 목록에 없는 모델입니다'); this.name = 'OwuiProbeUnknownModelError' }
@@ -152,7 +172,6 @@ export async function probeOpenWebUi(settings: LlmSettings, model: string, optio
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`
   const failure = (error: unknown) => toLimitedFetchError(error).message
-  const shortId = (id: string) => SHORT_ID.test(id) && !looksLikeSecret(id) && !(settings.apiKey && id.includes(settings.apiKey)) ? id : OWUI_PROBE_MASKED
   async function getJson(url: string, cap: number, maxResponseBytes: number): Promise<unknown> {
     const timeoutMs = remaining(cap)
     if (timeoutMs <= 0) throw new LimitedFetchError('timeout')
@@ -181,12 +200,12 @@ export async function probeOpenWebUi(settings: LlmSettings, model: string, optio
   // 목록을 읽었으면 그 안의 id만 받는다 — 못 읽었으면 진단은 계속하되 결과의 모델 표기는 형식 검사로 가린다
   const entry: unknown = data?.find((item) => isObject(item) && item.id === model)
   if (data && entry === undefined) throw new OwuiProbeUnknownModelError()
-  const info = isObject(entry) && isObject(entry.info) ? entry.info : undefined
+  const info = modelInfo(entry)
   const raw = info && isObject(info.meta) ? info.meta : undefined
   if (info) {
     meta.found = true
     // 개수는 그대로 — 형식에 맞지 않는 항목은 (가림)으로 바꾼다
-    const ids = (value: unknown) => Array.isArray(value) ? value.slice(0, MAX_IDS).map((id) => typeof id === 'string' ? shortId(id) : OWUI_PROBE_MASKED) : []
+    const ids = (value: unknown) => owuiMetaIds(value, settings.apiKey, true)
     meta.toolIds = ids(raw?.toolIds)
     meta.defaultFeatureIds = ids(raw?.defaultFeatureIds)
     if (isObject(raw?.capabilities)) {

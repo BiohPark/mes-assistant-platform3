@@ -1,3 +1,4 @@
+import type { OwuiToolDelivery } from '@mes/domain'
 export interface ChatMessageInput {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
@@ -39,6 +40,10 @@ export interface ChatRequest {
   meta?: ChatMeta
   /** OpenWebUI Files API로 올린 첨부 (OpenWebUI 확장 파라미터) */
   files?: Array<{ type: 'file'; id: string }>
+  /** 전역 설정을 호출 시점에 반영한다. */
+  owuiTools?: 'auto' | 'off'
+  /** 실제 전송 직전 기록. 폴백이면 기본 본문으로 다시 호출한다. */
+  onDispatch?: (delivery: OwuiToolDelivery, body: Record<string, unknown>) => void | Promise<void>
   limits?: ChatLimits
 }
 

@@ -3,8 +3,8 @@ import { OpenAICompatibleProvider } from './openaiProvider.js'
 import type { ChatProvider } from './provider.js'
 import type { LlmSettings } from '@mes/domain'
 
-export function createProvider(settings: LlmSettings): ChatProvider {
-  return settings.mode === 'live' ? new OpenAICompatibleProvider(settings) : new MockProvider()
+export function createProvider(settings: LlmSettings, readOwuiTools?: () => Promise<'auto' | 'off'>): ChatProvider {
+  return settings.mode === 'live' ? new OpenAICompatibleProvider(settings, readOwuiTools) : new MockProvider()
 }
 
 export type { ChatChunk, ChatLimits, ChatProvider, ChatRequest, ChatMessageInput, ToolCall, ChatMeta } from './provider.js'

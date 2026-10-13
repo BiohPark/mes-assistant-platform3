@@ -202,7 +202,7 @@ describe('LLM admin test API', () => {
     it('시간 초과는 504 TIMEOUT', async () => {
       // limitedFetch의 타이머는 자체 단위 테스트가 검증한다 — 여기서는 본문 읽기가 timeout으로 끝났을 때의 HTTP 매핑만 본다
       const timeoutBody = new ReadableStream<Uint8Array>({ start(controller) { controller.error(new LimitedFetchError('timeout')) } })
-      vi.stubGlobal('fetch', vi.fn(async () => new Response(timeoutBody, { status: 200 })))
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/models') ? new Response('{"data":[]}') : new Response(timeoutBody, { status: 200 })))
       const res = await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send(userMessage()).expect(504)
       expect(res.body.code).toBe('TIMEOUT')
       expect(JSON.stringify(res.body)).not.toMatch(/top-secret|localhost:3101/)
@@ -234,11 +234,12 @@ describe('LLM admin test API', () => {
       expect(JSON.stringify([missing.body, failed.body])).not.toMatch(/top-secret|Authorization|Bearer/)
     })
     it('정상 응답은 키 없이 text·model·ms를 돌려주고 요청에 stream·model이 실린다', async () => {
-      const fetchMock = vi.fn(async () => sse('가짜 응답'))
+      const fetchMock = vi.fn(async (url: string, _init: RequestInit) => url.endsWith('/models') ? new Response('{"data":[]}') : sse('가짜 응답'))
       vi.stubGlobal('fetch', fetchMock)
       const res = await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send({ model: 'fake-writer', ...userMessage('테스트') }).expect(200)
       expect(res.body).toEqual({ text: '가짜 응답', model: 'fake-writer', ms: expect.any(Number) })
-      const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+      const [, init] = fetchMock.mock.calls.find(([url]) => url.endsWith('/chat/completions'))!
+      expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/models'))).toHaveLength(1)
       expect(JSON.parse(String(init.body))).toEqual({ model: 'fake-writer', messages: [{ role: 'user', content: '테스트' }], stream: true })
       expect(init.redirect).toBe('manual')
       expect(JSON.stringify(res.body)).not.toContain('top-secret')

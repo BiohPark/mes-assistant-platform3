@@ -268,12 +268,20 @@ export interface ConversationRequestInput {
 export type RequestInput = FileRequestInput | ConversationRequestInput
 
 /** 답변 1건을 만들 때 AI에 실제로 보낸 것 — 화면의 "사용한 자료"와 전송 기록 뷰어가 읽는다 */
+export interface OwuiToolDelivery {
+  mode: 'tools' | 'basic' | 'fallback'
+  tool_ids?: string[]
+  features?: Record<string, boolean>
+}
+
 export interface RequestInfo {
+  /** 실제 마지막 시도의 도구·기능 전달 방식. 파일 transport와 별개다. */
+  owuiTools?: OwuiToolDelivery
   at: ISODate
   provider: 'mock' | 'live'
   transport: 'inline' | 'openwebui'
   model: string
-  /** 직렬화한 요청 본문 크기 (OpenWebUI 첨부 파일의 바이트는 제외) */
+  /** 입력 예산 본문의 바이트 (OpenWebUI 파일 내용·도구 메타는 제외, 트레이 추정과 같은 의미) */
   bytes: number
   limitBytes: number
   inputs: RequestInput[]
@@ -445,6 +453,9 @@ export interface LlmSettings {
   model: string
   /** 없으면 inline */
   fileDelivery?: FileDelivery
+  preset?: 'openai-compatible' | 'openwebui'
+  /** OpenWebUI live 호출에서만 적용, 없으면 auto */
+  owuiTools?: 'auto' | 'off'
 }
 
 export interface Settings {

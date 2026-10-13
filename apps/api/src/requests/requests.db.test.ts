@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { OpenAICompatibleProvider, type ChatProvider } from '@mes/llm'
 import { loadConfig } from '../config/config.js'
 import { runMigrations } from '../db/migrate.js'
-import { appSetting, chatRequest, dbLock, fileObject, message, task, taskInput } from '../db/schema.js'
+import { thread as threadTable, appSetting, chatRequest, dbLock, fileObject, message, task, taskInput } from '../db/schema.js'
 import { seedCatalog } from '../db/seed.js'
 import { appUser, assistant } from '../db/schema.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -50,6 +50,52 @@ describe('RequestService DB', () => {
     tasks = new DbTasksService(db, undefined, extras)
   })
   afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); await rm(root, { recursive: true, force: true }) })
+
+  it.each([false, true])('live OpenWebUI dispatch persists final tools/body and one request (reject=%s)', async reject => {
+    const bodies: Record<string, unknown>[] = []
+    const server = createServer((req, res) => {
+      if (req.url === '/api/models') { res.end(JSON.stringify({ data: [{ id: 'fake-general', info: { meta: { toolIds: ['lookup'], defaultFeatureIds: ['web_search'] } } }] })); return }
+      if (req.method !== 'POST' || req.url !== '/api/chat/completions') { res.writeHead(404); res.end(); return }
+      const chunks: Buffer[] = []
+      req.on('data', chunk => chunks.push(chunk))
+      req.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
+        bodies.push(body)
+        if (reject && 'tool_ids' in body) { res.writeHead(400); res.end('rejected'); return }
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.end('data: {"choices":[{"delta":{"content":"OK"}}]}\n\ndata: [DONE]\n\n')
+      })
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address() as { port: number }
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
+      LLM_MODE: 'live', LLM_PRESET: 'openwebui', LLM_API_KEY: 'test-key', LLM_BASE_URL: `http://127.0.0.1:${address.port}`, LLM_DEFAULT_MODEL: 'fake-general' })
+    const runner = new RequestsService(db, config, new OpenAICompatibleProvider(toLlmSettings(config.llm)))
+    const { thread } = await tasks.create('member', { assistantId, title: 'Tool test' })
+    await db.update(threadTable).set({ modelId: 'fake-general' }).where(eq(threadTable.id, thread.id))
+    try {
+      await db.insert(appSetting).values({ key: 'owuiTools', value: 'auto' }).onDuplicateKeyUpdate({ set: { value: 'auto' } })
+      const estimate = await runner.estimate('member', thread.id, { draft: 'tools check' })
+      const started = await runner.start('member', thread.id, { content: 'tools check' }, `owui-${reject}`)
+      const events: Array<{ event: string; data: Record<string, unknown> }> = []
+      const unsubscribe = runner.subscribe(started.id, event => events.push(event))
+      await started.done
+      unsubscribe()
+      const expected = reject ? { mode: 'fallback' } : { mode: 'tools', tool_ids: ['lookup'], features: { web_search: true } }
+      expect(await runner.get(started.id)).toMatchObject({ status: 'succeeded', owuiTools: expected, bytes: estimate.bytes })
+      expect(events.find(event => event.event === 'completed')?.data.requestInfo).toMatchObject({ owuiTools: expected })
+      const snapshot = await runner.snapshot(started.id) as Record<string, unknown>
+      expect(snapshot.messages).toEqual(bodies.at(-1)!.messages)
+      if (reject) { expect(snapshot).not.toHaveProperty('tool_ids'); expect(snapshot).not.toHaveProperty('features'); expect(bodies).toHaveLength(2) }
+      else { expect(snapshot).toMatchObject({ tool_ids: ['lookup'], features: { web_search: true }, params: { function_calling: 'legacy' } }); expect(bodies).toHaveLength(1) }
+      expect((await db.select().from(chatRequest).where(eq(chatRequest.threadId, thread.id)))).toHaveLength(1)
+      await db.insert(appSetting).values({ key: 'owuiTools', value: 'off' }).onDuplicateKeyUpdate({ set: { value: 'off' } })
+      const disabled = await runner.start('member', thread.id, { content: 'disabled' }, `owui-disabled-${reject}`)
+      await disabled.done
+      expect(await runner.get(disabled.id)).toMatchObject({ owuiTools: { mode: 'basic' } })
+      expect(bodies.at(-1)).not.toHaveProperty('tool_ids')
+    } finally { runner.onModuleDestroy(); await db.delete(appSetting).where(eq(appSetting.key, 'owuiTools')); await new Promise<void>(resolve => server.close(() => resolve())) }
+  })
 
   it('reasoning keeps first-token and idle waits alive, streams phases, persists separately and never enters the next request', async () => {
     let release!: () => void
