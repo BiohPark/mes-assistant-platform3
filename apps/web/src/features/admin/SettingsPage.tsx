@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -21,6 +21,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
   const { defaultModel, defaultModelSource, ...patchable } = initial
   const modelList = useModelList()
   const [form, setForm] = useState<SettingsPatch>(patchable)
+  const savedModelOverride = useRef(initial.defaultModelOverride ?? null)
   const assistants = useAssistants()
   const options = useMemo(() => assistants.map(row => ({ value: row.id, label: row.name, status: row.status })), [assistants])
   const assistantSource = useCallback(() => options, [options])
@@ -28,7 +29,18 @@ function SettingsForm({ initial }: { initial: Settings }) {
   function change<K extends keyof SettingsPatch>(key: K, value: SettingsPatch[K]) { setForm((current) => ({ ...current, [key]: value })) }
   async function submit(event: FormEvent) {
     event.preventDefault()
-    try { await saveSettings(form); await client.invalidateQueries({ queryKey: ['settings'] }); void client.invalidateQueries({ queryKey: ['system-assistant', 'model'] }); void client.invalidateQueries({ queryKey: ['diagnostics'] }); toast.success(t('admin.settings.saved')) }
+    const { defaultModelOverride, ...otherSettings } = form
+    const patch: SettingsPatch = otherSettings
+    const modelOverride = defaultModelOverride ?? null
+    if (modelOverride !== savedModelOverride.current) patch.defaultModelOverride = modelOverride
+    try {
+      await saveSettings(patch)
+      savedModelOverride.current = modelOverride
+      await client.invalidateQueries({ queryKey: ['settings'] })
+      void client.invalidateQueries({ queryKey: ['system-assistant', 'model'] })
+      void client.invalidateQueries({ queryKey: ['diagnostics'] })
+      toast.success(t('admin.settings.saved'))
+    }
     catch (error) { toast.error(error instanceof Error ? error.message : t('admin.saveFailed')) }
   }
   return <form onSubmit={(event) => void submit(event)} className="space-y-3 rounded-xl border bg-card p-4 text-sm"><h2 className="font-semibold">{t('admin.settings.global')}</h2>

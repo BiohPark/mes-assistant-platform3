@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { createPool } from '../../apps/api/src/db/connection.js'
 
 const password = 'e2e-password-1234'
 async function owner(page: Page) {
@@ -120,5 +121,57 @@ test('SO 전역 기본 모델: 저장·해제 즉시 반영, 목록 실패 시 �
     for (const value of [model, null]) expect((await request.patch('/api/settings', { data: { defaultModelOverride: value } })).status()).toBe(403)
   } finally {
     expect((await page.request.patch('/api/settings', { data: { defaultModelOverride: original.defaultModelOverride ?? null } })).status()).toBe(200)
+  }
+})
+
+test('두 SO 세션: 이전 설정 화면에서 첨부 개수만 저장해도 다른 세션의 모델 변경을 유지한다', async ({ page, browser, baseURL }) => {
+  await owner(page)
+  const original = await (await page.request.get('/api/settings')).json() as { defaultModelOverride?: string | null; fileMaxPerRequest?: number }
+  const otherContext = await browser.newContext({ baseURL, locale: 'ko-KR' })
+  try {
+    expect((await page.request.patch('/api/settings', { data: { defaultModelOverride: null } })).status()).toBe(200)
+    await page.goto('/settings')
+    const stalePicker = page.getByRole('combobox', { name: '기본 모델' })
+    await expect(stalePicker).toBeEnabled()
+    await expect(stalePicker).toHaveValue('')
+
+    const other = await otherContext.newPage()
+    expect((await other.request.post('/api/auth/login', { data: { loginId: 'dev-owner', password } })).ok()).toBe(true)
+    expect((await (await other.request.get('/api/me')).json()).roles).toContain('system_owner')
+    await other.goto('/settings')
+    const picker = other.getByRole('combobox', { name: '기본 모델' })
+    await expect(picker).toBeEnabled()
+    await picker.click()
+    await other.getByRole('option').first().click()
+    const model = await picker.inputValue()
+    expect(model).not.toBe('')
+    const changed = other.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH')
+    await other.getByRole('button', { name: '설정 저장' }).click()
+    expect((await changed).status()).toBe(200)
+    await expect(other.getByText(`현재 적용 모델: ${model}`, { exact: true })).toBeVisible()
+
+    await expect(stalePicker).toHaveValue('')
+    const fileMaxPerRequest = original.fileMaxPerRequest === 7 ? 8 : 7
+    await page.getByLabel('첨부 개수 한도').fill(String(fileMaxPerRequest))
+    const saved = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH')
+    await page.getByRole('button', { name: '설정 저장' }).click()
+    const written = await saved
+    expect(written.status()).toBe(200)
+    expect(written.request().postDataJSON()).toMatchObject({ fileMaxPerRequest })
+    expect(written.request().postDataJSON()).not.toHaveProperty('defaultModelOverride')
+    expect(await written.json()).toMatchObject({ defaultModelOverride: model, defaultModel: model, fileMaxPerRequest })
+    expect(await (await page.request.get('/api/settings')).json()).toMatchObject({ defaultModelOverride: model, fileMaxPerRequest })
+  } finally {
+    try {
+      expect((await page.request.patch('/api/settings', { data: {
+        defaultModelOverride: original.defaultModelOverride ?? null,
+        ...(original.fileMaxPerRequest === undefined ? {} : { fileMaxPerRequest: original.fileMaxPerRequest }),
+      } })).status()).toBe(200)
+      if (original.fileMaxPerRequest === undefined) {
+        const pool = createPool(process.env.DATABASE_URL!, 1)
+        try { await pool.execute("delete from app_setting where `key` = 'fileMaxPerRequest'") }
+        finally { await pool.end() }
+      }
+    } finally { await otherContext.close() }
   }
 })

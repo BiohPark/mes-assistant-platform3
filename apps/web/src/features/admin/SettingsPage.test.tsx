@@ -82,6 +82,63 @@ it('모델 목록에서 선택·설정 해제하고 적용 모델과 출처를 �
   expect(saved[1]).toMatchObject({ defaultModelOverride: null })
 })
 
+it('첨부 개수만 저장하면 모델 override를 전송하지 않아 다른 세션의 변경을 유지한다', async () => {
+  const saved: Record<string, unknown>[] = []
+  let current = { defaultModel: 'setting-a', defaultModelOverride: 'setting-a', defaultModelSource: 'setting', fileMaxPerRequest: 10 }
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/llm/models') return jsonResponse(200, { models: ['setting-a', 'setting-b'] })
+    if (url === '/api/settings') {
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)); saved.push(body)
+        current = { ...current, ...body, defaultModel: body.defaultModelOverride ?? current.defaultModelOverride }
+      }
+      return jsonResponse(200, current)
+    }
+    return jsonResponse(200, [])
+  }))
+  const user = userEvent.setup()
+  renderPage()
+  await screen.findByText('현재 적용 모델: setting-a')
+  current = { ...current, defaultModel: 'setting-b', defaultModelOverride: 'setting-b' }
+  await user.clear(screen.getByRole('spinbutton', { name: '첨부 개수 한도' }))
+  await user.type(screen.getByRole('spinbutton', { name: '첨부 개수 한도' }), '7')
+  await user.click(screen.getByRole('button', { name: '설정 저장' }))
+  await waitFor(() => expect(saved).toHaveLength(1))
+  expect(saved[0]).toMatchObject({ fileMaxPerRequest: 7 })
+  expect(saved[0]).not.toHaveProperty('defaultModelOverride')
+  await screen.findByText('현재 적용 모델: setting-b')
+  expect(current.defaultModelOverride).toBe('setting-b')
+})
+
+it('저장 성공 후 재조회가 실패해도 모델 기준값을 갱신해 다음 저장에서 생략한다', async () => {
+  const saved: Record<string, unknown>[] = []
+  let reads = 0
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/llm/models') return jsonResponse(200, { models: ['setting-b'] })
+    if (url === '/api/settings') {
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)); saved.push(body)
+        return jsonResponse(200, { defaultModel: 'setting-b', defaultModelOverride: 'setting-b', defaultModelSource: 'setting' })
+      }
+      reads += 1
+      return reads === 1 ? jsonResponse(200, { defaultModel: 'env-model', defaultModelOverride: null }) : jsonResponse(503, {})
+    }
+    return jsonResponse(200, [])
+  }))
+  const user = userEvent.setup()
+  renderPage()
+  const select = await screen.findByRole('combobox', { name: '기본 모델' })
+  await waitFor(() => expect(select).toBeEnabled())
+  await user.click(select)
+  await user.click(await screen.findByRole('option', { name: 'setting-b' }))
+  await user.click(screen.getByRole('button', { name: '설정 저장' }))
+  await waitFor(() => expect(reads).toBe(2))
+  expect(saved[0]).toMatchObject({ defaultModelOverride: 'setting-b' })
+  await user.click(screen.getByRole('button', { name: '설정 저장' }))
+  await waitFor(() => expect(saved).toHaveLength(2))
+  expect(saved[1]).not.toHaveProperty('defaultModelOverride')
+})
+
 it('모델 목록 실패는 오류를 표시하고 기존 override를 유지한 채 다른 설정을 저장한다', async () => {
   const saved: unknown[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -96,7 +153,36 @@ it('모델 목록 실패는 오류를 표시하고 기존 override를 유지한 
   expect(screen.getByText('현재 적용 모델: existing')).toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: '설정 저장' }))
   await waitFor(() => expect(saved).toHaveLength(1))
-  expect(saved[0]).toMatchObject({ defaultModelOverride: 'existing' })
+  expect(saved[0]).not.toHaveProperty('defaultModelOverride')
+})
+
+it.each(['setting-b', null])('모델 변경(%s) 저장 실패 후 재시도에도 override를 포함한다', async model => {
+  const saved: Record<string, unknown>[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/llm/models') return jsonResponse(200, { models: ['setting-a', 'setting-b'] })
+    if (url === '/api/settings') {
+      if (init?.method === 'PATCH') {
+        saved.push(JSON.parse(String(init.body)))
+        if (saved.length === 1) return jsonResponse(503, {})
+      }
+      return jsonResponse(200, { defaultModel: 'setting-a', defaultModelOverride: 'setting-a', defaultModelSource: 'setting' })
+    }
+    return jsonResponse(200, [])
+  }))
+  const user = userEvent.setup()
+  renderPage()
+  const select = await screen.findByRole('combobox', { name: '기본 모델' })
+  await waitFor(() => expect(select).toBeEnabled())
+  if (model === null) await user.click(screen.getByRole('button', { name: '설정 해제(.env 값 사용)' }))
+  else {
+    await user.click(select)
+    await user.click(await screen.findByRole('option', { name: model }))
+  }
+  await user.click(screen.getByRole('button', { name: '설정 저장' }))
+  await waitFor(() => expect(saved).toHaveLength(1))
+  await user.click(screen.getByRole('button', { name: '설정 저장' }))
+  await waitFor(() => expect(saved).toHaveLength(2))
+  expect(saved).toEqual([{ defaultModelOverride: model }, { defaultModelOverride: model }])
 })
 
 it('AI 연결 요약 카드는 /api/llm/status를 보여 주고 연결 진단으로 이어진다 — 사용자 목록은 여기서 조회하지 않는다', async () => {
