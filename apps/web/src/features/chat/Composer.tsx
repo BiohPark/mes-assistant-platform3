@@ -34,7 +34,9 @@ interface ComposerProps {
   inputLabel?: string
   maxAttachments?: number
   /** discussion=true 이면 팀 의견(AI 미전송) */
-  onSend: (text: string, attachments: PendingAttachment[], discussion: boolean) => Promise<void>
+  onSend: (text: string, attachments: PendingAttachment[], discussion: boolean) => Promise<void | boolean>
+  /** Ask for confirmation before marking the draft as sent; false preserves it without an error. */
+  beforeSend?: (discussion: boolean) => Promise<boolean>
   onStop: () => void
   suggestions?: string[]
   allowAttachments?: boolean
@@ -52,7 +54,7 @@ interface ComposerProps {
   draftKey?: string
 }
 
-export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, onSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange, clearOnSubmit = false, draftKey }: ComposerProps) {
+export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, onSend, beforeSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange, clearOnSubmit = false, draftKey }: ComposerProps) {
   const t = useT()
   const [saved] = useState(() => (draftKey ? getDraft(draftKey) : undefined))
   const [discussion, setDiscussionState] = useState(saved?.discussion ?? false)
@@ -114,10 +116,17 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
     submitting.current = true
     const submittedText = text
     const f = pending
-    if (clearOnSubmit) { setText(''); setPending([]) }
-    else { sent.current = { text: submittedText, pending: f }; commit({}) }
     try {
-      await onSend(submittedText, f, discussion)
+      if (beforeSend && !await beforeSend(discussion)) return
+      if (!mounted.current) return
+      if (clearOnSubmit) { setText(''); setPending([]) }
+      else { sent.current = { text: submittedText, pending: f }; commit({}) }
+      const accepted = await onSend(submittedText, f, discussion)
+      if (accepted === false) {
+        if (clearOnSubmit) { writeText(submittedText); setPending(f) }
+        else { sent.current = null; commit({}) }
+        return
+      }
       // 보낸 것만 지운다 — 응답이 화면에서 끝난 뒤 onSend가 풀리기까지 사용자가 다음 메시지(텍스트·첨부)를 준비했을 수 있다
       if (!clearOnSubmit) { sent.current = null; writeText((current) => (current === submittedText ? '' : current)); setPending((current) => current.filter((item) => !f.includes(item))); if (latest.current.text === '') onDraftChange?.('') }
     } catch (e) {
