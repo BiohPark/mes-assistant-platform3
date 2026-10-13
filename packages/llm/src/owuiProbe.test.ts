@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { LlmSettings } from '@mes/domain'
-import { OWUI_PROBE_MASKED, OWUI_PROBE_OTHER, OWUI_PROBE_PROMPT, frameKeyPaths, probeOpenWebUi } from './owuiProbe.js'
+import { OWUI_PROBE_MASKED, OWUI_PROBE_OTHER, OWUI_PROBE_PROMPT, OwuiProbeUnknownModelError, frameKeyPaths, looksLikeSecret, probeOpenWebUi } from './owuiProbe.js'
 
 type Handler = (req: IncomingMessage, res: ServerResponse, body: Record<string, unknown>) => void | Promise<void>
 let server: Server | undefined
@@ -169,5 +169,47 @@ describe('유출 경로 재현 (S10-5 리뷰 P1 ×4) — 허용 목록 밖은 �
     expect(seen.filter((x) => x.path === '/api/chat/completions')[1]!.body).toMatchObject({ tool_ids: ['web_tool', 'server:mcp:docs'], features: { web_search: true } })
     const text = JSON.stringify(result)
     for (const leaked of [SECRET, 'internal_flag', 'confidential', 'the answer', '10.20.30.40', 'private-report', 'team/secret', '12345', 'cookie-secret', 'private', 'path.txt', 'corp']) expect(text).not.toContain(leaked)
+  })
+})
+
+describe('재리뷰 재현 (S10-5 P1 ×2·P2)', () => {
+  it('P1 버전은 semver(주.부.수[-접미])만 — IPv4 모양은 확인 불가', async () => {
+    for (const [value, expected] of [['10.20.30.40', null], ['192.168.0.1', null], ['0.12.0', '0.12.0'], ['0.6.5-dev', '0.6.5-dev'], ['1.2', null], ['0.6.5-sk-live-secret', null]] as const) {
+      const settings = await serve({ 'GET /api/version': json(200, { version: value }), 'GET /api/models': json(200, MODELS), 'POST /api/chat/completions': sse(['[DONE]']) })
+      expect((await probeOpenWebUi(settings, 'agent-a')).version).toBe(expected)
+      server!.closeAllConnections(); await new Promise((resolve) => server!.close(resolve)); server = undefined
+    }
+  })
+
+  it('P1 모델 목록에 없는 입력은 시험 호출 전에 거부, 목록의 id도 식별자 형식이 아니면 가린다', async () => {
+    const odd = 'owui.corp.example'
+    const settings = await serve({ 'GET /api/version': json(200, { version: '0.12.0' }),
+      'GET /api/models': json(200, { data: [{ id: 'agent-a' }, { id: odd }, { id: 'glm-5.2' }, { id: 'llama3.1:8b' }] }), 'POST /api/chat/completions': sse(['[DONE]']) })
+    await expect(probeOpenWebUi(settings, 'http://evil.example/x?q=secret')).rejects.toBeInstanceOf(OwuiProbeUnknownModelError)
+    expect(seen.some((x) => x.path === '/api/chat/completions')).toBe(false)
+    expect((await probeOpenWebUi(settings, odd)).model).toBe(OWUI_PROBE_MASKED)
+    expect((await probeOpenWebUi(settings, 'glm-5.2')).model).toBe('glm-5.2')
+    expect((await probeOpenWebUi(settings, 'llama3.1:8b')).model).toBe('llama3.1:8b')
+  })
+
+  it('P1 모델 목록을 못 읽으면 진단은 하되 식별자 형식이 아닌 모델은 결과에서 가린다', async () => {
+    const settings = await serve({ 'GET /api/version': json(200, { version: '0.12.0' }), 'GET /api/models': json(500, {}), 'POST /api/chat/completions': sse(['[DONE]']) })
+    const result = await probeOpenWebUi(settings, 'C:/private/path?token=abc')
+    expect(result.model).toBe(OWUI_PROBE_MASKED)
+    expect(result.attempts.map((a) => a.status)).toEqual([200, 200])
+    expect(JSON.stringify(result)).not.toMatch(/private|token|abc/)
+  })
+
+  it('P2 식별자 모양의 비밀값(대표 접두·24자 이상 영숫자 혼합)은 가린다', async () => {
+    const secrets = ['sk-proj-abc', 'pk_live_1', 'rk-x', 'ghp_abcdef', 'github_pat_x', 'gho_x', 'xoxb-123', 'xoxp-1', 'Bearer_token', 'AKIAABCDEF', 'eyJhbGciOi', 'a1b2c3d4e5f6g7h8i9j0k1l2', 'server:mcp:Zx9Qw8Er7Ty6Ui5Op4As3Df2']
+    const fine = ['web_tool', 'company_document_search_tool_v2', 'server:mcp:docs', 'web_search', 'image_generation']
+    for (const id of secrets) expect([id, looksLikeSecret(id)]).toEqual([id, true])
+    for (const id of fine) expect([id, looksLikeSecret(id)]).toEqual([id, false])
+    const settings = await serve({ 'GET /api/version': json(200, { version: '0.12.0' }),
+      'GET /api/models': json(200, { data: [{ id: 'agent-a', info: { meta: { toolIds: [...fine, ...secrets], defaultFeatureIds: ['sk-feature'] } } }, { id: 'sk-model-secret' }] }), 'POST /api/chat/completions': sse(['[DONE]']) })
+    const result = await probeOpenWebUi(settings, 'agent-a')
+    expect(result.meta.toolIds).toEqual([...fine, ...secrets.map(() => OWUI_PROBE_MASKED)])
+    expect(result.meta.defaultFeatureIds).toEqual([OWUI_PROBE_MASKED])
+    expect((await probeOpenWebUi(settings, 'sk-model-secret')).model).toBe(OWUI_PROBE_MASKED)
   })
 })

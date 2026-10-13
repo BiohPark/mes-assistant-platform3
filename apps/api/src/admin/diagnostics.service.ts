@@ -4,7 +4,7 @@ import { constants } from 'node:fs'
 import { arch, platform, release } from 'node:os'
 import type { Pool } from 'mysql2/promise'
 import { OwuiProbeResultSchema, type OwuiProbeReport } from '@mes/contracts'
-import { probeOpenWebUi } from '@mes/llm'
+import { OwuiProbeUnknownModelError, probeOpenWebUi } from '@mes/llm'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, DB_CLIENT, type Db } from '../db/db.module.js'
 import { buildInfo } from '../health/build-info.js'
@@ -115,6 +115,7 @@ export class DiagnosticsService {
       return OwuiProbeResultSchema.parse(redact(result, [this.config.llm.apiKey, host].filter(Boolean)))
     } catch (error) {
       if (error instanceof HttpException) throw error
+      if (error instanceof OwuiProbeUnknownModelError) throw new BadRequestException('모델 목록에 없는 모델입니다')
       throw new HttpException('OpenWebUI 진단을 마치지 못했습니다', 504)
     } finally { release() }
   }

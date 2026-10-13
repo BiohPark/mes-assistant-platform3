@@ -33,6 +33,7 @@ const db = { ...reads, insert: writes, update: writes, delete: writes, transacti
 let owui: Server
 let owuiPort = 0
 let hang = false
+let chatCalls = 0
 const ANSWER = '비밀 답변 본문'
 beforeAll(async () => {
   owui = createServer(async (req, res) => {
@@ -44,6 +45,7 @@ beforeAll(async () => {
     if (req.url === '/api/models') return send(200, { data: [{ id: 'agent-a', info: { meta: { toolIds: ['t1', '10.20.30.40', 'private-report.pdf'], defaultFeatureIds: ['web_search'],
       capabilities: { vision: true, 'top-secret': true }, knowledge: [{ name: 'kb' }] }, params: { function_calling: 'native' } } }] })
     if (req.url === '/api/chat/completions') {
+      chatCalls++
       if (hang) return
       const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
       if ('tool_ids' in body) return send(400, { detail: `tool_ids not allowed — see http://127.0.0.1:${owuiPort}/docs key top-secret Cookie: sid=cookie-secret D:\\private\\x.txt` })
@@ -96,6 +98,16 @@ describe('OpenWebUI 진단 API', () => {
     const text = JSON.stringify(res.body)
     for (const leaked of [ANSWER, OWUI_PROBE_PROMPT, 'top-secret', '127.0.0.1', String(owuiPort), 'http', 'confidential', '10.20.30.40', 'private', 'cookie-secret', 'tool_ids not allowed']) expect(text).not.toContain(leaked)
     expect(writes).not.toHaveBeenCalled()
+  })
+
+  it('모델 목록에 없는 모델(URL·경로·쿼리 포함)은 시험 호출 없이 400, 응답에 입력을 되풀이하지 않는다 (재리뷰 P1)', async () => {
+    const server = (await boot()).getHttpServer()
+    chatCalls = 0
+    for (const model of ['http://evil.example/x?q=secret', 'C:/private/path', 'no-such-model']) {
+      const res = await request(server).post(PROBE).set('Cookie', 'mes_session=owner').send({ model }).expect(400)
+      expect(JSON.stringify(res.body)).not.toContain(model)
+    }
+    expect(chatCalls).toBe(0)
   })
 
   it('Mock 모드는 400, 전역 상한이 차면 429', async () => {

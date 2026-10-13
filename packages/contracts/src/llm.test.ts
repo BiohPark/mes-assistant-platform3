@@ -36,7 +36,16 @@ describe('OpenWebUI 진단 계약', () => {
       { ...ok, meta: { ...meta, error: 'HTTP 401 · bad key' } },
       { ...ok, meta: { ...meta, functionCalling: 'sk-live-secret' } },
       { ...ok, version: 'owui.corp.example' },
+      // 재리뷰 P1·P2
+      { ...ok, version: '10.20.30.40' },
+      { ...ok, model: 'http://evil.example/x?q=secret' },
+      { ...ok, model: 'C:/private/path' },
+      { ...ok, model: 'sk-model-secret' },
+      { ...ok, meta: { ...meta, toolIds: ['sk-proj-abc'] } },
+      { ...ok, meta: { ...meta, toolIds: ['a1b2c3d4e5f6g7h8i9j0k1l2'] } },
+      { ...ok, meta: { ...meta, defaultFeatureIds: ['ghp_abcdef'] } },
     ]
+    for (const model of ['glm-5.2', 'llama3.1:8b', '(가림)']) expect(OwuiProbeResultSchema.safeParse({ ...ok, model }).success).toBe(true)
     for (const value of bad) expect(OwuiProbeResultSchema.safeParse(value).success).toBe(false)
   })
 })

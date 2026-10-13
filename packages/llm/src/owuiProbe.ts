@@ -69,7 +69,26 @@ const FRAME_INNER_KEYS = new Set(['role', 'content', 'reasoning_content', 'reaso
 const FUNCTION_CALLING = new Set(['native', 'legacy', 'default'])
 /** 짧은 식별자(도구 서버 접두 server:·server:mcp: 허용) — 점·슬래시·숫자 시작(IP)·확장자·긴 값은 가린다 */
 const SHORT_ID = /^(?:server:(?:mcp:)?)?[A-Za-z_][A-Za-z0-9_-]{0,39}$/
-const VERSION = /^\d{1,4}(?:\.\d{1,4}){1,3}(?:-[A-Za-z0-9]{1,16})?$/
+/** semver 주.부.수[-접미]만 — 점 4개짜리 IPv4 모양은 통과하지 않는다 */
+const VERSION = /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[A-Za-z0-9]{1,16})?$/
+/** 모델 ID — 영숫자로 시작, 점·콜론·하이픈 허용(glm-5.2·llama3.1:8b). 슬래시·쿼리·호스트/확장자 모양(.영문2자+)·포트 모양·IPv4는 가린다 */
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/
+const HOST_OR_FILE = /\.[A-Za-z]{2,}|:\d{2,5}$|^\d{1,3}(?:\.\d{1,3}){3}/
+/** 대표 비밀 접두 — OpenAI·Stripe(sk-/pk-/rk-), GitHub(ghp_·gho_·github_pat_), Slack(xox?-), Bearer, AWS(AKIA), JWT(eyJ) */
+const SECRET_PREFIX = /^(?:(?:sk|pk|rk)[-_]|gh[pousr]_|github_pat_|xox[abposr]-|bearer|AKIA|eyJ)/i
+
+/** 식별자 모양의 비밀값 — 대표 접두이거나, 구분자 없는 24자 이상 영숫자 덩어리에 문자와 숫자가 섞였으면 가린다 */
+export function looksLikeSecret(value: string): boolean {
+  const bare = value.replace(/^server:(?:mcp:)?/, '')
+  if (SECRET_PREFIX.test(value) || SECRET_PREFIX.test(bare)) return true
+  return (value.match(/[A-Za-z0-9]{24,}/g) ?? []).some((run) => /[A-Za-z]/.test(run) && /\d/.test(run))
+}
+
+/** 입력 모델이 OpenWebUI 모델 목록에 없다 — 시험 호출 전에 멈춘다(API 400) */
+export class OwuiProbeUnknownModelError extends Error {
+  constructor() { super('모델 목록에 없는 모델입니다'); this.name = 'OwuiProbeUnknownModelError' }
+}
+const safeModel = (model: string) => MODEL_ID.test(model) && !HOST_OR_FILE.test(model) && !looksLikeSecret(model) ? model : OWUI_PROBE_MASKED
 const elapsed = (started: number) => Math.round(performance.now() - started)
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const isEmpty = (value: unknown) => value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0)
@@ -133,7 +152,7 @@ export async function probeOpenWebUi(settings: LlmSettings, model: string, optio
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`
   const failure = (error: unknown) => toLimitedFetchError(error).message
-  const shortId = (id: string) => SHORT_ID.test(id) && !(settings.apiKey && id.includes(settings.apiKey)) ? id : OWUI_PROBE_MASKED
+  const shortId = (id: string) => SHORT_ID.test(id) && !looksLikeSecret(id) && !(settings.apiKey && id.includes(settings.apiKey)) ? id : OWUI_PROBE_MASKED
   async function getJson(url: string, cap: number, maxResponseBytes: number): Promise<unknown> {
     const timeoutMs = remaining(cap)
     if (timeoutMs <= 0) throw new LimitedFetchError('timeout')
@@ -147,35 +166,38 @@ export async function probeOpenWebUi(settings: LlmSettings, model: string, optio
   try {
     const body = await getJson(joinUrl(rootUrl(settings.baseUrl), 'api/version'), VERSION_TIMEOUT_MS, SMALL_MAX_BYTES)
     const value = isObject(body) ? body.version : undefined
-    if (typeof value === 'string' && VERSION.test(value)) version = value
+    if (typeof value === 'string' && VERSION.test(value) && !looksLikeSecret(value)) version = value
   } catch { /* 확인 불가 */ }
 
   const meta: OwuiProbeMeta = { found: false, toolIds: [], defaultFeatureIds: [], capabilities: {}, knowledgeCount: 0, functionCalling: null }
+  let data: unknown[] | undefined
   try {
     const body = await getJson(joinUrl(settings.baseUrl, 'models'), MODELS_TIMEOUT_MS, MODELS_MAX_BYTES)
-    const data = isObject(body) && Array.isArray(body.data) ? body.data : []
-    const entry: unknown = data.find((item) => isObject(item) && item.id === model)
-    const info = isObject(entry) && isObject(entry.info) ? entry.info : undefined
-    const raw = info && isObject(info.meta) ? info.meta : undefined
-    if (info) {
-      meta.found = true
-      // 개수는 그대로 — 형식에 맞지 않는 항목은 (가림)으로 바꾼다
-      const ids = (value: unknown) => Array.isArray(value) ? value.slice(0, MAX_IDS).map((id) => typeof id === 'string' ? shortId(id) : OWUI_PROBE_MASKED) : []
-      meta.toolIds = ids(raw?.toolIds)
-      meta.defaultFeatureIds = ids(raw?.defaultFeatureIds)
-      if (isObject(raw?.capabilities)) {
-        const capabilities = raw.capabilities
-        meta.capabilities = Object.fromEntries(OWUI_KNOWN_CAPABILITIES.filter((name) => typeof capabilities[name] === 'boolean').map((name) => [name, capabilities[name] as boolean]))
-      }
-      meta.knowledgeCount = Array.isArray(raw?.knowledge) ? raw.knowledge.length : 0
-      // OpenWebUI는 function_calling을 info.params에 둔다(옛 기록 대비 meta.params도 본다)
-      const params = isObject(info.params) ? info.params : isObject(raw?.params) ? raw.params : undefined
-      const fc = params?.function_calling
-      meta.functionCalling = typeof fc === 'string' ? (FUNCTION_CALLING.has(fc) ? fc : OWUI_PROBE_OTHER) : null
-    }
+    data = isObject(body) && Array.isArray(body.data) ? body.data : []
   } catch (error) {
     // LimitedFetchError는 고정 문구, 그 밖은 httpError의 고정 분류나 '응답 형식 오류'뿐
     meta.error = error instanceof LimitedFetchError || !(error instanceof Error) ? failure(error) : error.message
+  }
+  // 목록을 읽었으면 그 안의 id만 받는다 — 못 읽었으면 진단은 계속하되 결과의 모델 표기는 형식 검사로 가린다
+  const entry: unknown = data?.find((item) => isObject(item) && item.id === model)
+  if (data && entry === undefined) throw new OwuiProbeUnknownModelError()
+  const info = isObject(entry) && isObject(entry.info) ? entry.info : undefined
+  const raw = info && isObject(info.meta) ? info.meta : undefined
+  if (info) {
+    meta.found = true
+    // 개수는 그대로 — 형식에 맞지 않는 항목은 (가림)으로 바꾼다
+    const ids = (value: unknown) => Array.isArray(value) ? value.slice(0, MAX_IDS).map((id) => typeof id === 'string' ? shortId(id) : OWUI_PROBE_MASKED) : []
+    meta.toolIds = ids(raw?.toolIds)
+    meta.defaultFeatureIds = ids(raw?.defaultFeatureIds)
+    if (isObject(raw?.capabilities)) {
+      const capabilities = raw.capabilities
+      meta.capabilities = Object.fromEntries(OWUI_KNOWN_CAPABILITIES.filter((name) => typeof capabilities[name] === 'boolean').map((name) => [name, capabilities[name] as boolean]))
+    }
+    meta.knowledgeCount = Array.isArray(raw?.knowledge) ? raw.knowledge.length : 0
+    // OpenWebUI는 function_calling을 info.params에 둔다(옛 기록 대비 meta.params도 본다)
+    const params = isObject(info.params) ? info.params : isObject(raw?.params) ? raw.params : undefined
+    const fc = params?.function_calling
+    meta.functionCalling = typeof fc === 'string' ? (FUNCTION_CALLING.has(fc) ? fc : OWUI_PROBE_OTHER) : null
   }
 
   const messages = [{ role: 'user', content: OWUI_PROBE_PROMPT }]
@@ -234,5 +256,5 @@ export async function probeOpenWebUi(settings: LlmSettings, model: string, optio
   }
 
   const attempts = [await attempt('current'), await attempt('legacy')]
-  return { model, version, meta, attempts, ms: elapsed(started) }
+  return { model: safeModel(model), version, meta, attempts, ms: elapsed(started) }
 }

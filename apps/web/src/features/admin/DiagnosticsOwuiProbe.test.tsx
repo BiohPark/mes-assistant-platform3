@@ -69,6 +69,9 @@ it('Mock 모드는 버튼을 막고 Live 전용임을 안내한다', async () =>
   const card = await screen.findByRole('region', { name: 'OpenWebUI 진단' })
   expect(within(card).getByRole('button', { name: 'OpenWebUI 진단' })).toBeDisabled()
   expect(card).toHaveTextContent('Live 모드에서만')
+  // 남는 위험을 비노출 범위 안내에 적는다 (재리뷰 P2)
+  expect(card).toHaveTextContent('모델 목록에 있는 것만')
+  expect(card).toHaveTextContent('짧은 식별자처럼 생긴 비밀값은 구분하지 못합니다')
 })
 
 it('호출이 막히면(429) 알림을 띄운다', async () => {

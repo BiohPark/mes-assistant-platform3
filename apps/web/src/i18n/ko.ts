@@ -164,7 +164,7 @@ export const ko = {
       envGuide: '주소·모드·키는 서버 .env(LLM_MODE · LLM_PRESET · LLM_BASE_URL · LLM_API_KEY · LLM_DEFAULT_MODEL)에서 바꾸고 서비스를 재시작합니다. 이 화면에서는 표시와 연결 시험만 합니다.',
       open: '연결 진단 열기', badge: '{mode} · 연결 진단 열기', testChat: '시험 대화',
       probe: {
-        title: 'OpenWebUI 진단', hint: '짧은 시험 질문을 두 번 보냅니다 — ① 지금 방식 ② tool_ids · features · function_calling legacy. 결과에는 질문·답변·파일·키·주소가 담기지 않고 저장되지 않습니다.',
+        title: 'OpenWebUI 진단', hint: '짧은 시험 질문을 두 번 보냅니다 — ① 지금 방식 ② tool_ids · features · function_calling legacy. 모델은 OpenWebUI 모델 목록에 있는 것만 진단합니다. 결과에는 질문·답변·파일·키·주소가 담기지 않고 저장되지 않습니다. 도구·기능·모델 ID와 버전은 정해진 형식일 때만 그대로 보이고, 주소·경로·파일명·대표 비밀 접두(sk-·ghp_ 등)·24자 이상 무작위 문자열 모양은 (가림)으로 바뀝니다. 다만 짧은 식별자처럼 생긴 비밀값은 구분하지 못합니다.',
         modelLabel: '진단 모델', run: 'OpenWebUI 진단', running: '진단 중… (최대 3분)', liveOnly: 'Live 모드에서만 실행할 수 있습니다.',
         failed: '진단을 실행하지 못했습니다: {error}', copy: '진단 결과 복사', version: 'OpenWebUI 버전', unknown: '확인 불가', model: '모델',
         meta: '모델 메타', metaFound: '있음', metaMissing: '없음', none: '없음', on: '켬', off: '끔', knowledge: '지식', notSet: '미지정',
