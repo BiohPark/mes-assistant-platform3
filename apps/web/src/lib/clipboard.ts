@@ -11,18 +11,21 @@ export async function copyText(text: string, doc: Document = document): Promise<
   } catch {
     // 권한 거부 등 → 폴백 시도
   }
+  const opener = doc.activeElement as HTMLElement | null
+  let ta: HTMLTextAreaElement | undefined
   try {
-    const ta = doc.createElement('textarea')
+    ta = doc.createElement('textarea')
     ta.value = text
     ta.setAttribute('readonly', '')
     ta.style.position = 'fixed'
     ta.style.opacity = '0'
     doc.body.appendChild(ta)
     ta.select()
-    const ok = doc.execCommand('copy')
-    doc.body.removeChild(ta)
-    return ok
+    return doc.execCommand('copy')
   } catch {
     return false
+  } finally {
+    ta?.remove()
+    opener?.focus?.({ preventScroll: true })
   }
 }

@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common'
-import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type Task, type TaskStatus, type Thread } from '@mes/domain'
-import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
-import { unionAll } from 'drizzle-orm/mysql-core'
+import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type TagSuggestion, type Task, type TaskAiRequestStatus, type TaskStatus, type Thread } from '@mes/domain'
+import { and, desc, eq, exists, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
+import { alias, unionAll } from 'drizzle-orm/mysql-core'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appUser, assistant, assistantChecklistTemplate, chatRequest, chatRequestInput, checklistItem, checklistReview, checklistReviewItem, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, tag, task, taskAssignee, taskFeedback, taskInput, taskTag, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, assistantChecklistTemplate, chatRequest, chatRequestInput, checklistItem, checklistReview, checklistReviewItem, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, serviceRequest, tag, task, taskAssignee, taskFeedback, taskInput, taskTag, thread } from '../db/schema.js'
 import { EventsService } from '../events/events.service.js'
 import { assertTaskAccess, assertThreadAccess } from '../sr/access.js'
 import type { TaskExtrasService } from './task-extras.service.js'
@@ -35,6 +35,7 @@ const id = () => randomUUID()
 const iso = (value: Date | null | undefined) => value?.toISOString()
 const uniqueTags = (values: string[]) => [...new Map(values.map((value) => normalizeTag(value)).filter(Boolean).map((value) => [tagKey(value), value])).values()]
 const checkTagLength = (label: string) => { if ([...tagKey(label)].length > 191) throw new BadRequestException('태그가 너무 깁니다') }
+const SHOWN_AI_STATUSES: TaskAiRequestStatus[] = ['pending', 'streaming', 'failed', 'interrupted']
 
 @Injectable()
 export class DbTasksService {
@@ -63,7 +64,15 @@ export class DbTasksService {
   private async assemble(rows: (typeof task.$inferSelect)[]): Promise<(Task & { thread?: Thread })[]> {
     if (!rows.length) return []
     const ids = rows.map((row) => row.id)
-    const [details, materials, extras] = await Promise.all([
+    // 대화별 대표 요청 1건(S9-8 U3): 활성 요청(활성 유니크 인덱스) → 없으면 최신 1건((thread_id, created_at) 인덱스, created_at·id 내림차순 LIMIT 1).
+    // 이력 전체를 훑지 않고 스레드마다 두 번의 인덱스 조회만 한다. 그 1건이 표시 대상 상태일 때만 남긴다.
+    const activeRequest = alias(chatRequest, 'active_request')
+    const latestRequest = alias(chatRequest, 'latest_request')
+    const activeId = this.db.select({ id: activeRequest.id }).from(activeRequest).where(eq(activeRequest.activeThreadId, thread.id))
+    const latestId = this.db.select({ id: latestRequest.id }).from(latestRequest).where(eq(latestRequest.threadId, thread.id))
+      .orderBy(desc(latestRequest.createdAt), desc(latestRequest.id)).limit(1)
+    const pickedRequestId = sql`coalesce((${activeId}), (${latestId}))`
+    const [details, materials, extras, aiRequests] = await Promise.all([
       this.db.select({ taskId: task.id, label: tag.label, userId: taskAssignee.userId, taskThread: thread }).from(task)
         .leftJoin(taskTag, eq(taskTag.taskId, task.id)).leftJoin(tag, eq(taskTag.tagKey, tag.key))
         .leftJoin(taskAssignee, eq(taskAssignee.taskId, task.id)).leftJoin(thread, eq(thread.taskId, task.id))
@@ -77,6 +86,9 @@ export class DbTasksService {
         .leftJoin(checklistReview, eq(checklistReview.taskId, task.id))
         .leftJoin(checklistReviewItem, eq(checklistReviewItem.reviewId, checklistReview.id))
         .leftJoin(taskFeedback, eq(taskFeedback.taskId, task.id)).where(inArray(task.id, ids)),
+      this.db.select({ taskId: thread.taskId, status: chatRequest.status, phase: chatRequest.phase, createdAt: chatRequest.createdAt, finishedAt: chatRequest.finishedAt })
+        .from(thread).innerJoin(chatRequest, eq(chatRequest.id, pickedRequestId))
+        .where(and(inArray(thread.taskId, ids), inArray(chatRequest.status, SHOWN_AI_STATUSES))),
     ])
     return rows.map((row) => {
       const taskId = row.id
@@ -87,6 +99,7 @@ export class DbTasksService {
       const review = reviews[0]
       const reviewItems = review ? [...new Map(extra.filter((item) => item.review?.id === review.id && item.reviewItem).map((item) => [item.reviewItem!.itemId, item.reviewItem!])).values()] : []
       const feedback = extra.find((item) => item.feedback)?.feedback
+      const aiRequest = aiRequests.find((item) => item.taskId === taskId)
       return {
         id: row.id, code: row.code, assistantId: row.assistantId, title: row.title,
         titleSource: row.titleSource as Task['titleSource'], summary: row.summary,
@@ -106,6 +119,8 @@ export class DbTasksService {
         ...(iso(row.startedAt) && { startedAt: iso(row.startedAt)! }),
         ...(iso(row.completedAt) && { completedAt: iso(row.completedAt)! }),
         ...(row.completedBy && { completedBy: row.completedBy }),
+        aiRequest: aiRequest ? { status: aiRequest.status as TaskAiRequestStatus, ...(aiRequest.phase && { phase: aiRequest.phase }),
+          updatedAt: (aiRequest.finishedAt ?? aiRequest.createdAt).toISOString() } : null,
       }
     })
   }
@@ -308,8 +323,19 @@ export class DbTasksService {
     this.events?.publish('task.updated', { taskId })
   }
 
-  async suggestions(prefix: string, exclude: string[] = []) {
-    return tagSuggestions(await this.list(), [], prefix, exclude)
+  /**
+   * 자동완성 후보: 보이는 대화의 태그 + 보이는 접수(코드 부여) SR 코드. 열람 범위는 서버(이 함수)가 적용한다 — SR 목록과 같이 BO는 본인 SR만.
+   * srScope는 그 범위가 전체인지('all') 일부인지('partial') — 일부만 보는 뷰어에게는 목록에 없는 SR 번호를 미접수로 단정하지 않는다('unknown').
+   */
+  async suggestions(actor: string | undefined, prefix: string, exclude: string[] = []): Promise<{ items: TagSuggestion[]; srScope: 'all' | 'partial' }> {
+    const [viewer] = actor ? await this.db.select({ isBusinessOwner: appUser.isBusinessOwner, isSystemOwner: appUser.isSystemOwner }).from(appUser).where(eq(appUser.id, actor)) : []
+    const srScope = viewer?.isBusinessOwner && !viewer.isSystemOwner ? 'partial' : 'all'
+    const [tasks, rows] = await Promise.all([
+      this.list({}, actor),
+      this.db.select({ code: serviceRequest.code }).from(serviceRequest).where(and(isNotNull(serviceRequest.code), ...(srScope === 'partial' ? [eq(serviceRequest.requesterId, actor!)] : []))),
+    ])
+    const srCodes = rows.map((row) => row.code).filter((code): code is string => !!code)
+    return { items: tagSuggestions(tasks, srCodes, prefix, exclude, srScope), srScope }
   }
 
   async messages(threadId: string, actor?: string) {

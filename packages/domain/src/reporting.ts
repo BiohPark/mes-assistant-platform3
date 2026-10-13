@@ -1,5 +1,6 @@
 import { format, startOfWeek, subDays } from 'date-fns'
-import { SR_STATUSES, type ActivityLog, type Assistant, type FileAsset, type ServiceRequest, type SrStatus, type Task, type User } from './types.js'
+import { SR_STAGES, srStage, type SrStage } from './srStage.js'
+import type { ActivityLog, Assistant, FileAsset, ServiceRequest, Task, User } from './types.js'
 
 export type Granularity = 'day' | 'week'
 
@@ -166,8 +167,9 @@ export function tagUsage(tasks: Task[]): TagUsage[] {
   return [...byTag.values()].sort((a, b) => b.conversations - a.conversations || a.tag.localeCompare(b.tag))
 }
 
-export function srStatusDistribution(srs: ServiceRequest[]): Array<{ status: SrStatus; count: number }> {
-  return SR_STATUSES.filter((s) => s !== 'draft').map((status) => ({ status, count: srs.filter((s) => s.status === status).length }))
+/** 화면 단계(srStage)별 SR 수. reviewing은 submitted(접수됨)에 합산된다. */
+export function srStatusDistribution(srs: ServiceRequest[]): Array<{ status: SrStage; count: number }> {
+  return SR_STAGES.map((status) => ({ status, count: srs.filter((s) => srStage(s.status) === status).length }))
 }
 
 type ReportActivity = Pick<ActivityLog, 'type' | 'taskId' | 'srId' | 'payload' | 'at'>

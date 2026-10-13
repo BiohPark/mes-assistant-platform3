@@ -100,8 +100,20 @@ it('접수 내용 수정은 후보 전체를 나열하되 저장된 선택만 �
   expect(fetch).not.toHaveBeenCalledWith('/api/service-requests/sr/draft', expect.anything())
 })
 
-it('검토가 시작된 접수 내용은 읽기 전용으로 보여 주고 제출·다듬기 버튼이 없다', async () => {
+it('옛 reviewing 행은 접수됨과 같이 수정 모드로 연다', async () => {
   mount({ ...draft, code: 'SR-2026-0001', title: '접수 제목', titleSource: 'manual', body: '접수 본문', status: 'reviewing', attachmentIds: ['f1'] }, async (url) => {
+    if (url.startsWith('/api/files/')) return jsonResponse(200, files[url.split('/')[3]!])
+    return jsonResponse(200, [])
+  })
+  const sheet = await screen.findByRole('dialog')
+  expect(within(sheet).getByRole('heading', { name: '접수 내용 수정' })).toBeInTheDocument()
+  expect(sheet).toHaveTextContent('처리 시작 전까지 내용을 수정할 수 있습니다.')
+  expect(within(sheet).getByRole('textbox', { name: 'SR 제목' })).not.toHaveAttribute('readonly')
+  expect(within(sheet).getByRole('button', { name: '저장' })).toBeInTheDocument()
+})
+
+it('처리가 시작된 접수 내용은 읽기 전용으로 보여 주고 제출·다듬기 버튼이 없다', async () => {
+  mount({ ...draft, code: 'SR-2026-0001', title: '접수 제목', titleSource: 'manual', body: '접수 본문', status: 'in_progress', attachmentIds: ['f1'] }, async (url) => {
     if (url.startsWith('/api/files/')) return jsonResponse(200, files[url.split('/')[3]!])
     return jsonResponse(200, [])
   })

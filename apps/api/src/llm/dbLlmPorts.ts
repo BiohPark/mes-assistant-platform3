@@ -8,6 +8,7 @@ import type { Db } from '../db/db.module.js'
 import { appSetting, appUser, checklistItem, fileObject, fileRemoteRef, serviceRequest, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { toLlmSettings } from './presets.js'
+import { effectiveDefaultModel, DEFAULT_MODEL_OVERRIDE_KEY } from './effectiveDefaultModel.js'
 import { DbCatalogReader } from '../catalog/catalog.service.js'
 import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
 
@@ -28,8 +29,8 @@ export class DbLlmPorts implements LlmPorts {
     const budget = values.get('requestBudgetBytes')
     return {
       id: 'app', currentUserId: this.currentUserId,
-      // 기본 모델은 .env 유효값(toLlmSettings → effectiveDefaultModel). DB defaultModel 행은 읽지 않는다 (S7 C2)
-      llm: { ...toLlmSettings(this.config.llm),
+      // 이미 읽은 전역 설정을 단일 정본으로 해석한다. 구형 defaultModel은 읽지 않는다.
+      llm: { ...toLlmSettings(this.config.llm), model: effectiveDefaultModel(this.config, values.get(DEFAULT_MODEL_OVERRIDE_KEY)),
         ...(values.get('fileDelivery') === 'inline' || values.get('fileDelivery') === 'openwebui' ? { fileDelivery: values.get('fileDelivery') as 'inline' | 'openwebui' } : {}) },
       ...(typeof sr === 'string' ? { srIntakeAssistantId: sr } : {}),
       requestBudgetBytes: typeof budget === 'number' ? budget : this.config.request.budgetBytes,

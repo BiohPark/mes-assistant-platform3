@@ -490,10 +490,10 @@ paths:
   /tags/suggest:
     get:
       tags: [tasks]
-      summary: 태그 자동완성 (빈도순 + 접수 SR 코드 — SR은 S4부터)
+      summary: 태그 자동완성 — 보이는 대화의 태그 + 보이는 접수 SR 코드(열람 범위는 서버. BO는 본인 SR만). 정렬은 완전 일치 > 앞부분 > 부분, 그 안에서 사용 수(S9-4)
       parameters: [{ name: prefix, in: query, schema: { type: string } }, { name: exclude, in: query, schema: { type: array, items: { type: string } } }]
       responses:
-        '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: object, required: [tag], properties: { tag: { type: string }, count: { type: integer }, kind: { type: string } } } } } } }
+        '200': { description: 'items + srScope(접수 SR 열람 범위 — all: 전체, partial: 본인 것만(BO). 목록에 없는 SR 번호는 all이면 미접수, partial이면 확인 불가)', content: { application/json: { schema: { type: object, required: [items, srScope], properties: { srScope: { enum: [all, partial] }, items: { type: array, items: { type: object, required: [tag, count, isSr], properties: { tag: { type: string }, count: { type: integer, description: 이 태그를 쓰는 보이는 대화 수 }, isSr: { type: boolean, description: SR 번호 형식 }, srStatus: { enum: [accepted, unfiled, unknown], description: 'isSr일 때만. accepted=접수된 SR 있음, unfiled=전체를 보는데 없음(SR 미접수), unknown=열람 범위 밖일 수 있어 단정 불가(SR 확인 불가)' } } } } } } } } }
   /tasks/{taskId}/activity:
     get:
       tags: [tasks]
@@ -678,10 +678,10 @@ paths:
   /service-requests/{srId}/status:
     patch:
       tags: [service-requests]
-      summary: 상태 변경 (담당자·SO) — 요청자에게 한글 라벨 알림. done·rejected는 reason 필수(400), 사유는 activity_log.payload.reason(sr.status_changed)에만 저장 (U9)
+      summary: 상태 변경 (담당자·SO) — 요청자에게 한글 라벨 알림. done·rejected는 reason 필수(400), 사유는 activity_log.payload.reason(sr.status_changed)에만 저장 (U9). 409 = draft(접수 전) 또는 in_progress 다시 열기인데 done·rejected가 아님 (S9-7)
       parameters: [{ $ref: '#/components/parameters/srId' }]
-      requestBody: { content: { application/json: { schema: { type: object, required: [status], properties: { status: { enum: [submitted, reviewing, in_progress, responded, done, rejected] }, reason: { type: string, minLength: 1, maxLength: 500, description: 'done·rejected 필수, 그 외 선택' } } } } } }
-      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }, '400': { $ref: '#/components/responses/Problem' } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [status], properties: { status: { enum: [in_progress, done, rejected], description: '수동 변경은 완료·반려와 다시 열기(in_progress — done·rejected에서만, 아니면 409)뿐. submitted·responded는 접수·결과 공유의 자동 전환, reviewing은 더 이상 설정 불가(기존 행은 접수됨으로 표시)' }, reason: { type: string, minLength: 1, maxLength: 500, description: 'done·rejected 필수, 그 외 선택' } } } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }, '400': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' } }
   /service-requests/{srId}/refine:
     post:
       tags: [service-requests]
@@ -815,11 +815,11 @@ paths:
   /settings:
     get:
       tags: [misc]
-      summary: 전역 설정 조회 (로그인 사용자 전원 — 웹이 기본 모델·한도를 표시). defaultModel은 서버 .env LLM_DEFAULT_MODEL 유효값(읽기 전용, 구형 DB 행은 무시). S4 ① · S7 C2
+      summary: 전역 설정 조회 (로그인 사용자 전원). 유효 모델·출처(setting|env|default)를 반환. 구형 defaultModel DB 행은 무시. S9
       responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Settings' } } } } }
     patch:
       tags: [misc]
-      summary: 전역 설정 (SO 전용). OpenWebUI 키는 여기서 다루지 않음(서버 비밀). 쓰기 DTO(SettingsPatch)에 defaultModel은 없다 — 보내면 400 (S7 C2)
+      summary: 전역 설정 (SO 전용). defaultModelOverride 저장·해제는 재기동 없이 다음 요청부터 반영. defaultModel·defaultModelSource 및 알 수 없는 키는 400. S9
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/SettingsPatch' } } } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Settings' } } } }
@@ -1000,6 +1000,7 @@ components:
         checklistTemplate: { type: array, maxItems: 100, items: { type: object, required: [id, label, required], properties: { id: { type: string, minLength: 1, maxLength: 191 }, label: { type: string, minLength: 1, maxLength: 1000 }, required: { type: boolean } } } }
     Task:
       type: object
+      required: [aiRequest]
       properties:
         id: { type: string }
         code: { type: string }
@@ -1018,6 +1019,18 @@ components:
         modelId: { type: string }
         lastActivityAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }
+        aiRequest:
+          description: 'AI 요청 상태(S9-8 U3). 목록·단건 응답에 항상 포함(값 또는 null). 활성(pending·streaming) 요청 우선, 없으면 대화의 최신 요청 1건(created_at → id 내림차순)이 failed·interrupted일 때만. cancelled·succeeded·요청 없음은 null.'
+          oneOf:
+            - { $ref: '#/components/schemas/TaskAiRequest' }
+            - { type: 'null' }
+    TaskAiRequest:
+      type: object
+      required: [status, updatedAt]
+      properties:
+        status: { enum: [pending, streaming, failed, interrupted] }
+        phase: { type: string, description: 활성 요청의 진행 단계 문구. 없으면 생략 }
+        updatedAt: { type: string, format: date-time, description: 'finished_at, 없으면 created_at(활성 요청은 시작 시각)' }
     TaskPatch:
       type: object
       properties:
@@ -1129,7 +1142,8 @@ components:
         model: { type: string }
         bytes: { type: integer }
         limitBytes: { type: integer }
-        srCodes: { type: array, items: { type: string } }
+        srCodes: { type: array, items: { type: string }, description: 태그에서 뽑은 SR 번호(접수 여부 무관) }
+        srs: { type: array, description: '본문이 프롬프트에 실제 들어간 SR — 태그 중 접수된 것만. estimate와 전송이 같은 조립 결과(S9-4, 보낸 것 = 본 것)', items: { type: object, required: [code, title], properties: { code: { type: string }, title: { type: string } } } }
         inputs: { type: array, items: { $ref: '#/components/schemas/RequestInput' } }
     RequestRecord:
       allOf:
@@ -1168,7 +1182,9 @@ components:
     Settings:
       type: object
       properties:
-        defaultModel: { type: string, readOnly: true, description: '서버 .env LLM_DEFAULT_MODEL 유효값(미설정·공백이면 도메인 기본). 요청 시작·SR 보조·요약·시스템 assistant·진단·시험 API가 같은 함수(effectiveDefaultModel)를 쓴다. 구형 app_setting.defaultModel 행은 무시(기동 경고 1줄). S7 C2' }
+        defaultModel: { type: string, readOnly: true, description: 'DB defaultModelOverride → .env LLM_DEFAULT_MODEL → 도메인 기본값. 모든 기본 모델 소비처는 effectiveDefaultModel의 해석을 사용한다. 구형 app_setting.defaultModel은 무시하고 기동 경고를 유지한다.' }
+        defaultModelSource: { type: string, enum: [setting, env, default], readOnly: true, description: 현재 적용 모델의 출처 }
+        defaultModelOverride: { type: string, nullable: true, maxLength: 191, description: '전역 모델 ID. trim 후 1–191자. 빈 값·공백·null은 해제이며 미지정 시 응답에서 생략될 수 있다.' }
         fileDelivery: { enum: [inline, openwebui] }
         requestBudgetBytes: { type: integer, minimum: 1024, maximum: 16777216 }
         srIntakeAssistantId: { type: string, nullable: true, description: '중단된 에이전트는 409' }
@@ -1176,9 +1192,10 @@ components:
         fileMaxPerRequest: { type: integer, minimum: 1, maximum: 100 }
     SettingsPatch:
       type: object
-      description: 전역 설정 쓰기 DTO (SO). Settings에서 defaultModel을 뺀 것 — 알 수 없는 키(defaultModel 포함)는 400. S7 C2
+      description: 전역 설정 쓰기 DTO (SO). defaultModelOverride는 trim 후 1–191자 또는 빈 값·null(설정 해제). 읽기 전용 defaultModel·defaultModelSource 및 알 수 없는 키는 400. S9
       additionalProperties: false
       properties:
+        defaultModelOverride: { type: string, nullable: true, maxLength: 191, description: 'trim 후 빈 값·null이면 새 키를 해제하여 .env 폴백을 사용. 다음 요청부터 적용.' }
         fileDelivery: { enum: [inline, openwebui] }
         requestBudgetBytes: { type: integer, minimum: 1024, maximum: 16777216 }
         srIntakeAssistantId: { type: string, nullable: true, description: '중단된 에이전트는 409 · null이면 지정 해제' }
