@@ -83,6 +83,17 @@ export const en = {
     draftLeft: 'Conversation {code} was kept. You can resend the attachments.',
     tags: 'Tags', tagPlaceholder: 'SR number · keyword', retiredAssistant: 'This agent is retired.', pickAnotherAssistant: 'Choose another agent',
   },
+  myWork: {
+    description: 'Conversations you own or participate in, ordered by recent activity.',
+    includeCompleted: 'Include completed',
+    list: 'My work conversations',
+    recentActivity: 'Recent activity',
+    empty: 'No work assigned to you',
+    emptyDescription: 'Start a new conversation in the agent hub.',
+    goToHub: 'Go to agent hub',
+    loadFailed: 'Could not load your work.',
+    unknownAssistant: 'Unknown agent',
+  },
   reports: {
     owner: 'Assignee', ownerFilter: 'Assignee: {name}',
     periodLabel: 'Report period and interval', days: { one: '{count} day', other: '{count} days' }, day: 'Day', week: 'Week',
@@ -479,6 +490,7 @@ export const en = {
   nav: {
     requests: 'Requests', work: 'Work', admin: 'Admin',
     hub: 'Agent Hub',
+    myWork: 'My work',
     sr: 'My SR requests',
     reports: 'Reports',
     srManage: 'SR inbox',

@@ -2,8 +2,8 @@ import { createContext, use } from 'react'
 import { AuthModeSchema, MeSchema, type AuthMode, type Me } from '@mes/contracts'
 
 export class HttpError extends Error {
-  constructor(readonly status: number) {
-    super(`HTTP ${status}`)
+  constructor(readonly status: number, message = `HTTP ${status}`) {
+    super(message)
   }
 }
 
