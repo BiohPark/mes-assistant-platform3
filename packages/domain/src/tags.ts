@@ -34,23 +34,40 @@ export function primarySrTag(tags: string[]): string | undefined {
 export interface TagSuggestion {
   tag: string
   count: number
+  /** SR 번호 형식 */
   isSr: boolean
+  /** 접수된(코드가 부여된) SR이 실제로 있음. 형식만 맞고 접수가 없으면 false → 'SR 미접수' */
+  srAccepted: boolean
 }
 
-/** 자동완성 후보: 사용 빈도순 + 접수된 SR 코드. 이미 붙은 태그는 제외. */
+/**
+ * 후보 정렬: 완전 일치 > 앞부분 일치 > 부분 일치, 같은 등급 안에서는 사용 수 → 이름.
+ * 입력값과 다른 번호(CC-2099-001 ↔ CC-2099-0010)가 사용 수만으로 위에 오지 않게 한다. 서버·웹이 같은 함수를 쓴다.
+ */
+export function rankTagSuggestions<T extends { tag: string; count: number }>(items: T[], prefix: string): T[] {
+  const p = tagKey(prefix)
+  const tier = (tag: string) => {
+    const key = tagKey(tag)
+    return !p || key === p ? 0 : key.startsWith(p) ? 1 : key.includes(p) ? 2 : 3
+  }
+  return items.map((item) => ({ item, tier: tier(item.tag) })).filter((x) => x.tier < 3)
+    .sort((a, b) => a.tier - b.tier || b.item.count - a.item.count || a.item.tag.localeCompare(b.item.tag)).map((x) => x.item)
+}
+
+/** 자동완성 후보: 사용 태그 + 접수된 SR 코드(srCodes — 열람 범위는 호출 측이 적용). 이미 붙은 태그는 제외. */
 export function tagSuggestions(tasks: Task[], srCodes: string[], prefix: string, exclude: string[] = []): TagSuggestion[] {
   const excluded = new Set(exclude.map(tagKey))
+  const accepted = new Set(srCodes.map(tagKey))
   const byKey = new Map<string, TagSuggestion>()
   const add = (tag: string, n: number) => {
     const key = tagKey(tag)
     if (!key || excluded.has(key)) return
     const cur = byKey.get(key)
-    byKey.set(key, { tag: cur?.tag ?? normalizeTag(tag), count: (cur?.count ?? 0) + n, isSr: isSrTag(tag) })
+    byKey.set(key, { tag: cur?.tag ?? normalizeTag(tag), count: (cur?.count ?? 0) + n, isSr: isSrTag(tag), srAccepted: accepted.has(key) })
   }
   for (const t of tasks) for (const tag of t.tags) add(tag, 1)
   for (const code of srCodes) if (code) add(code, 0)
-  const p = tagKey(prefix)
-  return [...byKey.values()].filter((s) => !p || tagKey(s.tag).startsWith(p) || tagKey(s.tag).includes(p)).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+  return rankTagSuggestions([...byKey.values()], prefix)
 }
 
 export type PoolRole = 'output' | 'upload'

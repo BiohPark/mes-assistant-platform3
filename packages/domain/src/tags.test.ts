@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isSrTag, normalizeTag, sharedPool, srTagColor, tagKey, tagSuggestions, primarySrTag } from './tags.js'
+import { isSrTag, normalizeTag, rankTagSuggestions, sharedPool, srTagColor, tagKey, tagSuggestions, primarySrTag } from './tags.js'
 import type { Assistant, FileAsset, Task } from './types.js'
 
 const file = (id: string, originTaskId: string, extra: Partial<FileAsset> = {}): FileAsset => ({
@@ -81,6 +81,32 @@ describe('tagSuggestions', () => {
   it('excludes tags already on the conversation', () => {
     const tasks = [task('a', 'x', ['cca'])]
     expect(tagSuggestions(tasks, [], '', ['CCA'])).toEqual([])
+  })
+  it('ranks exact match above a more-used prefix match (CC-2099-001 is not CC-2099-0010)', () => {
+    const tasks = [task('a', 'x', ['CC-2099-0010']), task('b', 'x', ['CC-2099-0010']), task('c', 'x', ['CC-2099-0010']), task('d', 'x', ['CC-2099-001'])]
+    expect(tagSuggestions(tasks, [], 'cc-2099-001').map((s) => s.tag)).toEqual(['CC-2099-001', 'CC-2099-0010'])
+  })
+  it('ranks prefix match above a more-used partial match, then by usage', () => {
+    const tasks = [task('a', 'x', ['item-cc']), task('b', 'x', ['item-cc']), task('c', 'x', ['cc-x']), task('d', 'x', ['cc-y']), task('e', 'x', ['cc-y'])]
+    expect(tagSuggestions(tasks, [], 'cc').map((s) => s.tag)).toEqual(['cc-y', 'cc-x', 'item-cc'])
+  })
+  it('marks SR-pattern tags as accepted only when an accepted SR code exists', () => {
+    const tasks = [task('a', 'x', ['SR-2026-0001', 'SR-2026-0002', 'plain'])]
+    const out = tagSuggestions(tasks, ['SR-2026-0001', 'SR-2026-0003'], '')
+    expect(out.find((s) => s.tag === 'SR-2026-0001')).toMatchObject({ isSr: true, srAccepted: true, count: 1 })
+    expect(out.find((s) => s.tag === 'SR-2026-0002')).toMatchObject({ isSr: true, srAccepted: false, count: 1 })
+    expect(out.find((s) => s.tag === 'SR-2026-0003')).toMatchObject({ isSr: true, srAccepted: true, count: 0 })
+    expect(out.find((s) => s.tag === 'plain')).toMatchObject({ isSr: false, srAccepted: false })
+  })
+})
+
+describe('rankTagSuggestions', () => {
+  const s = (tag: string, count: number) => ({ tag, count })
+  it('without a prefix keeps every item sorted by usage then name', () => {
+    expect(rankTagSuggestions([s('b', 1), s('a', 1), s('c', 3)], '').map((i) => i.tag)).toEqual(['c', 'a', 'b'])
+  })
+  it('drops items that do not contain the prefix and orders exact > prefix > partial', () => {
+    expect(rankTagSuggestions([s('x-ab', 9), s('ab-1', 2), s('ab', 1), s('zz', 5)], '#AB ').map((i) => i.tag)).toEqual(['ab', 'ab-1', 'x-ab'])
   })
 })
 
