@@ -233,4 +233,31 @@ describe('SR 접수 에이전트 보호 (데모 테스트 4건)', () => {
       expect((await db.select().from(fileObject).where(eq(fileObject.id, first.imageFileId!)))[0]?.deletedAt).toBeInstanceOf(Date)
     } finally { await rm(root, { recursive: true, force: true }) }
   })
+
+  it('AI 도우미 캐릭터: 매직바이트가 PNG가 아니면 거부, 교체하면 이전 파일 소프트 삭제, 제거하면 설정 키도 지운다 (U4)', async () => {
+    const { FileStorageService } = await import('../files/fileStorage.service.js')
+    const { mkdtemp, rm } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')
+    const upload = (name: string, buffer: Buffer, mimetype = 'image/png') => ({ originalname: name, mimetype, buffer, size: buffer.length })
+    const root = await mkdtemp(join(tmpdir(), 'assistant-image-'))
+    const service = new AdminService(db, new FileStorageService(root))
+    try {
+      await expect(service.assistantImage('owner', upload('fake.png', Buffer.from('not a png')))).rejects.toMatchObject({ status: 400 })
+      const wide = Buffer.from(png); wide.writeUInt32BE(513, 16)
+      await expect(service.assistantImage('owner', upload('wide.png', wide))).rejects.toMatchObject({ status: 400 })
+      await expect(service.assistantImage('owner', upload('big.png', Buffer.concat([png, Buffer.alloc(1024 * 1024)])))).rejects.toMatchObject({ status: 413 })
+      expect((await service.getSettings()).assistantImageFileId).toBeUndefined()
+      const first = (await service.assistantImage('owner', upload('one.png', png, 'application/octet-stream'))).assistantImageFileId as string
+      expect(first).toEqual(expect.any(String))
+      const [firstRow] = await db.select().from(fileObject).where(eq(fileObject.id, first))
+      expect(firstRow).toMatchObject({ kind: 'assistant_image', mime: 'image/png', deletedAt: null })
+      const second = (await service.assistantImage('owner', upload('two.png', png))).assistantImageFileId as string
+      expect(second).not.toBe(first)
+      expect((await db.select().from(fileObject).where(eq(fileObject.id, first)))[0]?.deletedAt).toBeInstanceOf(Date)
+      expect((await service.assistantImage('owner', null)).assistantImageFileId).toBeUndefined()
+      expect((await db.select().from(fileObject).where(eq(fileObject.id, second)))[0]?.deletedAt).toBeInstanceOf(Date)
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
 })

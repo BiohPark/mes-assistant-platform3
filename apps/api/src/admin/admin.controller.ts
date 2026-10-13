@@ -97,6 +97,18 @@ export class AdminSettingsController {
   @Patch()
   @Roles('system_owner')
   async patch(@Body() body: unknown) { return this.view(await this.admin.settings(parse(settings, body))) }
+  /** AI 도우미 캐릭터 이미지 업로드·교체 (SO 전용). 열람은 파일 API(/files/{id}/content) (U4) */
+  @Post('assistant-image')
+  @Roles('system_owner')
+  @UseInterceptors(FileInterceptor('file'))
+  async assistantImage(@Req() req: AuthedRequest, @UploadedFile() file?: { originalname: string; mimetype: string; buffer: Buffer; size: number }) {
+    if (!file) throw new BadRequestException('이미지가 필요합니다')
+    return this.view(await this.admin.assistantImage(req.user!.id, file))
+  }
+  @Delete('assistant-image')
+  @Roles('system_owner')
+  @HttpCode(204)
+  clearAssistantImage(@Req() req: AuthedRequest) { return this.admin.assistantImage(req.user!.id, null).then(() => undefined) }
 }
 
 @Controller('codes')
