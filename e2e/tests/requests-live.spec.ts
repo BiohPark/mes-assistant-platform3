@@ -24,7 +24,7 @@ test('S5 파일 처리 완료 뒤 첨부하여 답변한다', async ({ page, con
   await expect(card).toBeVisible()
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByText(/파일 처리 대기/).first()).toBeVisible()
-  await expect(card.getByText('AI 응답 중')).toBeVisible() // U3: 칸반 카드의 AI 칩 — 응답 중
+  // 응답 중 칩 표시는 kanban-ai.spec(slow- 파일로 보류)에서 결정적으로 검증 — 여기서는 성공 뒤 소멸만 본다
   await expect(page.getByText(/files: 2/).first()).toBeVisible({ timeout: 15_000 }) // 가짜 서버의 느린 처리 + 병렬 부하
   await expect(card.getByText('AI 응답 중')).toBeHidden() // 성공하면 칩이 사라진다
   await expect(card.locator('[data-ai-status]')).toHaveCount(0)
