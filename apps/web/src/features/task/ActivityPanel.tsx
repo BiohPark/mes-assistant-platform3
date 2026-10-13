@@ -72,24 +72,54 @@ const ACTIVITY_ICON: Record<PanelActivityType, LucideIcon> = {
   'request.failed': CircleAlert,
 }
 
+/** Group the user send and every lifecycle event without depending on input order. */
+export function groupRequestActivity(activity: ActivityLog[]) {
+  const rows: { event: ActivityLog; events?: ActivityLog[]; requestId?: string }[] = []
+  const groups = new Map<string, typeof rows[number]>()
+  const rank = (event: ActivityLog) => String(event.type).startsWith('request.') ? String(event.type) === 'request.started' ? 1 : 2 : 0
+  for (const event of activity) {
+    const requestId = typeof event.payload.requestId === 'string' ? event.payload.requestId : undefined
+    if (!requestId || !(event.type === 'message.sent' || String(event.type).startsWith('request.'))) {
+      rows.push({ event }); continue
+    }
+    const existing = groups.get(requestId)
+    if (existing) {
+      existing.events!.push(event)
+      if (rank(event) > rank(existing.event) || (rank(event) === rank(existing.event) && event.at > existing.event.at)) existing.event = event
+    } else {
+      const row = { event, events: [event], requestId }
+      groups.set(requestId, row); rows.push(row)
+    }
+  }
+  return rows
+}
+
 export function ActivityPanel({ activity }: ActivityPanelProps) {
   const { formatDateTime } = useDates()
   const t = useT()
   const users = useUserMap()
+  const rows = groupRequestActivity(activity)
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-2 text-right text-[11px] text-muted-foreground">{t('task.activity.count', { count: activity.length })}</div>
+      <div className="mb-2 text-right text-[11px] text-muted-foreground">{t('task.activity.count', { count: rows.length })}</div>
       <ol className="min-h-0 flex-1 overflow-y-auto">
-        {activity.map((a) => {
+        {rows.map(({ event: a, events, requestId }) => {
           const user = users.get(a.userId)
           const detail = describeActivity(a)
           const Icon = ACTIVITY_ICON[a.type] ?? History
           const labelKey = ACTIVITY_LABEL_KEY[a.type]
           return (
-            <li key={a.id} className="flex gap-2 border-l-2 py-1.5 pl-2.5">
+            <li key={requestId ?? a.id} data-request-id={requestId} className="flex gap-2 border-l-2 py-1.5 pl-2.5">
               <UserAvatar user={user} size="xs" className="mt-0.5" />
               <div className="min-w-0 flex-1 text-xs leading-snug">
                 <span className="font-medium">{user?.name ?? t('task.activity.system')}</span> <Icon aria-hidden="true" focusable="false" className={cn('mr-1 inline size-3 align-text-bottom', HIGHLIGHT[a.type] ?? 'text-muted-foreground')} /><span className={cn(HIGHLIGHT[a.type])}>{t(labelKey ?? 'task.activity.other')}</span>
+                {events && <details className="mt-1">
+                  <summary className="min-h-11 cursor-pointer rounded-md py-3 text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('task.activity.requestDetails', { count: events.length })}</summary>
+                  <div className="space-y-1 border-l pl-2">{[...events].sort((left, right) => left.at.localeCompare(right.at)).map(event => <div key={event.id}>
+                    <span>{t(ACTIVITY_LABEL_KEY[event.type] ?? 'task.activity.other')}</span> <time dateTime={event.at}>{formatDateTime(event.at)}</time>
+                    {describeActivity(event) && <div className="break-words text-muted-foreground">{describeActivity(event)}</div>}
+                  </div>)}</div>
+                </details>}
                 {detail && <div className="truncate text-muted-foreground">{detail}</div>}
                 <div className="text-xs text-muted-foreground/80">{formatDateTime(a.at)}</div>
               </div>

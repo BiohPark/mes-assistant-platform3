@@ -47,12 +47,13 @@ export function ContextTray({ task, estimate }: { task: Task; estimate: RequestE
   return <div className="border-t bg-muted/20 px-2.5 py-2" aria-label={t('chat.trayLabel')} aria-busy={pending}>
     <button type="button" className="flex w-full items-center gap-2 text-left text-xs" onClick={() => setOpen(!expanded)} aria-expanded={expanded}>
       <span className="font-medium">{t('chat.trayInputs', { count: inputs.length })}</span>
-      <span className="ml-auto text-muted-foreground">{pending ? t('chat.calculating') : t('chat.trayEstimate', { bytes: formatSize(info.bytes), limit: formatSize(info.limitBytes) })}</span>
+      <span className="ml-auto text-muted-foreground">{pending ? t('chat.calculating') : null}</span>
       <ChevronDown className={cn('size-3.5', expanded && 'rotate-180')} />
     </button>
     <div role="meter" aria-label={t('chat.requestSize')} aria-valuemin={0} aria-valuemax={info.limitBytes} aria-valuenow={info.bytes}
       className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted"><div className={cn('h-full', level === 'over' ? 'bg-destructive' : level === 'warn' ? 'bg-tone-warning-fg' : 'bg-primary')}
         style={{ width: `${Math.min(100, Math.round(info.bytes / info.limitBytes * 100))}%` }} /></div>
+    {expanded && !pending && <p className="mt-1 text-xs text-muted-foreground">{t('chat.trayEstimate', { bytes: formatSize(info.bytes), limit: formatSize(info.limitBytes) })}</p>}
     {expanded && <p className="mt-1 text-xs text-muted-foreground">{t('chat.trayPersistHint')}</p>}
     {expanded && <ul className={cn('mt-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto', revisionChanged && 'opacity-60')} aria-busy={revisionChanged}>{inputs.map((input) => <li key={input.kind === 'file' ? input.fileId : input.sourceTaskId}
       className="inline-flex max-w-full items-center gap-1 rounded-full border bg-background px-1.5 py-0.5 text-xs">

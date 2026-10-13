@@ -215,6 +215,9 @@ export const en = {
     askAgainHint: 'New request with current materials and model, including previous messages',
     pendingAttemptHint: 'A request could not be sent. Press Send to resend the same content. Ask again is unavailable until then.',
     replaceDraftTitle: 'Replace your draft text?', replaceDraftDescription: 'Only text changes. Current attachments and team comment mode are kept.', replaceDraftConfirm: 'Replace text',
+    agent: 'Agent', unread: 'New activity', scrollToBottom: 'Scroll to bottom',
+    searchConversation: 'Search this conversation', searchCount: '{current}/{total}', searchPrevious: 'Previous', searchNext: 'Next',
+    copyCode: 'Copy code', copiedCode: 'Code copied.',
     questionIndex: 'Question index', newAnswer: 'Go to new answer', questionFailed: 'Failed',
     openWebUi: 'Open in OpenWebUI',
     documentation: 'Documentation',
@@ -398,6 +401,7 @@ export const en = {
     },
     conversation: 'Conversation', delete: 'Delete', download: 'Download', mainInput: 'Main input', reference: 'Reference', thisConversation: 'This conversation',
     activity: {
+      requestDetails: 'Request details ({count})',
       count: { one: '{count} entry', other: '{count} entries' }, system: 'System', empty: 'No history yet.', loadFailed: 'Could not load history.',
       request: { started: 'AI request started', completed: 'AI request completed', cancelled: 'AI request cancelled', failed: 'AI request failed' },
       other: 'Other activity',

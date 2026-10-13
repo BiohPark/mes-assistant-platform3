@@ -21,6 +21,7 @@ import { ContextTray } from './ContextTray'
 import { useRequestEstimate } from './useRequestEstimate'
 import { getDraft } from './drafts'
 import { toast } from 'sonner'
+import { useConversationViewed } from '@/lib/conversationRead'
 import { useT } from '@/i18n'
 
 export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; assistant?: Assistant; onOpenMaterials?: () => void }) {
@@ -50,6 +51,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   const chat = useChat(task.threadId, holdReleased)
   const messages = useQuery({ queryKey: ['messages', task.threadId], queryFn: ({ signal }) => getMessages(task.threadId!, signal), enabled: !!task.threadId,
   })
+  useConversationViewed(selfId, task.id, task.lastActivityAt)
   const remoteRequestId = messages.data?.find((item) => item.status === 'streaming' && item.requestId !== chat.run?.requestId)?.requestId
   const remoteRequest = useQuery({ queryKey: ['request', remoteRequestId], queryFn: () => getRequest(remoteRequestId!), enabled: !!remoteRequestId })
   const remoteStreaming = !!remoteRequestId
@@ -182,7 +184,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={sending} onFiles={(files) => composer.current?.dropFiles(files)}>
     <div ref={setQuestionIndexContainer} data-testid="chat-question-toolbar" className="shrink-0 border-b px-4 py-2 empty:hidden" />
     <div data-testid="chat-message-scroll" className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-    <ChatMessages messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince} questionIndexContainer={questionIndexContainer} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
+    <ChatMessages key={task.id} assistantName={assistant?.name} messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince} questionIndexContainer={questionIndexContainer} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
       actions={(item) => ({
         onAskAgain: item.role === 'user' && item.kind !== 'discussion' ? () => askAgain(item) : undefined,
         askAgainDisabled,

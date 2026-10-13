@@ -10,7 +10,8 @@ import type { ChatRun } from './useChat'
 import { requestPhaseDetail, responsePhase } from './requestLabels'
 
 type BubbleActions = Omit<ComponentProps<typeof MessageBubble>, 'message' | 'progress'>
-const nearBottomDistance = 80
+const nearBottomDistance = 24
+const jumpDistance = 200
 
 /** 각 질문 뒤·다음 질문 앞 구간에 그 요청의 오류 답변이 있으면 실패로 본다(한 번 순회). */
 export function failedQuestionIds(messages: Message[]) {
@@ -24,8 +25,8 @@ export function failedQuestionIds(messages: Message[]) {
 }
 
 /** 업무와 SR 접수에서 공용 메시지 표시·스트리밍·자동 스크롤을 사용한다. */
-export function ChatMessages({ messages, run, waitingSince, empty, actions, questionIndexContainer }: {
-  messages: Message[]; run?: ChatRun | null; waitingSince?: number; empty?: ReactNode; actions?: (message: Message) => BubbleActions; questionIndexContainer?: HTMLElement | null
+export function ChatMessages({ messages, run, waitingSince, empty, actions, questionIndexContainer, assistantName }: {
+  assistantName?: string; messages: Message[]; run?: ChatRun | null; waitingSince?: number; empty?: ReactNode; actions?: (message: Message) => BubbleActions; questionIndexContainer?: HTMLElement | null
 }) {
   const t = useT()
   const { formatDateTime } = useDates()
@@ -53,8 +54,16 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
   }] : messages
   const root = useRef<HTMLDivElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
+  const scrollerRef = useRef<HTMLElement | null>(null)
   const nearBottom = useRef(true)
-  const [unread, setUnread] = useState(false)
+  const [farFromBottom, setFarFromBottom] = useState(false)
+  const [search, setSearch] = useState('')
+  const [matchIndex, setMatchIndex] = useState(0)
+  const matches = useMemo(() => {
+    const term = search.trim().toLocaleLowerCase()
+    return term ? visibleMessages.filter(message => (message.id === run?.replyId ? run.text || message.content : message.content).toLocaleLowerCase().includes(term)) : []
+  }, [search, visibleMessages, run?.replyId, run?.text])
+  const selectedMatch = matches[Math.min(matchIndex, Math.max(0, matches.length - 1))]?.id
   const [indexOpen, setIndexOpen] = useState(false)
   const jumpTarget = useRef<HTMLElement | null>(null)
   const questions = messages.filter(item => item.role === 'user' && item.kind !== 'discussion')
@@ -66,16 +75,19 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
     while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement
     if (!scroller) return
     const element = scroller
+    scrollerRef.current = element
     const onScroll = () => {
-      nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight <= nearBottomDistance
-      if (nearBottom.current) setUnread(false)
+      const distance = element.scrollHeight - element.scrollTop - element.clientHeight
+      nearBottom.current = distance <= nearBottomDistance
+      setFarFromBottom(distance > jumpDistance)
     }
     element.addEventListener('scroll', onScroll, { passive: true })
     return () => element.removeEventListener('scroll', onScroll)
   }, [])
   useEffect(() => {
     if (nearBottom.current) bottom.current?.scrollIntoView?.({ block: 'end', behavior: 'instant' })
-    else setUnread(true)
+    const element = scrollerRef.current
+    if (element) setFarFromBottom(element.scrollHeight - element.scrollTop - element.clientHeight > jumpDistance)
   }, [messages, run?.text, run?.reasoning, run?.phase])
 
   function messageElement(id: string) {
@@ -87,13 +99,31 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
   }
   function jumpToEnd() {
     nearBottom.current = true
-    setUnread(false)
+    setFarFromBottom(false)
     bottom.current?.scrollIntoView?.({ block: 'end', behavior: 'instant' })
     const last = messages.at(-1)
     if (last) messageElement(last.id)?.focus({ preventScroll: true })
   }
-  const questionIndex = questions.length > 0 && <div className="flex justify-end">
-      <Popover open={indexOpen} onOpenChange={setIndexOpen}><PopoverTrigger asChild>
+  useEffect(() => {
+    if (selectedMatch) messageElement(selectedMatch)?.scrollIntoView?.({ block: 'center', behavior: 'instant' })
+  }, [selectedMatch])
+  function nextMatch(direction: number) {
+    setMatchIndex(current => matches.length ? (current + direction + matches.length) % matches.length : 0)
+  }
+  const questionIndex = <div className="flex flex-wrap items-center justify-end gap-2">
+      <div role="search" aria-label={t('chat.searchConversation')} className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+        <input type="search" aria-label={t('chat.searchConversation')} placeholder={t('chat.searchConversation')}
+          value={search} onChange={event => { setSearch(event.target.value); setMatchIndex(0) }}
+          onKeyDown={event => {
+            if (event.nativeEvent.isComposing) return
+            if (event.key === 'Enter') { event.preventDefault(); nextMatch(event.shiftKey ? -1 : 1) }
+            if (event.key === 'Escape') { setSearch(''); setMatchIndex(0) }
+          }} className="min-h-11 min-w-0 flex-1 rounded-lg border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+        {search.trim() && <><span role="status" className="text-xs text-muted-foreground">{t('chat.searchCount', { current: selectedMatch ? Math.min(matchIndex + 1, matches.length) : 0, total: matches.length })}</span>
+          <button type="button" disabled={!matches.length} onClick={() => nextMatch(-1)} className="min-h-11 px-2 text-xs disabled:opacity-50">{t('chat.searchPrevious')}</button>
+          <button type="button" disabled={!matches.length} onClick={() => nextMatch(1)} className="min-h-11 px-2 text-xs disabled:opacity-50">{t('chat.searchNext')}</button></>}
+      </div>
+      {questions.length > 0 && <Popover open={indexOpen} onOpenChange={setIndexOpen}><PopoverTrigger asChild>
         <button type="button" className="inline-flex min-h-11 items-center gap-1 rounded-lg border bg-card px-3 text-xs text-card-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><List aria-hidden="true" className="size-4" />{t('chat.questionIndex')}</button>
       </PopoverTrigger><PopoverContent align="end" aria-label={t('chat.questionIndex')} className="max-h-80 overflow-y-auto"
         onCloseAutoFocus={(event) => { if (jumpTarget.current) { event.preventDefault(); focusMessage(jumpTarget.current); jumpTarget.current = null } }}>
@@ -104,16 +134,16 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
           <span className="flex items-center gap-1 text-xs text-muted-foreground"><time dateTime={item.createdAt}>{formatDateTime(item.createdAt)}</time>
             {failed.has(item.id) && <span className="inline-flex items-center gap-1 text-tone-danger-fg"><AlertCircle aria-hidden="true" className="size-3" />{t('chat.questionFailed')}</span>}</span>
         </button>)}</nav>
-      </PopoverContent></Popover>
+      </PopoverContent></Popover>}
     </div>
   return <div ref={root} className="space-y-4">
     {questionIndexContainer ? createPortal(questionIndex, questionIndexContainer) : questionIndex}
-    {visibleMessages.length ? visibleMessages.map(item => <MessageBubble key={item.id}
+    {visibleMessages.length ? visibleMessages.map(item => <MessageBubble key={item.id} assistantName={assistantName} searchMatch={item.id === selectedMatch}
       message={run?.replyId === item.id ? { ...item, status: 'streaming', content: run.text || item.content, reasoning: run.reasoning || item.reasoning } : item}
       {...(item === currentReply || item.id !== replyId ? actions?.(item) : undefined)}
       progress={active && item.id === replyId ? { phase, elapsed, detail: phaseDetail } : undefined} />) : empty}
-    {unread && <div className="sticky bottom-2 flex justify-center"><button type="button" onClick={jumpToEnd}
-      className="inline-flex min-h-11 items-center gap-1 rounded-full border bg-card px-3 text-sm text-card-foreground shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowDown aria-hidden="true" className="size-4" />{t('chat.newAnswer')}</button></div>}
+    {farFromBottom && <div className="sticky bottom-2 flex justify-center"><button type="button" onClick={jumpToEnd}
+      className="inline-flex min-h-11 items-center gap-1 rounded-full border bg-card px-3 text-sm text-card-foreground shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowDown aria-hidden="true" className="size-4" />{t('chat.scrollToBottom')}</button></div>}
     <div ref={bottom} />
   </div>
 }
