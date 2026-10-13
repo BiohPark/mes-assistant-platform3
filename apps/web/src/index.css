@@ -146,7 +146,33 @@ html, body, #root {
 }
 
 /* 채팅/문서 마크다운 */
-.md-body { font-size: 0.875rem; line-height: 1.6; word-break: break-word; }
+.md-body {
+  --md-link: var(--primary);
+  --md-border: var(--border);
+  --md-quote: var(--muted-foreground);
+  font-size: 0.875rem; line-height: 1.6; word-break: break-word;
+}
+/* 말풍선 내부 장식도 배경에 맞는 전경 토큰을 사용한다. */
+.md-body[data-tone] {
+  --md-link: var(--md-foreground);
+  --md-border: var(--md-foreground);
+  --md-quote: var(--md-foreground);
+  --md-surface: color-mix(in oklch, var(--md-foreground) 7%, var(--md-background));
+  color: var(--md-foreground);
+}
+.md-body[data-tone="primary"] {
+  --md-background: var(--primary);
+  --md-foreground: var(--primary-foreground);
+}
+.md-body[data-tone="warning"] {
+  --md-background: var(--tone-warning-bg);
+  --md-foreground: var(--tone-warning-fg);
+}
+.md-body[data-tone="card"] {
+  --md-background: var(--card);
+  --md-foreground: var(--card-foreground);
+  --md-link: var(--primary);
+}
 .md-body > * + * { margin-top: 0.6em; }
 .md-body h1 { font-size: 1.05rem; font-weight: 600; margin-top: 1em; }
 .md-body h2 { font-size: 0.95rem; font-weight: 600; margin-top: 1em; }
@@ -154,15 +180,15 @@ html, body, #root {
 .md-body ul { list-style: disc; padding-left: 1.25rem; }
 .md-body ol { list-style: decimal; padding-left: 1.25rem; }
 .md-body li + li { margin-top: 0.15em; }
-.md-body code { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size: 0.75rem; background: color-mix(in oklch, var(--foreground) 7%, transparent); padding: 0.1em 0.35em; border-radius: var(--radius-lg); }
-.md-body pre { background: color-mix(in oklch, var(--foreground) 6%, transparent); padding: 0.6rem 0.75rem; border-radius: var(--radius-xl); overflow-x: auto; }
+.md-body code { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size: 0.75rem; background: var(--md-surface, color-mix(in oklch, var(--foreground) 7%, transparent)); padding: 0.1em 0.35em; border-radius: var(--radius-lg); }
+.md-body pre { background: var(--md-surface, color-mix(in oklch, var(--foreground) 6%, transparent)); padding: 0.6rem 0.75rem; border-radius: var(--radius-xl); overflow-x: auto; }
 .md-body pre code { background: transparent; padding: 0; font-size: 0.75rem; }
 .md-body table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
-.md-body th, .md-body td { border: 1px solid var(--border); padding: 0.3rem 0.5rem; text-align: left; vertical-align: top; }
-.md-body th { background: color-mix(in oklch, var(--foreground) 5%, transparent); font-weight: 600; }
-.md-body blockquote { border-left: 3px solid var(--border); padding-left: 0.75rem; color: var(--muted-foreground); }
-.md-body a { color: var(--primary); text-decoration: underline; }
-.md-body hr { border-color: var(--border); }
+.md-body th, .md-body td { border: 1px solid var(--md-border); padding: 0.3rem 0.5rem; text-align: left; vertical-align: top; }
+.md-body th { background: var(--md-surface, color-mix(in oklch, var(--foreground) 5%, transparent)); font-weight: 600; }
+.md-body blockquote { border-left: 3px solid var(--md-border); padding-left: 0.75rem; color: var(--md-quote); }
+.md-body a { color: var(--md-link); text-decoration: underline; }
+.md-body hr { border-color: var(--md-border); }
 
 /* 테마 토큰 재정의는 마지막에 두어 :root와 같은 명시도에서 우선한다. */
 .dark {

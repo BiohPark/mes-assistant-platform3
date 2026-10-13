@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -308,6 +309,36 @@ function actionView(status = 'in_progress') {
   const task = { id: 't', threadId: 'h', status, inputs: [], tags: [] } as unknown as Task
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ChatView task={task} /></TooltipProvider></MeContext></QueryClientProvider>)
 }
+
+it('keeps the question index above the message scroller when messages arrive and while scrolling', async () => {
+  let finish!: (response: Response) => void
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/messages')
+    ? new Promise<Response>(resolve => { finish = resolve }) : Response.json([])))
+  actionView()
+  expect(screen.queryByRole('button', { name: '질문 목차' })).not.toBeInTheDocument()
+  await waitFor(() => expect(finish).toBeDefined())
+  await act(async () => finish(Response.json([originalQuestion])))
+  const trigger = await screen.findByRole('button', { name: '질문 목차' })
+  const toolbar = screen.getByTestId('chat-question-toolbar')
+  const scroller = screen.getByTestId('chat-message-scroll')
+  expect(toolbar).toContainElement(trigger)
+  expect(scroller).not.toContainElement(trigger)
+  expect(toolbar.nextElementSibling).toBe(scroller)
+  expect(scroller.querySelector('[data-message-id="original"]')).toBeInTheDocument()
+  fireEvent.scroll(scroller, { target: { scrollTop: 200 } })
+  expect(toolbar).toContainElement(trigger)
+  const user = userEvent.setup()
+  trigger.focus()
+  await user.keyboard('{Enter}')
+  expect(await screen.findByRole('dialog', { name: '질문 목차' })).toBeVisible()
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(trigger).toHaveFocus())
+  await user.keyboard('{Enter}')
+  await screen.findByRole('dialog', { name: '질문 목차' })
+  await user.keyboard('{Enter}')
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '질문 목차' })).not.toBeInTheDocument())
+  expect(scroller.querySelector('[data-message-id="original"]')).toHaveFocus()
+})
 
 it('confirms draft replacement, preserves current attachments and sends prefill through estimate and SSE', async () => {
   const requests: Array<{ url: string; body: Record<string, unknown> }> = []

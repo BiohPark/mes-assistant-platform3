@@ -279,6 +279,7 @@ export const message = mysqlTable(
     role: text('role').notNull(),
     kind: text('kind'),
     content: longtext('content').notNull(),
+    reasoning: text('reasoning'),
     authorId: varchar('author_id', { length: 191 }).references((): AnyMySqlColumn => appUser.id),
     status: text('status').notNull(),
     error: longtext('error'),

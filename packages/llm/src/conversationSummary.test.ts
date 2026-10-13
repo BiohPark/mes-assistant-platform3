@@ -59,3 +59,12 @@ describe('summarizeConversation', () => {
     await expect(summarizeConversation(p, 'm', rows, users, { limitBytes: 10_000 })).rejects.toThrow('HTTP 500')
   })
 })
+
+it('excludes stored reasoning from both rule and model summaries and summary budgets', async () => {
+  const history = rows.map(row => ({ ...row, reasoning: 'PRIVATE_REASONING'.repeat(10_000) }))
+  const mock = await summarizeConversation(provider('mock', []), 'm', history, users, { limitBytes: 10_000 })
+  expect(mock.text).not.toContain('PRIVATE_REASONING')
+  const live = provider('live', [{ type: 'reasoning', text: 'summary thought' }, { type: 'delta', text: '요약' }])
+  expect((await summarizeConversation(live, 'm', history, users, { limitBytes: 10_000 })).text).toBe('요약')
+  expect(JSON.stringify(live.calls)).not.toContain('PRIVATE_REASONING')
+})

@@ -58,3 +58,23 @@ test('legacy tool calls stream a sources frame first; tool_ids are rejected (400
     assert.equal((await chat(base, {})).status, 200)
   }, { FAKE_OWUI_REJECT_TOOL_IDS: '1' })
 })
+
+test('reasoning keyword streams reasoning_content for several seconds before answering', async () => withServer(false, async (base) => {
+  const start = Date.now()
+  const response = await fetch(`${base}/api/chat/completions`, { method: 'POST', body: JSON.stringify({ stream: true, model: 'fake-general', messages: [{ role: 'user', content: '[reasoning] 확인' }] }) })
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let body = '', firstReasoningAt, firstAnswerAt
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    const piece = decoder.decode(value, { stream: true })
+    body += piece
+    if (piece.includes('reasoning_content')) firstReasoningAt ??= Date.now()
+    if (piece.includes('"content"')) firstAnswerAt ??= Date.now()
+  }
+  assert.ok(body.includes('PRIVATE_REASONING'))
+  assert.ok(body.includes('data: [DONE]'))
+  assert.ok(firstReasoningAt - start < 1500)
+  assert.ok(firstAnswerAt - firstReasoningAt >= 2800)
+}))

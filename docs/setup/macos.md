@@ -25,6 +25,8 @@ mise를 쓰는데 `node --version`이 22가 아니면 저장소 폴더 안에서
 
 `Copy-Item .env.example .env` 대신 `cp .env.example .env` (또는 그대로 `pnpm setup:env`).
 
+응답 대기 기본값은 첨부 없는 첫 응답 5분(`REQUEST_FIRST_TOKEN_MS=300000`), 첨부 첫 응답 10분(`REQUEST_FILES_FIRST_TOKEN_MS=600000`), 본문/생각 청크 사이 무응답 5분(`REQUEST_IDLE_MS=300000`)이다. 기존 `.env` 값을 우선하므로 필요하면 직접 갱신한 뒤 API를 재시작한다. 업그레이드 시 `pnpm db:migrate`로 `message.reasoning` nullable text 컬럼을 추가한다(MariaDB 10.4 호환). 화면의 생각 과정은 접혀 보존되며 다음 요청·추정·요약에서 제외한다.
+
 ## 4. DB 셋업 — (b) 직접 설치
 
 Homebrew MariaDB는 macOS 사용자가 관리자라 `-u root`와 비밀번호가 필요 없다(이 경로는 CI가 검증하지 않는다):

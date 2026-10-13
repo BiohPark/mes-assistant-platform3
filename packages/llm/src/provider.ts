@@ -56,6 +56,7 @@ export interface ChatMeta {
 
 export type ChatChunk =
   | { type: 'delta'; text: string }
+  | { type: 'reasoning'; text: string }
   | { type: 'tool_call'; call: ToolCall }
   | { type: 'done' }
   | { type: 'error'; message: string }

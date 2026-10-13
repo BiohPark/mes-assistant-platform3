@@ -70,6 +70,14 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' })
     // legacy 도구 호출은 OpenWebUI처럼 sources 프레임을 먼저 보낸다
     if (payload.params?.function_calling === 'legacy' && payload.tool_ids?.length) res.write(`data: ${JSON.stringify({ sources: [{ source: { id: 'fake-kb' } }] })}\n\n`)
+    if (/\[reasoning\]/i.test(lastUserText(payload.messages))) {
+      for (const thought of ['PRIVATE_REASONING: 요청을 검토합니다. ', '자료를 비교합니다. ', '답변을 준비합니다.']) {
+        if (res.destroyed) return
+        res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: { reasoning_content: thought } }] })}\n\n`)
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+      if (res.destroyed) return
+    }
     for (const piece of text.match(/.{1,8}/gsu) ?? []) {
       res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: { content: piece } }] })}\n\n`)
     }
