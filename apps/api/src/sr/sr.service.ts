@@ -163,7 +163,11 @@ export class SrService {
     })
   }
   async draft(actor: string, srId: string) {
-    await this.view(actor, srId)
+    await this.user(actor)
+    // 접수 전환은 요청자 본인만 한다(SO 예외 없음). 타인·미존재 SR은 같은 403으로 존재를 노출하지 않는다.
+    const [sr] = await this.db.select({ id: serviceRequest.id }).from(serviceRequest)
+      .where(and(eq(serviceRequest.id, srId), eq(serviceRequest.requesterId, actor)))
+    if (!sr) throw new ForbiddenException('요청자만 초안을 만들 수 있습니다')
     const [owner] = await this.db.select().from(thread).where(eq(thread.srId, srId))
     if (!owner) throw new NotFoundException('접수 대화를 찾을 수 없습니다')
     const rows = await this.db.select({ role: message.role, content: message.content, status: message.status }).from(message).where(eq(message.threadId, owner.id)).orderBy(message.seq)

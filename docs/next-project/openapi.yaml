@@ -660,9 +660,9 @@ paths:
   /service-requests/{srId}/draft:
     get:
       tags: [service-requests]
-      summary: 접수 전환용 초안 — 접수 대화에서 제목(보조 호출, 기록 없음)·본문 초안
+      summary: 접수 전환용 초안 (요청자 본인만, SO 예외 없음) — 접수 대화에서 제목(보조 호출, 기록 없음)·본문 초안. 타인·미존재 SR은 같은 403
       parameters: [{ $ref: '#/components/parameters/srId' }]
-      responses: { '200': { description: OK } }
+      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } }
   /service-requests/{srId}/title:
     patch:
       tags: [service-requests]
@@ -673,9 +673,9 @@ paths:
   /service-requests/{srId}/content:
     patch:
       tags: [service-requests]
-      summary: 접수 내용 수정 (제목·본문·첨부 선택)
+      summary: 접수 내용 수정 (요청자·SO만, 제목·본문·첨부 선택)
       parameters: [{ $ref: '#/components/parameters/srId' }]
-      responses: { '204': { description: 변경 } }
+      responses: { '204': { description: 변경 }, '403': { $ref: '#/components/responses/Problem' } }
   /service-requests/{srId}/status:
     patch:
       tags: [service-requests]
@@ -689,15 +689,16 @@ paths:
       summary: 현재 제목·본문을 보조 호출로 다듬은 **제안**만 반환 (요청자·SO, 저장 없음, 기록 없음). 적용·제출은 사람이 한다 (U9)
       parameters: [{ $ref: '#/components/parameters/srId' }]
       requestBody: { content: { application/json: { schema: { type: object, required: [title, body], properties: { title: { type: string }, body: { type: string } } } } } }
-      responses: { '201': { description: 제안, content: { application/json: { schema: { type: object, properties: { title: { type: string }, body: { type: string } } } } } }, '429': { description: 보조 요청 진행 중 } }
+      responses: { '201': { description: 제안, content: { application/json: { schema: { type: object, properties: { title: { type: string }, body: { type: string } } } } } }, '403': { $ref: '#/components/responses/Problem' }, '429': { description: 보조 요청 진행 중 } }
   /service-requests/{srId}/submit:
     post:
       tags: [service-requests]
-      summary: 접수로 전환 (SR-YYYY-NNNN 발급·태그·접수 에이전트 소유자 알림)
+      summary: 접수로 전환 (요청자·SO만, SR-YYYY-NNNN 발급·태그·접수 에이전트 소유자 알림)
       parameters: [{ $ref: '#/components/parameters/srId' }]
       requestBody: { content: { application/json: { schema: { type: object, required: [title, body], properties: { title: { type: string }, titleSource: { enum: [ai, manual] }, body: { type: string }, attachmentIds: { type: array, items: { type: string } } } } } } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }
+        '403': { $ref: '#/components/responses/Problem' }
   /service-requests/{srId}/tasks:
     post:
       tags: [service-requests]
