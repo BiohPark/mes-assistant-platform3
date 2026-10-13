@@ -36,16 +36,17 @@ export function applyEvent(query: QueryClient, event: string, data: Record<strin
     if (taskId) { invalidate(['conversation-inputs', taskId]); invalidate(['candidates', taskId]); invalidate(['task', taskId]); invalidate(['activity', taskId]) }
     invalidate(['estimate'])
   }
+  if (event === 'sr.updated') invalidate(['sr'])
   if (event === 'notification.created') invalidate(['notifications'])
 }
 
-export function useEvents() {
+export function useEvents(enabled = true) {
   const query = useQueryClient()
   useEffect(() => {
-    if (typeof EventSource === 'undefined') return
+    if (!enabled || typeof EventSource === 'undefined') return
     const source = new EventSource('/api/events')
     const names = ['task.created', 'task.updated', 'message.appended', 'request.updated', 'file.updated', 'input.updated',
-      'context.updated', 'presence.typing', 'notification.created', 'resync']
+      'context.updated', 'sr.updated', 'presence.typing', 'notification.created', 'resync']
     const handlers = names.map((event) => {
       const handler = (message: Event) => {
         const data = JSON.parse((message as MessageEvent<string>).data || '{}') as Record<string, unknown>
@@ -56,5 +57,5 @@ export function useEvents() {
       return [event, handler] as const
     })
     return () => { for (const [event, handler] of handlers) source.removeEventListener(event, handler); source.close() }
-  }, [query])
+  }, [query, enabled])
 }

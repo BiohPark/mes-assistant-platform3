@@ -109,9 +109,35 @@ it('검색·상태 필터로 0건이면 각 조건을 따로 지울 수 있다',
   expect(screen.getByRole('textbox', { name: 'SR 검색' })).toHaveValue('')
   expect(await screen.findByRole('table')).toHaveTextContent('알람')
   await userEvent.click(screen.getByRole('button', { name: '반려' }))
-  expect(screen.getByText('조건에 맞는 요청이 없습니다.')).toBeInTheDocument()
+  expect(screen.getByText('선택한 상태의 요청이 없습니다.')).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '검색어 지우기' })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: '상태 필터 초기화' }))
   expect(await screen.findByRole('table')).toHaveTextContent('알람')
   expect(screen.getByRole('button', { name: '전체' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+
+it('queue chips distinguish unstarted and assigned SRs, sort elapsedDays descending then updatedAt ascending, and link conversation codes', async () => {
+  const rows = [
+    { ...row('new', 'submitted'), taskCount: 0, elapsedDays: 1 },
+    { ...row('old-newer', 'reviewing'), taskCount: 0, elapsedDays: 5, updatedAt: '2026-10-03' },
+    { ...row('old-older', 'submitted'), taskCount: 0, elapsedDays: 5, updatedAt: '2026-10-02' },
+    { ...row('mine', 'in_progress'), taskCount: 1, elapsedDays: 2, conversations: [{ id: 'task', code: 'C-42', title: '내 대화', status: 'in_progress', threadId: 'h', assigneeIds: ['u'] }] },
+    { ...row('other', 'submitted'), taskCount: 1, elapsedDays: 8, conversations: [{ id: 'other-task', code: 'C-43', title: '다른 대화', status: 'done', threadId: 'h2', assigneeIds: ['other'] }] },
+  ]
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests?scope=inbox' ? jsonResponse(200, rows) : jsonResponse(200, [])))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrManagePage /></MeContext></TooltipProvider>)
+  await screen.findByRole('table')
+  expect(screen.getByRole('link', { name: 'C-42' })).toHaveAttribute('href', '/c/task')
+  await userEvent.click(screen.getByRole('button', { name: '미착수' }))
+  expect(within(screen.getByRole('table')).getAllByRole('row').slice(1).map(item => item.textContent)).toEqual([
+    expect.stringContaining('요청 old-older'), expect.stringContaining('요청 old-newer'), expect.stringContaining('요청 new'),
+  ])
+  expect(screen.queryByText('요청 other')).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '내 연결 SR' }))
+  expect(screen.getByRole('table')).toHaveTextContent('요청 mine')
+  expect(screen.queryByText('요청 old-older')).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '완료' }))
+  expect(screen.getByText('내가 담당하는 연결 SR이 없습니다.')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: '내 SR 요청' })).toHaveAttribute('href', '/sr')
 })

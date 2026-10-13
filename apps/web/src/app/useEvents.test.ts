@@ -55,3 +55,15 @@ it('refreshes other conversations that may reference a newly appended source mes
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ['candidates'] })
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ['conversation-inputs'] })
 })
+
+it('sr.updated refetches the SR through GET without trusting event content', async () => {
+  const query = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const get = vi.fn(async () => ({ id: 's', title: '서버에서 다시 읽은 제목' }))
+  query.setQueryData(['sr', 's'], { id: 's', title: '이전 제목' })
+  const observer = new QueryObserver(query, { queryKey: ['sr', 's'], queryFn: get, staleTime: Infinity })
+  const unsubscribe = observer.subscribe(() => undefined)
+  applyEvent(query, 'sr.updated', { srId: 's', title: '이벤트에 들어온 제목' })
+  await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() => expect(query.getQueryData(['sr', 's'])).toEqual({ id: 's', title: '서버에서 다시 읽은 제목' }))
+  unsubscribe(); query.clear()
+})
