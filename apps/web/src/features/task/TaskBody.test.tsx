@@ -98,7 +98,7 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
     }
     if (url === '/api/threads/h-pending/requests/estimate') return jsonResponse(200, {
       at: task.createdAt, provider: 'mock', transport: 'inline', model: 'mock', bytes: 100, limitBytes: 10_000,
-      inputs: [], srCodes: [], overLimit: false, attachmentLimit: 20,
+      inputs: [], srCodes: [], srs: [], overLimit: false, attachmentLimit: 20,
     })
     if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
     if (url === '/api/settings') return jsonResponse(200, { fileMaxPerRequest: 20 })
