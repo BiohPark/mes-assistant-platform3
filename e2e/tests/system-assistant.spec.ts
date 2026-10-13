@@ -17,7 +17,7 @@ test('제안 확인 후 대화를 만들고 새 대화로 이동한다', async (
   await signUp(page)
   let taskWrites = 0
   page.on('request', (request) => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/tasks') taskWrites++ })
-  await page.getByRole('button', { name: '시스템 assistant 열기' }).click()
+  await page.getByRole('button', { name: 'AI 도우미 열기' }).click() // 상단 버튼 대신 알약(U4)
   const drawer = page.getByRole('dialog', { name: '시스템 assistant' })
   await drawer.getByRole('textbox', { name: 'AI 요청 입력' }).fill('FDS 작성 도우미로 "테스트" 대화 시작해줘')
   await drawer.getByRole('button', { name: '전송' }).click()
@@ -40,7 +40,7 @@ test('제안 확인 후 대화를 만들고 새 대화로 이동한다', async (
 test('담당자의 에이전트 등록 적용은 기존 API가 거부한다', async ({ page }) => {
   test.skip(live, 'Mock 규칙 전용 — 가짜 OpenWebUI는 도구 호출을 내지 않음')
   await signUp(page)
-  await page.getByRole('button', { name: '시스템 assistant 열기' }).click()
+  await page.getByRole('button', { name: 'AI 도우미 열기' }).click() // 상단 버튼 대신 알약(U4)
   const drawer = page.getByRole('dialog', { name: '시스템 assistant' })
   await drawer.getByRole('textbox', { name: 'AI 요청 입력' }).fill('에이전트 등록: ID e2e-denied, 이름 거부 확인 도우미, Record › Deviation')
   await drawer.getByRole('button', { name: '전송' }).click()

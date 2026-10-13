@@ -4,7 +4,6 @@ export const en = {
   common: {
     appName: 'MES Agent Hub',
     tagline: 'Conversations · Tags · SR',
-    openAssistant: 'Open system assistant',
     theme: 'Theme',
     themeSystem: 'System',
     themeLight: 'Light',
@@ -198,6 +197,8 @@ export const en = {
       userName: '{name} name', saveName: 'Save name', usersRoles: 'Users & roles',
       issueConfirm: 'Issue a temporary password for {name}?', issueFailed: 'Failed to issue password', temporaryPassword: 'Temporary password', pendingChange: 'Change pending',
       issuedPassword: 'Temporary password (shown only on this screen): ', openDiagnostics: 'Open connection check', aiSummary: 'AI connection summary', loading: 'Loading settings…',
+      assistantImage: 'AI assistant character', assistantImageHint: 'PNG, JPEG or WebP up to 1 MiB and 512×512. The default icon is used when none is set. Company character images are uploaded only here.',
+      assistantImageChoose: 'Choose image', assistantImageRemove: 'Remove character', assistantImageSaved: 'Character image saved', assistantImageRemoved: 'Character image removed', assistantImageFailed: 'Could not save the character image',
     },
     password: {
       mismatch: 'New passwords do not match', mustChange: 'You must change your password to continue',
@@ -545,6 +546,9 @@ export const en = {
     staleDescription: 'The app was updated and the previous page could not be loaded. Reload to continue with the new version.',
     reload: 'Reload',
     home: 'Go home',
+  },
+  pill: {
+    open: 'Open AI assistant', close: 'Close AI assistant', characterAlt: 'AI assistant character', moveHint: 'Drag or use the arrow keys to move; Home resets the position',
   },
   nav: {
     requests: 'Requests', work: 'Work', admin: 'Admin',

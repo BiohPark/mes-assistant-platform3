@@ -77,7 +77,7 @@ export class RequestsService implements OnModuleDestroy {
    * 상한이면 429. 잠금을 쥔 채 슬롯을 늘려 채팅 시작 트랜잭션과 어느 순서로 겹쳐도 상한을 넘지 않는다.
    * 돌려주는 함수로 슬롯을 반환한다(여러 번 불러도 한 번만).
    */
-  async admit(_kind: 'test'): Promise<() => void> {
+  async admit(_kind: 'test' | 'assistant'): Promise<() => void> {
     await this.db.transaction(async (tx) => {
       await this.lockGlobalCapacity(tx)
       await this.assertGlobalCapacity(tx)
@@ -120,10 +120,12 @@ export class RequestsService implements OnModuleDestroy {
     try { return await this.runAuxiliary(actor, 'summary', (auxSignal) => summarizeConversation(this.provider, model, messages, userMap, { limitBytes, signal: auxSignal }), { signal }) }
     catch (error) { if (error instanceof SummaryBudgetError) throw new HttpException(error.message, 413); throw error }
   }
-  async runAuxiliary<T>(actor: string, _kind: 'title' | 'summary' | 'checklist' | 'refine' | 'test', operation: (signal: AbortSignal) => Promise<T>,
+  /** 사용자별 단일 진행 — 도우미(assistant)는 제목·요약 등 다른 보조 호출과 별도 슬롯(U4). 전역 상한은 admit이 따로 센다 */
+  async runAuxiliary<T>(actor: string, kind: 'title' | 'summary' | 'checklist' | 'refine' | 'test' | 'assistant', operation: (signal: AbortSignal) => Promise<T>,
     options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<T> {
-    if (this.auxiliaryUsers.has(actor)) throw new HttpException('보조 요청이 이미 진행 중입니다', 429)
-    this.auxiliaryUsers.add(actor)
+    const slot = kind === 'assistant' ? `${actor}:assistant` : `${actor}:aux`
+    if (this.auxiliaryUsers.has(slot)) throw new HttpException(kind === 'assistant' ? '다른 보조 요청이 진행 중입니다' : '보조 요청이 이미 진행 중입니다', 429)
+    this.auxiliaryUsers.add(slot)
     const controller = new AbortController()
     const abort = () => controller.abort('cancelled')
     options.signal?.addEventListener('abort', abort, { once: true })
@@ -138,7 +140,7 @@ export class RequestsService implements OnModuleDestroy {
     } finally {
       clearTimeout(timer)
       options.signal?.removeEventListener('abort', abort)
-      this.auxiliaryUsers.delete(actor)
+      this.auxiliaryUsers.delete(slot)
     }
   }
   private safeError(error: unknown) {

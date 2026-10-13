@@ -25,14 +25,26 @@ export async function uploadImage(id: string, file: File | null) {
   return response.json() as Promise<unknown>
 }
 /** 유효 모델·출처는 읽기 전용, override는 SO가 설정·해제한다. */
-export type Settings = { owuiTools?: 'auto' | 'off'; defaultModel?: string; defaultModelSource?: 'setting' | 'env' | 'default'; defaultModelOverride?: string | null; fileDelivery?: 'inline' | 'openwebui'; requestBudgetBytes?: number; srIntakeAssistantId?: string | null; link1Rule?: string; fileMaxPerRequest?: number }
-export type SettingsPatch = Omit<Settings, 'defaultModel' | 'defaultModelSource'>
+export type Settings = { owuiTools?: 'auto' | 'off'; defaultModel?: string; defaultModelSource?: 'setting' | 'env' | 'default'; defaultModelOverride?: string | null; fileDelivery?: 'inline' | 'openwebui'; requestBudgetBytes?: number; srIntakeAssistantId?: string | null; link1Rule?: string; fileMaxPerRequest?: number; assistantImageFileId?: string | null }
+/** assistantImageFileId는 PATCH가 아니라 uploadAssistantImage로만 바뀐다 (U4) */
+export type SettingsPatch = Omit<Settings, 'defaultModel' | 'defaultModelSource' | 'assistantImageFileId'>
 export const getSettings = async (): Promise<Settings> => {
   const response = await fetch('/api/settings', { credentials: 'same-origin' })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   return response.json() as Promise<Settings>
 }
 export const saveSettings = (patch: SettingsPatch) => adminRequest('settings', 'PATCH', patch)
+/** AI 도우미 캐릭터 이미지 (SO) — null이면 제거 */
+export async function uploadAssistantImage(file: File | null) {
+  if (!file) return adminRequest('settings/assistant-image', 'DELETE')
+  const form = new FormData(); form.append('file', file)
+  const response = await fetch('/api/settings/assistant-image', { method: 'POST', credentials: 'same-origin', body: form })
+  if (!response.ok) {
+    const error: unknown = await response.json().catch(() => null)
+    throw new Error(error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' ? error.message : `HTTP ${response.status}`)
+  }
+  return response.json() as Promise<Settings>
+}
 export const listManagedCodes = async () => CodeSchema.array().parse(await adminRequest('codes?includeInactive=true', 'GET'))
 export const createCode = (input: { groupKey: string; code: string; name: string; sortOrder?: number }) => adminRequest('codes', 'POST', input)
 export const updateCode = (id: string, patch: { name?: string; sortOrder?: number; active?: boolean }) => adminRequest(`codes/${encodeURIComponent(id)}`, 'PATCH', patch)

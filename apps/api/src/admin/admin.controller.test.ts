@@ -1,4 +1,6 @@
 import 'reflect-metadata'
+import { Readable } from 'node:stream'
+import { NotFoundException } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +15,9 @@ import { DbCatalogReader } from '../catalog/catalog.service.js'
 
 const config = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
 const admin = { getSettings: vi.fn(async () => ({})), settings: vi.fn(async () => ({})), createAssistant: vi.fn(async () => ({ id: 'new-agent' })),
-  order: vi.fn(async () => undefined), codes: vi.fn(async () => []), updateAssistant: vi.fn(async () => ({})), deleteAssistant: vi.fn(async () => undefined), image: vi.fn(async () => undefined) }
+  order: vi.fn(async () => undefined), codes: vi.fn(async () => []), updateAssistant: vi.fn(async () => ({})), deleteAssistant: vi.fn(async () => undefined), image: vi.fn(async () => undefined),
+  assistantImage: vi.fn(async () => ({ assistantImageFileId: 'img-1' })),
+  assistantImageContent: vi.fn(async () => ({ mime: 'image/png', size: 3, stream: Readable.from([Buffer.from('png')]) })) }
 const accounts = { profile: vi.fn(async (_id: string, input: unknown) => input), users: vi.fn(async () => []), role: vi.fn(async () => undefined), active: vi.fn(async () => undefined), name: vi.fn(async (_id: string, name: string) => ({ name })), temporaryPassword: vi.fn(async () => ({ temporaryPassword: 'secret' })), changePassword: vi.fn(async () => undefined) }
 
 describe('관리 API 서버 권한', () => {
@@ -48,6 +52,38 @@ describe('관리 API 서버 권한', () => {
   it('에이전트 이미지 업로드는 UTF-8 파일 이름을 그대로 넘긴다', async () => {
     await request(app.getHttpServer()).post('/api/assistants/new-agent/image').set('Cookie', 'mes_session=so').attach('file', Buffer.from('png'), { filename: '아이콘 🙂.png', contentType: 'image/png' }).expect(201)
     expect(admin.image).toHaveBeenCalledWith('so', 'new-agent', expect.objectContaining({ originalname: '아이콘 🙂.png', mimetype: 'image/png' }))
+  })
+  it('AI 도우미 캐릭터 이미지는 SO만 올리고·지우며, 파일이 없으면 400이고 PATCH로는 바꿀 수 없다 (U4)', async () => {
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')
+    for (const cookie of ['member', 'bo']) {
+      await request(app.getHttpServer()).post('/api/settings/assistant-image').set('Cookie', `mes_session=${cookie}`).attach('file', png, { filename: 'c.png', contentType: 'image/png' }).expect(403)
+      await request(app.getHttpServer()).delete('/api/settings/assistant-image').set('Cookie', `mes_session=${cookie}`).expect(403)
+    }
+    await request(app.getHttpServer()).post('/api/settings/assistant-image').attach('file', png, { filename: 'c.png', contentType: 'image/png' }).expect(401)
+    expect(admin.assistantImage).not.toHaveBeenCalled()
+    await request(app.getHttpServer()).post('/api/settings/assistant-image').set('Cookie', 'mes_session=so').expect(400)
+    const uploaded = await request(app.getHttpServer()).post('/api/settings/assistant-image').set('Cookie', 'mes_session=so').attach('file', png, { filename: '캐릭터.png', contentType: 'image/png' }).expect(201)
+    expect(admin.assistantImage).toHaveBeenCalledWith('so', expect.objectContaining({ originalname: '캐릭터.png', size: png.length }))
+    expect(uploaded.body).toMatchObject({ assistantImageFileId: 'img-1', defaultModel: 'glm-5.2' })
+    await request(app.getHttpServer()).delete('/api/settings/assistant-image').set('Cookie', 'mes_session=so').expect(204)
+    expect(admin.assistantImage).toHaveBeenLastCalledWith('so', null)
+    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ assistantImageFileId: 'x' }).expect(400)
+    expect(admin.settings).not.toHaveBeenCalled()
+  })
+  it('현재 캐릭터 이미지는 로그인 사용자가 권한 검사 없이 열람하고, 없으면 404, 비로그인은 401 (U4 리뷰 P2)', async () => {
+    // 요청자 전용(BO)은 auth/guards.ts의 BO 경로 허용 목록(이 작업 범위 밖)에서 403 — 알약은 BO에게 안 보이므로 실사용 영향 없음. 허용하려면 그 목록에 GET /api/settings/assistant-image 한 줄
+    await request(app.getHttpServer()).get('/api/settings/assistant-image').set('Cookie', 'mes_session=bo').expect(403)
+    for (const cookie of ['member', 'so']) {
+      const response = await request(app.getHttpServer()).get('/api/settings/assistant-image').set('Cookie', `mes_session=${cookie}`).expect(200)
+      expect(response.headers['content-type']).toMatch(/^image\/png/)
+      expect(response.headers['x-content-type-options']).toBe('nosniff')
+      expect(Buffer.from(response.body as Buffer).toString()).toBe('png')
+    }
+    await request(app.getHttpServer()).get('/api/settings/assistant-image').expect(401)
+    admin.assistantImageContent.mockRejectedValueOnce(new NotFoundException('캐릭터 이미지가 없습니다'))
+    await request(app.getHttpServer()).get('/api/settings/assistant-image').set('Cookie', 'mes_session=member').expect(404)
+    admin.assistantImageContent.mockRejectedValueOnce(Object.assign(new Error('missing'), { code: 'ENOENT' }))
+    await request(app.getHttpServer()).get('/api/settings/assistant-image').set('Cookie', 'mes_session=member').expect(404)
   })
   it('도구 전달 설정은 auto/off만 SO가 변경하고 누락 시 다른 설정에 섞이지 않는다', async () => {
     for (const owuiTools of ['auto', 'off']) {

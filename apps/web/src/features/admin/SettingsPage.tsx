@@ -14,11 +14,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ModelSelect } from '@/components/ModelSelect'
 import { useModelList } from '@/lib/useModelList'
-import { getSettings, saveSettings, type Settings, type SettingsPatch } from '@/api/admin'
+import { Sparkles } from 'lucide-react'
+import { getSettings, saveSettings, uploadAssistantImage, type Settings, type SettingsPatch } from '@/api/admin'
 
 function SettingsForm({ initial }: { initial: Settings }) {
   const t = useT()
-  const { defaultModel, defaultModelSource, owuiTools: _owuiTools, ...patchable } = initial
+  const { defaultModel, defaultModelSource, owuiTools: _owuiTools, assistantImageFileId: _assistantImage, ...patchable } = initial
   const modelList = useModelList()
   const [form, setForm] = useState<SettingsPatch>(patchable)
   const savedModelOverride = useRef(initial.defaultModelOverride ?? null)
@@ -100,6 +101,36 @@ function OwuiToolsForm({ initial }: { initial: Settings }) {
   </form>
 }
 
+/** AI 도우미 캐릭터(알약 이미지) — SO 업로드·교체·제거. 저장소에는 넣지 않고 서버 파일로만 둔다(U4) */
+function AssistantImageForm({ fileId }: { fileId: string | null | undefined }) {
+  const t = useT()
+  const headingId = useId()
+  const client = useQueryClient()
+  const [busy, setBusy] = useState(false)
+  async function save(file: File | null) {
+    setBusy(true)
+    try {
+      await uploadAssistantImage(file)
+      await client.invalidateQueries({ queryKey: ['settings'] })
+      toast.success(t(file ? 'admin.settings.assistantImageSaved' : 'admin.settings.assistantImageRemoved'))
+    } catch (error) { toast.error(error instanceof Error ? error.message : t('admin.settings.assistantImageFailed')) }
+    finally { setBusy(false) }
+  }
+  return <section aria-labelledby={headingId} className="space-y-3 rounded-xl border bg-card p-4 text-sm">
+    <h2 id={headingId} className="font-semibold">{t('admin.settings.assistantImage')}</h2>
+    <div className="flex flex-wrap items-center gap-3">
+      <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-primary-foreground">
+        {fileId ? <img src={`/api/settings/assistant-image?v=${encodeURIComponent(fileId)}`} alt={t('pill.characterAlt')} className="size-full object-cover" /> : <Sparkles className="size-5" aria-hidden />}
+      </span>
+      <Field label={t('admin.settings.assistantImageChoose')} className="[&>label]:cursor-pointer [&>label]:rounded-lg [&>label]:border [&>label]:px-2 [&>label]:py-1">
+        <input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void save(file) }} />
+      </Field>
+      {fileId && <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void save(null)}>{t('admin.settings.assistantImageRemove')}</Button>}
+    </div>
+    <p className="text-xs text-muted-foreground">{t('admin.settings.assistantImageHint')}</p>
+  </section>
+}
+
 /** 우측 요약 카드 — TopBar와 같은 ['llm','status'] 캐시를 읽는다. 연결 시험·상세는 연결 진단 화면 몫 */
 function AiSummary() {
   const t = useT()
@@ -121,9 +152,9 @@ function AiSummary() {
 export function SettingsPage() {
   const t = useT()
   const query = useQuery({ queryKey: ['settings'], queryFn: getSettings })
-  const { owuiTools: _owuiTools, ...generalSettings } = query.data ?? {}
+  const { owuiTools: _owuiTools, assistantImageFileId: _assistantImage, ...generalSettings } = query.data ?? {}
   return <><TopBar title={t('nav.settings')} /><div className="flex-1 overflow-auto p-4"><div className="mx-auto grid max-w-5xl items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-    {query.data ? <div className="space-y-4"><SettingsForm key={JSON.stringify(generalSettings)} initial={query.data} /><OwuiToolsForm key={query.data.owuiTools ?? 'auto'} initial={query.data} /></div> : <p>{t('admin.settings.loading')}</p>}
+    {query.data ? <div className="space-y-4"><SettingsForm key={JSON.stringify(generalSettings)} initial={query.data} /><OwuiToolsForm key={query.data.owuiTools ?? 'auto'} initial={query.data} /><AssistantImageForm fileId={query.data.assistantImageFileId} /></div> : <p>{t('admin.settings.loading')}</p>}
     <AiSummary />
   </div></div></>
 }

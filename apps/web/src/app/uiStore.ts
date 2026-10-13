@@ -7,6 +7,8 @@ export interface HomeFilters {
   level2CodeIds: string[]
   showRetired: boolean
 }
+/** AI 도우미 알약의 화면 좌표(px, 왼쪽 위). null = 기본 위치(우하단) */
+export interface PillPos { x: number; y: number }
 
 export const emptyHomeFilters = (): HomeFilters => ({ q: '', level1CodeIds: [], level2CodeIds: [], showRetired: false })
 
@@ -18,6 +20,8 @@ interface UiState {
   setKanbanCollapseEmpty: (v: boolean) => void
   assistantOpen: boolean
   setAssistantOpen: (open: boolean) => void
+  pillPos: PillPos | null
+  setPillPos: (pos: PillPos | null) => void
 }
 
 export const useUiStore = create<UiState>()(
@@ -29,6 +33,8 @@ export const useUiStore = create<UiState>()(
       setKanbanCollapseEmpty: (kanbanCollapseEmpty) => set({ kanbanCollapseEmpty }),
       assistantOpen: false,
       setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
+      pillPos: null,
+      setPillPos: (pillPos) => set({ pillPos }),
     }),
     { name: 'mes-hub-ui', version: 1,
       migrate: (stored) => {
@@ -39,6 +45,6 @@ export const useUiStore = create<UiState>()(
           level1CodeIds: old?.level1CodeIds ?? (old?.level1CodeId ? [old.level1CodeId] : []),
           level2CodeIds: old?.level2CodeIds ?? (old?.level2CodeId ? [old.level2CodeId] : []),
         } }
-      }, partialize: (s) => ({ homeFilters: s.homeFilters, kanbanCollapseEmpty: s.kanbanCollapseEmpty }) },
+      }, partialize: (s) => ({ homeFilters: s.homeFilters, kanbanCollapseEmpty: s.kanbanCollapseEmpty, pillPos: s.pillPos }) },
   ),
 )

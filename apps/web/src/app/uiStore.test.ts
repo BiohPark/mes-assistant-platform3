@@ -14,3 +14,13 @@ it('keeps multiple Lv2 choices when Lv1 changes until the catalog validates them
   useUiStore.getState().setHomeFilters({ level1CodeIds: ['two'] })
   expect(useUiStore.getState().homeFilters.level2CodeIds).toEqual(['a', 'b'])
 })
+it('persists the assistant pill position but not the open state (U4)', async () => {
+  useUiStore.getState().setPillPos({ x: 40, y: 50 })
+  useUiStore.getState().setAssistantOpen(true)
+  const stored = JSON.parse(localStorage.getItem('mes-hub-ui')!).state
+  expect(stored.pillPos).toEqual({ x: 40, y: 50 })
+  expect(stored).not.toHaveProperty('assistantOpen')
+  useUiStore.getState().setPillPos(null)
+  expect(JSON.parse(localStorage.getItem('mes-hub-ui')!).state.pillPos).toBeNull()
+  useUiStore.getState().setAssistantOpen(false)
+})

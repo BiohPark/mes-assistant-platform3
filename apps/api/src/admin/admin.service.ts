@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common'
-import { and, asc, eq, or, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, or, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appSetting, appUser, assistant, assistantChecklistTemplate, assistantClassification, assistantExpectedIo, checklistItem, code, codeGroup, fileObject, task } from '../db/schema.js'
 import { lockAssistantCodes, resolveCode, resolveClassifications, writeClassifications, type ClassificationIds } from '../db/classifications.js'
@@ -10,6 +10,12 @@ import { CONFIG, type AppConfig } from '../config/config.js'
 import { FILE_STORAGE } from '../files/files.service.js'
 import { FileStorageService, createStorageKey, sha256 } from '../files/fileStorage.service.js'
 import { Optional, PayloadTooLargeException } from '@nestjs/common'
+import { probeImage } from './imageProbe.js'
+
+type Upload = { originalname: string; mimetype: string; buffer: Buffer; size: number }
+/** AI 도우미 캐릭터 이미지 한도 — 알약 48px 표시용 (U4) */
+const ASSISTANT_IMAGE_MAX_BYTES = 1024 * 1024
+const ASSISTANT_IMAGE_MAX_PX = 512
 
 type AssistantInput = {
   classifications?: ClassificationInput[]; id?: string; name: string; level1?: string; level2?: string; level1CodeId?: string; level2CodeId?: string; summary: string; ownerId: string
@@ -179,6 +185,41 @@ export class AdminService {
       throw error
     }
     return this.assistant(id)
+  }
+  /** AI 도우미 캐릭터(app_setting.assistantImageFileId) — SO 업로드·교체·제거. 매직바이트 PNG·JPEG·WebP, ≤1 MiB, ≤512px. null이면 제거 (U4) */
+  async assistantImage(actor: string, file: Upload | null) {
+    const info = file ? probeImage(file.buffer) : null
+    if (file) {
+      if (file.size > ASSISTANT_IMAGE_MAX_BYTES) throw new PayloadTooLargeException('이미지는 1 MiB 이하여야 합니다')
+      if (!info || file.originalname.length > 255) throw new BadRequestException('PNG·JPEG·WebP 이미지만 올릴 수 있습니다')
+      if (info.width > ASSISTANT_IMAGE_MAX_PX || info.height > ASSISTANT_IMAGE_MAX_PX) throw new BadRequestException('이미지는 512×512 이하여야 합니다')
+      if (!this.storage) throw new Error('파일 저장소가 없습니다')
+    }
+    const storageKey = file ? createStorageKey(file.originalname) : null
+    try {
+      if (file && storageKey) await this.storage!.write(storageKey, file.buffer) // 쓰기 실패(부분 파일)도 아래 정리 범위
+      await this.db.transaction(async (tx) => {
+        const [current] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'assistantImageFileId')).for('update')
+        if (file && storageKey && info) {
+          const fileId = randomUUID()
+          await tx.insert(fileObject).values({ id: fileId, kind: 'assistant_image', originalName: file.originalname, mime: info.mime, sizeBytes: file.size,
+            sha256: sha256(file.buffer), storageKey, source: 'upload', version: 1, uploadedBy: actor })
+          await tx.insert(appSetting).values({ key: 'assistantImageFileId', value: fileId }).onDuplicateKeyUpdate({ set: { value: fileId } })
+        } else await tx.delete(appSetting).where(eq(appSetting.key, 'assistantImageFileId'))
+        if (typeof current?.value === 'string') await tx.update(fileObject).set({ deletedAt: new Date() }).where(eq(fileObject.id, current.value))
+      })
+    } catch (error) {
+      if (storageKey) await this.storage!.remove(storageKey)
+      throw error
+    }
+    return this.getSettings()
+  }
+  /** 현재 설정이 가리키는 캐릭터 이미지 — 로그인 사용자 누구나(요청자 포함) 이 파일만 열람한다. 없으면 404 (U4 리뷰 P2) */
+  async assistantImageContent() {
+    const [setting] = await this.db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'assistantImageFileId'))
+    const [row] = typeof setting?.value === 'string' ? await this.db.select().from(fileObject).where(and(eq(fileObject.id, setting.value), isNull(fileObject.deletedAt))) : []
+    if (!row || !this.storage) throw new NotFoundException('캐릭터 이미지가 없습니다')
+    return { mime: row.mime, size: row.sizeBytes, stream: await this.storage.createReadStream(row.storageKey) }
   }
   async order(ids: string[], revisions: Record<string, number>) {
     if (new Set(ids).size !== ids.length) throw new BadRequestException('중복된 에이전트 ID입니다')

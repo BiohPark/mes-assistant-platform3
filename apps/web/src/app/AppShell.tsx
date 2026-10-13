@@ -8,7 +8,7 @@ import { AuthGate } from './AuthGate'
 import { useEvents } from './useEvents'
 import { useMe } from './auth'
 import { PasswordPage } from '@/features/admin/PasswordPage'
-import { SystemAssistantDrawer } from '@/features/system-assistant/SystemAssistantDrawer'
+import { AssistantPill } from '@/features/assistant-pill/AssistantPill'
 import { useT } from '@/i18n'
 
 function LiveEvents() { useEvents(); return null }
@@ -48,7 +48,7 @@ function AppContent() {
     <>
       {!requesterOnly && <LiveEvents />}
         <div className="flex h-full bg-muted/30">
-          <aside className="flex w-14 shrink-0 flex-col items-center border-r border-sidebar-border bg-sidebar py-3 text-sidebar-foreground lg:w-52 lg:items-stretch lg:px-3">
+          <aside className="flex w-14 shrink-0 flex-col items-center border-r border-sidebar-border bg-sidebar pt-3 pb-16 text-sidebar-foreground lg:w-52 lg:items-stretch lg:px-3"> {/* 하단 64px은 AI 도우미 알약 기본 자리 */}
             <div className="mb-4 flex items-center gap-2 px-1 lg:px-1">
               <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <Boxes className="size-4" />
@@ -84,7 +84,7 @@ function AppContent() {
             <Outlet />
           </main>
         </div>
-        {!requesterOnly && <SystemAssistantDrawer />}
+        {!requesterOnly && <AssistantPill />}
         <Toaster position="bottom-right" richColors closeButton />
     </>
   )

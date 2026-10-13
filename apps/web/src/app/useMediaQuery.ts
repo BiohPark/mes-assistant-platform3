@@ -2,8 +2,12 @@ import { useSyncExternalStore } from 'react'
 
 function subscribe(query: string, cb: () => void): () => void {
   const mql = window.matchMedia(query)
-  mql.addEventListener('change', cb)
-  return () => mql.removeEventListener('change', cb)
+  if (typeof mql.addEventListener === 'function') {
+    mql.addEventListener('change', cb)
+    return () => mql.removeEventListener('change', cb)
+  }
+  mql.addListener(cb) // 구형 Safari·테스트 stub
+  return () => mql.removeListener(cb)
 }
 
 /** CSS 미디어쿼리 매칭 여부. SSR 없음 → 초기값도 실제 매칭값 */

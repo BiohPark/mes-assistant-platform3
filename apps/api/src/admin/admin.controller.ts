@@ -1,5 +1,6 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, Req, UploadedFile, UseInterceptors } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, Put, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
+import type { Response } from 'express'
 import { z } from 'zod'
 import { ClassificationsInputSchema } from '@mes/contracts'
 import type { AuthedRequest } from '../auth/guards.js'
@@ -97,6 +98,37 @@ export class AdminSettingsController {
   @Patch()
   @Roles('system_owner')
   async patch(@Body() body: unknown) { return this.view(await this.admin.settings(parse(settings, body))) }
+  /** 현재 캐릭터 이미지 — 로그인 사용자 누구나(요청자 포함) 이 파일만 열람. 교체되면 파일 ID가 바뀌므로 웹은 ?v=<fileId>로 캐시를 가른다 (U4 리뷰 P2) */
+  @Get('assistant-image')
+  async assistantImageContent(@Res() res: Response) {
+    let content: Awaited<ReturnType<AdminService['assistantImageContent']>>
+    try { content = await this.admin.assistantImageContent() }
+    catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') throw new NotFoundException('캐릭터 이미지가 없습니다')
+      throw error
+    }
+    res.setHeader('Content-Type', content.mime)
+    res.setHeader('Content-Length', content.size)
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate')
+    content.stream.on('error', (error) => {
+      if (!res.headersSent) { res.removeHeader('Content-Length'); res.status(500).end() }
+      else res.destroy(error)
+    })
+    content.stream.pipe(res)
+  }
+  /** AI 도우미 캐릭터 이미지 업로드·교체 (SO 전용) (U4) */
+  @Post('assistant-image')
+  @Roles('system_owner')
+  @UseInterceptors(FileInterceptor('file'))
+  async assistantImage(@Req() req: AuthedRequest, @UploadedFile() file?: { originalname: string; mimetype: string; buffer: Buffer; size: number }) {
+    if (!file) throw new BadRequestException('이미지가 필요합니다')
+    return this.view(await this.admin.assistantImage(req.user!.id, file))
+  }
+  @Delete('assistant-image')
+  @Roles('system_owner')
+  @HttpCode(204)
+  clearAssistantImage(@Req() req: AuthedRequest) { return this.admin.assistantImage(req.user!.id, null).then(() => undefined) }
 }
 
 @Controller('codes')

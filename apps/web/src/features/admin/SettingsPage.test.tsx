@@ -241,6 +241,41 @@ it('OpenWebUI 도구 전달은 별도로 저장하고 변경한 경우에만 전
   await waitFor(() => expect(screen.getByRole('button', { name: '도구 전달 저장' })).toBeDisabled())
 })
 
+it('AI 도우미 캐릭터는 별도 multipart로 올리고 제거는 DELETE — 일반 설정 PATCH에는 섞이지 않는다 (U4)', async () => {
+  const calls: Array<{ url: string; method?: string; body?: BodyInit | null }> = []
+  let current: Record<string, unknown> = { defaultModel: 'env-model', fileMaxPerRequest: 10, assistantImageFileId: null }
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/settings/assistant-image') {
+      calls.push({ url, method: init?.method, body: init?.body })
+      current = { ...current, assistantImageFileId: init?.method === 'POST' ? 'img-1' : null }
+      return init?.method === 'POST' ? jsonResponse(201, current) : jsonResponse(204)
+    }
+    if (url === '/api/settings') {
+      if (init?.method === 'PATCH') { calls.push({ url, method: 'PATCH', body: init.body }); current = { ...current, ...JSON.parse(String(init.body)) } }
+      return jsonResponse(200, current)
+    }
+    return jsonResponse(200, [])
+  }))
+  const user = userEvent.setup()
+  renderPage()
+  const section = await screen.findByRole('region', { name: 'AI 도우미 캐릭터' })
+  expect(within(section).queryByRole('img')).not.toBeInTheDocument()
+  expect(within(section).queryByRole('button', { name: '캐릭터 제거' })).not.toBeInTheDocument()
+  await user.upload(within(section).getByLabelText('이미지 선택'), new File(['png'], 'character.png', { type: 'image/png' }))
+  await within(section).findByRole('img', { name: 'AI 도우미 캐릭터' })
+  expect(calls).toHaveLength(1)
+  expect(calls[0]).toMatchObject({ url: '/api/settings/assistant-image', method: 'POST' })
+  expect(calls[0]!.body).toBeInstanceOf(FormData)
+  expect((calls[0]!.body as FormData).get('file')).toBeInstanceOf(File)
+  expect(within(section).getByRole('img')).toHaveAttribute('src', '/api/settings/assistant-image?v=img-1')
+  await user.click(within(section).getByRole('button', { name: '캐릭터 제거' }))
+  await waitFor(() => expect(within(section).queryByRole('img')).not.toBeInTheDocument())
+  expect(calls[1]).toMatchObject({ url: '/api/settings/assistant-image', method: 'DELETE' })
+  await user.click(screen.getByRole('button', { name: '설정 저장' }))
+  await waitFor(() => expect(calls).toHaveLength(3))
+  expect(JSON.parse(String(calls[2]!.body))).not.toHaveProperty('assistantImageFileId')
+})
+
 it('도구 전달만 저장하고 재조회해도 일반 설정의 미저장 편집값을 유지한다', async () => {
   const saved: Record<string, unknown>[] = []
   let current = { defaultModel: 'env-model', owuiTools: 'auto', requestBudgetBytes: 1000000, fileMaxPerRequest: 10 }

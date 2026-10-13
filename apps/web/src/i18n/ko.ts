@@ -2,7 +2,6 @@ export const ko = {
   common: {
     appName: 'MES Agent Hub',
     tagline: '대화 · 태그 · SR',
-    openAssistant: '시스템 assistant 열기',
     theme: '테마',
     themeSystem: '시스템 설정',
     themeLight: '라이트',
@@ -196,6 +195,8 @@ export const ko = {
       userName: '{name} 이름', saveName: '이름 저장', usersRoles: '사용자·역할',
       issueConfirm: '{name}의 임시 비밀번호를 발급할까요?', issueFailed: '발급 실패', temporaryPassword: '임시 비밀번호', pendingChange: '변경 대기',
       issuedPassword: '임시 비밀번호 (이번 화면에만 표시): ', openDiagnostics: '연결 진단 열기', aiSummary: 'AI 연결 요약', loading: '설정을 불러오는 중…',
+      assistantImage: 'AI 도우미 캐릭터', assistantImageHint: 'PNG·JPEG·WebP, 1 MiB·512×512 이하. 없으면 기본 아이콘을 씁니다. 회사 캐릭터 이미지는 여기서만 올립니다.',
+      assistantImageChoose: '이미지 선택', assistantImageRemove: '캐릭터 제거', assistantImageSaved: '캐릭터 이미지를 저장했습니다', assistantImageRemoved: '캐릭터 이미지를 제거했습니다', assistantImageFailed: '캐릭터 이미지 저장 실패',
     },
     password: {
       mismatch: '새 비밀번호가 일치하지 않습니다', mustChange: '비밀번호를 변경해야 계속할 수 있습니다',
@@ -543,6 +544,9 @@ export const ko = {
     staleDescription: '앱이 업데이트되어 이전 화면을 불러올 수 없습니다. 새로고침하면 새 버전으로 계속합니다.',
     reload: '새로고침',
     home: '홈으로',
+  },
+  pill: {
+    open: 'AI 도우미 열기', close: 'AI 도우미 닫기', characterAlt: 'AI 도우미 캐릭터', moveHint: '끌거나 화살표 키로 옮기고, Home 키로 원위치',
   },
   nav: {
     requests: '요청', work: '업무', admin: '관리',
