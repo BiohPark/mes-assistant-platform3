@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common'
-import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type Task, type TaskAiRequestStatus, type TaskStatus, type Thread } from '@mes/domain'
-import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
+import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type TagSuggestion, type Task, type TaskAiRequestStatus, type TaskStatus, type Thread } from '@mes/domain'
+import { and, desc, eq, exists, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import { alias, unionAll } from 'drizzle-orm/mysql-core'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appUser, assistant, assistantChecklistTemplate, chatRequest, chatRequestInput, checklistItem, checklistReview, checklistReviewItem, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, tag, task, taskAssignee, taskFeedback, taskInput, taskTag, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, assistantChecklistTemplate, chatRequest, chatRequestInput, checklistItem, checklistReview, checklistReviewItem, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, serviceRequest, tag, task, taskAssignee, taskFeedback, taskInput, taskTag, thread } from '../db/schema.js'
 import { EventsService } from '../events/events.service.js'
 import { assertTaskAccess, assertThreadAccess } from '../sr/access.js'
 import type { TaskExtrasService } from './task-extras.service.js'
@@ -323,8 +323,19 @@ export class DbTasksService {
     this.events?.publish('task.updated', { taskId })
   }
 
-  async suggestions(prefix: string, exclude: string[] = []) {
-    return tagSuggestions(await this.list(), [], prefix, exclude)
+  /**
+   * 자동완성 후보: 보이는 대화의 태그 + 보이는 접수(코드 부여) SR 코드. 열람 범위는 서버(이 함수)가 적용한다 — SR 목록과 같이 BO는 본인 SR만.
+   * srScope는 그 범위가 전체인지('all') 일부인지('partial') — 일부만 보는 뷰어에게는 목록에 없는 SR 번호를 미접수로 단정하지 않는다('unknown').
+   */
+  async suggestions(actor: string | undefined, prefix: string, exclude: string[] = []): Promise<{ items: TagSuggestion[]; srScope: 'all' | 'partial' }> {
+    const [viewer] = actor ? await this.db.select({ isBusinessOwner: appUser.isBusinessOwner, isSystemOwner: appUser.isSystemOwner }).from(appUser).where(eq(appUser.id, actor)) : []
+    const srScope = viewer?.isBusinessOwner && !viewer.isSystemOwner ? 'partial' : 'all'
+    const [tasks, rows] = await Promise.all([
+      this.list({}, actor),
+      this.db.select({ code: serviceRequest.code }).from(serviceRequest).where(and(isNotNull(serviceRequest.code), ...(srScope === 'partial' ? [eq(serviceRequest.requesterId, actor!)] : []))),
+    ])
+    const srCodes = rows.map((row) => row.code).filter((code): code is string => !!code)
+    return { items: tagSuggestions(tasks, srCodes, prefix, exclude, srScope), srScope }
   }
 
   async messages(threadId: string, actor?: string) {

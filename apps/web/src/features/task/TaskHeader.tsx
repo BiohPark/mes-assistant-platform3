@@ -7,7 +7,7 @@ import type { Assistant } from '@mes/contracts'
 import { useQueryClient } from '@tanstack/react-query'
 import { addTag, deleteTask, removeTag, setTaskStatus, setTaskTitle } from '@/api/tasks'
 import { useActor } from '@/app/hooks'
-import { useTagSuggest } from '@/app/useTagSuggest'
+import { useSrStatus, useTagSuggest } from '@/app/useTagSuggest'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { TagInput } from '@/components/TagInput'
 import { ReasonDialog } from '@/components/ReasonDialog'
@@ -24,6 +24,7 @@ export function TaskHeader({ task, assistant }: { task: Task; assistant: Assista
   const t = useT()
   const query = useQueryClient()
   const suggest = useTagSuggest()
+  const srStatus = useSrStatus()
   const navigate = useNavigate()
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState(task.title)
@@ -73,8 +74,8 @@ export function TaskHeader({ task, assistant }: { task: Task; assistant: Assista
     <div className="mt-2">{editingTitle ? <Input aria-label={t('task.header.titleLabel')} value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => void commitTitle()} onKeyDown={(event) => { if (event.key === 'Enter') void commitTitle(); if (event.key === 'Escape') { setTitle(task.title); setEditingTitle(false) } }} autoFocus className="h-8 text-base font-semibold" /> : <button type="button" className="max-w-full text-left text-base font-semibold break-words hover:underline" disabled={task.status === 'done'} onClick={() => { setTitle(task.title); setEditingTitle(true) }}>{task.title}</button>}
       {task.summary && <p className="mt-0.5 text-xs break-words text-muted-foreground">{task.summary}</p>}
     </div>
-    <div className="mt-2"><TagInput tags={task.tags} suggest={suggest} readOnly={task.status === 'done'} onAdd={async (value) => { await addTag(actor, task.id, value); refresh() }} onRemove={async (value) => { await removeTag(actor, task.id, value); refresh() }} onChipClick={(value) => navigate(`/?view=kanban&tag=${encodeURIComponent(value)}`)} /></div>
-    <div className="mt-2"><RelatedStrip task={task} /></div>
+    <div className="mt-2"><TagInput tags={task.tags} suggest={suggest} srStatus={srStatus} readOnly={task.status === 'done'} onAdd={async (value) => { await addTag(actor, task.id, value); refresh() }} onRemove={async (value) => { await removeTag(actor, task.id, value); refresh() }} onChipClick={(value) => navigate(`/?view=kanban&tag=${encodeURIComponent(value)}`)} /></div>
+    <div className="mt-2"><RelatedStrip tags={task.tags} excludeTaskId={task.id} /></div>
     <ReasonDialog open={reopen} onOpenChange={setReopen} title={t('task.header.reopenTitle')} description={t('task.header.reopenDescription')} confirmLabel={t('task.header.reopenConfirm')} onConfirm={(reason) => changeStatus('in_progress', reason)} />
     <ConfirmDialog open={confirmDelete} onOpenChange={setConfirmDelete} title={t('task.header.deleteTitle')} description={t('task.header.deleteDescription')} onConfirm={remove} />
     <TaskCompleteDialog task={task} open={complete} onOpenChange={setComplete} />

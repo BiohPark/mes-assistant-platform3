@@ -87,10 +87,11 @@ export async function completeTask(taskId: string, feedback?: CompletionFeedback
   void queryClient.invalidateQueries({ queryKey: ['files', taskId] })
   return result
 }
+export interface TagSuggestResponse { items: TagSuggestion[]; srScope: 'all' | 'partial' }
 export const suggestTags = (prefix = '', exclude: string[] = []) => {
   const query = new URLSearchParams({ prefix })
   for (const tag of exclude) query.append('exclude[]', tag)
-  return request<TagSuggestion[]>(`/tags/suggest?${query}`)
+  return request<TagSuggestResponse>(`/tags/suggest?${query}`)
 }
 
 export async function setTaskTitle(taskId: string, title: string, source: Task['titleSource']): Promise<void> {
