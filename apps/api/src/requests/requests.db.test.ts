@@ -833,6 +833,7 @@ describe('RequestService DB', () => {
     const gate = new Promise<void>((resolve) => { release = resolve })
     const first = service.runAuxiliary('member', 'title', async () => { await gate; return '제목' })
     await expect(service.runAuxiliary('member', 'summary', async () => '요약')).rejects.toMatchObject({ status: 429 })
+    expect(await service.runAuxiliary('member', 'assistant', async () => '도우미')).toBe('도우미') // 도우미 슬롯은 독립(U4)
     release()
     expect(await first).toBe('제목')
   })
