@@ -12,9 +12,8 @@ export class EventsController {
   constructor(@Inject(EventsService) private readonly events: EventsService, @Inject(DB) private readonly db: Db) {}
 
   private async visible(actor: string, event: StoredEvent) {
-    if (event.event === 'presence.typing') return true
     if (event.event === 'notification.created') return event.data.userId === actor
-    if (event.event !== 'message.appended' && event.event !== 'request.updated') return true
+    if (event.event !== 'message.appended' && event.event !== 'request.updated' && event.event !== 'presence.typing') return true
     const [owner] = await this.db.select({ srId: thread.srId }).from(thread).where(eq(thread.id, event.data.threadId))
     if (!owner?.srId) return true
     try { await assertSrAccess(this.db, actor, owner.srId); return true }

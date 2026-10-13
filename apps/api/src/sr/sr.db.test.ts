@@ -190,6 +190,34 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     requester.emit('close')
   })
 
+  it.each(['other', 'staff', 'requester', 'owner'].flatMap((actor) => ['live', 'replay'].map((delivery) => ({ actor, delivery }))))(
+    'filters SR typing for $actor on $delivery delivery while preserving ordinary typing', async ({ actor, delivery }) => {
+    const draft = await sr.create('requester')
+    const ordinary = await new DbTasksService(db).create('staff', { assistantId })
+    const events = new EventsService(), controller = new EventsController(events, db)
+    const open = async (lastId: string) => {
+      const stream = new EventEmitter() as EventEmitter & { status: ReturnType<typeof vi.fn>; set: ReturnType<typeof vi.fn>;
+        flushHeaders: ReturnType<typeof vi.fn>; write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> }
+      stream.status = vi.fn(() => stream); stream.set = vi.fn(() => stream); stream.flushHeaders = vi.fn()
+      stream.write = vi.fn(() => true); stream.end = vi.fn()
+      await controller.stream({ user: { id: actor } } as never, stream as unknown as Response, lastId)
+      return stream
+    }
+    const cursor = events.cursor()
+    let stream = delivery === 'live' ? await open(cursor) : undefined
+    const canReadSr = actor === 'requester' || actor === 'owner'
+    try {
+      events.typing(draft.threadId, 'requester', '비공개 입력자')
+      events.typing(ordinary.task.threadId!, 'staff', '일반 입력자')
+      stream ??= await open(cursor)
+      // Delivery is ordered: seeing the ordinary event means the SR event has been processed.
+      await vi.waitFor(() => expect(stream!.write.mock.calls.flat().join('')).toContain('일반 입력자'))
+      const chunks = stream.write.mock.calls.flat().join('')
+      expect(chunks.includes(draft.threadId)).toBe(canReadSr)
+      expect(chunks.includes('비공개 입력자')).toBe(canReadSr)
+    } finally { stream?.emit('close') }
+  })
+
   it('notifies requester for status and result; rejects draft and empty share', async () => {
     const draft = await sr.create('requester')
     await expect(sr.share('owner', draft.id, { text: 'x', fileIds: [] })).rejects.toMatchObject({ status: 409 })
