@@ -31,3 +31,34 @@ export const LlmTestConnectionSchema = z.object({
   completion: z.object({ ok: z.boolean(), ms: z.number(), model: z.string(), error: z.string().optional() }),
 })
 export type LlmTestConnection = z.infer<typeof LlmTestConnectionSchema>
+
+/** POST /admin/diagnostics/openwebui — SO 전용 OpenWebUI 진단(S10-5). 입력은 모델 하나 */
+export const OwuiProbeRequestSchema = z.object({ model: LlmModelIdSchema }).strict()
+/** 결과에는 본문·파일·키·주소가 없다 — 프레임은 키 경로, 오류는 가린 120자 이내 문구 */
+export const OwuiProbeAttemptSchema = z.object({
+  mode: z.enum(['current', 'legacy']),
+  status: z.number().int().nullable(),
+  firstByteMs: z.number().nullable(),
+  firstContentMs: z.number().nullable(),
+  totalMs: z.number(),
+  frames: z.array(z.string()),
+  error: z.string().max(120).optional(),
+})
+export const OwuiProbeResultSchema = z.object({
+  model: z.string(),
+  version: z.string().nullable(),
+  meta: z.object({
+    found: z.boolean(),
+    toolIds: z.array(z.string()),
+    defaultFeatureIds: z.array(z.string()),
+    capabilities: z.record(z.string(), z.boolean()),
+    knowledgeCount: z.number(),
+    functionCalling: z.string().nullable(),
+    error: z.string().max(120).optional(),
+  }),
+  attempts: z.array(OwuiProbeAttemptSchema),
+  ms: z.number(),
+})
+export type OwuiProbeRequest = z.infer<typeof OwuiProbeRequestSchema>
+export type OwuiProbeAttemptResult = z.infer<typeof OwuiProbeAttemptSchema>
+export type OwuiProbeReport = z.infer<typeof OwuiProbeResultSchema>

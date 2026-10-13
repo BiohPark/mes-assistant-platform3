@@ -786,6 +786,17 @@ paths:
         '200': { description: '{ models: { ok, count, ms, error? }, completion: { ok, ms, model, error? } }' }
         '403': { $ref: '#/components/responses/Problem' }
         '429': { description: 전역 동시 상한 포화 또는 같은 사용자의 보조 요청 진행 중 }
+  /admin/diagnostics/openwebui:
+    post:
+      tags: [llm]
+      summary: OpenWebUI 진단 (SO 전용, Live 모드만). 입력은 모델 하나. /api/version(실패 시 version null = 확인 불가), /api/models의 해당 모델 info.meta(toolIds·defaultFeatureIds·capabilities 불리언·knowledge 개수)와 info.params.function_calling을 읽고, 고정 시험 질문을 두 번 보낸다 — ① 지금 방식(model·messages·stream) ② tool_ids·features(defaultFeatureIds→true)·params.function_calling 'legacy'를 붙인 방식. 각 시도는 HTTP 상태·첫 바이트·첫 내용(delta.content)까지 ms·총 ms·프레임 종류 순서(키 경로만, 연속은 ×N으로 접음, 최대 40)를 보고한다. 프롬프트·답변 본문·파일·키·주소는 담지 않고, 상위 오류는 주소·IP·호스트·키를 가린 120자 이내 문구. 결과·요청은 DB·파일에 저장하지 않으며 로그는 상태 코드·소요 시간만. 전역 동시 상한(RequestsService.admit)과 사용자별 보조 요청 단일 진행을 공유하고, 전체 3분·시도당 75 s·응답 1 MB(limitedFetch, 리다이렉트 차단) 상한. 클라이언트가 끊으면 시험 호출을 멈춘다. S10-5
+      requestBody: { content: { application/json: { schema: { type: object, required: [model], additionalProperties: false, properties: { model: { type: string, minLength: 1, maxLength: 191, description: 제어 문자 불가 } } } } } }
+      responses:
+        '200': { description: '{ model, version|null, meta: { found, toolIds[], defaultFeatureIds[], capabilities{name:boolean}, knowledgeCount, functionCalling|null, error? }, attempts: [{ mode: current|legacy, status|null, firstByteMs|null, firstContentMs|null, totalMs, frames[], error? }], ms }' }
+        '400': { description: 형식 오류 또는 Mock 모드 }
+        '403': { $ref: '#/components/responses/Problem' }
+        '429': { description: 전역 동시 상한 포화 또는 같은 사용자의 보조 요청 진행 중 }
+        '504': { description: 진단 보호 상한(185 s) 초과 }
   /admin/llm/test:
     post:
       tags: [llm]
