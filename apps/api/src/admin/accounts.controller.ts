@@ -49,3 +49,10 @@ export class PasswordController {
     return this.accounts.changePassword(req.user!.id, input.currentPassword, input.newPassword)
   }
 }
+
+@Controller('me')
+export class MyProfileController {
+  constructor(@Inject(AccountsService) private readonly accounts: AccountsService) {}
+  @Patch()
+  ownProfile(@Req() req: AuthedRequest, @Body() body: unknown) { return this.accounts.profile(req.user!.id, parse(ProfilePatchSchema, body)) }
+}

@@ -11,7 +11,7 @@ const gates = vi.hoisted(() => {
   function gate() { let resolve = () => {}; const promise = new Promise<void>((done) => { resolve = done }); return { promise, resolve } }
   return { reports: gate(), diagnostics: gate() }
 })
-vi.mock('./AppShell', () => ({ AppShell: () => <MeContext value={{ theme: 'system', locale: 'ko', id: 'u', name: '사용자', role: '', roles }}><span>shell</span><Outlet /></MeContext> }))
+vi.mock('./AppShell', () => ({ AppShell: () => <MeContext value={{ theme: 'system', locale: 'ko', id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles }}><span>shell</span><Outlet /></MeContext> }))
 vi.mock('@/features/home/HomePage', () => ({ HomePage: () => { if (homeError) throw homeError; return <div>허브 화면</div> } }))
 vi.mock('@/features/sr/SrIntakePage', () => ({ SrIntakePage: () => <div>SR 접수 화면</div> }))
 vi.mock('@/features/my-work/MyWorkPage', () => ({ MyWorkPage: () => <div>내 작업 화면</div> }))

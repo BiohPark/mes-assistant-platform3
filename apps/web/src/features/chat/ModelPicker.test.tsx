@@ -17,7 +17,7 @@ it('writes a selected model to the task and leaves the thread untouched', async 
     if (url === '/api/llm/models') return jsonResponse(200, { models: ['chosen-model'] })
     return jsonResponse(200, {})
   }))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ModelPicker task={task} assistant={assistant} /></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ModelPicker task={task} assistant={assistant} /></MeContext>)
   fireEvent.click(screen.getByTitle('이 대화의 모델 변경'))
   fireEvent.click(await screen.findByRole('button', { name: 'chosen-model' }))
   await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t' && init?.method === 'PATCH' && JSON.parse(String(init.body)).modelId === 'chosen-model')).toBe(true))
@@ -30,7 +30,7 @@ it('shows the server default model when neither task nor assistant selects one',
     if (url === '/api/llm/models') return jsonResponse(200, { models: ['server-default'] })
     return jsonResponse(404)
   }))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ModelPicker task={task} assistant={{ ...assistant, modelId: undefined }} /></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ModelPicker task={task} assistant={{ ...assistant, modelId: undefined }} /></MeContext>)
   await waitFor(() => expect(screen.getByTitle('이 대화의 모델 변경')).toHaveTextContent('server-default'))
   expect(screen.getByTitle('이 대화의 모델 변경')).toHaveTextContent('공통 기본 모델')
 })
@@ -39,7 +39,7 @@ it('constrains long model names and opens a viewport-bound mobile popup with the
   const modelId = 'missing-model-with-a-very-long-provider-and-version-name'
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/llm/models'
     ? jsonResponse(200, { models: ['available-model'] }) : jsonResponse(200, {})))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><ModelPicker task={{ ...task, modelId }} assistant={assistant} /></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><ModelPicker task={{ ...task, modelId }} assistant={assistant} /></MeContext>)
   const trigger = screen.getByTitle('이 대화의 모델 변경')
   await waitFor(() => expect(trigger).toHaveClass('text-tone-warning-fg'))
   expect(trigger).toHaveClass('max-w-[60vw]', 'truncate', 'border-tone-warning-fg')

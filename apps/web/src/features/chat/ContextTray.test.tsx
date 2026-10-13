@@ -11,7 +11,7 @@ const data: NonNullable<RequestEstimateState['data']> = {
   at: '2026-09-28T00:00:00.000Z', provider: 'mock', transport: 'inline', model: 'mock', bytes: 400, limitBytes: 1000, srCodes: [], overLimit: false, attachmentLimit: 10,
   inputs: [{ kind: 'file', fileId: 'f', name: 'spec.txt', version: 1, weight: 'reference', delivery: 'attached', text: true, bytes: 300 }],
 }
-const me = { id: 'u', name: '사용자', role: '', roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
+const me = { id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
 
 function mount(estimate: RequestEstimateState) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

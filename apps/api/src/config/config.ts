@@ -1,7 +1,7 @@
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { isIP } from 'node:net'
 import { z } from 'zod'
-import { AuthModeSchema, FILE_MAX_PER_REQUEST } from '@mes/contracts'
+import { AuthModeSchema, EmailDomainSchema, FILE_MAX_PER_REQUEST } from '@mes/contracts'
 
 const list = z
   .string()
@@ -46,6 +46,7 @@ const EnvSchema = z.object({
   OIDC_CLIENT_ID: z.string().optional(),
   OIDC_CLIENT_SECRET: z.string().optional(),
   INITIAL_SYSTEM_OWNERS: list,
+  DEFAULT_EMAIL_DOMAIN: z.string().trim().transform((value) => value || undefined).optional().pipe(EmailDomainSchema.optional()),
   FILE_STORAGE_ROOT: z.string().default('storage'),
   WEB_DIST_DIR: z.string().optional(),
   FILE_MAX_BYTES: z.coerce.number().int().positive().default(50 * 1024 * 1024),
@@ -121,6 +122,7 @@ export function loadConfig(env: Record<string, string | undefined>) {
       redirectUri: `${appOrigin}/api/auth/callback`,
     } : undefined,
     initialSystemOwners: e.INITIAL_SYSTEM_OWNERS,
+    defaultEmailDomain: e.DEFAULT_EMAIL_DOMAIN,
     fileStorageRoot: resolve(e.FILE_STORAGE_ROOT),
     webDistDir: resolve(e.WEB_DIST_DIR || resolve(import.meta.dirname, '../../../web/dist')),
     fileMaxBytes: e.FILE_MAX_BYTES,

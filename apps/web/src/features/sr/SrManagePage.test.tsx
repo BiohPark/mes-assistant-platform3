@@ -21,7 +21,7 @@ it('inbox 표는 초안을 제외하고 코드·제목·본문 검색 및 상태
     if (url === '/api/catalog/users') return jsonResponse(200, [{ id: 'requester', name: '김요청', initials: '김', color: '#000000', isSystemOwner: false, isBusinessOwner: true }])
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrManagePage /></MeContext></TooltipProvider>)
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrManagePage /></MeContext></TooltipProvider>)
   const table = await screen.findByRole('table')
   await within(table).findByText('알람')
   expect(within(table).queryByText('초안')).not.toBeInTheDocument()
@@ -48,7 +48,7 @@ it('inbox 표는 초안을 제외하고 코드·제목·본문 검색 및 상태
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })
 
-const me = { id: 'u', name: '사용자', role: '', roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
+const me = { id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
 const row = (id: string, status: string, title = `요청 ${id}`) => ({ id, code: `SR-${id}`, title, body: '', status, requesterId: 'requester', titleSource: 'manual', attachmentIds: [], threadId: `thread-${id}`, results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01', submittedAt: '2026-10-01' })
 
 it('불러오는 동안 뼈대를 보이고 끝나면 표를 그린다', async () => {

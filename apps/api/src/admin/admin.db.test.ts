@@ -173,7 +173,7 @@ describe('SR 접수 에이전트 보호 (데모 테스트 4건)', () => {
     expect((await admin.assistant('urs-analyst')).summary).toBe('수정')
   })
   it('마지막 SO 해제를 막고 임시 비밀번호는 세션을 없애며 변경 후 플래그를 내린다', async () => {
-    const accounts = new AccountsService(db)
+    const accounts = new AccountsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' }))
     await expect(accounts.role('owner', 'isSystemOwner', false)).rejects.toMatchObject({ status: 409 })
     await db.insert(appUser).values({ id: 'member', loginId: 'member', name: '담당자', initials: '담', color: '#111111', passwordHash: await hashPassword('password-1234') })
     const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
@@ -192,12 +192,12 @@ describe('SR 접수 에이전트 보호 (데모 테스트 4건)', () => {
     expect(await db.select().from(appSession).where(eq(appSession.userId, 'member'))).toEqual([])
   })
   it('사용자 이름을 바꾸면 머리글자도 갱신한다', async () => {
-    const accounts = new AccountsService(db)
+    const accounts = new AccountsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' }))
     await accounts.name('member', '김 담당')
     expect((await db.select().from(appUser).where(eq(appUser.id, 'member')))[0]).toMatchObject({ name: '김 담당', initials: '김' })
   })
   it('사용자를 비활성화하면 기존 세션을 없애고 새 세션을 인증하지 않는다', async () => {
-    const accounts = new AccountsService(db)
+    const accounts = new AccountsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' }))
     const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
     const sessions = new DbSessionStore(db, config)
     const session = await sessions.create('member')

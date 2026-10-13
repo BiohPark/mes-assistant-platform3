@@ -18,7 +18,7 @@ it('finds conversations sharing either tag and removes the current conversation'
     if (url.includes('tag%5B%5D=%EB%91%98%EC%A7%B8')) return jsonResponse(200, [{ ...base, id: 'other', code: 'WK-2026-0002', title: '관련 대화', tags: ['둘째'] }])
     return jsonResponse(200, [base])
   }))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><RelatedStrip task={base} /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><RelatedStrip task={base} /></TooltipProvider></MeContext>)
   const button = await screen.findByText('같은 태그 대화 1')
   fireEvent.click(button)
   expect(screen.getByRole('link', { name: /WK-2026-0002.*관련 대화/ })).toHaveAttribute('href', '/c/other')
@@ -29,7 +29,7 @@ it('limits the summary to three avatars and a remainder while keeping every rela
   const rows = Array.from({ length: 5 }, (_, index) => ({ ...base, id: `other-${index}`, code: `WK-2026-000${index + 2}`, title: `관련 ${index}`, tags: ['첫째'] }))
   vi.stubGlobal('fetch', vi.fn(async (url: string) => jsonResponse(200, url === '/api/assistants'
     ? [{ id: 'a', name: 'URS Analyst', color: 'var(--primary)', summary: '', level1: '상위', level2: '하위', level1CodeId: 'l1', level2CodeId: 'l2', order: 0, ownerId: 'u', status: 'open', expectedInputs: [], expectedOutputs: [], usageExample: '', checklistTemplate: [], createdBy: 'u', createdAt: base.createdAt, updatedAt: base.createdAt, revision: 0 }] : [base, ...rows])))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><RelatedStrip task={base} /></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><RelatedStrip task={base} /></MeContext>)
   const summary = (await screen.findByText('같은 태그 대화 5')).closest('summary')!
   expect(summary.querySelectorAll('.ring-2.ring-background')).toHaveLength(3)
   for (const avatar of summary.querySelectorAll('.ring-2.ring-background')) {

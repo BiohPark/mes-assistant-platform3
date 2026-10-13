@@ -2,6 +2,8 @@ import type { ProfilePatch } from '@mes/contracts'
 import { randomBytes } from 'node:crypto'
 import { ConflictException, Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common'
 import { eq, sql } from 'drizzle-orm'
+import { CONFIG, type AppConfig } from '../config/config.js'
+import { emailView } from '../auth/email.js'
 import { DB, type Db } from '../db/db.module.js'
 import { appSession, appUser } from '../db/schema.js'
 import { hashPassword, verifyPassword } from '../auth/password.js'
@@ -9,12 +11,13 @@ import { initialsOf } from '../auth/userDisplay.js'
 
 @Injectable()
 export class AccountsService {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(@Inject(DB) private readonly db: Db, @Inject(CONFIG) private readonly config: AppConfig) {}
 
   async users() {
-    return this.db.select({ id: appUser.id, loginId: appUser.loginId, name: appUser.name, active: appUser.active,
+    const rows = await this.db.select({ email: appUser.email, id: appUser.id, loginId: appUser.loginId, name: appUser.name, active: appUser.active,
       isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner,
       mustChangePassword: appUser.mustChangePassword }).from(appUser).orderBy(appUser.name)
+    return rows.map(row => ({ ...row, ...emailView(row, this.config.defaultEmailDomain) }))
   }
   async name(id: string, name: string) {
     return this.db.transaction(async (tx) => {
@@ -29,8 +32,9 @@ export class AccountsService {
       const [row] = await tx.select({ id: appUser.id }).from(appUser).where(eq(appUser.id, id)).for('update')
       if (!row) throw new NotFoundException('사용자를 찾을 수 없습니다')
       await tx.update(appUser).set({ ...input, ...(input.name !== undefined && { initials: initialsOf(input.name) }) }).where(eq(appUser.id, id))
-      const [updated] = await tx.select({ name: appUser.name, theme: appUser.theme, locale: appUser.locale }).from(appUser).where(eq(appUser.id, id))
-      return updated!
+      const [updated] = await tx.select({ loginId: appUser.loginId, email: appUser.email, name: appUser.name, theme: appUser.theme, locale: appUser.locale }).from(appUser).where(eq(appUser.id, id))
+      const { loginId: _loginId, ...profile } = updated!
+      return { ...profile, ...emailView(updated!, this.config.defaultEmailDomain) }
     })
   }
   async role(id: string, field: 'isSystemOwner' | 'isBusinessOwner', enabled: boolean) {

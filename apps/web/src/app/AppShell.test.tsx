@@ -10,7 +10,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 it('renders the forced password page with its avatar tooltip', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/me'
-    ? jsonResponse(200, { id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const, mustChangePassword: true })
+    ? jsonResponse(200, { id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const, mustChangePassword: true })
     : jsonResponse(404)))
   renderWithProviders(<AppShell />)
   expect(await screen.findByText('비밀번호를 변경해야 계속할 수 있습니다')).toBeInTheDocument()
@@ -18,7 +18,7 @@ it('renders the forced password page with its avatar tooltip', async () => {
 
 it('요청자(BO)는 메뉴 1개뿐이고 구획 머리말이 없다', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/me'
-    ? jsonResponse(200, { id: 'requester', name: '요청자', role: '', roles: ['requester'], theme: 'system' as const, locale: 'ko' as const, mustChangePassword: false })
+    ? jsonResponse(200, { id: 'requester', name: '요청자', role: '', email: null, emailIsDefault: false, roles: ['requester'], theme: 'system' as const, locale: 'ko' as const, mustChangePassword: false })
     : jsonResponse(200, [])))
   renderWithProviders(<AppShell />)
   expect(await screen.findByRole('link', { name: '내 SR 요청' })).toBeInTheDocument()
@@ -31,7 +31,7 @@ it('요청자(BO)는 메뉴 1개뿐이고 구획 머리말이 없다', async () 
 
 it('일반 담당자는 업무 4개 + 요청 1개 = 메뉴 5개, 머리말 2개', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/me'
-    ? jsonResponse(200, { id: 'member', name: '담당자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const })
+    ? jsonResponse(200, { id: 'member', name: '담당자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const })
     : jsonResponse(200, [])))
   renderWithProviders(<AppShell />)
   expect(await screen.findByRole('link', { name: '내 SR 요청' })).toBeInTheDocument()
@@ -45,7 +45,7 @@ it('일반 담당자는 업무 4개 + 요청 1개 = 메뉴 5개, 머리말 2개'
 
 it('SO는 업무·요청·관리 3구획 메뉴 9개를 본다', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/me'
-    ? jsonResponse(200, { id: 'owner', name: '관리자', role: '', roles: ['member', 'requester', 'system_owner'], theme: 'system' as const, locale: 'ko' as const })
+    ? jsonResponse(200, { id: 'owner', name: '관리자', role: '', email: null, emailIsDefault: false, roles: ['member', 'requester', 'system_owner'], theme: 'system' as const, locale: 'ko' as const })
     : jsonResponse(200, [])))
   renderWithProviders(<AppShell />)
   expect(await screen.findByRole('link', { name: '연결 진단' })).toBeInTheDocument()
@@ -58,7 +58,7 @@ it('SO는 업무·요청·관리 3구획 메뉴 9개를 본다', async () => {
 
 it('활성 메뉴는 accent 배경, 나머지 메뉴는 같은 스타일을 쓴다', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/me'
-    ? jsonResponse(200, { id: 'owner', name: '관리자', role: '', roles: ['member', 'requester', 'system_owner'], theme: 'system' as const, locale: 'ko' as const })
+    ? jsonResponse(200, { id: 'owner', name: '관리자', role: '', email: null, emailIsDefault: false, roles: ['member', 'requester', 'system_owner'], theme: 'system' as const, locale: 'ko' as const })
     : jsonResponse(200, [])))
   renderWithProviders(<AppShell />)
   const hub = await screen.findByRole('link', { name: '에이전트 허브' })
