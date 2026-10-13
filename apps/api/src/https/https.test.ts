@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer, request } from 'node:https'
+import { parseEnv } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { loadConfig } from '../config/config.js'
 import { httpsOriginWarning, loadHttpsOptions, parseHttpsConfig } from './https.js'
@@ -48,6 +49,31 @@ describe('optional direct HTTPS', () => {
 
   it.each(['C:\\Program Files\\mes\\cert.pfx', '\\\\fileserver\\certificates\\cert.pfx'])('accepts Windows paths unchanged: %s', (path) => {
     expect(parseHttpsConfig({ HTTPS_PFX_FILE: path })).toEqual({ pfxFile: path, passphrase: undefined })
+  })
+
+  it('keeps Windows paths through .env parsing with single quotes, slashes or no quotes', () => {
+    const env = parseEnv([
+      String.raw`HTTPS_CERT_FILE='C:\new certs\server-chain.pem'`,
+      'HTTPS_KEY_FILE=C:/new certs/server-key.pem',
+      String.raw`HTTPS_CA_FILE=\\fileserver\new\ca-chain.pem`,
+    ].join('\n'))
+    expect(parseHttpsConfig(env)).toEqual({
+      certFile: String.raw`C:\new certs\server-chain.pem`,
+      keyFile: 'C:/new certs/server-key.pem',
+      caFile: String.raw`\\fileserver\new\ca-chain.pem`,
+    })
+  })
+
+  it.each(['HTTPS_PFX_FILE', 'HTTPS_CERT_FILE', 'HTTPS_KEY_FILE', 'HTTPS_CA_FILE'])(
+    'rejects a double-quoted Windows path that .env parsing broke with a newline: %s', (name) => {
+      const others = name === 'HTTPS_PFX_FILE' ? {} : { HTTPS_CERT_FILE: 'cert.pem', HTTPS_KEY_FILE: 'key.pem' }
+      const env: Record<string, string | undefined> = { ...others, ...parseEnv(String.raw`${name}="C:\new certs\server.pem"`) }
+      expect(env[name]).toContain('\n')
+      expect(() => parseHttpsConfig(env)).toThrow(new RegExp(`${name}.*따옴표`))
+    })
+
+  it('rejects tabs and other control characters in certificate paths', () => {
+    expect(() => parseHttpsConfig({ HTTPS_PFX_FILE: 'C:\\certs\tserver.pfx' })).toThrow(/HTTPS_PFX_FILE.*따옴표/)
   })
 
   it('loads PEM with an optional CA and password-protected PFX', () => {

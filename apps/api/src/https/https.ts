@@ -12,6 +12,12 @@ export function parseHttpsConfig(env: Record<string, string | undefined>): Https
   const keyFile = env.HTTPS_KEY_FILE || undefined
   const caFile = env.HTTPS_CA_FILE || undefined
   const passphrase = env.HTTPS_PFX_PASSPHRASE || undefined
+  for (const [setting, path] of [['HTTPS_PFX_FILE', pfxFile], ['HTTPS_CERT_FILE', certFile], ['HTTPS_KEY_FILE', keyFile], ['HTTPS_CA_FILE', caFile]]) {
+    // .env double quotes turn `\n` in `"C:\new\..."` into a newline.
+    if (path && [...path].some((char) => char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f)) {
+      throw new Error(`설정 오류 — ${setting}: 경로에 줄바꿈·탭 같은 제어 문자가 있습니다. .env에서 Windows 경로를 큰따옴표로 감싸면 \\n 등이 바뀌므로 작은따옴표나 / 구분자를 사용하세요(따옴표 문제일 수 있음)`)
+    }
+  }
   if (pfxFile) {
     if (certFile || keyFile || caFile) throw new Error('설정 오류 — HTTPS_PFX_FILE과 HTTPS_CERT_FILE/HTTPS_KEY_FILE/HTTPS_CA_FILE은 함께 사용할 수 없습니다')
     return { pfxFile, passphrase }

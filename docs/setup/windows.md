@@ -283,7 +283,7 @@ PFX 예시 (`.env`, 가상 로컬 경로):
 API_PORT=8443
 APP_ORIGIN=https://localhost:8443
 TRUST_PROXY=false
-HTTPS_PFX_FILE="D:\mes-hub\config\certificates\server.pfx"
+HTTPS_PFX_FILE='D:\mes-hub\config\certificates\server.pfx'
 # 비밀번호가 있는 PFX만 설정. 실제 값은 비밀 저장소에서 넣는다.
 # HTTPS_PFX_PASSPHRASE=
 ```
@@ -294,13 +294,13 @@ PEM 예시 (위 PFX 설정은 제거):
 API_PORT=8443
 APP_ORIGIN=https://localhost:8443
 TRUST_PROXY=false
-HTTPS_CERT_FILE="D:\mes-hub\config\certificates\server-chain.pem"
-HTTPS_KEY_FILE="D:\mes-hub\config\certificates\server-key.pem"
+HTTPS_CERT_FILE='D:\mes-hub\config\certificates\server-chain.pem'
+HTTPS_KEY_FILE='D:\mes-hub\config\certificates\server-key.pem'
 # 선택: PEM CA 체인 (상태 확인에도 사용할 수 있도록 발급 CA 루트 포함)
-HTTPS_CA_FILE="D:\mes-hub\config\certificates\ca-chain.pem"
+HTTPS_CA_FILE='D:\mes-hub\config\certificates\ca-chain.pem'
 ```
 
-드라이브 경로·공백·UNC 경로(`\\fileserver\certificates\server.pfx`)를 허용하며, 공백이 있으면 따옴표로 감싼다. 상대 경로는 **프로세스 작업 폴더** 기준이다(WinSW는 `D:\mes-hub\app`). 운영에서는 절대 경로를 권장한다. 두 방식 혼용, PEM 짝 누락, CA 또는 PFX 비밀번호만 지정, 파일 누락·읽기 실패, 잘못된 키·PFX 비밀번호는 기동 오류가 된다. 비밀번호와 인증서 내용은 오류 로그에 출력하지 않는다. PEM 키는 암호화되지 않은 키를 사용한다. 암호화 개인 키가 필요하면 비밀번호가 있는 PFX를 사용한다.
+드라이브 경로·공백·UNC 경로(`\\fileserver\certificates\server.pfx`)를 허용한다. **Windows 경로는 작은따옴표(`'D:\...'`)로 감싸거나 `/` 구분자(`D:/mes-hub/...`)를 쓴다** — `.env`의 큰따옴표 안에서는 `\n`이 줄바꿈으로 바뀌어(`"C:\new certs\..."`) 경로가 깨지며, 경로에 줄바꿈·탭 같은 제어 문자가 있으면 기동 오류로 안내한다. 상대 경로는 **프로세스 작업 폴더** 기준이다(WinSW는 `D:\mes-hub\app`). 운영에서는 절대 경로를 권장한다. 두 방식 혼용, PEM 짝 누락, CA 또는 PFX 비밀번호만 지정, 파일 누락·읽기 실패, 잘못된 키·PFX 비밀번호는 기동 오류가 된다. 비밀번호와 인증서 내용은 오류 로그에 출력하지 않는다. PEM 키는 암호화되지 않은 키를 사용한다. 암호화 개인 키가 필요하면 비밀번호가 있는 PFX를 사용한다.
 
 `APP_ORIGIN`은 사용자가 실제 접속하는 HTTPS origin(포트 포함)으로 설정하고 그 호스트가 인증서 SAN에 있어야 한다. 위 `localhost`는 예시이며 실제 발급 인증서의 호스트로 바꾼다. Secure 쿠키는 **`APP_ORIGIN`이 `https://`일 때만** 설정된다. 직접 HTTPS를 켜고 `APP_ORIGIN`을 HTTP로 두면 기동 경고가 난다. 개발 Vite 프록시는 기본 HTTP API를 전제로 하므로 이 직접 HTTPS 확인은 빌드한 web을 API에서 제공하는 배포 방식으로 한다.
 
