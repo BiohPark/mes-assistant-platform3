@@ -26,6 +26,7 @@ import { SrConvertSheet } from './SrConvertSheet'
 import { SrStatusHistory } from './SrStatusHistory'
 import { SharedResults } from './SharedResults'
 import { SrAttachments } from './SrAttachments'
+import { useEvents } from '@/app/useEvents'
 import { useMe } from '@/app/auth'
 
 const steps = ['draft', ...SR_STAGE_FLOW] as const
@@ -33,6 +34,8 @@ const steps = ['draft', ...SR_STAGE_FLOW] as const
 export function SrIntakePage() {
   const t = useT()
   const me = useMe()
+  // 요청자 전용 셸은 SSE를 열지 않으므로 접수 화면에서 구독한다.
+  useEvents(me.roles.includes('requester') && !me.roles.includes('system_owner'))
   const client = useQueryClient()
   const list = useQuery({ queryKey: ['sr', 'mine'], queryFn: () => listSr('mine') })
   const intake = useQuery({ queryKey: ['sr-intake-assistant'], queryFn: getSrIntakeAssistant })

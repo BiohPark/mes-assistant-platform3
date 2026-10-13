@@ -12,6 +12,10 @@ export class EventsController {
   constructor(@Inject(EventsService) private readonly events: EventsService, @Inject(DB) private readonly db: Db) {}
 
   private async visible(actor: string, event: StoredEvent) {
+    if (event.event === 'sr.updated') {
+      try { await assertSrAccess(this.db, actor, event.data.srId); return true }
+      catch { return false }
+    }
     if (event.event === 'notification.created') return event.data.userId === actor
     if (event.event !== 'message.appended' && event.event !== 'request.updated' && event.event !== 'presence.typing') return true
     const [owner] = await this.db.select({ srId: thread.srId }).from(thread).where(eq(thread.id, event.data.threadId))
@@ -47,10 +51,17 @@ export class EventsController {
       else pending.push(event)
     })
     const replay = this.events.replay(lastId)
-    if (!lastId || replay.resync) write(`id: ${this.events.cursor()}\nevent: resync\ndata: {}\n\n`)
+    const resync = !lastId || replay.resync
+    const cursor = this.events.cursor()
+    if (resync) write(`id: ${cursor}\nevent: resync\ndata: {}\n\n`)
     else for (const event of replay.events) await send(event)
     const replayed = new Set(replay.events.map((event) => event.id))
-    for (const event of pending) if (!replayed.has(event.id)) await send(event)
+    const coveredSequence = resync ? Number(cursor.split(':')[1]) : -1
+    for (const event of pending) {
+      if (Number(event.id.split(':')[1]) <= coveredSequence || replayed.has(event.id)) continue
+      replayed.add(event.id)
+      await send(event)
+    }
     ready = true
     if (!closed) {
       heartbeat = setInterval(() => write(': ping\n\n'), 15_000)
