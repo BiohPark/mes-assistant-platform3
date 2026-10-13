@@ -48,6 +48,22 @@ Windows와 같다. `pnpm dev` → http://localhost:5173 → 회원가입(예: `d
 배포 묶음 생성은 저장소 루트에서 `pnpm release`로 하고, 로컬 운영 HOME 테스트는 `pnpm deploy:local -- --home /absolute/path/mes-hub --init --no-service`로 한다.
 데모 bundle은 `mise exec -- pnpm db:import /path/to/bundle.json --dry-run --default-owner <loginId>`로 먼저 확인한다. 소유자가 빈 행이 있으면 `--default-owner`에 기존 또는 함께 가져올 사용자의 로그인 ID를 지정한다. 기본 크기 제한은 64 MiB다. macOS/Node 22에서 60 MiB bundle의 최대 RSS는 382 MiB였으므로 이관 프로세스에 최소 512 MiB의 여유 메모리를 둔다. 다중 SR 업무는 기본적으로 중단하며, 연결 손실을 수용할 때만 `--allow-multi-sr`를 추가한다.
 
+### 직접 HTTPS 확인
+
+방식 비교와 설정 규칙은 [Windows 직접 HTTPS 안내](windows.md#직접-https-또는-iis-tls-종료)를 따른다. `.pfx`는 `HTTPS_PFX_FILE`과 선택 `HTTPS_PFX_PASSPHRASE`, PEM은 `HTTPS_CERT_FILE`·`HTTPS_KEY_FILE`과 선택 `HTTPS_CA_FILE`이다. 두 방식을 섞지 않는다. 모두 비우면 기존 HTTP를 유지한다. PEM 인증서는 full chain, 키는 암호화되지 않은 PEM을 사용한다.
+
+macOS에서는 경로만 바꾼다. 예를 들어 `.env`에 `HTTPS_CERT_FILE=/absolute/path/mes-hub/config/certificates/server-chain.pem`, `HTTPS_KEY_FILE=/absolute/path/mes-hub/config/certificates/server-key.pem`, `API_PORT=8443`, `APP_ORIGIN=https://localhost:8443`, `TRUST_PROXY=false`를 지정한다. PFX를 쓰면 PEM 설정 대신 `HTTPS_PFX_FILE=/absolute/path/mes-hub/config/certificates/server.pfx`를 지정한다. 호스트는 인증서 SAN과 일치해야 하며 Secure 쿠키는 `APP_ORIGIN`의 HTTPS 여부를 따른다. 직접 HTTPS인데 HTTP origin이면 경고한다. IIS 등 프록시에서 TLS를 종료하면 API `HTTPS_*`는 비우고 사용자 HTTPS origin과 신뢰할 프록시 IP/서브넷을 지정한다. API 직접 접근은 막는다.
+
+배포 API가 빌드한 web을 제공하는 방식으로 확인한다. 기본 `pnpm dev`의 Vite 프록시는 HTTP API를 전제로 한다. 상대 인증서 경로는 API 작업 폴더 기준이므로 절대 경로를 권장한다. API를 실행하는 계정에 상위 폴더 접근과 파일 읽기를 허용하고 개인 키/PFX와 `.env`의 권한을 해당 계정만 읽을 수 있게 제한한다(예: 소유자 지정 후 `chmod 600`). 인증서 교체 후 API를 재시작한다. Windows로 옮길 때는 WinSW 서비스 계정의 NTFS/공유 권한을 별도로 설정하고, `.env`의 Windows 경로는 큰따옴표 대신 작은따옴표나 `/` 구분자로 쓴다(큰따옴표 안의 `\n`은 줄바꿈이 된다).
+
+사내 CA는 PEM 방식의 `HTTPS_CA_FILE`(발급 루트 포함)을 쓰거나, PFX·프록시 방식에서는 Node 시작 전에 셸에서 지정한다:
+
+```bash
+export NODE_EXTRA_CA_CERTS=/absolute/path/mes-hub/config/certificates/ca-chain.pem
+```
+
+macOS 키체인의 회사 CA 신뢰와 Node 신뢰는 별개다. `deploy-local.mjs`·`verify-release.mjs` 모두 CA와 호스트 이름을 검증하며 TLS 검증을 끄지 않는다. release 검증은 환경의 `HTTPS_*`로 HTTPS를 선택하며 인증서 SAN에 임시 서버 호스트 `127.0.0.1`이 필요하다. 단위 테스트 인증서·키는 OpenSSL로 실행 중 임시 폴더에 생성하고 종료 시 삭제한다. `openssl version`으로 실행 가능 여부를 확인한다.
+
 ### 분류 경로 업그레이드 (S7)
 
 반드시 **서비스 중지 → DB와 파일 저장소 백업 → `pnpm db:migrate` → 검증 → 기동** 순서로 진행한다. 배포 묶음에서는 같은 환경 파일을 사용해 `api/dist/db/migrate.js`를 실행한다. 실행 중인 서버와 구버전 앱의 쓰기를 함께 중지한다.

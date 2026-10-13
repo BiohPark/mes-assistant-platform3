@@ -267,6 +267,56 @@ pnpm test:db
 3. `pnpm deploy:local -- --home D:\mes-hub`로 첫 앱을 배포하고 DB를 마이그레이션한다. 아직 서비스 exe가 없으면 시작과 상태 확인을 생략한다. [WinSW v2.12.0 공식 릴리스](https://github.com/winsw/winsw/releases/tag/v2.12.0)의 Windows x64 실행 파일을 `D:\mes-hub\service\mes-hub.exe`로 둔 뒤, 관리자 PowerShell에서 `D:\mes-hub\service\mes-hub.exe install`과 `D:\mes-hub\service\mes-hub.exe start`를 실행한다. 서비스 계정의 PATH에서 `node.exe`를 찾을 수 있어야 한다. 첫 배포라면 `INITIAL_SYSTEM_OWNERS`의 ID로 가장 먼저 가입한다.
 4. 브라우저에서 `APP_ORIGIN`을 열고 `/api/health`의 상태·버전·커밋을 확인한다. SO로 로그인하여 **진단** 메뉴(`/admin/diagnostics`)를 열고 **다시 확인**을 누른다. 문제가 있으면 **텍스트로 복사**하여 대화에 붙여 넣는다. 복사 텍스트에는 비밀값 대신 설정 여부만 나온다.
 
+### 직접 HTTPS 또는 IIS TLS 종료
+
+HTTPS는 선택 설정이다. `HTTPS_*`를 모두 비우면 기존 HTTP 동작을 유지한다. 회사가 발급한 **서버 인증서와 개인 키**를 운영 HOME의 `config\certificates`처럼 앱 교체로 사라지지 않는 위치에 두고 `config\.env`에서 아래 **한 방식만** 설정한다. 인증서·키·PFX 비밀번호는 저장소에 넣지 않는다.
+
+| 방식 | API 연결 | 설정·운영 차이 |
+|---|---|---|
+| 직접 HTTPS (.pfx) | 브라우저 → API HTTPS | 인증서·개인 키·중간 체인을 포함한 PFX를 Node가 읽음. 선택 비밀번호 필요 |
+| 직접 HTTPS (PEM) | 브라우저 → API HTTPS | 인증서(full chain)와 개인 키 파일을 각각 읽음. 추가 CA 체인 파일은 선택 |
+| IIS/리버스 프록시 TLS 종료 | 브라우저 → 프록시 HTTPS → API HTTP | 인증서 갱신·TLS는 프록시에서 관리. API의 `HTTPS_*`는 비움. 프록시 주소만 신뢰하고 API 직접 접근 차단 |
+
+PFX 예시 (`.env`, 가상 로컬 경로):
+
+```dotenv
+API_PORT=8443
+APP_ORIGIN=https://localhost:8443
+TRUST_PROXY=false
+HTTPS_PFX_FILE='D:\mes-hub\config\certificates\server.pfx'
+# 비밀번호가 있는 PFX만 설정. 실제 값은 비밀 저장소에서 넣는다.
+# HTTPS_PFX_PASSPHRASE=
+```
+
+PEM 예시 (위 PFX 설정은 제거):
+
+```dotenv
+API_PORT=8443
+APP_ORIGIN=https://localhost:8443
+TRUST_PROXY=false
+HTTPS_CERT_FILE='D:\mes-hub\config\certificates\server-chain.pem'
+HTTPS_KEY_FILE='D:\mes-hub\config\certificates\server-key.pem'
+# 선택: PEM CA 체인 (상태 확인에도 사용할 수 있도록 발급 CA 루트 포함)
+HTTPS_CA_FILE='D:\mes-hub\config\certificates\ca-chain.pem'
+```
+
+드라이브 경로·공백·UNC 경로(`\\fileserver\certificates\server.pfx`)를 허용한다. **Windows 경로는 작은따옴표(`'D:\...'`)로 감싸거나 `/` 구분자(`D:/mes-hub/...`)를 쓴다** — `.env`의 큰따옴표 안에서는 `\n`이 줄바꿈으로 바뀌어(`"C:\new certs\..."`) 경로가 깨지며, 경로에 줄바꿈·탭 같은 제어 문자가 있으면 기동 오류로 안내한다. 상대 경로는 **프로세스 작업 폴더** 기준이다(WinSW는 `D:\mes-hub\app`). 운영에서는 절대 경로를 권장한다. 두 방식 혼용, PEM 짝 누락, CA 또는 PFX 비밀번호만 지정, 파일 누락·읽기 실패, 잘못된 키·PFX 비밀번호는 기동 오류가 된다. 비밀번호와 인증서 내용은 오류 로그에 출력하지 않는다. PEM 키는 암호화되지 않은 키를 사용한다. 암호화 개인 키가 필요하면 비밀번호가 있는 PFX를 사용한다.
+
+`APP_ORIGIN`은 사용자가 실제 접속하는 HTTPS origin(포트 포함)으로 설정하고 그 호스트가 인증서 SAN에 있어야 한다. 위 `localhost`는 예시이며 실제 발급 인증서의 호스트로 바꾼다. Secure 쿠키는 **`APP_ORIGIN`이 `https://`일 때만** 설정된다. 직접 HTTPS를 켜고 `APP_ORIGIN`을 HTTP로 두면 기동 경고가 난다. 개발 Vite 프록시는 기본 HTTP API를 전제로 하므로 이 직접 HTTPS 확인은 빌드한 web을 API에서 제공하는 배포 방식으로 한다.
+
+직접 노출은 `TRUST_PROXY=false`를 유지한다. IIS TLS 종료는 `API_PORT=3000`, `APP_ORIGIN=https://localhost`(실제 사용자 origin으로 교체), `HTTPS_*` 미설정으로 두고 `TRUST_PROXY=127.0.0.1`처럼 **프록시 IP/서브넷만** 지정한다. IIS는 `X-Forwarded-For`를 덮어쓰고 API 포트를 방화벽으로 외부 차단한다. `true`는 허용하지 않으며 홉 수 `1`은 직접 접근이 막힌 경우만 쓴다. SSE 버퍼링·유휴 시간 설정은 기존 IIS 안내를 따른다.
+
+WinSW **실행 서비스 계정**에 PFX/키/인증서/CA 파일과 `config\.env`의 읽기 권한, 상위 폴더의 접근 권한을 준다. 관리자 터미널 계정에만 권한이 있으면 서비스는 읽지 못한다. 개인 키·PFX와 비밀번호가 있는 `.env`는 서비스 계정과 관리 담당자만 읽도록 NTFS ACL을 제한하고 비밀값을 WinSW XML에 넣지 않는다. UNC를 쓰면 서비스 계정의 공유 권한과 NTFS 읽기 권한이 모두 필요하다. 인증서를 교체한 뒤 서비스를 재시작한다(자동 갱신 로딩 없음).
+
+`deploy:local`의 `/api/health`는 `APP_ORIGIN`으로 확인하며 `config\.env`의 `HTTPS_CA_FILE`을 신뢰 CA로 사용할 수 있다. PFX 방식은 `HTTPS_CA_FILE`을 함께 지정할 수 없으므로, 상태 확인 프로세스를 시작하기 **전에** 셸 환경에 PEM CA 파일을 지정한다:
+
+```powershell
+$env:NODE_EXTRA_CA_CERTS = 'D:\mes-hub\config\certificates\ca-chain.pem'
+pnpm deploy:local -- --home D:\mes-hub --start
+```
+
+IIS 앞단도 사내 CA라면 같은 신뢰 설정을 사용한다. `NODE_EXTRA_CA_CERTS`는 필요 시 WinSW 실행 환경에도 지정한다. Node 시작 후 환경 값을 바꾸는 것으로는 적용되지 않는다. 브라우저/Windows의 회사 CA 신뢰와 Node의 신뢰는 각각 설정해야 한다. TLS 검증을 끄지 않는다. `verify-release.mjs`도 `HTTPS_*` 환경 설정에 따라 HTTPS로 임시 포트를 사용하며 `HTTPS_CA_FILE` 또는 시작 환경의 `NODE_EXTRA_CA_CERTS`로 검증한다. 인증서 경로는 절대 경로로 주고, 검증 호스트 `127.0.0.1`이 SAN에 있는 **테스트 인증서**를 사용한다. 인증서는 테스트 실행 중 OpenSSL로 생성하며 Windows 테스트 환경에서는 Git for Windows의 OpenSSL 등이 PATH에 있어야 한다.
+
 ### 데모 bundle 이관
 
 서비스를 멈추고 DB와 `FILE_STORAGE_ROOT`를 백업한 뒤, `D:\mes-hub\app`에서 `node --env-file=D:\mes-hub\config\.env api\dist\db\import.js C:\path\bundle.json --dry-run --default-owner <loginId>`로 테이블별 건수를 확인한다. 소유자가 빈 행이 있으면 `--default-owner`에 기존 또는 함께 가져올 사용자의 로그인 ID를 지정한다. 이어서 `--dry-run` 없이 실행한다. bundle 크기 제한은 기본 64 MiB이며 `IMPORT_BUNDLE_MAX_BYTES`로 조정한다. macOS/Node 22에서 60 MiB bundle의 최대 RSS는 382 MiB였다. Windows에서는 별도 측정 전까지 이관 프로세스에 최소 512 MiB의 여유 메모리를 둔다. 다중 SR 업무는 기본적으로 목록을 보여 주고 중단한다. 가장 이른 SR만 연결하고 나머지 연결의 권한·조회 손실을 수용할 때만 `--allow-multi-sr`를 지정한다. 새 계정의 로그인 ID와 임시 비밀번호는 실행 종료 시 표준 출력에 한 번만 표시되므로 각 사용자에게 안전한 경로로 전달한다. 같은 ID의 에이전트·코드는 서버 값을 유지하고 차이를 보고한다. 기존 콘텐츠와 그 하위 행의 내용·관계가 다르거나 누락되면 전체 이관을 중단한다.

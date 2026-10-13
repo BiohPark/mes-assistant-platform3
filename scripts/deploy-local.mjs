@@ -1,6 +1,11 @@
 import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { request as httpRequest } from 'node:http'
+import { request as httpsRequest } from 'node:https'
+import { rootCertificates } from 'node:tls'
+import { parseEnv } from 'node:util'
+import { fileURLToPath } from 'node:url'
 
 const repo = resolve(import.meta.dirname, '..')
 const args = process.argv.slice(2)
@@ -32,127 +37,166 @@ function service(home, action, disabled) {
   run(exe, [action], { cwd: join(home, 'service') })
   return true
 }
-async function health(home) {
-  const env = readFileSync(join(home, 'config', '.env'), 'utf8')
-  const origin = env.match(/^APP_ORIGIN=(.+)$/m)?.[1]?.trim().replace(/^['"]|['"]$/g, '')
+/** Core HTTPS keeps certificate/hostname verification and supports a private CA without dependencies. */
+export async function requestUrl(url, { caFile, cwd = process.cwd() } = {}) {
+  const target = new URL(url)
+  if (!['http:', 'https:'].includes(target.protocol)) throw new Error('HTTP 또는 HTTPS 주소가 필요합니다')
+  let ca
+  if (target.protocol === 'https:' && caFile) {
+    try { ca = [...rootCertificates, readFileSync(resolve(cwd, caFile))] }
+    catch { throw new Error('HTTPS_CA_FILE을 읽을 수 없습니다. 경로와 읽기 권한을 확인하세요') }
+  }
+  return new Promise((done, fail) => {
+    const request = target.protocol === 'https:' ? httpsRequest : httpRequest
+    const req = request(target, { ca, signal: AbortSignal.timeout(15000) }, (response) => {
+      const chunks = []
+      response.on('data', (chunk) => chunks.push(chunk))
+      response.on('error', fail)
+      response.on('end', () => {
+        try {
+          const body = [204, 205, 304].includes(response.statusCode) ? null : Buffer.concat(chunks)
+          done(new Response(body, {
+            status: response.statusCode,
+            headers: Object.fromEntries(Object.entries(response.headers).filter(([, value]) => value !== undefined).map(([key, value]) => [key, Array.isArray(value) ? value.join(', ') : value])),
+          }))
+        } catch (error) { fail(error) }
+      })
+    })
+    req.on('error', fail)
+    req.end()
+  })
+}
+
+export async function health(home) {
+  const env = parseEnv(readFileSync(join(home, 'config', '.env'), 'utf8'))
+  const origin = env.APP_ORIGIN
   if (!origin) throw new Error('config/.env에 APP_ORIGIN이 필요합니다')
-  const response = await fetch(new URL('/api/health', origin), { signal: AbortSignal.timeout(15000) })
+  const response = await requestUrl(new URL('/api/health', origin), {
+    caFile: env.HTTPS_CA_FILE || process.env.HTTPS_CA_FILE,
+    cwd: join(home, 'app'),
+  })
   if (!response.ok || (await response.json()).status !== 'ok') throw new Error(`/api/health 확인 실패 (${response.status})`)
   console.log('/api/health 확인 완료')
 }
 
-const homeArg = value('--home')
-if (!homeArg || !isAbsolute(homeArg)) throw new Error('--home에 절대 경로가 필요합니다')
-const home = resolve(homeArg)
-const bundle = resolve(value('--bundle') ?? join(repo, 'release', 'mes-hub'))
-const app = join(home, 'app')
-const backups = join(home, 'backups')
-const noService = args.includes('--no-service')
-const dryRun = args.includes('--dry-run')
-const init = args.includes('--init')
-const rollback = args.includes('--rollback')
-const start = args.includes('--start')
-if ([init, rollback, start].filter(Boolean).length > 1) throw new Error('--init, --rollback, --start는 함께 쓸 수 없습니다')
-const relativeHome = relative(repo, home)
-if (bundle === app || relativeHome === '' || (!isAbsolute(relativeHome) && relativeHome !== '..' && !relativeHome.startsWith(`..${sep}`))) {
-  throw new Error('운영 HOME은 저장소 밖이어야 합니다')
-}
+async function main() {
 
-const statePath = join(home, 'deployment-state.json')
-function readState() {
-  return existsSync(statePath) ? JSON.parse(readFileSync(statePath, 'utf8')) : {
-    appStatus: existsSync(app) ? 'unknown' : 'absent', rollbackBackup: null,
+  const homeArg = value('--home')
+  if (!homeArg || !isAbsolute(homeArg)) throw new Error('--home에 절대 경로가 필요합니다')
+  const home = resolve(homeArg)
+  const bundle = resolve(value('--bundle') ?? join(repo, 'release', 'mes-hub'))
+  const app = join(home, 'app')
+  const backups = join(home, 'backups')
+  const noService = args.includes('--no-service')
+  const dryRun = args.includes('--dry-run')
+  const init = args.includes('--init')
+  const rollback = args.includes('--rollback')
+  const start = args.includes('--start')
+  if ([init, rollback, start].filter(Boolean).length > 1) throw new Error('--init, --rollback, --start는 함께 쓸 수 없습니다')
+  const relativeHome = relative(repo, home)
+  if (bundle === app || relativeHome === '' || (!isAbsolute(relativeHome) && relativeHome !== '..' && !relativeHome.startsWith(`..${sep}`))) {
+    throw new Error('운영 HOME은 저장소 밖이어야 합니다')
   }
-}
-function saveState(state) {
-  const temporary = `${statePath}.tmp`
-  writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 })
-  renameSync(temporary, statePath)
-}
 
-if (dryRun) {
-  console.log(`예정: ${init ? 'config/service/storage/logs/backups 초기 구조 생성' : rollback ? '서비스 중지 → 성공한 app 백업 복원 → DB 복원 안내 (--start 별도)' : start ? '서비스 시작 → 상태 확인' : 'release 빌드 → 새 app 임시 복사·검증 → 서비스 중지 → app 백업·교체 → DB 마이그레이션 → 서비스 시작 → 상태 확인'}`)
-  console.log(`HOME: ${home}`)
-  console.log(`설정 유지: ${join(home, 'config', '.env')}`)
-  process.exit(0)
-}
-
-if (rollback) {
-  const state = readState()
-  const latest = state.rollbackBackup
-  if (!latest || !/^app-\d[\dTZ-]*$/.test(latest) || !existsSync(join(backups, latest))) throw new Error('되돌릴 성공한 app 백업이 없습니다')
-  service(home, 'stop', noService)
-  if (existsSync(app)) renameSync(app, join(backups, `failed-${stamp()}`))
-  renameSync(join(backups, latest), app)
-  saveState({ ...state, status: 'succeeded', appStatus: 'succeeded', rollbackBackup: null, finishedAt: new Date().toISOString() })
-  console.log('DB는 자동으로 되돌리지 않습니다. 필요한 경우 별도 DB 백업을 복원한 뒤 --start로 서비스를 시작하세요.')
-  process.exit(0)
-}
-
-if (start) {
-  if (!existsSync(app)) throw new Error('시작할 app이 없습니다')
-  if (service(home, 'start', noService)) await health(home)
-  process.exit(0)
-}
-
-if (init) {
-  if (existsSync(app) || existsSync(join(home, 'config', '.env')) || existsSync(join(home, 'service', 'mes-hub.xml'))) {
-    throw new Error('기존 app/config/service가 있어 --init으로 덮어쓸 수 없습니다')
-  }
-  const template = value('--bundle') ? bundle : repo
-  for (const dir of ['config', 'service', 'storage', 'logs', 'backups']) mkdirSync(join(home, dir), { recursive: true })
-  let env = readFileSync(join(template, '.env.example'), 'utf8')
-  env = env.replace(/^SEED_DEV_ACCOUNTS=.*$/m, 'SEED_DEV_ACCOUNTS=false').replace(/^FILE_STORAGE_ROOT=.*$/m, `FILE_STORAGE_ROOT=${join(home, 'storage')}`)
-  env += '\nNODE_ENV=production\n'
-  writeFileSync(join(home, 'config', '.env'), env, { flag: 'wx', mode: 0o600 })
-  const xml = value('--bundle') ? join(template, 'deploy', 'windows', 'mes-hub.xml') : join(repo, 'deploy', 'windows', 'mes-hub.xml')
-  cpSync(xml, join(home, 'service', 'mes-hub.xml'), { errorOnExist: true, force: false })
-  console.log(`초기 구조 생성: ${home}. config/.env를 설정한 뒤 업데이트 명령을 실행하세요.`)
-  process.exit(0)
-}
-
-mkdirSync(home, { recursive: true })
-const state = { ...readState(), status: 'started', startedAt: new Date().toISOString(), finishedAt: null }
-saveState(state)
-try {
-  if (!value('--bundle')) {
-    const pnpm = process.env.npm_execpath
-    if (pnpm) run(process.execPath, [pnpm, 'release'], { cwd: repo })
-    else run('pnpm', ['release'], { cwd: repo })
-  }
-  for (const path of ['api/dist/main.js', 'api/dist/db/migrate.js', '.env.example', 'deploy/windows/mes-hub.xml']) {
-    if (!existsSync(join(bundle, path))) throw new Error(`배포 묶음 누락: ${path}`)
-  }
-  for (const dir of ['config', 'service', 'storage', 'logs', 'backups']) mkdirSync(join(home, dir), { recursive: true })
-  if (!existsSync(join(home, 'config', '.env'))) throw new Error('config/.env가 없습니다. 먼저 --init을 실행하세요')
-  const staged = mkdtempSync(join(home, 'app-staging-'))
-  try {
-    cpSync(bundle, staged, { recursive: true })
-    verifyCopy(bundle, staged)
-    for (const path of ['api/dist/main.js', 'api/dist/db/migrate.js', '.env.example', 'deploy/windows/mes-hub.xml']) {
-      if (!existsSync(join(staged, path))) throw new Error(`배포 묶음 복사 검증 실패: ${path}`)
+  const statePath = join(home, 'deployment-state.json')
+  function readState() {
+    return existsSync(statePath) ? JSON.parse(readFileSync(statePath, 'utf8')) : {
+      appStatus: existsSync(app) ? 'unknown' : 'absent', rollbackBackup: null,
     }
+  }
+  function saveState(state) {
+    const temporary = `${statePath}.tmp`
+    writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 })
+    renameSync(temporary, statePath)
+  }
+
+  if (dryRun) {
+    console.log(`예정: ${init ? 'config/service/storage/logs/backups 초기 구조 생성' : rollback ? '서비스 중지 → 성공한 app 백업 복원 → DB 복원 안내 (--start 별도)' : start ? '서비스 시작 → 상태 확인' : 'release 빌드 → 새 app 임시 복사·검증 → 서비스 중지 → app 백업·교체 → DB 마이그레이션 → 서비스 시작 → 상태 확인'}`)
+    console.log(`HOME: ${home}`)
+    console.log(`설정 유지: ${join(home, 'config', '.env')}`)
+    process.exit(0)
+  }
+
+  if (rollback) {
+    const state = readState()
+    const latest = state.rollbackBackup
+    if (!latest || !/^app-\d[\dTZ-]*$/.test(latest) || !existsSync(join(backups, latest))) throw new Error('되돌릴 성공한 app 백업이 없습니다')
     service(home, 'stop', noService)
-    if (existsSync(app)) {
-      const backup = `${state.appStatus === 'succeeded' ? 'app' : 'failed'}-${stamp()}`
-      renameSync(app, join(backups, backup))
-      if (state.appStatus === 'succeeded') state.rollbackBackup = backup
+    if (existsSync(app)) renameSync(app, join(backups, `failed-${stamp()}`))
+    renameSync(join(backups, latest), app)
+    saveState({ ...state, status: 'succeeded', appStatus: 'succeeded', rollbackBackup: null, finishedAt: new Date().toISOString() })
+    console.log('DB는 자동으로 되돌리지 않습니다. 필요한 경우 별도 DB 백업을 복원한 뒤 --start로 서비스를 시작하세요.')
+    process.exit(0)
+  }
+
+  if (start) {
+    if (!existsSync(app)) throw new Error('시작할 app이 없습니다')
+    if (service(home, 'start', noService)) await health(home)
+    process.exit(0)
+  }
+
+  if (init) {
+    if (existsSync(app) || existsSync(join(home, 'config', '.env')) || existsSync(join(home, 'service', 'mes-hub.xml'))) {
+      throw new Error('기존 app/config/service가 있어 --init으로 덮어쓸 수 없습니다')
     }
-    state.appStatus = 'started'
+    const template = value('--bundle') ? bundle : repo
+    for (const dir of ['config', 'service', 'storage', 'logs', 'backups']) mkdirSync(join(home, dir), { recursive: true })
+    let env = readFileSync(join(template, '.env.example'), 'utf8')
+    env = env.replace(/^SEED_DEV_ACCOUNTS=.*$/m, 'SEED_DEV_ACCOUNTS=false').replace(/^FILE_STORAGE_ROOT=.*$/m, `FILE_STORAGE_ROOT=${join(home, 'storage')}`)
+    env += '\nNODE_ENV=production\n'
+    writeFileSync(join(home, 'config', '.env'), env, { flag: 'wx', mode: 0o600 })
+    const xml = value('--bundle') ? join(template, 'deploy', 'windows', 'mes-hub.xml') : join(repo, 'deploy', 'windows', 'mes-hub.xml')
+    cpSync(xml, join(home, 'service', 'mes-hub.xml'), { errorOnExist: true, force: false })
+    console.log(`초기 구조 생성: ${home}. config/.env를 설정한 뒤 업데이트 명령을 실행하세요.`)
+    process.exit(0)
+  }
+
+  mkdirSync(home, { recursive: true })
+  const state = { ...readState(), status: 'started', startedAt: new Date().toISOString(), finishedAt: null }
+  saveState(state)
+  try {
+    if (!value('--bundle')) {
+      const pnpm = process.env.npm_execpath
+      if (pnpm) run(process.execPath, [pnpm, 'release'], { cwd: repo })
+      else run('pnpm', ['release'], { cwd: repo })
+    }
+    for (const path of ['api/dist/main.js', 'api/dist/db/migrate.js', '.env.example', 'deploy/windows/mes-hub.xml']) {
+      if (!existsSync(join(bundle, path))) throw new Error(`배포 묶음 누락: ${path}`)
+    }
+    for (const dir of ['config', 'service', 'storage', 'logs', 'backups']) mkdirSync(join(home, dir), { recursive: true })
+    if (!existsSync(join(home, 'config', '.env'))) throw new Error('config/.env가 없습니다. 먼저 --init을 실행하세요')
+    const staged = mkdtempSync(join(home, 'app-staging-'))
+    try {
+      cpSync(bundle, staged, { recursive: true })
+      verifyCopy(bundle, staged)
+      for (const path of ['api/dist/main.js', 'api/dist/db/migrate.js', '.env.example', 'deploy/windows/mes-hub.xml']) {
+        if (!existsSync(join(staged, path))) throw new Error(`배포 묶음 복사 검증 실패: ${path}`)
+      }
+      service(home, 'stop', noService)
+      if (existsSync(app)) {
+        const backup = `${state.appStatus === 'succeeded' ? 'app' : 'failed'}-${stamp()}`
+        renameSync(app, join(backups, backup))
+        if (state.appStatus === 'succeeded') state.rollbackBackup = backup
+      }
+      state.appStatus = 'started'
+      saveState(state)
+      renameSync(staged, app)
+    } finally { rmSync(staged, { recursive: true, force: true }) }
+    run(process.execPath, ['--env-file', join(home, 'config', '.env'), join(app, 'api', 'dist', 'db', 'migrate.js')], { cwd: app })
+    if (service(home, 'start', noService)) await health(home)
+    state.status = 'succeeded'
+    state.appStatus = 'succeeded'
+    state.finishedAt = new Date().toISOString()
     saveState(state)
-    renameSync(staged, app)
-  } finally { rmSync(staged, { recursive: true, force: true }) }
-  run(process.execPath, ['--env-file', join(home, 'config', '.env'), join(app, 'api', 'dist', 'db', 'migrate.js')], { cwd: app })
-  if (service(home, 'start', noService)) await health(home)
-  state.status = 'succeeded'
-  state.appStatus = 'succeeded'
-  state.finishedAt = new Date().toISOString()
-  saveState(state)
-  console.log(`배포 완료: ${app}`)
-} catch (error) {
-  state.status = 'failed'
-  if (state.appStatus === 'started') state.appStatus = 'failed'
-  state.finishedAt = new Date().toISOString()
-  saveState(state)
-  throw error
+    console.log(`배포 완료: ${app}`)
+  } catch (error) {
+    state.status = 'failed'
+    if (state.appStatus === 'started') state.appStatus = 'failed'
+    state.finishedAt = new Date().toISOString()
+    saveState(state)
+    throw error
+  }
+
 }
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main()

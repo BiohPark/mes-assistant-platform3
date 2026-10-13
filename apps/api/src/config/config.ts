@@ -2,6 +2,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { isIP } from 'node:net'
 import { z } from 'zod'
 import { AuthModeSchema, EmailDomainSchema, FILE_MAX_PER_REQUEST } from '@mes/contracts'
+import { parseHttpsConfig } from '../https/https.js'
 
 const list = z
   .string()
@@ -106,6 +107,7 @@ export function loadConfig(env: Record<string, string | undefined>) {
   }
   return {
     port: e.API_PORT,
+    https: parseHttpsConfig(env),
     appOrigin,
     databaseUrl: e.DATABASE_URL,
     sessionSecret: e.SESSION_SECRET,
