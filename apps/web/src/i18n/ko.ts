@@ -192,6 +192,7 @@ export const ko = {
     copyMessage: '복사', copiedMessage: '메시지를 복사했습니다.', copyMessageFailed: '복사하지 못했습니다. 다시 시도해 주세요.',
     messageActions: '메시지 동작', messageMenu: '메시지 메뉴', askAgain: '다시 묻기',
     askAgainHint: '현재 자료·모델로 새 요청, 이전 문답 포함',
+    pendingAttemptHint: '전송하지 못한 요청이 있습니다. 전송을 누르면 같은 내용을 다시 보냅니다. 그 전에는 다시 묻기를 쓸 수 없습니다.',
     replaceDraftTitle: '작성 중인 텍스트를 바꿀까요?', replaceDraftDescription: '텍스트만 바꿉니다. 현재 첨부와 팀 의견 모드는 유지합니다.', replaceDraftConfirm: '텍스트 바꾸기',
     questionIndex: '질문 목차', newAnswer: '새 답변으로', questionFailed: '실패',
     openWebUi: 'OpenWebUI에서 열기',

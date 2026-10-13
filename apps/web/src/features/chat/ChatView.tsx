@@ -45,7 +45,9 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   const remoteRequestId = messages.data?.find((item) => item.status === 'streaming' && item.requestId !== chat.run?.requestId)?.requestId
   const remoteRequest = useQuery({ queryKey: ['request', remoteRequestId], queryFn: () => getRequest(remoteRequestId!), enabled: !!remoteRequestId })
   const remoteStreaming = !!remoteRequestId
-  const askAgainDisabled = task.status === 'done' || !task.threadId || sending || chat.sending || !!chat.run || remoteStreaming
+  // 보관된 실패 시도가 있으면 다음 전송은 그 시도를 그대로 재전송하므로, 다른 텍스트를 프리필하면 화면과 전송 내용이 어긋난다.
+  const pendingAttempt = chat.hasPendingAttempt()
+  const askAgainDisabled = task.status === 'done' || !task.threadId || sending || chat.sending || !!chat.run || remoteStreaming || pendingAttempt
   useEffect(() => { if (askAgainDisabled) setAskTarget(null) }, [askAgainDisabled])
   function prefill(message: Message) {
     if (askAgainDisabled || sendLock.current) return
@@ -131,6 +133,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   </div>{Object.values(typing).some((item) => item.until > Date.now()) && <p className="px-4 py-1 text-xs text-muted-foreground">{t('chat.typing', { names: Object.values(typing).filter((item) => item.until > Date.now()).map((item) => item.name).join(', ') })}</p>}
   <ContextTray task={task} estimate={estimate} />
   {prefilled && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.askAgainHint')}</p>}
+  {pendingAttempt && !sending && !chat.sending && task.status !== 'done' && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.pendingAttemptHint')}</p>}
   {task.status !== 'done' && <Composer ref={composer} disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowPin allowDiscussion
     blockedReason={estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping}
     placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}

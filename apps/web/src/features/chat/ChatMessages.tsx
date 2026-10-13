@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import type { Message } from '@mes/domain'
 import { AlertCircle, ArrowDown, List } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -9,6 +9,17 @@ import type { ChatRun } from './useChat'
 
 type BubbleActions = Omit<ComponentProps<typeof MessageBubble>, 'message'>
 const nearBottomDistance = 80
+
+/** 각 질문 뒤·다음 질문 앞 구간에 그 요청의 오류 답변이 있으면 실패로 본다(한 번 순회). */
+export function failedQuestionIds(messages: Message[]) {
+  const failed = new Set<string>()
+  let question: Message | undefined
+  for (const item of messages) {
+    if (item.role === 'user' && item.kind !== 'discussion') question = item
+    else if (question && item.role === 'assistant' && item.status === 'error' && (!question.requestId || item.requestId === question.requestId)) failed.add(question.id)
+  }
+  return failed
+}
 
 /** 업무와 SR 접수에서 공용 메시지 표시·스트리밍·자동 스크롤을 사용한다. */
 export function ChatMessages({ messages, run, empty, actions }: {
@@ -23,6 +34,7 @@ export function ChatMessages({ messages, run, empty, actions }: {
   const [indexOpen, setIndexOpen] = useState(false)
   const jumpTarget = useRef<HTMLElement | null>(null)
   const questions = messages.filter(item => item.role === 'user' && item.kind !== 'discussion')
+  const failed = useMemo(() => indexOpen ? failedQuestionIds(messages) : new Set<string>(), [indexOpen, messages])
 
   // Track the enclosing scroller before content grows, rather than measuring its new height.
   useEffect(() => {
@@ -56,11 +68,6 @@ export function ChatMessages({ messages, run, empty, actions }: {
     const last = messages.at(-1)
     if (last) messageElement(last.id)?.focus({ preventScroll: true })
   }
-  function failed(question: Message) {
-    const start = messages.indexOf(question)
-    const end = messages.findIndex((item, index) => index > start && item.role === 'user' && item.kind !== 'discussion')
-    return messages.slice(start + 1, end < 0 ? undefined : end).some(item => item.role === 'assistant' && item.status === 'error' && (!question.requestId || item.requestId === question.requestId))
-  }
   return <div ref={root} className="space-y-4">
     {questions.length > 0 && <div className="sticky top-0 z-10 flex justify-end">
       <Popover open={indexOpen} onOpenChange={setIndexOpen}><PopoverTrigger asChild>
@@ -72,7 +79,7 @@ export function ChatMessages({ messages, run, empty, actions }: {
           onClick={() => { jumpTarget.current = messageElement(item.id) ?? null; setIndexOpen(false) }}>
           <span className="line-clamp-2 break-all">{index + 1}. {item.content}</span>
           <span className="flex items-center gap-1 text-xs text-muted-foreground"><time dateTime={item.createdAt}>{formatDateTime(item.createdAt)}</time>
-            {failed(item) && <span className="inline-flex items-center gap-1 text-tone-danger-fg"><AlertCircle aria-hidden="true" className="size-3" />{t('chat.questionFailed')}</span>}</span>
+            {failed.has(item.id) && <span className="inline-flex items-center gap-1 text-tone-danger-fg"><AlertCircle aria-hidden="true" className="size-3" />{t('chat.questionFailed')}</span>}</span>
         </button>)}</nav>
       </PopoverContent></Popover>
     </div>}

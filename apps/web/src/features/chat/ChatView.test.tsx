@@ -343,6 +343,44 @@ it('confirms draft replacement, preserves current attachments and sends prefill 
   expect(requests.some(r => r.url.includes('/retry'))).toBe(false)
 })
 
+it('blocks reasking while a failed attempt is stored and resends that attempt unchanged', async () => {
+  const requests: Array<{ key?: string; body: Record<string, unknown> }> = []
+  let status = 409
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/threads/h/messages') return Response.json([originalQuestion])
+    if (url === '/api/files') return Response.json({ id: 'file-a', name: 'a.txt' })
+    if (url.endsWith('/estimate')) return Response.json({ bytes: 100, limitBytes: 1000, inputs: [], srCodes: [], srs: [], overLimit: false })
+    if (url === '/api/threads/h/requests') {
+      requests.push({ key: (init?.headers as Record<string, string> | undefined)?.['Idempotency-Key'], body: JSON.parse(String(init?.body)) })
+      if (status === 409) return Response.json({ message: '이미 응답 중입니다' }, { status })
+      return new Response('event: started\ndata: {"requestId":"new","replyMessageId":"new-answer"}\n\nevent: completed\ndata: {}\n\n', { status })
+    }
+    return Response.json([])
+  }))
+  const { container } = actionView()
+  await screen.findByRole('button', { name: '다시 묻기' })
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  fireEvent.change(input, { target: { value: '실패할 새 질문' } })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'a.txt')] } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(toastError).toHaveBeenCalled())
+  expect(requests).toHaveLength(2)
+  expect(input).toHaveValue('실패할 새 질문')
+  const ask = screen.getByRole('button', { name: '다시 묻기' })
+  expect(ask).toBeDisabled()
+  expect(screen.getByText('전송하지 못한 요청이 있습니다. 전송을 누르면 같은 내용을 다시 보냅니다. 그 전에는 다시 묻기를 쓸 수 없습니다.')).toBeVisible()
+  fireEvent.click(ask)
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(input).toHaveValue('실패할 새 질문')
+  status = 201
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(requests).toHaveLength(3))
+  expect(requests[2]).toEqual(requests[0])
+  expect(requests[2]!.body).toEqual({ content: '실패할 새 질문', attachmentIds: ['file-a'], oneShotFileIds: [] })
+  await waitFor(() => expect(screen.getByRole('button', { name: '다시 묻기' })).toBeEnabled())
+  expect(screen.queryByText('전송하지 못한 요청이 있습니다.', { exact: false })).not.toBeInTheDocument()
+})
+
 it.each(['done', 'streaming'])('disables reasking for %s conversations', async (state) => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/messages') ? Response.json([originalQuestion, ...(state === 'streaming' ? [{ ...originalQuestion, id: 'remote', role: 'assistant', status: 'streaming' }] : [])]) : Response.json([])))
   actionView(state === 'done' ? 'done' : 'in_progress')

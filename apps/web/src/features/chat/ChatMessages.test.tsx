@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Message } from '@mes/domain'
 import { afterEach, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { ChatMessages } from './ChatMessages'
+import { ChatMessages, failedQuestionIds } from './ChatMessages'
 
 const question: Message = { id: 'q', threadId: 'h', role: 'user', content: '첫 질문', status: 'done', attachmentIds: [], createdAt: '2026-01-01T00:00:00Z', requestId: 'r' }
 const answer: Message = { ...question, id: 'a', role: 'assistant', content: '답변', status: 'error', error: '실패' }
@@ -51,4 +51,14 @@ it('lists question times and failure labels and focuses the selected message aft
   await user.keyboard('{Enter}')
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(document.querySelector('[data-message-id="q"]')).toHaveFocus()
+})
+
+it('marks a question failed only by an error answer in its own span that matches its request', () => {
+  const second: Message = { ...question, id: 'q2', content: '둘째 질문', requestId: 'r2' }
+  const third: Message = { ...question, id: 'q3', content: '셋째 질문', requestId: undefined }
+  const failed = failedQuestionIds([
+    { ...answer, id: 'orphan' }, question, { ...answer, requestId: 'other' }, { ...question, id: 'team', kind: 'discussion' },
+    second, { ...answer, id: 'a2', requestId: 'r2' }, third, { ...answer, id: 'a3', requestId: 'any' }, { ...answer, id: 'ok', status: 'done' },
+  ])
+  expect([...failed]).toEqual(['q2', 'q3'])
 })
