@@ -93,6 +93,20 @@ describe('SR 접수 에이전트 보호 (데모 테스트 4건)', () => {
     expect(await admin.getSettings()).not.toHaveProperty('defaultModel')
     expect(await db.select().from(appSetting).where(eq(appSetting.key, 'defaultModel'))).toHaveLength(1) // 행은 지우지 않고 무시만 한다
   })
+  it('override 설정·교체·해제는 같은 LLM 포트에 즉시 반영되고 구형 행은 유지된다', async () => {
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', LLM_DEFAULT_MODEL: 'env-model' })
+    const ports = new DbLlmPorts(db, config, 'owner')
+    try {
+      for (const model of ['setting-a', 'setting-b']) {
+        expect(await admin.settings({ defaultModelOverride: model })).toMatchObject({ defaultModelOverride: model })
+        expect((await ports.getSettings()).llm.model).toBe(model)
+      }
+      expect(await admin.settings({ defaultModelOverride: null })).not.toHaveProperty('defaultModelOverride')
+      expect((await ports.getSettings()).llm.model).toBe('env-model')
+      expect(await db.select().from(appSetting).where(eq(appSetting.key, 'defaultModelOverride'))).toHaveLength(0)
+      expect(await db.select().from(appSetting).where(eq(appSetting.key, 'defaultModel'))).toHaveLength(1)
+    } finally { await admin.settings({ defaultModelOverride: null }) }
+  })
   it('새 에이전트의 입출력·체크리스트를 저장하고 순서 revision 충돌을 거부한다', async () => {
     const input = { id: 'admin-test', name: '관리 테스트', level1CodeId: 'assistant_level1:SDLC', level2CodeId: 'assistant_level2:분석',
       summary: '요약', ownerId: 'owner', status: 'open' as const, usageExample: '예시', expectedInputs: ['입력'], expectedOutputs: ['출력'],
