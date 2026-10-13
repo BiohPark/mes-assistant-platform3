@@ -11,6 +11,23 @@ vi.mock('@/lib/clipboard', () => ({ copyText: copy }))
 vi.mock('sonner', () => ({ toast: { error: copyError, success: copySuccess } }))
 afterEach(() => { vi.unstubAllGlobals(); copy.mockReset(); copyError.mockClear(); copySuccess.mockClear() })
 
+it.each([
+  { role: 'user', kind: undefined, intake: false, tone: 'primary', background: 'bg-primary' },
+  { role: 'user', kind: 'discussion', intake: false, tone: 'warning', background: 'bg-tone-warning-bg' },
+  { role: 'assistant', kind: undefined, intake: false, tone: 'card', background: 'bg-card' },
+  { role: 'assistant', kind: 'discussion', intake: false, tone: 'card', background: 'bg-card' },
+  { role: 'user', kind: 'discussion', intake: true, tone: 'primary', background: 'bg-primary' },
+] as const)('matches Markdown to the $tone bubble (role=$role, kind=$kind, intake=$intake)', ({ role, kind, intake, tone, background }) => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  const message = { id: 'tone', threadId: 'h', role, kind, content: 'https://example.com', status: 'done', createdAt: '2026-01-01', attachmentIds: [] } as Message
+  const { container } = renderWithProviders(<TooltipProvider><MessageBubble message={message} intake={intake} /></TooltipProvider>)
+  const markdown = container.querySelector('.md-body')
+  expect(markdown).toHaveAttribute('data-tone', tone)
+  expect(markdown?.parentElement).toHaveClass(background)
+  expect(screen.getByRole('link')).toHaveAttribute('target', '_blank')
+  expect(screen.getByRole('link')).toHaveAttribute('rel', 'noreferrer')
+})
+
 it('labels an assistant reply as assistant when it offers output saving', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
   const message = { id: 'm', threadId: 'h', seq: 1, role: 'assistant', content: '# answer', status: 'done', createdAt: '2026-01-01T00:00:00.000Z', attachmentIds: [] } as Message
