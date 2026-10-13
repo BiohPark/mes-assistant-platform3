@@ -92,5 +92,5 @@ test('scrollToBottom hidden at bottom and shown more than 200px above it', async
   await expect(jump).toBeVisible()
   await jump.click()
   await expect(jump).toHaveCount(0)
-  expect(await scroll.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThanOrEqual(24)
+  await expect.poll(() => scroll.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThanOrEqual(24)
 })
