@@ -44,5 +44,9 @@ export const setMyAccountProfile = async (input: ProfilePatch) => ProfileSchema.
 export const setMyName = (name: string) => setMyProfile({ name })
 export const setUserFlag = (id: string, field: 'system-owner' | 'business-owner' | 'active', enabled: boolean) => adminRequest(`users/${encodeURIComponent(id)}/${field}`, 'PUT', { enabled })
 export const temporaryPassword = async (id: string) => await adminRequest(`users/${encodeURIComponent(id)}/temporary-password`, 'POST') as { temporaryPassword: string }
-/** SO 전용 OpenWebUI 진단(S10-5) — 스키마에 없는 필드는 버린다 */
-export const probeOpenWebUi = async (model: string) => OwuiProbeResultSchema.parse(await adminRequest('admin/diagnostics/openwebui', 'POST', { model }))
+/** SO 전용 OpenWebUI 진단(S10-5) — 허용 목록(계약) 밖 값이 있으면 보여 주지 않는다. 검증 오류 문구는 값을 인용할 수 있어 고정 문구로 바꾼다 */
+export async function probeOpenWebUi(model: string) {
+  const parsed = OwuiProbeResultSchema.safeParse(await adminRequest('admin/diagnostics/openwebui', 'POST', { model }))
+  if (!parsed.success) throw new Error('응답 형식 오류')
+  return parsed.data
+}

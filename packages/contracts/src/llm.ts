@@ -34,29 +34,39 @@ export type LlmTestConnection = z.infer<typeof LlmTestConnectionSchema>
 
 /** POST /admin/diagnostics/openwebui — SO 전용 OpenWebUI 진단(S10-5). 입력은 모델 하나 */
 export const OwuiProbeRequestSchema = z.object({ model: LlmModelIdSchema }).strict()
-/** 결과에는 본문·파일·키·주소가 없다 — 프레임은 키 경로, 오류는 가린 120자 이내 문구 */
+/**
+ * 결과는 허용 목록으로만 이뤄진다(S10-5 리뷰) — @mes/llm owuiProbe와 같은 목록. 서버 응답과 웹 파싱 양쪽에서 검사해
+ * 목록 밖 값(키·주소·파일명·본문)이 새로 섞이면 통과하지 못한다.
+ */
+export const OWUI_PROBE_OTHER = '기타'
+export const OWUI_PROBE_MASKED = '(가림)'
+const OWUI_CAPABILITIES = ['vision', 'file_upload', 'file_context', 'web_search', 'image_generation', 'code_interpreter', 'citations', 'status_updates', 'usage', 'builtin_tools'] as const
+const FRAME_TOKEN = '(?:choices(?:\\.(?:delta|message)(?:\\.(?:role|content|reasoning_content|reasoning|tool_calls|function_call|refusal|기타))?|\\.finish_reason)?|sources|usage|error|기타|non-json|empty|\\[DONE\\])'
+const FRAME = new RegExp(`^(?:${FRAME_TOKEN}(?:\\+${FRAME_TOKEN})*(?: ×\\d+)?|…)$`)
+const PROBE_ID = /^(?:(?:server:(?:mcp:)?)?[A-Za-z_][A-Za-z0-9_-]{0,39}|\(가림\))$/
+const PROBE_ERROR = /^(?:HTTP \d{3} · (?:형식 거부|인증 거부|찾을 수 없음|크기 거부|요청 제한|서버 오류|거부)|응답 시간 초과|리다이렉트 응답은 허용하지 않습니다|응답 크기 한도 초과|요청이 취소되었습니다\.|LLM 서비스 연결 오류|응답 형식 오류)$/
 export const OwuiProbeAttemptSchema = z.object({
   mode: z.enum(['current', 'legacy']),
   status: z.number().int().nullable(),
   firstByteMs: z.number().nullable(),
   firstContentMs: z.number().nullable(),
   totalMs: z.number(),
-  frames: z.array(z.string()),
-  error: z.string().max(120).optional(),
+  frames: z.array(z.string().regex(FRAME)).max(41),
+  error: z.string().regex(PROBE_ERROR).optional(),
 })
 export const OwuiProbeResultSchema = z.object({
   model: z.string(),
-  version: z.string().nullable(),
+  version: z.string().regex(/^\d{1,4}(?:\.\d{1,4}){1,3}(?:-[A-Za-z0-9]{1,16})?$/).nullable(),
   meta: z.object({
     found: z.boolean(),
-    toolIds: z.array(z.string()),
-    defaultFeatureIds: z.array(z.string()),
-    capabilities: z.record(z.string(), z.boolean()),
-    knowledgeCount: z.number(),
-    functionCalling: z.string().nullable(),
-    error: z.string().max(120).optional(),
+    toolIds: z.array(z.string().regex(PROBE_ID)).max(20),
+    defaultFeatureIds: z.array(z.string().regex(PROBE_ID)).max(20),
+    capabilities: z.partialRecord(z.enum(OWUI_CAPABILITIES), z.boolean()),
+    knowledgeCount: z.number().int(),
+    functionCalling: z.enum(['native', 'legacy', 'default', '기타']).nullable(),
+    error: z.string().regex(PROBE_ERROR).optional(),
   }),
-  attempts: z.array(OwuiProbeAttemptSchema),
+  attempts: z.array(OwuiProbeAttemptSchema).max(2),
   ms: z.number(),
 })
 export type OwuiProbeRequest = z.infer<typeof OwuiProbeRequestSchema>

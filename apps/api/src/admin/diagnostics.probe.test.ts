@@ -40,12 +40,15 @@ beforeAll(async () => {
     for await (const chunk of req) chunks.push(chunk as Buffer)
     const send = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
     if (req.url === '/api/version') return send(200, { version: '0.12.0' })
-    if (req.url === '/api/models') return send(200, { data: [{ id: 'agent-a', info: { meta: { toolIds: ['t1'], defaultFeatureIds: ['web_search'], capabilities: { vision: true }, knowledge: [{ name: 'kb' }] }, params: { function_calling: 'native' } } }] })
+    // 허용 목록 밖 값을 심는다 — capabilities 키의 키, IP·파일명 도구 ID, 임의 프레임 키, 오류 본문의 쿠키·경로 (리뷰 P1 ×4)
+    if (req.url === '/api/models') return send(200, { data: [{ id: 'agent-a', info: { meta: { toolIds: ['t1', '10.20.30.40', 'private-report.pdf'], defaultFeatureIds: ['web_search'],
+      capabilities: { vision: true, 'top-secret': true }, knowledge: [{ name: 'kb' }] }, params: { function_calling: 'native' } } }] })
     if (req.url === '/api/chat/completions') {
       if (hang) return
       const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
-      if ('tool_ids' in body) return send(400, { detail: `tool_ids not allowed — see http://127.0.0.1:${owuiPort}/docs key top-secret` })
+      if ('tool_ids' in body) return send(400, { detail: `tool_ids not allowed — see http://127.0.0.1:${owuiPort}/docs key top-secret Cookie: sid=cookie-secret D:\\private\\x.txt` })
       res.writeHead(200, { 'content-type': 'text/event-stream' })
+      res.write(`data: ${JSON.stringify({ confidential_answer: ANSWER })}\n\n`)
       res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: ANSWER } }] })}\n\n`)
       return res.end('data: [DONE]\n\n')
     }
@@ -87,12 +90,11 @@ describe('OpenWebUI 진단 API', () => {
     const res = await request((await boot()).getHttpServer()).post(PROBE).set('Cookie', 'mes_session=owner').send({ model: 'agent-a' }).expect(200)
     const result = OwuiProbeResultSchema.strict().parse(res.body)
     expect(result).toMatchObject({ model: 'agent-a', version: '0.12.0',
-      meta: { found: true, toolIds: ['t1'], defaultFeatureIds: ['web_search'], capabilities: { vision: true }, knowledgeCount: 1, functionCalling: 'native' } })
-    expect(result.attempts[0]).toMatchObject({ mode: 'current', status: 200, frames: ['choices.delta.content', '[DONE]'] })
-    expect(result.attempts[1]).toMatchObject({ mode: 'legacy', status: 400 })
-    expect(result.attempts[1]!.error).toMatch(/^HTTP 400 · tool_ids not allowed/)
+      meta: { found: true, toolIds: ['t1', '(가림)', '(가림)'], defaultFeatureIds: ['web_search'], capabilities: { vision: true }, knowledgeCount: 1, functionCalling: 'native' } })
+    expect(result.attempts[0]).toMatchObject({ mode: 'current', status: 200, frames: ['기타', 'choices.delta.content', '[DONE]'] })
+    expect(result.attempts[1]).toMatchObject({ mode: 'legacy', status: 400, error: 'HTTP 400 · 형식 거부' })
     const text = JSON.stringify(res.body)
-    for (const leaked of [ANSWER, OWUI_PROBE_PROMPT, 'top-secret', '127.0.0.1', String(owuiPort), 'http']) expect(text).not.toContain(leaked)
+    for (const leaked of [ANSWER, OWUI_PROBE_PROMPT, 'top-secret', '127.0.0.1', String(owuiPort), 'http', 'confidential', '10.20.30.40', 'private', 'cookie-secret', 'tool_ids not allowed']) expect(text).not.toContain(leaked)
     expect(writes).not.toHaveBeenCalled()
   })
 

@@ -171,7 +171,7 @@ export const en = {
         failed: 'Could not run the diagnostics: {error}', copy: 'Copy diagnostics result', version: 'OpenWebUI version', unknown: 'Unknown', model: 'Model',
         meta: 'Model meta', metaFound: 'Found', metaMissing: 'Not found', none: 'None', on: 'on', off: 'off', knowledge: 'Knowledge', notSet: 'Not set',
         current: '① Current', legacy: '② Legacy (tool_ids · features · function_calling legacy)', framesCurrent: '① Frame order', framesLegacy: '② Frame order',
-        noResponse: 'No response', firstByte: 'first byte {ms} ms', firstContent: 'first content {ms} ms', total: 'total {ms} ms', elapsed: 'Total time',
+        masked: '(masked)', other: 'other', noResponse: 'No response', firstByte: 'first byte {ms} ms', firstContent: 'first content {ms} ms', total: 'total {ms} ms', elapsed: 'Total time',
       },
     },
     test: {

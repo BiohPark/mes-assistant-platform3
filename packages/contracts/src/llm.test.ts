@@ -20,4 +20,23 @@ describe('OpenWebUI 진단 계약', () => {
     expect(parsed).not.toHaveProperty('leaked')
     expect(OwuiProbeResultSchema.safeParse({ ...parsed, attempts: [{ ...attempt, error: 'x'.repeat(121) }] }).success).toBe(false)
   })
+
+  it('허용 목록 밖 값(키·주소·파일명·본문)은 통과하지 못한다 — 리뷰 P1 ×4', () => {
+    const attempt = { mode: 'legacy', status: 400, firstByteMs: null, firstContentMs: null, totalMs: 2, frames: ['기타+sources', 'choices.delta.기타+choices.delta.content ×3', '[DONE]'], error: 'HTTP 400 · 형식 거부' }
+    const meta = { found: true, toolIds: ['web_tool', 'server:mcp:docs', '(가림)'], defaultFeatureIds: ['web_search'], capabilities: { vision: true }, knowledgeCount: 1, functionCalling: '기타' }
+    const ok = { model: 'm', version: '0.12.0', ms: 3, attempts: [attempt], meta }
+    expect(OwuiProbeResultSchema.safeParse(ok).success).toBe(true)
+    const bad = [
+      { ...ok, meta: { ...meta, capabilities: { 'sk-live-secret': true } } },
+      { ...ok, attempts: [{ ...attempt, frames: ['confidential_answer'] }] },
+      { ...ok, attempts: [{ ...attempt, frames: ['choices.delta.confidential_answer'] }] },
+      { ...ok, meta: { ...meta, toolIds: ['10.20.30.40'] } },
+      { ...ok, meta: { ...meta, defaultFeatureIds: ['private-report.pdf'] } },
+      { ...ok, attempts: [{ ...attempt, error: 'HTTP 400 · Cookie: sid=1' }] },
+      { ...ok, meta: { ...meta, error: 'HTTP 401 · bad key' } },
+      { ...ok, meta: { ...meta, functionCalling: 'sk-live-secret' } },
+      { ...ok, version: 'owui.corp.example' },
+    ]
+    for (const value of bad) expect(OwuiProbeResultSchema.safeParse(value).success).toBe(false)
+  })
 })

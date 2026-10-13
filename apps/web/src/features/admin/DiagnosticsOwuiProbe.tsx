@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import type { OwuiProbeAttemptResult, OwuiProbeReport } from '@mes/contracts'
+import { OWUI_PROBE_MASKED, OWUI_PROBE_OTHER, type OwuiProbeAttemptResult, type OwuiProbeReport } from '@mes/contracts'
 import { probeOpenWebUi } from '@/api/admin'
 import { ModelSelect } from '@/components/ModelSelect'
 import { Button } from '@/components/ui/button'
@@ -18,7 +18,9 @@ function attemptLine(attempt: OwuiProbeAttemptResult, t: Translator): string {
 
 /** 화면 요약과 복사 텍스트가 같은 행을 쓴다 — 결과 스키마에 있는 값만 담긴다 */
 function probeRows(result: OwuiProbeReport, t: Translator): [string, string][] {
-  const list = (items: string[]) => items.length ? items.join(', ') : t('admin.diagnostics.probe.none')
+  // 허용 목록 밖 표기((가림)·기타)는 화면 언어로 바꿔 보여 준다
+  const other = (value: string) => value.replaceAll(OWUI_PROBE_OTHER, t('admin.diagnostics.probe.other'))
+  const list = (items: string[]) => items.length ? items.map((id) => id === OWUI_PROBE_MASKED ? t('admin.diagnostics.probe.masked') : id).join(', ') : t('admin.diagnostics.probe.none')
   const caps = Object.entries(result.meta.capabilities)
   const attempt = (mode: OwuiProbeAttemptResult['mode']) => result.attempts.find((item) => item.mode === mode)
   const rows: [string, string][] = [
@@ -30,12 +32,12 @@ function probeRows(result: OwuiProbeReport, t: Translator): [string, string][] {
     ['defaultFeatureIds', list(result.meta.defaultFeatureIds)],
     ['capabilities', caps.length ? caps.map(([name, on]) => `${name} ${on ? t('admin.diagnostics.probe.on') : t('admin.diagnostics.probe.off')}`).join(' · ') : t('admin.diagnostics.probe.none')],
     [t('admin.diagnostics.probe.knowledge'), t('common.items', { count: result.meta.knowledgeCount })],
-    ['function_calling', result.meta.functionCalling ?? t('admin.diagnostics.probe.notSet')],
+    ['function_calling', result.meta.functionCalling === null ? t('admin.diagnostics.probe.notSet') : other(result.meta.functionCalling)],
   ]
   for (const [mode, label, frames] of [['current', 'admin.diagnostics.probe.current', 'admin.diagnostics.probe.framesCurrent'], ['legacy', 'admin.diagnostics.probe.legacy', 'admin.diagnostics.probe.framesLegacy']] as const) {
     const item = attempt(mode)
     if (!item) continue
-    rows.push([t(label), attemptLine(item, t)], [t(frames), item.frames.join(' → ') || '—'])
+    rows.push([t(label), attemptLine(item, t)], [t(frames), other(item.frames.join(' → ')) || '—'])
   }
   rows.push([t('admin.diagnostics.probe.elapsed'), `${result.ms} ms`])
   return rows

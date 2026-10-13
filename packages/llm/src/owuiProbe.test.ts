@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { LlmSettings } from '@mes/domain'
-import { OWUI_PROBE_PROMPT, frameKeyPaths, maskProbeError, probeOpenWebUi } from './owuiProbe.js'
+import { OWUI_PROBE_MASKED, OWUI_PROBE_OTHER, OWUI_PROBE_PROMPT, frameKeyPaths, probeOpenWebUi } from './owuiProbe.js'
 
 type Handler = (req: IncomingMessage, res: ServerResponse, body: Record<string, unknown>) => void | Promise<void>
 let server: Server | undefined
@@ -93,17 +93,14 @@ describe('probeOpenWebUi', () => {
     expect(result.attempts[0]).toMatchObject({ mode: 'current', status: 200 })
     const legacy = result.attempts[1]!
     expect(legacy).toMatchObject({ mode: 'legacy', status: 400, firstContentMs: null, frames: [] })
-    expect(legacy.error).toMatch(/^HTTP 400 · tool_ids rejected by \[url\]/)
-    expect(legacy.error!.length).toBeLessThanOrEqual(120)
-    expect(legacy.error).not.toMatch(/owui|corp|probe-secret-key|10\.1\.2\.3/)
-    expect(legacy.error).not.toContain(OWUI_PROBE_PROMPT)
+    expect(legacy.error).toBe('HTTP 400 · 형식 거부') // 본문은 읽지 않는다 — 상태 코드와 고정 분류만
   })
 
   it('모델 목록 실패는 meta.error로, 연결 실패는 status null과 고정 문구로 남는다', async () => {
     const settings = await serve({ 'GET /api/version': json(200, { version: '<script>' }), 'GET /api/models': json(401, { detail: 'bad key probe-secret-key' }) })
     const result = await probeOpenWebUi(settings, 'agent-a')
     expect(result.version).toBeNull() // 형식이 이상하면 버전으로 쓰지 않는다
-    expect(result.meta).toMatchObject({ found: false, error: 'HTTP 401 · bad key [redacted]' })
+    expect(result.meta).toMatchObject({ found: false, error: 'HTTP 401 · 인증 거부' })
     expect(result.attempts.map((a) => a.status)).toEqual([404, 404])
     await new Promise((resolve) => server!.close(resolve)); server = undefined
     const offline = await probeOpenWebUi(settings, 'agent-a')
@@ -134,19 +131,43 @@ describe('probeOpenWebUi', () => {
 })
 
 describe('frameKeyPaths', () => {
-  it('값은 버리고 키 경로만, 이상한 키는 ?로', () => {
+  it('값은 버리고 알려진 키 경로만, 그 밖의 키는 기타로', () => {
     expect(frameKeyPaths({ id: 'x', object: 'o', created: 1, model: 'm', choices: [{ index: 0, delta: { content: 'hi', tool_calls: [{}] }, logprobs: null }] })).toBe('choices.delta.content+choices.delta.tool_calls')
-    expect(frameKeyPaths({ 'http://evil.example/a b': 1 })).toBe('?')
+    expect(frameKeyPaths({ 'http://evil.example/a b': 1 })).toBe(OWUI_PROBE_OTHER)
+    expect(frameKeyPaths({ confidential_answer: 1, another_secret: 2, sources: [1] })).toBe(`${OWUI_PROBE_OTHER}+sources`)
+    expect(frameKeyPaths({ choices: [{ delta: { leaked_field: 'v', reasoning: 'r' } }] })).toBe(`choices.delta.${OWUI_PROBE_OTHER}+choices.delta.reasoning`)
     expect(frameKeyPaths({ choices: [{ delta: {} }] })).toBe('choices.delta')
     expect(frameKeyPaths('text')).toBe('non-json')
     expect(frameKeyPaths({ error: { message: 'secret' } })).toBe('error')
   })
 })
 
-describe('maskProbeError', () => {
-  it('주소·IP·호스트·비밀값을 가리고 120자로 자른다', () => {
-    expect(maskProbeError('see https://a.b/c?d=1 and api.corp.example:443 or 192.168.0.1:80 Bearer abc.def', ['zzz'])).toBe('see [url] and [host] or [host] Bearer [redacted]')
-    expect(maskProbeError('key zzz here', ['zzz'])).toBe('key [redacted] here')
-    expect(maskProbeError('y'.repeat(500), [])).toHaveLength(120)
+describe('유출 경로 재현 (S10-5 리뷰 P1 ×4) — 허용 목록 밖은 결과에 없다', () => {
+  const SECRET = 'sk-live-9f8e7d6c5b4a'
+  it('capabilities 키·임의 프레임 키·IP/파일명 도구 ID·HTTP 오류 본문', async () => {
+    const settings = await serve({
+      'GET /api/version': json(200, { version: 'owui.corp.example' }),
+      'GET /api/models': json(200, { data: [{ id: 'agent-a', info: {
+        meta: { capabilities: { [SECRET]: true, vision: true, internal_flag_x: false, file_upload: 'yes' },
+          toolIds: ['web_tool', '10.20.30.40', 'private-report.pdf', 'team/secret', 'server:mcp:docs', 'probe-secret-key', '12345', 'x'.repeat(41)],
+          defaultFeatureIds: ['web_search', 'confidential.txt'] },
+        params: { function_calling: SECRET } } }] }),
+      'POST /api/chat/completions': async (req, res, body) => {
+        if ('tool_ids' in body) { res.writeHead(400, { 'content-type': 'application/json', 'set-cookie': 'sid=cookie-secret' }).end(JSON.stringify({ detail: `Cookie: sid=cookie-secret at C:\\private\\path.txt — body: ${SECRET}` })); return }
+        return sse([{ confidential_answer: 'the answer' }, { choices: [{ delta: { [SECRET]: 'x', content: 'hi' } }] }, '[DONE]'])(req, res, body)
+      },
+    })
+    const result = await probeOpenWebUi(settings, 'agent-a')
+    expect(result.version).toBeNull()
+    expect(result.meta.capabilities).toEqual({ vision: true })
+    expect(result.meta.toolIds).toEqual(['web_tool', OWUI_PROBE_MASKED, OWUI_PROBE_MASKED, OWUI_PROBE_MASKED, 'server:mcp:docs', OWUI_PROBE_MASKED, OWUI_PROBE_MASKED, OWUI_PROBE_MASKED])
+    expect(result.meta.defaultFeatureIds).toEqual(['web_search', OWUI_PROBE_MASKED])
+    expect(result.meta.functionCalling).toBe(OWUI_PROBE_OTHER)
+    expect(result.attempts[0]!.frames).toEqual([OWUI_PROBE_OTHER, `choices.delta.${OWUI_PROBE_OTHER}+choices.delta.content`, '[DONE]'])
+    expect(result.attempts[1]!.error).toBe('HTTP 400 · 형식 거부')
+    // 가린 도구 ID는 legacy 요청에 싣지 않는다
+    expect(seen.filter((x) => x.path === '/api/chat/completions')[1]!.body).toMatchObject({ tool_ids: ['web_tool', 'server:mcp:docs'], features: { web_search: true } })
+    const text = JSON.stringify(result)
+    for (const leaked of [SECRET, 'internal_flag', 'confidential', 'the answer', '10.20.30.40', 'private-report', 'team/secret', '12345', 'cookie-secret', 'private', 'path.txt', 'corp']) expect(text).not.toContain(leaked)
   })
 })

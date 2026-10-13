@@ -169,7 +169,7 @@ export const ko = {
         failed: '진단을 실행하지 못했습니다: {error}', copy: '진단 결과 복사', version: 'OpenWebUI 버전', unknown: '확인 불가', model: '모델',
         meta: '모델 메타', metaFound: '있음', metaMissing: '없음', none: '없음', on: '켬', off: '끔', knowledge: '지식', notSet: '미지정',
         current: '① 지금 방식', legacy: '② legacy (tool_ids · features · function_calling legacy)', framesCurrent: '① 프레임 순서', framesLegacy: '② 프레임 순서',
-        noResponse: '응답 없음', firstByte: '첫 바이트 {ms} ms', firstContent: '첫 내용 {ms} ms', total: '총 {ms} ms', elapsed: '총 소요',
+        masked: '(가림)', other: '기타', noResponse: '응답 없음', firstByte: '첫 바이트 {ms} ms', firstContent: '첫 내용 {ms} ms', total: '총 {ms} ms', elapsed: '총 소요',
       },
     },
     test: {
