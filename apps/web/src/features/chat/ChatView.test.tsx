@@ -301,3 +301,61 @@ it('does not accept drops on a completed conversation', () => {
   fireEvent.dragEnter(screen.getByTestId('chat-dropzone'), { dataTransfer: { types: ['Files'], files: [], items: [] } })
   expect(screen.queryByText('놓으면 첨부 대기에 추가')).not.toBeInTheDocument()
 })
+
+const originalQuestion = { id: 'original', threadId: 'h', role: 'user', content: '**기존 질문**', status: 'done', createdAt: '2026-01-01T00:00:00Z', attachmentIds: ['old-file'], requestId: 'old-request' }
+function actionView(status = 'in_progress') {
+  const task = { id: 't', threadId: 'h', status, inputs: [], tags: [] } as unknown as Task
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ChatView task={task} /></TooltipProvider></MeContext></QueryClientProvider>)
+}
+
+it('confirms draft replacement, preserves current attachments and sends prefill through estimate and SSE', async () => {
+  const requests: Array<{ url: string; body: Record<string, unknown> }> = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/threads/h/messages') return Response.json([originalQuestion])
+    if (url === '/api/files') return Response.json({ id: 'current-file', name: 'current.txt' })
+    if (init?.method === 'POST' && typeof init.body === 'string') requests.push({ url, body: JSON.parse(init.body) })
+    if (url.endsWith('/estimate')) return Response.json({ bytes: 100, limitBytes: 1000, inputs: [], srCodes: [], overLimit: false })
+    if (url === '/api/threads/h/requests') return new Response('event: started\ndata: {"requestId":"new","replyMessageId":"new-answer"}\n\nevent: completed\ndata: {}\n\n', { status: 201 })
+    return Response.json([])
+  }))
+  const { container } = actionView()
+  const ask = await screen.findByRole('button', { name: '다시 묻기' })
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  fireEvent.change(input, { target: { value: '지킬 초안' } })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['current'], 'current.txt')] } })
+  fireEvent.click(ask)
+  expect(await screen.findByRole('dialog')).toHaveTextContent('작성 중인 텍스트를 바꿀까요?')
+  fireEvent.click(screen.getByRole('button', { name: '취소' }))
+  expect(input).toHaveValue('지킬 초안')
+  fireEvent.click(ask)
+  fireEvent.click(screen.getByRole('button', { name: '텍스트 바꾸기' }))
+  await waitFor(() => expect(input).toHaveFocus())
+  expect(input).toHaveValue(originalQuestion.content)
+  expect(screen.getByText('current.txt')).toBeVisible()
+  expect(screen.getByText('현재 자료·모델로 새 요청, 이전 문답 포함')).toBeVisible()
+  await waitFor(() => expect(requests.some(r => r.url.endsWith('/estimate') && r.body.draft === originalQuestion.content)).toBe(true))
+  expect(requests.some(r => r.url === '/api/threads/h/requests')).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(requests.some(r => r.url === '/api/threads/h/requests')).toBe(true))
+  expect(requests.find(r => r.url === '/api/threads/h/requests')?.body).toEqual({ content: originalQuestion.content, attachmentIds: ['current-file'], oneShotFileIds: [] })
+  expect(requests.find(r => r.url.endsWith('/estimate') && r.body.attachmentIds)?.body).toEqual({ draft: originalQuestion.content, attachmentIds: ['current-file'], oneShotFileIds: [] })
+  expect(originalQuestion.attachmentIds).toEqual(['old-file'])
+  expect(requests.some(r => r.url.includes('/retry'))).toBe(false)
+})
+
+it.each(['done', 'streaming'])('disables reasking for %s conversations', async (state) => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/messages') ? Response.json([originalQuestion, ...(state === 'streaming' ? [{ ...originalQuestion, id: 'remote', role: 'assistant', status: 'streaming' }] : [])]) : Response.json([])))
+  actionView(state === 'done' ? 'done' : 'in_progress')
+  expect(await screen.findByRole('button', { name: '다시 묻기' })).toBeDisabled()
+})
+
+it('moves keyboard focus from the mobile reask menu into the composer after it closes', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/messages') ? Response.json([originalQuestion]) : Response.json([])))
+  actionView()
+  const trigger = await screen.findByRole('button', { name: '메시지 메뉴' })
+  fireEvent.keyDown(trigger, { key: 'Enter' })
+  fireEvent.click(await screen.findByRole('menuitem', { name: '다시 묻기' }))
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  await waitFor(() => expect(input).toHaveValue(originalQuestion.content))
+  expect(input).toHaveFocus()
+})

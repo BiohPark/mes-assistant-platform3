@@ -114,3 +114,32 @@ it('accepts dropped files through the same limit and once rules as the attach bu
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(send).toHaveBeenCalledWith('', [{ file: first, once: false }, { file: second, once: true }], true))
 })
+
+
+it('prefills only text, focuses the input and preserves discussion mode and attachments', async () => {
+  const send = vi.fn(async () => undefined)
+  const changed = vi.fn()
+  const ref = createRef<ComposerHandle>()
+  renderComposer({ ref, streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, allowPin: true, allowDiscussion: true, onDraftChange: changed })
+  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  const file = new File(['a'], 'current.txt')
+  act(() => { ref.current!.dropFiles([file]); ref.current!.setText('**원문 질문**') })
+  expect(screen.getByRole('textbox', { name: '팀 의견 입력' })).toHaveValue('**원문 질문**')
+  expect(screen.getByRole('textbox', { name: '팀 의견 입력' })).toHaveFocus()
+  expect(changed).toHaveBeenLastCalledWith('**원문 질문**')
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(send).toHaveBeenCalledWith('**원문 질문**', [{ file, once: true }], true))
+})
+
+it('locks submission synchronously until the current send settles', async () => {
+  let finish!: () => void
+  const send = vi.fn(() => new Promise<void>(resolve => { finish = resolve }))
+  renderComposer({ streaming: false, onSend: send, onStop: () => undefined })
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  fireEvent.change(input, { target: { value: '질문' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  expect(send).toHaveBeenCalledTimes(1)
+  await act(async () => finish())
+})
