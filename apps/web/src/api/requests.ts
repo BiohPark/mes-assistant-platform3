@@ -29,6 +29,7 @@ export interface RequestRecord {
   createdAt?: string
   provider: string
   transport: string
+  owuiTools?: RequestInfo['owuiTools'] | null
   model: string
   bytes: number | null
   limitBytes: number

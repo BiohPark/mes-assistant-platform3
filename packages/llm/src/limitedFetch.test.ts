@@ -34,6 +34,7 @@ describe('limitedFetch', () => {
     const error = await limitedFetch('https://upstream.example/v1/models', {}, { timeoutMs: 20 }).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(LimitedFetchError)
     expect((error as LimitedFetchError).code).toBe('timeout')
+    expect((error as LimitedFetchError).requestNotSent).toBe(false)
   })
 
   it('timeoutMs는 본문을 읽는 시간까지 포함한다', async () => {
@@ -99,6 +100,24 @@ describe('limitedFetch', () => {
     expect((error as LimitedFetchError).code).toBe('network')
     expect((error as Error).message).toBe(LIMITED_FETCH_MESSAGES.network)
     expect((error as Error).message).not.toContain('top-secret')
+    expect((error as LimitedFetchError).requestNotSent).toBe(false)
+  })
+
+  it.each(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH'])('구조화된 연결 수립 실패(%s)만 본문 미전송으로 표시하고 원인은 노출하지 않는다', async code => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('private URL', { cause: Object.assign(new Error('top-secret'), { code }) }) }))
+    const error = await limitedFetch('https://upstream.example/v1/chat/completions', { method: 'POST', body: 'private' }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(LimitedFetchError)
+    expect(error).toMatchObject({ code: 'network', requestNotSent: true, message: LIMITED_FETCH_MESSAGES.network })
+    expect((error as Error).cause).toBeUndefined()
+  })
+
+  it('응답 본문 오류에는 연결 수립 실패 코드가 있어도 미전송으로 표시하지 않는다', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({ start(controller) {
+      controller.error(Object.assign(new Error('private'), { code: 'ECONNREFUSED' }))
+    } }))))
+    const response = await limitedFetch('https://upstream.example/v1/chat/completions')
+    const error = await response.text().catch((e: unknown) => e)
+    expect(error).toMatchObject({ code: 'network', requestNotSent: false })
   })
 
   it('toLimitedFetchError는 AbortError·기타 예외를 안전한 오류로 바꾼다', () => {

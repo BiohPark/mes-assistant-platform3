@@ -394,3 +394,14 @@ WHERE status IN ('succeeded','failed','cancelled','interrupted')
 첫 응답은 기본 5분, 첨부가 있으면 10분을 기다린다. 이후 본문 또는 생각 청크가 올 때마다 무응답 제한(기본 5분)을 갱신한다. `REQUEST_FIRST_TOKEN_MS`·`REQUEST_FILES_FIRST_TOKEN_MS`·`REQUEST_IDLE_MS`는 밀리초이며, 기존 `.env`의 명시된 값이 새 기본값보다 우선한다. 값을 바꾸면 API를 재시작한다.
 
 업그레이드할 때 `pnpm db:migrate`로 nullable `message.reasoning` text 컬럼을 추가한다(MariaDB 10.4 호환, 기존 데이터 변경 없음). 생각 과정은 접힌 영역에서 펼쳐 볼 수 있고 완료되면 다시 접혀 보존된다. 생각 텍스트는 다음 요청·참조 대화·트레이 크기 추정·요약에 포함하지 않는다. mock과 가짜 OpenWebUI에서 `[reasoning]`이 들어간 질문을 보내면 3초간 생각을 스트리밍한 뒤 답한다.
+
+
+### OpenWebUI 도구 전달 (S10)
+
+SO는 전역 설정의 **OpenWebUI 도구 전달**에서 자동(기본) / 끔을 선택하고 **도구 전달 설정 저장**으로 따로 저장한다. DB 키는 `app_setting.owuiTools`이며 없으면 자동이다. 다른 설정 저장에는 이 키를 보내지 않는다. 재시작 없이 다음 요청부터 적용된다.
+
+`LLM_MODE=live`, `LLM_PRESET=openwebui`인 자동 모드는 `/api/models`의 선택 모델 `info.meta.toolIds`·`defaultFeatureIds`를 읽어 5분 동안 캐시한다. 진단과 같은 식별자 허용 목록만 사용하며, 도구·기능이 하나라도 있으면 `tool_ids`, `features: {기능ID: true}`, `params.function_calling: legacy`를 추가한다. 메타가 없거나 조회하지 못하면 기본 방식으로 보낸다. 앱 자체 함수 도구가 있는 호출은 기존 방식으로 보낸다.
+
+도구 전달 호출은 서버가 요청을 실행하지 않았음이 확실한 경우에만 동일 메시지·파일을 기본 방식으로 한 번 다시 보낸다. 대상은 HTTP 400·404·405·415·422의 요청 형식 거부 또는 요청 본문 전송 전의 연결 수립 실패(ECONNREFUSED·ENOTFOUND·EAI_AGAIN·ENETUNREACH·EHOSTUNREACH)다. 그 밖의 HTTP 오류(5xx 포함), 시간 초과, 첫 SSE 프레임 전 연결 끊김·원인 불명의 네트워크 오류는 실패로 처리해 사용자 재시도에 맡긴다. sources·reasoning 등 응답 프레임을 이미 받았거나 취소·크기 제한으로 중단한 경우도 자동 재전송하지 않는다. 기존 재시도 경로의 멱등 키 처리도 유지한다. 요청 기록과 **사용한 자료**에는 도구 전달 / 기본 방식 / 폴백과 실제 마지막 시도의 `tool_ids`·`features`가 보인다. 원본 JSON도 그 시도의 값을 담고, 폴백하면 도구 필드는 사라진다. 트레이 바이트는 기존 메시지·파일 입력 예산이며 도구 메타를 더하지 않는다. `transport`는 계속 파일 전달 방식을 뜻한다. `chat_request.owui_tools` nullable JSON 컬럼을 추가하는 마이그레이션을 적용한다.
+
+가짜 OpenWebUI의 `FAKE_OWUI_REJECT_TOOL_IDS=1`은 `tool_ids`가 있는 호출을 400으로 거부한다. live E2E의 `owui-tools.spec.ts`는 `FAKE_OWUI_E2E=1`에서만 열리는 `/__e2e/tool-ids` 제어로 거부 모드를 바꾸고 복원하며 성공·폴백·끔과 단일 요청 기록을 확인한다. session_id·chat_id를 만들지 않으며, 이 방식은 OpenWebUI 화면의 세션 기반 builtin 도구 전체를 구현하지 않는다.

@@ -45,7 +45,7 @@ const publicInfo = (info: RequestInfo | undefined) => info ? { ...info, inputs: 
 
 @Injectable()
 export class RequestsService implements OnModuleDestroy {
-  static createProvider(settings: LlmSettings): ChatProvider { return createProvider(settings) }
+  static createProvider(settings: LlmSettings, readOwuiTools?: () => Promise<'auto' | 'off'>): ChatProvider { return createProvider(settings, readOwuiTools) }
   private readonly storage: FileStorageService
   private readonly runs = new Map<string, AbortController>()
   private readonly listeners = new Map<string, Set<Listener>>()
@@ -410,7 +410,7 @@ export class RequestsService implements OnModuleDestroy {
     const row = await this.getRow(id)
     if (actor) await assertThreadAccess(this.db, actor, row.threadId)
     const inputs = await this.db.select().from(chatRequestInput).where(eq(chatRequestInput.requestId, id)).orderBy(chatRequestInput.seq)
-    return { id: row.id, threadId: row.threadId, status: row.status, phase: row.phase, code: errorCode(row.status, row.error, row.bytes), provider: row.provider, transport: row.transport,
+    return { id: row.id, threadId: row.threadId, status: row.status, phase: row.phase, code: errorCode(row.status, row.error, row.bytes), provider: row.provider, transport: row.transport, owuiTools: row.owuiTools,
       model: row.model, bytes: row.status === 'pending' && row.bytes === 0 ? null : row.bytes, limitBytes: row.limitBytes, error: row.error, retryOf: row.retryOf, createdAt: row.createdAt.toISOString(),
       finishedAt: row.finishedAt?.toISOString(), hasSnapshot: row.snapshot !== null, inputs: inputs.map((item) => ({ kind: item.kind, weight: item.weight, fileId: item.fileId,
         fileVersion: item.fileVersion, sourceLabel: item.sourceLabel, oneShot: item.oneShot, delivery: item.delivery, sourceTaskId: item.sourceTaskId,
@@ -547,20 +547,35 @@ export class RequestsService implements OnModuleDestroy {
       if (!(await this.saveBuilt(id, info))) { controller.abort('lost'); return }
       if (built.failed.length) { failure = `파일 ${built.failed.length}개(${built.failed.map((item) => item.name).join(', ')})를 OpenWebUI에 전달하지 못해 요청을 보내지 않았습니다.`; return }
       if (info.bytes > info.limitBytes) { failure = `요청 크기 한도 초과 (${Math.ceil(info.bytes / 1024)} KB / ${Math.ceil(info.limitBytes / 1024)} KB)`; return }
-      snapshot = { sentAt: new Date().toISOString(), provider: this.provider.kind, model: built.model, meta: built.meta,
-        messages: built.messages, ...(built.files?.length && { files: built.info.inputs.flatMap((input) => input.kind === 'file' && input.delivery === 'attached'
-          ? [{ type: 'file', fileId: input.fileId }] : []) }) }
-      const serialized = Buffer.from(JSON.stringify(snapshot))
-      if (serialized.byteLength > 1024 * 1024) {
-        const now = new Date(), key = `requests/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${id}.json`
-        snapshotBytes = serialized
-        snapshot = { storageKey: key }
+      const recordSnapshot = (extras: Record<string, unknown> = {}) => {
+        snapshot = { sentAt: new Date().toISOString(), provider: this.provider.kind, model: built.model, meta: built.meta,
+          messages: built.messages, stream: true, ...extras, ...(built.files?.length && { files: built.info.inputs.flatMap((input) => input.kind === 'file' && input.delivery === 'attached'
+            ? [{ type: 'file', fileId: input.fileId }] : []) }) }
+        const serialized = Buffer.from(JSON.stringify(snapshot))
+        snapshotBytes = undefined
+        if (serialized.byteLength > 1024 * 1024) {
+          const now = new Date(), key = `requests/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${id}.json`
+          snapshotBytes = serialized
+          snapshot = { storageKey: key }
+        }
       }
+      recordSnapshot()
       if (controller.signal.aborted) return
       const streaming = await this.db.update(chatRequest).set({ status: 'streaming' }).where(and(eq(chatRequest.id, id), eq(chatRequest.status, 'pending')))
       if (!streaming[0].affectedRows) { controller.abort('lost'); return }
       this.appEvents?.publish('request.updated', { requestId: id, threadId: row.threadId, taskId: owner.taskId, status: 'streaming', phase: null })
-      const iterator = this.provider.stream({ model: built.model, messages: built.messages, files: built.files, meta: built.meta, signal: controller.signal })[Symbol.asyncIterator]()
+      const iterator = this.provider.stream({ model: built.model, messages: built.messages, files: built.files, meta: built.meta, signal: controller.signal,
+        owuiTools: built.settings.llm.owuiTools,
+        onDispatch: async (delivery, body) => {
+          if (controller.signal.aborted) throw new Error('요청 중지')
+          if (info && this.config.llm.mode === 'live' && this.config.llm.preset === 'openwebui') {
+            info.owuiTools = delivery
+            const updated = await this.db.update(chatRequest).set({ owuiTools: delivery })
+              .where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
+            if (!updated[0].affectedRows) { controller.abort('lost'); throw new Error('요청 중지') }
+          }
+          recordSnapshot(delivery.mode === 'tools' ? { tool_ids: body.tool_ids, features: body.features, params: body.params } : {})
+        } })[Symbol.asyncIterator]()
       for (;;) {
         const chunk = await Promise.race([iterator.next(), deadline, stopped])
         if (chunk.done) break

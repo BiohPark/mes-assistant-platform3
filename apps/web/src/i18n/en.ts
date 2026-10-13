@@ -188,6 +188,7 @@ export const en = {
       modelNoMatch: 'No matching model. The typed value is used as is.',
     },
     settings: {
+      owuiTools: 'OpenWebUI tool delivery', owuiAuto: 'Automatic (default)', owuiOff: 'Off', saveOwuiTools: 'Save tool delivery', owuiHint: 'Pass model tools and default features to OpenWebUI Live conversations. Rejections or connection failures before the first frame retry once with the basic request.',
       saved: 'Settings saved', global: 'Global settings', requestBudget: 'Max request size (bytes)',
       defaultModelEnvHint: 'Saved changes apply to the next request without restarting. Clear the override to use LLM_DEFAULT_MODEL from the server .env, or the domain default when unset.',
       modelLoadFailed: 'Could not load the model list.',
@@ -204,6 +205,7 @@ export const en = {
     },
   },
   chat: {
+    owuiTools: 'Tool delivery', owuiBasic: 'Basic request', owuiFallback: 'Fallback (basic request)',
     copyMessage: 'Copy', copiedMessage: 'Message copied.', copyMessageFailed: 'Could not copy. Please try again.',
     messageActions: 'Message actions', messageMenu: 'Message menu', askAgain: 'Ask again',
     askAgainHint: 'New request with current materials and model, including previous messages',

@@ -212,3 +212,66 @@ it('영문 화면은 도메인 기본값의 출처와 설정 해제를 표시한
   expect(screen.getByText('Source: Domain default')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Clear override (use .env)' })).toBeInTheDocument()
 })
+
+it('OpenWebUI 도구 전달은 별도로 저장하고 변경한 경우에만 전송한다', async () => {
+  const saved: Record<string, unknown>[] = []
+  let current = { defaultModel: 'env-model', owuiTools: 'auto', fileMaxPerRequest: 10 }
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/settings') {
+      if (init?.method === 'PATCH') { const body = JSON.parse(String(init.body)); saved.push(body); current = { ...current, ...body } }
+      return jsonResponse(200, current)
+    }
+    return jsonResponse(200, [])
+  }))
+  const user = userEvent.setup()
+  renderPage()
+  expect(await screen.findByRole('radio', { name: '자동 (기본)' })).toBeChecked()
+  expect(screen.getAllByRole('button', { name: /설정 저장/ })).toHaveLength(1)
+  const toolsForm = screen.getByRole('form', { name: 'OpenWebUI 도구 전달' })
+  expect(within(toolsForm).getByRole('heading', { level: 2, name: 'OpenWebUI 도구 전달' })).toBeInTheDocument()
+  expect(within(toolsForm).getByRole('button', { name: '도구 전달 저장' })).toBeDisabled()
+  await user.click(screen.getByRole('radio', { name: '끔' }))
+  await user.click(screen.getByRole('button', { name: '설정 저장' }))
+  await waitFor(() => expect(saved).toHaveLength(1))
+  expect(saved[0]).not.toHaveProperty('owuiTools')
+  await user.click(screen.getByRole('radio', { name: '끔' }))
+  await user.click(screen.getByRole('button', { name: '도구 전달 저장' }))
+  await waitFor(() => expect(saved).toHaveLength(2))
+  expect(saved[1]).toEqual({ owuiTools: 'off' })
+  await waitFor(() => expect(screen.getByRole('button', { name: '도구 전달 저장' })).toBeDisabled())
+})
+
+it('도구 전달만 저장하고 재조회해도 일반 설정의 미저장 편집값을 유지한다', async () => {
+  const saved: Record<string, unknown>[] = []
+  let current = { defaultModel: 'env-model', owuiTools: 'auto', requestBudgetBytes: 1000000, fileMaxPerRequest: 10 }
+  let reads = 0
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/settings') {
+      if (init?.method === 'PATCH') { const body = JSON.parse(String(init.body)); saved.push(body); current = { ...current, ...body } }
+      else reads += 1
+      return jsonResponse(200, current)
+    }
+    return jsonResponse(200, [])
+  }))
+  const user = userEvent.setup()
+  renderPage()
+  const budget = await screen.findByRole('spinbutton', { name: '요청 크기 한도 (바이트)' })
+  const fileLimit = screen.getByRole('spinbutton', { name: '첨부 개수 한도' })
+  await user.clear(budget)
+  await user.type(budget, '2000000')
+  await user.clear(fileLimit)
+  await user.type(fileLimit, '7')
+  await user.click(screen.getByRole('radio', { name: '끔' }))
+  await user.click(screen.getByRole('button', { name: '도구 전달 저장' }))
+  await waitFor(() => {
+    expect(reads).toBe(2)
+    expect(screen.getByRole('button', { name: '도구 전달 저장' })).toBeDisabled()
+  })
+  expect(saved).toEqual([{ owuiTools: 'off' }])
+  expect(current.requestBudgetBytes).toBe(1000000)
+  expect(screen.getByRole('spinbutton', { name: '요청 크기 한도 (바이트)' })).toHaveValue(2000000)
+  expect(screen.getByRole('spinbutton', { name: '첨부 개수 한도' })).toHaveValue(7)
+  await user.click(screen.getByRole('button', { name: '설정 저장' }))
+  await waitFor(() => expect(saved).toHaveLength(2))
+  expect(saved[1]).toEqual({ requestBudgetBytes: 2000000, fileMaxPerRequest: 7 })
+})

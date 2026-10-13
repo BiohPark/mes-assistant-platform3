@@ -11,10 +11,13 @@ export const LIMITED_FETCH_MESSAGES: Record<LimitedFetchCode, string> = {
 
 export class LimitedFetchError extends Error {
   readonly code: LimitedFetchCode
-  constructor(code: LimitedFetchCode) {
+  /** 연결 수립 실패로 요청 본문이 전송되지 않았음이 확실할 때만 true. */
+  readonly requestNotSent: boolean
+  constructor(code: LimitedFetchCode, requestNotSent = false) {
     super(LIMITED_FETCH_MESSAGES[code])
     this.name = 'LimitedFetchError'
     this.code = code
+    this.requestNotSent = requestNotSent
   }
 }
 
@@ -30,6 +33,19 @@ export function toLimitedFetchError(error: unknown): LimitedFetchError {
   if (error instanceof LimitedFetchError) return error
   if (error instanceof DOMException && error.name === 'AbortError') return new LimitedFetchError('aborted')
   return new LimitedFetchError('network')
+}
+
+/** fetch의 구조화된 원인만 확인한다. 메시지·소켓 끊김·타임아웃은 실행 여부를 증명하지 못한다. */
+function isPreConnectionFailure(error: unknown): boolean {
+  const codes = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH'])
+  const seen = new Set<object>()
+  while (error !== null && typeof error === 'object' && !seen.has(error)) {
+    seen.add(error)
+    const cause = error as { code?: unknown; cause?: unknown }
+    if (typeof cause.code === 'string') return codes.has(cause.code)
+    error = cause.cause
+  }
+  return false
 }
 
 /**
@@ -50,7 +66,12 @@ export async function limitedFetch(url: string, init: RequestInit = {}, limits: 
 
   let response: Response
   try { response = await fetch(url, { ...init, redirect: 'manual', signal: controller.signal }) }
-  catch (error) { finish(); throw mapError(error) }
+  catch (error) {
+    finish()
+    const mapped = mapError(error)
+    if (mapped.code === 'network' && isPreConnectionFailure(error)) throw new LimitedFetchError('network', true)
+    throw mapped
+  }
   if (response.status >= 300 && response.status < 400) {
     finish()
     await response.body?.cancel().catch(() => undefined)

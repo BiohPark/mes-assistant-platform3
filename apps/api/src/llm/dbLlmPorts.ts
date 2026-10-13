@@ -30,7 +30,7 @@ export class DbLlmPorts implements LlmPorts {
     return {
       id: 'app', currentUserId: this.currentUserId,
       // 이미 읽은 전역 설정을 단일 정본으로 해석한다. 구형 defaultModel은 읽지 않는다.
-      llm: { ...toLlmSettings(this.config.llm), model: effectiveDefaultModel(this.config, values.get(DEFAULT_MODEL_OVERRIDE_KEY)),
+      llm: { ...toLlmSettings(this.config.llm), owuiTools: values.get('owuiTools') === 'off' ? 'off' : 'auto', model: effectiveDefaultModel(this.config, values.get(DEFAULT_MODEL_OVERRIDE_KEY)),
         ...(values.get('fileDelivery') === 'inline' || values.get('fileDelivery') === 'openwebui' ? { fileDelivery: values.get('fileDelivery') as 'inline' | 'openwebui' } : {}) },
       ...(typeof sr === 'string' ? { srIntakeAssistantId: sr } : {}),
       requestBudgetBytes: typeof budget === 'number' ? budget : this.config.request.budgetBytes,

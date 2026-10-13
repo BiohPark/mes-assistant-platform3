@@ -25,7 +25,7 @@ export async function uploadImage(id: string, file: File | null) {
   return response.json() as Promise<unknown>
 }
 /** 유효 모델·출처는 읽기 전용, override는 SO가 설정·해제한다. */
-export type Settings = { defaultModel?: string; defaultModelSource?: 'setting' | 'env' | 'default'; defaultModelOverride?: string | null; fileDelivery?: 'inline' | 'openwebui'; requestBudgetBytes?: number; srIntakeAssistantId?: string | null; link1Rule?: string; fileMaxPerRequest?: number }
+export type Settings = { owuiTools?: 'auto' | 'off'; defaultModel?: string; defaultModelSource?: 'setting' | 'env' | 'default'; defaultModelOverride?: string | null; fileDelivery?: 'inline' | 'openwebui'; requestBudgetBytes?: number; srIntakeAssistantId?: string | null; link1Rule?: string; fileMaxPerRequest?: number }
 export type SettingsPatch = Omit<Settings, 'defaultModel' | 'defaultModelSource'>
 export const getSettings = async (): Promise<Settings> => {
   const response = await fetch('/api/settings', { credentials: 'same-origin' })

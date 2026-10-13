@@ -30,6 +30,7 @@ const patchAssistant = assistantFields.partial().refine(input => !input.classifi
 /** 새 override만 쓰기 허용. 유효 모델·출처 및 알 수 없는 키는 strict로 거부한다. */
 const settings = z.object({
   defaultModelOverride: z.string().trim().max(191).nullable().transform(value => value || null).optional(),
+  owuiTools: z.enum(['auto', 'off']).optional(),
   fileDelivery: z.enum(['inline', 'openwebui']).optional(),
   requestBudgetBytes: z.number().int().min(1024).max(100_000_000).optional(),
   srIntakeAssistantId: key.nullable().optional(), link1Rule: z.string().max(4000).refine((value) => {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -18,7 +18,7 @@ import { getSettings, saveSettings, type Settings, type SettingsPatch } from '@/
 
 function SettingsForm({ initial }: { initial: Settings }) {
   const t = useT()
-  const { defaultModel, defaultModelSource, ...patchable } = initial
+  const { defaultModel, defaultModelSource, owuiTools: _owuiTools, ...patchable } = initial
   const modelList = useModelList()
   const [form, setForm] = useState<SettingsPatch>(patchable)
   const savedModelOverride = useRef(initial.defaultModelOverride ?? null)
@@ -68,6 +68,38 @@ function SettingsForm({ initial }: { initial: Settings }) {
     <Button type="submit">{t('admin.settings.saveSettings')}</Button>
   </form>
 }
+/** 도구 전달은 다른 설정의 stale 저장과 섞이지 않게 별도 PATCH한다. */
+function OwuiToolsForm({ initial }: { initial: Settings }) {
+  const t = useT()
+  const headingId = useId()
+  const client = useQueryClient()
+  const [value, setValue] = useState(initial.owuiTools ?? 'auto')
+  const [saved, setSaved] = useState(initial.owuiTools ?? 'auto')
+  const [saving, setSaving] = useState(false)
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (value === saved || saving) return
+    setSaving(true)
+    try {
+      await saveSettings({ owuiTools: value })
+      setSaved(value)
+      await client.invalidateQueries({ queryKey: ['settings'] })
+      toast.success(t('admin.settings.saved'))
+    } catch (error) { toast.error(error instanceof Error ? error.message : t('admin.saveFailed')) }
+    finally { setSaving(false) }
+  }
+  return <form aria-labelledby={headingId} onSubmit={event => void submit(event)} className="space-y-3 rounded-xl border bg-card p-4 text-sm">
+    <h2 id={headingId} className="font-semibold">{t('admin.settings.owuiTools')}</h2>
+    <fieldset aria-labelledby={headingId}>
+      <RadioGroup aria-label={t('admin.settings.owuiTools')} value={value} onValueChange={value => setValue(value as 'auto' | 'off')} disabled={saving}>
+        {(['auto', 'off'] as const).map(option => <label key={option} className="flex cursor-pointer items-center gap-2"><RadioGroupItem value={option} />{t(option === 'auto' ? 'admin.settings.owuiAuto' : 'admin.settings.owuiOff')}</label>)}
+      </RadioGroup>
+    </fieldset>
+    <p className="text-xs text-muted-foreground">{t('admin.settings.owuiHint')}</p>
+    <Button type="submit" disabled={saving || value === saved}>{t('admin.settings.saveOwuiTools')}</Button>
+  </form>
+}
+
 /** 우측 요약 카드 — TopBar와 같은 ['llm','status'] 캐시를 읽는다. 연결 시험·상세는 연결 진단 화면 몫 */
 function AiSummary() {
   const t = useT()
@@ -89,8 +121,9 @@ function AiSummary() {
 export function SettingsPage() {
   const t = useT()
   const query = useQuery({ queryKey: ['settings'], queryFn: getSettings })
+  const { owuiTools: _owuiTools, ...generalSettings } = query.data ?? {}
   return <><TopBar title={t('nav.settings')} /><div className="flex-1 overflow-auto p-4"><div className="mx-auto grid max-w-5xl items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-    {query.data ? <SettingsForm key={JSON.stringify(query.data)} initial={query.data} /> : <p>{t('admin.settings.loading')}</p>}
+    {query.data ? <div className="space-y-4"><SettingsForm key={JSON.stringify(generalSettings)} initial={query.data} /><OwuiToolsForm key={query.data.owuiTools ?? 'auto'} initial={query.data} /></div> : <p>{t('admin.settings.loading')}</p>}
     <AiSummary />
   </div></div></>
 }

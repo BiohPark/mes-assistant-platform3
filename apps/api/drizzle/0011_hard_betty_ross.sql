@@ -1,0 +1,1 @@
+ALTER TABLE `chat_request` ADD `owui_tools` json;

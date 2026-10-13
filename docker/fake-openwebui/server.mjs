@@ -10,7 +10,7 @@ const MODELS = [
     params: { function_calling: 'native' } } },
   { id: 'fake-writer', name: '가짜 문서 작성 에이전트' },
 ]
-const rejectToolIds = process.env.FAKE_OWUI_REJECT_TOOL_IDS === '1'
+let rejectToolIds = process.env.FAKE_OWUI_REJECT_TOOL_IDS === '1'
 const uploads = new Map()
 const requests = []
 const captureRequests = process.env.FAKE_OWUI_E2E === '1'
@@ -32,10 +32,46 @@ function lastUserText(messages = []) {
   return typeof m.content === 'string' ? m.content : m.content.map((p) => p.text ?? '').join('')
 }
 
+/** 기본·legacy 모두 같은 생각·본문·첨부 시나리오를 사용한다. legacy는 sources만 앞에 더한다. */
+async function completeChat(payload, res) {
+  const userText = lastUserText(payload.messages)
+  const text = `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${userText} [files: ${payload.files?.length ?? 0}]`
+  const id = `chatcmpl-${randomUUID()}`
+  if (!payload.stream) {
+    return json(res, 200, { id, object: 'chat.completion', model: payload.model, choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }] })
+  }
+  res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' })
+  const frame = body => res.write(`data: ${JSON.stringify(body)}\n\n`)
+  if (payload.params?.function_calling === 'legacy' && payload.tool_ids?.length) frame({ sources: [{ source: { id: 'fake-kb' } }] })
+  if (/\[reasoning\]/i.test(userText)) {
+    for (const thought of ['PRIVATE_REASONING: 요청을 검토합니다. ', '자료를 비교합니다. ', '답변을 준비합니다.']) {
+      if (res.destroyed) return
+      frame({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: { reasoning_content: thought } }] })
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+  }
+  for (const piece of text.match(/.{1,8}/gsu) ?? []) {
+    if (res.destroyed) return
+    frame({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: { content: piece } }] })
+  }
+  frame({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
+  res.end('data: [DONE]\n\n')
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost')
   if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: true })
   if (captureRequests && req.method === 'GET' && url.pathname === '/__e2e/requests') return json(res, 200, requests)
+  if (captureRequests && url.pathname === '/__e2e/tool-ids') {
+    if (req.method === 'GET') return json(res, 200, { reject: rejectToolIds })
+    if (req.method === 'POST') {
+      let body
+      try { body = JSON.parse((await readBody(req)).toString('utf8')) } catch { return json(res, 400, { detail: 'Invalid control' }) }
+      if (!body || typeof body.reject !== 'boolean') return json(res, 400, { detail: 'Invalid control' })
+      rejectToolIds = body.reject
+      return json(res, 200, { reject: rejectToolIds })
+    }
+  }
   if (req.method === 'GET' && url.pathname === '/api/version') return json(res, 200, { version: '0.0.0-fake' })
   if (req.method === 'GET' && url.pathname === '/api/models') {
     return json(res, 200, { data: MODELS.map((m) => ({ ...m, object: 'model', owned_by: 'fake' })) })
@@ -62,28 +98,7 @@ const server = createServer(async (req, res) => {
       if (requests.length > 200) requests.shift()
     }
     if (rejectToolIds && 'tool_ids' in payload) return json(res, 400, { detail: 'tool_ids is not allowed (fake reject mode)' })
-    const text = `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${lastUserText(payload.messages)} [files: ${payload.files?.length ?? 0}]`
-    const id = `chatcmpl-${randomUUID()}`
-    if (!payload.stream) {
-      return json(res, 200, { id, object: 'chat.completion', model: payload.model, choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }] })
-    }
-    res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' })
-    // legacy 도구 호출은 OpenWebUI처럼 sources 프레임을 먼저 보낸다
-    if (payload.params?.function_calling === 'legacy' && payload.tool_ids?.length) res.write(`data: ${JSON.stringify({ sources: [{ source: { id: 'fake-kb' } }] })}\n\n`)
-    if (/\[reasoning\]/i.test(lastUserText(payload.messages))) {
-      for (const thought of ['PRIVATE_REASONING: 요청을 검토합니다. ', '자료를 비교합니다. ', '답변을 준비합니다.']) {
-        if (res.destroyed) return
-        res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: { reasoning_content: thought } }] })}\n\n`)
-        await new Promise(resolve => setTimeout(resolve, 1000))
-      }
-      if (res.destroyed) return
-    }
-    for (const piece of text.match(/.{1,8}/gsu) ?? []) {
-      res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: { content: piece } }] })}\n\n`)
-    }
-    res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`)
-    res.end('data: [DONE]\n\n')
-    return
+    return completeChat(payload, res)
   }
   json(res, 404, { detail: 'Not Found' })
 })
