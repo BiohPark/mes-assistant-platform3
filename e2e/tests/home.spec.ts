@@ -38,3 +38,34 @@ test('로그인 후 시드 카탈로그 카드·검색·Lv1 필터', async ({ pa
   await expect(page.getByRole('link', { name: /새 대화/ })).toHaveCount(12)
   await expect(page.getByRole('link', { name: /편집$/ })).toHaveCount(0)
 })
+
+test.describe('390px 카드', () => {
+  test.use({ viewport: { width: 390, height: 844 } })
+
+  test('hover해도 진행 수가 남고, 요약 토글은 카드 이동 없이 여닫힌다', async ({ page }) => {
+    await page.goto('/signup')
+    await page.getByLabel('ID').fill(`e2e-card-${Date.now()}`)
+    await page.getByLabel('비밀번호', { exact: true }).fill('e2e-password-1234')
+    await page.getByLabel('이름').fill('가상 사용자')
+    await page.getByLabel('비밀번호 확인').fill('e2e-password-1234')
+    await page.getByRole('button', { name: '회원가입' }).click()
+    const card = page.getByRole('link', { name: /새 대화/ }).first().locator('..')
+    await expect(card).toBeVisible()
+    const count = card.getByText('진행', { exact: false })
+    await expect(count).toBeVisible()
+    await card.hover()
+    await expect(card.getByRole('link', { name: '대화', exact: true })).toBeVisible() // hover 액션이 떠도
+    await expect(count).toBeVisible() // 진행 수는 그대로 보인다
+    const toggle = card.getByRole('button', { name: /요약 펼치기$/ })
+    const box = await toggle.boundingBox()
+    expect(box!.width).toBeGreaterThanOrEqual(32)
+    expect(box!.height).toBeGreaterThanOrEqual(32)
+    await toggle.click()
+    await expect(page).toHaveURL(/\/$/) // 카드 링크로 넘어가지 않는다
+    await expect(card.getByRole('button', { name: /요약 접기$/ })).toHaveAttribute('aria-expanded', 'true')
+    await expect.poll(() => page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }))).toEqual({ scroll: 390, client: 390 })
+    await page.keyboard.press('Enter') // 포커스가 토글에 남아 있어 키보드로 닫힌다
+    await expect(card.getByRole('button', { name: /요약 펼치기$/ })).toHaveAttribute('aria-expanded', 'false')
+    await expect(page).toHaveURL(/\/$/)
+  })
+})

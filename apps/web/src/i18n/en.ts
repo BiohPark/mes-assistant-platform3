@@ -75,6 +75,7 @@ export const en = {
     active: 'active', overdue: '· {count} overdue', defaultModel: 'Default model',
     retiredAssistantLabel: '{name} (retired)', newConversationWith: 'New conversation with {name}', conversation: 'Chat',
     openWebUi: 'Open in OpenWebUI', descriptionPage: 'Description page', description: 'Docs',
+    expandSummary: 'Expand summary of {name}', collapseSummary: 'Collapse summary of {name}',
     openConversation: 'Open {code} {title}', aiTitle: 'AI title', selectedInputs: 'Selected inputs',
     daysOverdue: '{days}d overdue', today: 'Today', changeStatus: 'Change status', status: 'Status',
     statusChanged: "Status changed to '{status}'.", statusChangeFailed: 'Could not change the status',

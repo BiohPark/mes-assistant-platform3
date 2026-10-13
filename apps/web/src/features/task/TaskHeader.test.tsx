@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
 import { MeContext } from '@/app/auth'
+import { I18nProvider } from '@/i18n'
 import { TaskHeader } from './TaskHeader'
 
 const task = { id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '기본 제목', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: [], checklist: [], inputs: [], outputFileIds: [], threadId: 'h', createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z' } satisfies Task
@@ -55,4 +56,38 @@ it('places metadata and actions in separate mobile rows and constrains a long as
   expect(actions).toHaveClass('self-end', 'sm:ml-auto')
   expect(screen.getByText('아주 긴 이름을 가진 도우미')).toHaveClass('truncate')
   expect(screen.getByRole('button', { name: '대화 삭제' })).toHaveClass('size-8')
+})
+
+function stubSettings(link1Rule?: string) {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/settings' ? new Response(JSON.stringify(link1Rule ? { link1Rule } : {}), { status: 200 }) : new Response('[]', { status: 200 })))
+}
+function renderHeader(value: Assistant, locale: 'ko' | 'en' = 'ko') {
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale }}><I18nProvider locale={locale}><MemoryRouter><TaskHeader task={task} assistant={value} /></MemoryRouter></I18nProvider></MeContext></QueryClientProvider>)
+}
+
+it('shows the OpenWebUI shortcut next to the agent chip when a link is stored', async () => {
+  stubSettings()
+  renderHeader({ ...assistant, link1: 'https://owui.example/?model=stored' })
+  const link = screen.getByRole('link', { name: 'OpenWebUI에서 열기' })
+  expect(link).toHaveAttribute('href', 'https://owui.example/?model=stored')
+  expect(link).toHaveAttribute('target', '_blank')
+  expect(link).toHaveAttribute('rel', 'noreferrer')
+  expect(link.querySelector('svg')).not.toBeNull()
+  expect(link).toHaveClass('size-8', 'after:-inset-1.5')
+  expect(link.parentElement).toBe(screen.getByText(task.code).parentElement)
+  expect(screen.getByText('도우미').closest('a')!.nextElementSibling).toBe(link)
+})
+
+it('derives the shortcut from the settings rule when only a model is set, in English too', async () => {
+  stubSettings('https://owui.example/?model={modelId}')
+  renderHeader({ ...assistant, modelId: 'm 1' }, 'en')
+  expect(await screen.findByRole('link', { name: 'Open in OpenWebUI' })).toHaveAttribute('href', 'https://owui.example/?model=m%201')
+})
+
+it('hides the shortcut when neither a link nor a model is configured', async () => {
+  stubSettings('https://owui.example/?model={modelId}')
+  renderHeader(assistant)
+  await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => url === '/api/settings')).toBe(true))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(screen.queryByRole('link', { name: 'OpenWebUI에서 열기' })).toBeNull()
 })

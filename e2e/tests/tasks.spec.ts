@@ -58,3 +58,28 @@ test('새 대화의 첫 입력을 AI에 한 번 보내고 답변을 표시한다
   await expect(page.getByRole('paragraph').filter({ hasText: /^첫 AI 질문 E2E$/ })).toHaveCount(1) // 사용자 말풍선 1개 — 제목·답변 인용은 제외
   await expect(page.getByRole('button', { name: '사용한 자료' })).toHaveCount(1) // AI 답변 1개
 })
+
+test('대화 헤더의 사내 어시스턴트 바로가기는 링크가 설정된 에이전트에서만 새 탭으로 열린다', async ({ page }) => {
+  // 시드 에이전트에는 link1·modelId가 없다 — 공유 DB를 바꾸지 않고 이 페이지의 /api/assistants 응답에만 link1을 얹는다
+  await signUp(page, `e2e-shortcut-${Date.now()}`)
+  const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string; status: string; link1?: string }>
+  const target = assistants.find((item) => item.status !== 'retired' && !item.link1)!
+  const link1 = `https://openwebui.example/?model=e2e-shortcut-${Date.now()}`
+  await page.route('**/api/assistants', async (route) => {
+    const response = await route.fetch()
+    const rows = await response.json() as Array<{ id: string }>
+    await route.fulfill({ response, json: rows.map((row) => row.id === target.id ? { ...row, link1 } : row) })
+  })
+  const created = await page.request.post('/api/tasks', { data: { assistantId: target.id, tags: [], title: '바로가기 대화' } })
+  expect(created.ok()).toBe(true)
+  const task = await created.json() as { id: string }
+  await page.goto(`/c/${task.id}`)
+  const shortcut = page.getByRole('link', { name: 'OpenWebUI에서 열기' })
+  await expect(shortcut).toHaveAttribute('href', link1)
+  await expect(shortcut).toHaveAttribute('target', '_blank')
+  await expect(shortcut).toHaveAttribute('rel', 'noreferrer')
+  await page.unroute('**/api/assistants') // 실제 응답(링크 없음)으로 돌아오면 바로가기가 숨는다
+  await page.reload()
+  await expect(page.getByRole('button', { name: '업무 완료' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'OpenWebUI에서 열기' })).toHaveCount(0)
+})
