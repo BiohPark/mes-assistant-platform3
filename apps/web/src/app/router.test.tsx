@@ -14,15 +14,24 @@ const gates = vi.hoisted(() => {
 vi.mock('./AppShell', () => ({ AppShell: () => <MeContext value={{ theme: 'system', locale: 'ko', id: 'u', name: '사용자', role: '', roles }}><span>shell</span><Outlet /></MeContext> }))
 vi.mock('@/features/home/HomePage', () => ({ HomePage: () => { if (homeError) throw homeError; return <div>허브 화면</div> } }))
 vi.mock('@/features/sr/SrIntakePage', () => ({ SrIntakePage: () => <div>SR 접수 화면</div> }))
+vi.mock('@/features/my-work/MyWorkPage', () => ({ MyWorkPage: () => <div>내 작업 화면</div> }))
 vi.mock('@/features/reports/ReportsPage', async () => { await gates.reports.promise; return { ReportsPage: () => <div>리포트 화면</div> } })
 vi.mock('@/features/admin/DiagnosticsPage', async () => { await gates.diagnostics.promise; return { DiagnosticsPage: () => <div>진단 화면</div> } })
 
 afterEach(() => { roles = ['requester']; homeError = undefined; vi.restoreAllMocks() })
 
-it.each(['/', '/new/agent', '/c/task', '/reports', '/sr/manage', '/tasks/task', '/settings', '/admin/users', '/admin/diagnostics', '/assistants/manage'])('BO는 %s에서 /sr로 이동한다', async (path) => {
+it.each(['/', '/my-work', '/new/agent', '/c/task', '/reports', '/sr/manage', '/tasks/task', '/settings', '/admin/users', '/admin/diagnostics', '/assistants/manage'])('BO는 %s에서 /sr로 이동한다', async (path) => {
   const memory = createMemoryRouter(router.routes, { initialEntries: [path] })
   render(<RouterProvider router={memory} />)
   await waitFor(() => expect(memory.state.location.pathname).toBe('/sr'))
+})
+
+it.each([{ allowed: ['member'] }, { allowed: ['member', 'requester', 'system_owner'] }] as const)('$allowed 역할은 내 작업에 진입한다', async ({ allowed }) => {
+  roles = [...allowed]
+  const memory = createMemoryRouter(router.routes, { initialEntries: ['/my-work'] })
+  render(<RouterProvider router={memory} />)
+  expect(await screen.findByText('내 작업 화면')).toBeInTheDocument()
+  expect(memory.state.location.pathname).toBe('/my-work')
 })
 
 it.each(['/settings', '/admin/users', '/admin/diagnostics', '/assistants/manage'])('일반 담당자는 %s에서 허브로 이동한다', async (path) => {

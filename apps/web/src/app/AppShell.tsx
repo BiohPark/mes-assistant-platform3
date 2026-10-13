@@ -1,6 +1,6 @@
 import { Fragment } from 'react'
 import { NavLink, Outlet } from 'react-router'
-import { LayoutGrid, Boxes, Settings, Bot, Send, Inbox, BarChart3, Activity, Users } from 'lucide-react'
+import { LayoutGrid, ListTodo, Boxes, Settings, Bot, Send, Inbox, BarChart3, Activity, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -19,6 +19,7 @@ const owner = (roles: Roles) => roles.includes('system_owner')
 /** 사이드바 메뉴 한 배열. 업무(member) / 요청(모두) / 관리(owner) 3구획 — section 머리말은 구획이 2개 이상일 때만, 첫 항목 앞에 붙는다 */
 const NAV = [
   { to: '/', label: 'nav.hub', icon: LayoutGrid, end: true, section: 'nav.work', show: member },
+  { to: '/my-work', label: 'nav.myWork', icon: ListTodo, section: 'nav.work', show: member },
   { to: '/sr/manage', label: 'nav.srManage', icon: Inbox, section: 'nav.work', show: member },
   { to: '/reports', label: 'nav.reports', icon: BarChart3, section: 'nav.work', show: member },
   { to: '/sr', label: 'nav.sr', icon: Send, end: true, section: 'nav.requests' },

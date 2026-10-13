@@ -1,0 +1,116 @@
+import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, expect, it, vi } from 'vitest'
+import { Routes, Route } from 'react-router'
+import type { Task } from '@mes/domain'
+import { MeContext } from '@/app/auth'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { jsonResponse, renderWithProviders } from '@/test/render'
+import { MyWorkPage } from './MyWorkPage'
+
+const assistant = { id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-28T00:00:00.000Z', updatedAt: '2026-09-28T00:00:00.000Z', revision: 0 }
+const task = (id: string, extra: Partial<Task> = {}): Task => ({ id, code: `WK-2026-${id}`, assistantId: 'a', title: `대화 ${id}`, titleSource: 'manual', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: [], priority: 'normal', tags: [], checklist: [], inputs: [], outputFileIds: [], createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z', ...extra })
+
+function setup(tasks: Task[], locale: 'ko' | 'en' = 'ko') {
+  localStorage.setItem('mes-locale', locale)
+  const fetcher = vi.fn(async (url: string) => {
+    if (url === '/api/tasks') return jsonResponse(200, tasks)
+    if (url === '/api/assistants') return jsonResponse(200, [assistant])
+    return jsonResponse(200, [])
+  })
+  vi.stubGlobal('fetch', fetcher)
+  return fetcher
+}
+function renderPage() {
+  return renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><Routes>
+    <Route path="/my-work" element={<MyWorkPage />} />
+    <Route path="/c/:taskId" element={<div>대화 상세</div>} />
+    <Route path="/" element={<div>허브 화면</div>} />
+  </Routes></TooltipProvider></MeContext>, { route: '/my-work' })
+}
+afterEach(() => { vi.unstubAllGlobals(); localStorage.removeItem('mes-locale') })
+
+it('shows owner and participant conversations in recent activity order, excluding unrelated and completed work', async () => {
+  const fetcher = setup([
+    task('0001', { status: 'todo', tags: ['SR-2026-0001', '공유'] }),
+    task('0002', { status: 'on_hold', ownerId: 'other', assigneeIds: ['u'], lastActivityAt: '2026-10-01T00:00:00.000Z' }),
+    task('0003', { status: 'done' }),
+    task('0004', { ownerId: 'other', assigneeIds: ['other'] }),
+    task('0005', { ownerId: 'other', createdBy: 'u' }),
+    task('0006', { lastActivityAt: '2026-09-29T00:00:00.000Z' }),
+  ])
+  renderPage()
+  const list = await screen.findByRole('list', { name: '내 작업 대화' })
+  expect(within(list).getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(['/c/0002', '/c/0006', '/c/0001'])
+  for (const title of ['대화 0003', '대화 0004', '대화 0005']) expect(screen.queryByText(title)).not.toBeInTheDocument()
+  expect(within(list).getAllByText('도우미')).toHaveLength(3)
+  for (const text of ['대기', '진행 중', '보류', 'SR-2026-0001', '공유']) expect(within(list).getByText(text)).toBeInTheDocument()
+  expect(list.querySelectorAll('time')).toHaveLength(3)
+  expect(fetcher.mock.calls.filter(([url]) => url.startsWith('/api/tasks')).map(([url]) => url)).toEqual(['/api/tasks'])
+})
+
+it('toggles completed work with the keyboard and opens a conversation with Enter', async () => {
+  setup([task('0001'), task('0002', { status: 'done', lastActivityAt: '2026-10-01T00:00:00.000Z' })])
+  renderPage()
+  await screen.findByText('대화 0001')
+  const user = userEvent.setup()
+  const toggle = screen.getByRole('switch', { name: '완료 포함' })
+  toggle.focus()
+  await user.keyboard(' ')
+  expect(toggle).toHaveAttribute('aria-checked', 'true')
+  const link = await screen.findByRole('link', { name: /WK-2026-0002/ })
+  expect(within(screen.getByRole('list')).getAllByRole('link')[0]).toBe(link)
+  await user.keyboard(' ')
+  expect(screen.queryByText('대화 0002')).not.toBeInTheDocument()
+  screen.getByRole('link', { name: /WK-2026-0001/ }).focus()
+  await user.keyboard('{Enter}')
+  expect(await screen.findByText('대화 상세')).toBeInTheDocument()
+})
+
+it('offers the hub when no active conversations remain, including when only completed work exists', async () => {
+  setup([task('0001', { status: 'done' })])
+  renderPage()
+  expect(await screen.findByText('내 작업이 없습니다')).toBeInTheDocument()
+  const hub = screen.getByRole('link', { name: '에이전트 허브로 이동' })
+  expect(hub).toHaveAttribute('href', '/')
+  await userEvent.click(hub)
+  expect(await screen.findByText('허브 화면')).toBeInTheDocument()
+})
+
+it('keeps conversations with unavailable assistants visible', async () => {
+  setup([task('0001', { assistantId: 'missing' })])
+  renderPage()
+  expect(await screen.findByRole('link', { name: /WK-2026-0001/ })).toBeInTheDocument()
+  expect(screen.getByText('알 수 없는 에이전트')).toBeInTheDocument()
+})
+
+it('renders English labels, statuses and activity dates', async () => {
+  setup([task('0001')], 'en')
+  renderPage()
+  expect(await screen.findByRole('heading', { name: 'My work' })).toBeInTheDocument()
+  await screen.findByRole('list', { name: 'My work conversations' })
+  expect(screen.getByRole('switch', { name: 'Include completed' })).toBeInTheDocument()
+  expect(screen.getByText('In progress')).toBeInTheDocument()
+  expect(screen.getByText(/ago/)).toBeInTheDocument()
+})
+
+it('shows loading instead of an empty state while fetching', async () => {
+  setup([])
+  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
+  renderPage()
+  expect(screen.getByRole('status', { name: '불러오는 중…' })).toBeInTheDocument()
+  expect(screen.queryByText('내 작업이 없습니다')).not.toBeInTheDocument()
+})
+
+it.each(['/api/tasks', '/api/assistants'])('shows a retryable error for %s instead of an empty list', async failedUrl => {
+  setup([task('0001')])
+  let failed = true
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => failed && url === failedUrl ? jsonResponse(500) : jsonResponse(200, url === '/api/tasks' ? [task('0001')] : url === '/api/assistants' ? [assistant] : [])))
+  renderPage()
+  expect(await screen.findByRole('alert')).toHaveTextContent('내 작업을 불러오지 못했습니다.')
+  expect(screen.queryByText('내 작업이 없습니다')).not.toBeInTheDocument()
+  failed = false
+  await userEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+  expect(await screen.findByText('대화 0001')).toBeInTheDocument()
+})

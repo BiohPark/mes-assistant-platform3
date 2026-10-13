@@ -81,6 +81,17 @@ export const ko = {
     draftLeft: '대화 {code}가 남았습니다. 첨부를 다시 전송할 수 있습니다.',
     tags: '태그', tagPlaceholder: 'SR 번호·키워드', retiredAssistant: '폐기된 에이전트입니다.', pickAnotherAssistant: '다른 에이전트 고르기',
   },
+  myWork: {
+    description: '내가 담당하거나 참여하는 대화를 최근 활동 순으로 확인하세요.',
+    includeCompleted: '완료 포함',
+    list: '내 작업 대화',
+    recentActivity: '최근 활동',
+    empty: '내 작업이 없습니다',
+    emptyDescription: '새 대화는 에이전트 허브에서 시작하세요.',
+    goToHub: '에이전트 허브로 이동',
+    loadFailed: '내 작업을 불러오지 못했습니다.',
+    unknownAssistant: '알 수 없는 에이전트',
+  },
   reports: {
     owner: '담당자', ownerFilter: '담당자: {name}',
     periodLabel: '리포트 기간과 단위', days: { one: '{count}일', other: '{count}일' }, day: '일', week: '주',
@@ -477,6 +488,7 @@ export const ko = {
   nav: {
     requests: '요청', work: '업무', admin: '관리',
     hub: '에이전트 허브',
+    myWork: '내 작업',
     sr: '내 SR 요청',
     reports: '리포트',
     srManage: 'SR 처리',
