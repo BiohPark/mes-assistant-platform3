@@ -100,3 +100,23 @@ it.each([
   expect(row).not.toHaveTextContent('future.event')
   expect(row.querySelector('svg.lucide-history')).toHaveAttribute('aria-hidden', 'true')
 })
+
+it('groups a send, start and terminal events for each request into one row with a disclosure', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  const event = (id: string, type: string, requestId?: string, at = '2026-10-01T00:00:00Z'): ActivityLog => ({ id, type: type as ActivityLog['type'], userId: 'u', payload: requestId ? { requestId } : {}, at })
+  renderWithProviders(<TooltipProvider><ActivityPanel activity={[
+    event('done', 'request.completed', 'r', '2026-10-01T00:00:02Z'),
+    event('team', 'message.sent'), event('send', 'message.sent', 'r'), event('start', 'request.started', 'r'),
+    event('failed', 'request.failed', 'r2'), event('retry', 'request.started', 'r2'),
+  ]} /></TooltipProvider>)
+  const rows = screen.getAllByRole('listitem')
+  expect(rows).toHaveLength(3)
+  expect(rows[0]).toHaveAttribute('data-request-id', 'r')
+  expect(rows[0]).toHaveTextContent('AI 요청 완료')
+  const details = rows[0]!.querySelector('details')!
+  expect(details.open).toBe(false)
+  await (await import('@testing-library/user-event')).default.click(within(rows[0]!).getByText('요청 상세 3건'))
+  expect(details.open).toBe(true)
+  expect(within(rows[0]!).getByText('AI 요청 시작')).toBeVisible()
+  expect(rows[2]).toHaveTextContent('AI 요청 실패')
+})

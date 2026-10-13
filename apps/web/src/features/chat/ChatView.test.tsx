@@ -10,12 +10,73 @@ import { ChatView } from './ChatView'
 import { queueFirstRequest } from './useChat'
 import { queryClient } from '@/api/queryClient'
 import { clearDrafts, getDraft } from './drafts'
+import { useConversationUnread } from '@/lib/conversationRead'
 
 const toastError = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
 const toastInfo = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: toastError, success: toastSuccess, info: toastInfo, warning: vi.fn() } }))
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear(); toastSuccess.mockClear(); toastInfo.mockClear(); queryClient.clear(); clearDrafts() })
+
+it('records task activity while viewing, including own activity, and waits until a hidden tab is visible', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.endsWith('/estimate')
+    ? { inputs: [], srs: [], srCodes: [], bytes: 0, limitBytes: 100000, overLimit: false } : [])))
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const task = { id: 'viewed-task', threadId: 'viewed-thread', status: 'in_progress', inputs: [], tags: [], lastActivityAt: '2026-10-13T00:00:00Z' } as unknown as Task
+  const key = 'mes:last-viewed:viewed-user:viewed-task'
+  localStorage.removeItem(key)
+  function Unread({ task }: { task: Task }) { return <output aria-label="unread activity">{String(useConversationUnread(task, 'viewed-user'))}</output> }
+  const view = (task: Task) => <QueryClientProvider client={client}><MeContext value={{ id: 'viewed-user', name: 'User', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ChatView task={task} /><Unread task={task} /></TooltipProvider></MeContext></QueryClientProvider>
+  try {
+    const { rerender } = render(view(task))
+    await waitFor(() => expect(localStorage.getItem(key)).toBe(String(Date.parse(task.lastActivityAt))))
+    expect(screen.getByLabelText('unread activity')).toHaveTextContent('false')
+    const ownActivity = { ...task, lastActivityAt: '2026-10-13T00:00:01Z' }
+    rerender(view(ownActivity))
+    expect(localStorage.getItem(key)).toBe(String(Date.parse(ownActivity.lastActivityAt)))
+    expect(screen.getByLabelText('unread activity')).toHaveTextContent('false')
+    visibility.mockReturnValue('hidden')
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    const hiddenActivity = { ...task, lastActivityAt: '2026-10-13T00:00:02Z' }
+    rerender(view(hiddenActivity))
+    expect(localStorage.getItem(key)).toBe(String(Date.parse(ownActivity.lastActivityAt)))
+    expect(screen.getByLabelText('unread activity')).toHaveTextContent('true')
+    visibility.mockReturnValue('visible')
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    expect(localStorage.getItem(key)).toBe(String(Date.parse(hiddenActivity.lastActivityAt)))
+    expect(screen.getByLabelText('unread activity')).toHaveTextContent('false')
+  } finally {
+    visibility.mockRestore()
+    localStorage.removeItem(key)
+  }
+})
+
+it('reads activity only when the mounted conversation panel is displayed, including mobile tab and breakpoint changes', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const task = { id: 'mobile-viewed-task', threadId: 'mobile-viewed-thread', status: 'in_progress', inputs: [], tags: [], lastActivityAt: '2026-10-13T00:00:00Z' } as unknown as Task
+  const key = 'mes:last-viewed:mobile-viewed-user:mobile-viewed-task'
+  const view = (task: Task, hidden: boolean) => <QueryClientProvider client={client}><MeContext value={{ id: 'mobile-viewed-user', name: 'User', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><section style={{ display: hidden ? 'none' : 'flex' }}><ChatView task={task} /></section></TooltipProvider></MeContext></QueryClientProvider>
+  try {
+    const { rerender, container } = render(view(task, true))
+    const chat = screen.getByTestId('chat-message-scroll')
+    expect(localStorage.getItem(key)).toBeNull()
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    expect(localStorage.getItem(key)).toBeNull()
+    rerender(view(task, false))
+    await waitFor(() => expect(localStorage.getItem(key)).toBe(String(Date.parse(task.lastActivityAt))))
+    rerender(view(task, true))
+    const newActivity = { ...task, lastActivityAt: '2026-10-13T00:00:01Z' }
+    rerender(view(newActivity, true))
+    expect(localStorage.getItem(key)).toBe(String(Date.parse(task.lastActivityAt)))
+    // A desktop breakpoint reveals the chat even while the mobile materials tab remains selected.
+    act(() => { container.querySelector('section')!.style.display = 'flex'; window.dispatchEvent(new Event('resize')) })
+    expect(localStorage.getItem(key)).toBe(String(Date.parse(newActivity.lastActivityAt)))
+    expect(screen.getByTestId('chat-message-scroll')).toBe(chat)
+  } finally { visibility.mockRestore(); localStorage.removeItem(key); client.clear() }
+})
 
 it('reloads messages after the first AI request when the initial message fetch returns empty late', async () => {
   let finishInitialFetch!: (response: Response) => void
@@ -596,4 +657,19 @@ it('announces an automatic hold release once when retrying a failed reply, even 
   await waitFor(() => expect(retries).toBe(2))
   await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('보류를 해제했습니다', expect.objectContaining({ action: expect.objectContaining({ label: '보류' }) })))
   expect(toastSuccess.mock.calls.filter(call => call[0] === '보류를 해제했습니다')).toHaveLength(1)
+})
+
+it('resets the search input and result position when switching tasks', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.includes('/messages') ? [
+    { id: url, threadId: url.includes('/h1/') ? 'h1' : 'h2', role: 'user', content: '검색 본문', status: 'done', attachmentIds: [], createdAt: '2026-01-01T00:00:00Z' },
+  ] : [])))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const view = (id: string) => <QueryClientProvider client={client}><MeContext value={{ id: 'search-user', name: 'User', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ChatView task={{ id, threadId: `h${id}`, status: 'in_progress' } as Task} /></TooltipProvider></MeContext></QueryClientProvider>
+  const { rerender } = render(view('1'))
+  await screen.findByText('검색 본문')
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: '검색' } })
+  expect(screen.getByRole('status')).toHaveTextContent('1/1')
+  rerender(view('2'))
+  expect(screen.getByRole('searchbox')).toHaveValue('')
+  expect(screen.queryByRole('button', { name: '다음' })).not.toBeInTheDocument()
 })

@@ -1,3 +1,6 @@
+import { use } from 'react'
+import { MeContext } from '@/app/auth'
+import { useConversationUnread } from '@/lib/conversationRead'
 import { useT } from '@/i18n'
 import { Link } from 'react-router'
 import { CalendarClock, FileInput, MoreHorizontal, Sparkles } from 'lucide-react'
@@ -31,6 +34,7 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
   const { formatRelative } = useDates()
   const t = useT()
   const users = useUserMap()
+  const unread = useConversationUnread(task, use(MeContext)?.id ?? '')
   const sr = primarySrTag(task.tags)
   const daysLeft = daysUntil(task.dueDate)
   const overdue = task.status !== 'done' && daysLeft !== undefined && daysLeft < 0
@@ -44,6 +48,7 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
       <Link to={`/c/${task.id}`} className="absolute inset-0 rounded-xl" aria-label={t('hub.openConversation', { code: task.code, title: task.title })} />
       <div className="pointer-events-none flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
         <span className="shrink-0 font-mono whitespace-nowrap">{task.code}</span>
+        {unread && <span role="img" aria-label={t('chat.unread')} title={t('chat.unread')} className="size-2 shrink-0 rounded-full bg-primary" />}
         <TaskStatusBadge status={task.status} className="h-5 shrink-0 px-1.5 text-[11px]" />
         {task.aiRequest && <AiRequestChip aiRequest={task.aiRequest} className="h-5 shrink-0 px-1.5 text-[11px]" />}
         <StalledBadge task={task} className="h-5 shrink-0 px-1.5 text-[11px]" />

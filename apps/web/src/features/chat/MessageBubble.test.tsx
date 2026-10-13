@@ -34,7 +34,7 @@ it('labels an assistant reply as assistant when it offers output saving', async 
   vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
   const message = { id: 'm', threadId: 'h', seq: 1, role: 'assistant', content: '# answer', status: 'done', createdAt: '2026-01-01T00:00:00.000Z', attachmentIds: [] } as Message
   renderWithProviders(<TooltipProvider><MessageBubble message={message} onSaveAsOutput={() => undefined} /></TooltipProvider>)
-  expect(screen.getByText('assistant')).toBeInTheDocument()
+  expect(screen.getByText('에이전트')).toBeInTheDocument()
   expect(screen.queryByText('팀 의견 · AI 미전송')).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '산출물로 저장' })).toBeInTheDocument()
 })
@@ -219,5 +219,23 @@ it.each(['', '   '])('omits an empty assistant answer bubble for %j', (content) 
   expect(container.querySelector('.md-body')).not.toBeInTheDocument()
   expect(screen.queryByText('응답 중…')).not.toBeInTheDocument()
   expect(screen.getByRole('status')).toHaveTextContent('생각 중')
-  expect(screen.getByRole('status').parentElement).toHaveTextContent('assistant')
+  expect(screen.getByRole('status').parentElement).toHaveTextContent('에이전트')
+})
+
+it('copies fenced code without controls or inline code and preserves raw Markdown copying', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  copy.mockResolvedValue(true)
+  const content = 'inline `x`\n\n```ts\nconst x = 1\n```'
+  renderWithProviders(<MessageBubble message={{ ...thinkingMessage, content, status: 'done' }} assistantName="Named agent" />)
+  expect(screen.getByText('Named agent')).toBeInTheDocument()
+  expect(screen.getAllByRole('button', { name: '코드 복사' })).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: '코드 복사' }))
+  await waitFor(() => expect(copy).toHaveBeenCalledWith('const x = 1\n'))
+  fireEvent.click(within(screen.getByRole('group', { name: '메시지 동작' })).getByRole('button', { name: '복사' }))
+  await waitFor(() => expect(copy).toHaveBeenCalledWith(content))
+})
+
+it('shows reasoning text as received from the model', () => {
+  renderThinking({ ...thinkingMessage, reasoning: 'original reasoning' })
+  expect(screen.getByText('original reasoning')).toBeVisible()
 })

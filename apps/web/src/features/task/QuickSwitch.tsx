@@ -1,4 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
+import { useRef, useState } from 'react'
+import { useShortcut } from '@/lib/useShortcut'
+import { useConversationUnread } from '@/lib/conversationRead'
+import type { Task } from '@mes/domain'
 import { ArrowLeftRight, Check } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import { listTasks } from '@/api/tasks'
@@ -18,10 +22,13 @@ export function QuickSwitch({ currentTaskId }: { currentTaskId: string }) {
   const navigate = useNavigate()
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => listTasks() })
   const items = selectMyActive(tasks.data ?? [], me.id, LIMIT)
+  const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  useShortcut('k', () => { trigger.current?.focus(); setOpen(current => !current) })
   const responding = items.filter(isAiResponding).length
-  return <DropdownMenu>
+  return <DropdownMenu open={open} onOpenChange={setOpen}>
     <DropdownMenuTrigger asChild>
-      <Button variant="outline" size="sm" className="relative h-6 rounded-full px-2 text-xs font-normal after:absolute after:inset-x-0 after:-inset-y-2.5"><ArrowLeftRight data-icon="inline-start" />{t('task.header.quickSwitch')}{responding > 0 && <><span aria-hidden className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-tone-violet-bg px-1 text-[11px] font-medium text-tone-violet-fg">{responding}</span><span className="sr-only"> {t('task.header.quickSwitchResponding', { count: responding })}</span></>}</Button>
+      <Button ref={trigger} variant="outline" size="sm" className="relative h-6 rounded-full px-2 text-xs font-normal after:absolute after:inset-x-0 after:-inset-y-2.5"><ArrowLeftRight data-icon="inline-start" />{t('task.header.quickSwitch')}{responding > 0 && <><span aria-hidden className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-tone-violet-bg px-1 text-[11px] font-medium text-tone-violet-fg">{responding}</span><span className="sr-only"> {t('task.header.quickSwitchResponding', { count: responding })}</span></>}</Button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="start" className="w-[min(22rem,calc(100vw-2rem))]">
       <DropdownMenuLabel className="text-xs">{t('hub.myActiveConversations')}</DropdownMenuLabel>
@@ -33,11 +40,17 @@ export function QuickSwitch({ currentTaskId }: { currentTaskId: string }) {
           return <DropdownMenuItem key={task.id} disabled={current} aria-current={current ? 'page' : undefined} onSelect={() => void navigate(`/c/${encodeURIComponent(task.id)}`)} className="items-start text-xs">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 text-muted-foreground"><span className="font-mono">{task.code}</span>{task.aiRequest && <AiRequestChip aiRequest={task.aiRequest} className="ml-auto" />}</div>
-              <div className="truncate font-medium">{task.title || task.code}</div>
+              <div className="flex items-center gap-1.5"><span className="truncate font-medium">{task.title || task.code}</span><UnreadDot task={task} userId={me.id} /></div>
             </div>
             {current && <Check aria-hidden className="mt-0.5 size-3.5 shrink-0" />}
           </DropdownMenuItem>
         })}
     </DropdownMenuContent>
   </DropdownMenu>
+}
+
+function UnreadDot({ task, userId }: { task: Task; userId: string }) {
+  const t = useT()
+  const unread = useConversationUnread(task, userId)
+  return unread ? <span role="img" aria-label={t('chat.unread')} title={t('chat.unread')} className="size-2 shrink-0 rounded-full bg-primary" /> : null
 }

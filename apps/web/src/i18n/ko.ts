@@ -213,6 +213,9 @@ export const ko = {
     askAgainHint: '현재 자료·모델로 새 요청, 이전 문답 포함',
     pendingAttemptHint: '전송하지 못한 요청이 있습니다. 전송을 누르면 같은 내용을 다시 보냅니다. 그 전에는 다시 묻기를 쓸 수 없습니다.',
     replaceDraftTitle: '작성 중인 텍스트를 바꿀까요?', replaceDraftDescription: '텍스트만 바꿉니다. 현재 첨부와 팀 의견 모드는 유지합니다.', replaceDraftConfirm: '텍스트 바꾸기',
+    agent: '에이전트', unread: '새 활동', scrollToBottom: '맨 아래로',
+    searchConversation: '대화 내 검색', searchCount: '{current}/{total}', searchPrevious: '이전', searchNext: '다음',
+    copyCode: '코드 복사', copiedCode: '코드를 복사했습니다.',
     questionIndex: '질문 목차', newAnswer: '새 답변으로', questionFailed: '실패',
     openWebUi: 'OpenWebUI에서 열기',
     documentation: '설명 문서',
@@ -404,6 +407,7 @@ export const ko = {
     },
     conversation: '대화', delete: '삭제', download: '다운로드', mainInput: '주 입력', reference: '참고', thisConversation: '이 대화',
     activity: {
+      requestDetails: '요청 상세 {count}건',
       count: { one: '{count}건', other: '{count}건' }, system: '시스템', empty: '이력이 없습니다.', loadFailed: '이력을 불러오지 못했습니다.',
       request: { started: 'AI 요청 시작', completed: 'AI 요청 완료', cancelled: 'AI 요청 취소', failed: 'AI 요청 실패' },
       other: '기타 활동',

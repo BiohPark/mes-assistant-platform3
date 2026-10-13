@@ -460,6 +460,7 @@ export class RequestsService implements OnModuleDestroy {
         ...(content !== undefined ? { content: content || (error ? `⚠️ ${error}` : '') } : {}),
         ...(this.streamReasoning.has(id) ? { reasoning: this.streamReasoning.get(id) } : {}) }).where(and(eq(message.id, row.replyMessageId), eq(message.status, 'streaming')))
       if (!reply[0].affectedRows) throw new FencedTransition()
+      if (owner?.taskId) await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, owner.taskId))
       await tx.insert(activityLog).values({ id: randomUUID(), type: `request.${status === 'succeeded' ? 'completed' : status === 'cancelled' ? 'cancelled' : 'failed'}`,
         userId: row.requestedBy, taskId: owner?.taskId ?? null, srId: owner?.srId ?? null, payload: { requestId: id, bytes: info?.bytes ?? row.bytes, model: info?.model ?? row.model } })
       return true
