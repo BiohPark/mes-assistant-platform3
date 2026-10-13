@@ -10,8 +10,9 @@ import { queueFirstRequest } from './useChat'
 import { queryClient } from '@/api/queryClient'
 
 const toastError = vi.hoisted(() => vi.fn())
-vi.mock('sonner', () => ({ toast: { error: toastError } }))
-afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear(); queryClient.clear() })
+const toastSuccess = vi.hoisted(() => vi.fn())
+vi.mock('sonner', () => ({ toast: { error: toastError, success: toastSuccess, warning: vi.fn() } }))
+afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear(); toastSuccess.mockClear(); queryClient.clear() })
 
 it('reloads messages after the first AI request when the initial message fetch returns empty late', async () => {
   let finishInitialFetch!: (response: Response) => void
@@ -276,4 +277,27 @@ it.each(['error', 'nonempty'] as const)('does not offer empty-conversation mater
   await waitFor(() => expect(client.getQueryState(['messages', 'h'])?.status).toBe(result === 'error' ? 'error' : 'success'))
   expect(screen.queryByText(emptyHint)).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '자료 열기' })).not.toBeInTheDocument()
+})
+
+it('turns a file dropped on the conversation area into a pending attachment chip', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
+  const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  const zone = screen.getByTestId('chat-dropzone')
+  const drag = { dataTransfer: { types: ['Files'], files: [new File(['a'], 'dropped.txt', { type: 'text/plain' })], items: [] } }
+  fireEvent.dragEnter(zone, drag)
+  expect(screen.getByText('놓으면 첨부 대기에 추가')).toHaveAttribute('aria-hidden', 'true')
+  fireEvent.drop(zone, drag)
+  expect(screen.queryByText('놓으면 첨부 대기에 추가')).not.toBeInTheDocument()
+  expect(screen.getByText('dropped.txt')).toBeInTheDocument()
+  expect(screen.getByText('입력으로 고정')).toBeInTheDocument()
+  expect(toastSuccess).toHaveBeenCalledWith('1개 파일을 첨부 대기에 추가했습니다.')
+})
+
+it('does not accept drops on a completed conversation', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
+  const task = { id: 't', threadId: 'h', status: 'done', inputs: [], tags: [] } as unknown as Task
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  fireEvent.dragEnter(screen.getByTestId('chat-dropzone'), { dataTransfer: { types: ['Files'], files: [], items: [] } })
+  expect(screen.queryByText('놓으면 첨부 대기에 추가')).not.toBeInTheDocument()
 })

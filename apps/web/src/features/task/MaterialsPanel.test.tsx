@@ -7,7 +7,7 @@ import { jsonResponse, renderWithProviders } from '@/test/render'
 import { MaterialsPanel } from './MaterialsPanel'
 
 const toastSuccess = vi.hoisted(() => vi.fn())
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: toastSuccess } }))
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: toastSuccess, warning: vi.fn() } }))
 afterEach(() => { vi.unstubAllGlobals(); toastSuccess.mockClear() })
 
 it('shows a selected older version, offers an explicit switch, and keeps indirect files out of the pool', async () => {
@@ -213,4 +213,34 @@ it('moves focus and active contents with arrows and Home/End through one labelle
     expect(panel).toHaveAttribute('aria-labelledby', active.id)
     expect(within(panel).getByTestId(testId)).toBeInTheDocument()
   }
+})
+
+it('uploads a file dropped on the own-files tab through the regular upload request', async () => {
+  const uploads: FormData[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/files' && init?.method === 'POST') { uploads.push(init.body as FormData); return jsonResponse(201, { ...fileMeta, id: 'new', originTaskId: 't' }) }
+    if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [], conversations: [] })
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<MeContext value={me}><MaterialsPanel task={baseTask} /></MeContext>)
+  fireEvent.click(screen.getByRole('tab', { name: '이 대화 파일' }))
+  const own = screen.getByTestId('materials-own')
+  const file = new File(['x'], 'dropped.txt', { type: 'text/plain' })
+  const drag = { dataTransfer: { types: ['Files'], files: [file], items: [] } }
+  fireEvent.dragEnter(own, drag)
+  expect(screen.getByText('놓으면 이 대화 파일로 저장')).toHaveAttribute('aria-hidden', 'true')
+  fireEvent.drop(own, drag)
+  await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('1개 파일을 업로드했습니다.', { description: '같은 태그 대화에서 자료 후보로 보입니다.' }))
+  expect(uploads).toHaveLength(1)
+  expect(uploads[0]!.get('originTaskId')).toBe('t')
+  expect((uploads[0]!.get('file') as File).name).toBe('dropped.txt')
+  expect(screen.queryByText('놓으면 이 대화 파일로 저장')).not.toBeInTheDocument()
+})
+
+it('ignores drops on the own-files tab of a completed conversation', () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/tasks/t/candidates' ? jsonResponse(200, { files: [], conversations: [] }) : jsonResponse(200, [])))
+  renderWithProviders(<MeContext value={me}><MaterialsPanel task={{ ...baseTask, status: 'done' }} /></MeContext>)
+  fireEvent.click(screen.getByRole('tab', { name: '이 대화 파일' }))
+  fireEvent.dragEnter(screen.getByTestId('materials-own'), { dataTransfer: { types: ['Files'], files: [], items: [] } })
+  expect(screen.queryByText('놓으면 이 대화 파일로 저장')).not.toBeInTheDocument()
 })

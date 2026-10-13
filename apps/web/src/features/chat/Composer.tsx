@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { MessagesSquare, Paperclip, Pin, PinOff, Send, Square, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -17,7 +17,14 @@ export interface PendingAttachment {
   uploadedTaskId?: string
 }
 
+/** 드래그앤드랍 등 바깥에서 파일을 넣는 경로 — 첨부 버튼과 같은 한도·once 규칙을 탄다 */
+export interface ComposerHandle {
+  /** 추가됐으면 true, 한도 초과로 거부됐으면 false */
+  dropFiles: (files: File[]) => boolean
+}
+
 interface ComposerProps {
+  ref?: Ref<ComposerHandle>
   disabled?: boolean
   streaming: boolean
   placeholder?: string
@@ -40,7 +47,7 @@ interface ComposerProps {
   clearOnSubmit?: boolean
 }
 
-export function Composer({ disabled, streaming, placeholder, inputLabel, maxAttachments, onSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange, clearOnSubmit = false }: ComposerProps) {
+export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, onSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange, clearOnSubmit = false }: ComposerProps) {
   const t = useT()
   const [discussion, setDiscussion] = useState(false)
   const [text, setTextState] = useState('')
@@ -56,6 +63,21 @@ export function Composer({ disabled, streaming, placeholder, inputLabel, maxAtta
     setTextState(v)
     onDraftChange?.(v)
   }
+
+  function addFiles(files: File[]): boolean {
+    const picked = files.map((file) => ({ file, once: discussion }))
+    if (pending.length + picked.length > attachmentLimit) { setAttachmentError(t('chat.attachmentLimit', { limit: String(attachmentLimit) })); return false }
+    setPending((p) => [...p, ...picked])
+    setAttachmentError('')
+    return true
+  }
+  useImperativeHandle(ref, () => ({
+    dropFiles: (files) => {
+      if (disabled || !allowAttachments || !addFiles(files)) return false
+      toast.success(t('dropzone.attached', { count: files.length }))
+      return true
+    },
+  }))
 
   async function submit() {
     if (!canSend) return
@@ -125,9 +147,7 @@ export function Composer({ disabled, streaming, placeholder, inputLabel, maxAtta
           multiple
           className="hidden"
           onChange={(e) => {
-            const picked = Array.from(e.target.files ?? []).map((file) => ({ file, once: discussion }))
-            if (pending.length + picked.length > attachmentLimit) setAttachmentError(t('chat.attachmentLimit', { limit: String(attachmentLimit) }))
-            else { setPending((p) => [...p, ...picked]); setAttachmentError('') }
+            addFiles(Array.from(e.target.files ?? []))
             e.target.value = ''
           }}
         />

@@ -543,6 +543,12 @@ export const ko = {
   u10Admin: {
     codeActive: '{name} 활성',
   },
+  dropzone: {
+    toAttach: '놓으면 첨부 대기에 추가',
+    toUpload: '놓으면 이 대화 파일로 저장',
+    attached: { one: '{count}개 파일을 첨부 대기에 추가했습니다.', other: '{count}개 파일을 첨부 대기에 추가했습니다.' },
+    rejected: { one: '폴더·빈 파일 {count}개는 올릴 수 없어 제외했습니다.', other: '폴더·빈 파일 {count}개는 올릴 수 없어 제외했습니다.' },
+  },
 } as const
 
 type MessageShape<T> = { [K in keyof T]: T[K] extends string ? string : MessageShape<T[K]> }

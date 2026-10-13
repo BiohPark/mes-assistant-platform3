@@ -10,8 +10,9 @@ import { DraftConversationPage } from './DraftConversationPage'
 import { useChat } from '@/features/chat/useChat'
 
 const toastError = vi.hoisted(() => vi.fn())
-vi.mock('sonner', () => ({ toast: { error: toastError } }))
-afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear() })
+const toastSuccess = vi.hoisted(() => vi.fn())
+vi.mock('sonner', () => ({ toast: { error: toastError, success: toastSuccess, warning: vi.fn() } }))
+afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear(); toastSuccess.mockClear() })
 
 const assistant = { id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-28T00:00:00.000Z', updatedAt: '2026-09-28T00:00:00.000Z', revision: 0 }
 function mountDraft(path = '/new/a', conversation = <div>대화로 이동</div>) {
@@ -241,4 +242,30 @@ it.each([
   expect(screen.queryByRole('button', { name: '사용법 보기' })).not.toBeInTheDocument()
   expect(container).not.toHaveTextContent('internal-reference-uuid')
   expect(screen.getByRole('button', { name: '첫 질문 예시' })).toBeInTheDocument()
+})
+
+it('attaches a file dropped on the draft screen like the attach button and uploads it on the first send', async () => {
+  const calls: Array<{ url: string; method?: string; body?: unknown }> = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, method: init?.method, body: init?.body })
+    if (url === '/api/assistants') return Response.json([assistant])
+    if (url === '/api/tasks' && init?.method === 'POST') return Response.json({ id: 't', threadId: 'h' }, { status: 201 })
+    if (url === '/api/files') return Response.json({ id: 'f', name: 'dropped.txt' }, { status: 201 })
+    if (url === '/api/tasks/t/inputs/f') return new Response(null, { status: 204 })
+    return Response.json([])
+  }))
+  mountDraft()
+  await screen.findByText('도우미')
+  const zone = screen.getByTestId('draft-dropzone')
+  const drag = { dataTransfer: { types: ['Files'], files: [new File(['a'], 'dropped.txt', { type: 'text/plain' })], items: [] } }
+  fireEvent.dragEnter(zone, drag)
+  expect(screen.getByText('놓으면 첨부 대기에 추가')).toHaveAttribute('aria-hidden', 'true')
+  fireEvent.drop(zone, drag)
+  expect(screen.getByText('dropped.txt')).toBeInTheDocument()
+  expect(screen.getByText('입력으로 고정')).toBeInTheDocument()
+  expect(toastSuccess).toHaveBeenCalledWith('1개 파일을 첨부 대기에 추가했습니다.')
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await screen.findByText('대화로 이동')
+  expect((calls.find((call) => call.url === '/api/files')!.body as FormData).get('originTaskId')).toBe('t')
+  expect(calls.some((call) => call.url === '/api/tasks/t/inputs/f' && call.method === 'PUT')).toBe(true)
 })
