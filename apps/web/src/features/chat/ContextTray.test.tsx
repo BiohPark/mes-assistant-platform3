@@ -8,7 +8,7 @@ import type { RequestEstimateState } from './useRequestEstimate'
 
 const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [], assistantId: 'a' } as unknown as Task
 const data: NonNullable<RequestEstimateState['data']> = {
-  at: '2026-09-28T00:00:00.000Z', provider: 'mock', transport: 'inline', model: 'mock', bytes: 400, limitBytes: 1000, srCodes: [], overLimit: false, attachmentLimit: 10,
+  at: '2026-09-28T00:00:00.000Z', provider: 'mock', transport: 'inline', model: 'mock', bytes: 400, limitBytes: 1000, srCodes: [], srs: [], overLimit: false, attachmentLimit: 10,
   inputs: [{ kind: 'file', fileId: 'f', name: 'spec.txt', version: 1, weight: 'reference', delivery: 'attached', text: true, bytes: 300 }],
 }
 const me = { id: 'u', name: '사용자', role: '', roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
@@ -79,6 +79,18 @@ it('keeps the tray and meter mounted after the last input is removed', () => {
   expect(screen.getByText('예상 100 B / 1000 B')).toBeVisible()
   expect(screen.queryByText('spec.txt')).not.toBeInTheDocument()
   expect(root).toHaveAttribute('aria-busy', 'false')
+})
+
+it('lists the SR bodies that will actually be included, from the estimate (same assembly as sending)', () => {
+  const { rerender } = mount({ data: { ...data, srCodes: ['SR-2026-0001', 'SR-2026-0404'], srs: [{ code: 'SR-2026-0001', title: '알람 필터' }] }, pending: false, revisionChanged: false })
+  expect(screen.getByText('SR 본문 포함 · 1')).toBeVisible()
+  const list = screen.getByRole('list', { name: '이번 요청에 포함될 SR 본문' })
+  expect(list).toHaveTextContent('SR-2026-0001')
+  expect(list).toHaveTextContent('알람 필터')
+  // 미접수 번호(SR-2026-0404)는 본문이 없으므로 포함 목록에 없다
+  expect(list).not.toHaveTextContent('SR-2026-0404')
+  rerender({ data, pending: false, revisionChanged: false })
+  expect(screen.queryByText(/^SR 본문 포함/)).not.toBeInTheDocument()
 })
 
 it('renders a normal empty estimate once data is available', () => {

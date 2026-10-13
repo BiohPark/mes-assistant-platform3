@@ -106,7 +106,7 @@ it.each(['over-limit', 'estimate failure'] as const)('reuses the uploaded draft 
       const hasAttachment = (JSON.parse(String(init?.body)) as { attachmentIds?: string[] }).attachmentIds?.includes('f')
       if (hasAttachment) estimates++
       if (hasAttachment && estimates === 1 && firstResult === 'estimate failure') return new Response(JSON.stringify({ message: '추정 실패' }), { status: 500 })
-      return new Response(JSON.stringify({ bytes: 300, limitBytes: 256, inputs: [], srCodes: [], overLimit: hasAttachment && estimates === 1,
+      return new Response(JSON.stringify({ bytes: 300, limitBytes: 256, inputs: [], srCodes: [], srs: [], overLimit: hasAttachment && estimates === 1,
         attachmentLimit: 10 }), { status: 201 })
     }
     if (url === '/api/threads/h/requests') return new Response('event: started\ndata: {"requestId":"r","replyMessageId":"a","userMessageId":"u"}\n\nevent: completed\ndata: {"requestInfo":{}}\n\n', { status: 201 })
@@ -147,7 +147,7 @@ it('shows the phase of a request running in another tab', async () => {
 it('disables AI send when the estimate exceeds the request budget', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/threads/h/requests/estimate') return new Response(JSON.stringify({ provider: 'mock', transport: 'inline', model: 'mock',
-      bytes: 300, limitBytes: 256, inputs: [], srCodes: [], overLimit: true, attachmentLimit: 10 }), { status: 201 })
+      bytes: 300, limitBytes: 256, inputs: [], srCodes: [], srs: [], overLimit: true, attachmentLimit: 10 }), { status: 201 })
     return new Response('[]', { status: 200 })
   }))
   const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
@@ -169,7 +169,7 @@ it.each([false, true])('allows send after a smaller draft estimate fails and ret
       else if (body.draft === '짧음') return Response.json({ message: '추정 실패' }, { status: 500 })
       const overLimit = body.attachmentIds ? preSendOverLimit : true
       return Response.json({ at: '2026-09-28T00:00:00.000Z', provider: 'mock', transport: 'inline', model: 'mock',
-        bytes: overLimit ? 1200 : 100, limitBytes: 1000, inputs: [], srCodes: [], overLimit, attachmentLimit: 10 })
+        bytes: overLimit ? 1200 : 100, limitBytes: 1000, inputs: [], srCodes: [], srs: [], overLimit, attachmentLimit: 10 })
     }
     if (url === '/api/threads/h/requests') {
       sent.push(JSON.parse(String(init?.body)))
@@ -204,7 +204,7 @@ it.each([false, true])('allows send after a smaller draft estimate fails and ret
 it.each(['star', 'remove'] as const)('shows calculating and dims references during a %s refetch without a revision change', async (action) => {
   queryClient.setQueryData(['messages', 'h'], [])
   const info = { at: '2026-09-28T00:00:00.000Z', provider: 'mock', transport: 'inline', model: 'mock',
-    bytes: 400, limitBytes: 1000, srCodes: [], overLimit: false, attachmentLimit: 10,
+    bytes: 400, limitBytes: 1000, srCodes: [], srs: [], overLimit: false, attachmentLimit: 10,
     inputs: [{ kind: 'conversation', sourceTaskId: 'source', code: 'C-1', title: '참조 대화', assistantName: '도우미',
       weight: 'reference', mode: 'full', snapshotId: 'snapshot', messageCount: 2, bytes: 300 }] }
   let finishRefetch!: (response: Response) => void

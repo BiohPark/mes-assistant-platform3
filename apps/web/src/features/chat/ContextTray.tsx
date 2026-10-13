@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, ChevronDown, FileText, MessagesSquare, Star, X } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ClipboardList, FileText, MessagesSquare, Star, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { budgetLevel, type RequestInput, type Task } from '@mes/domain'
 import { setInput, getCandidates, formatSize } from '@/api/files'
@@ -63,6 +63,13 @@ export function ContextTray({ task, estimate }: { task: Task; estimate: RequestE
       <span className="rounded-full border px-1">{input.kind === 'file' ? t(delivery[input.delivery]) : input.mode === 'summary' ? t('chat.summary') : t('chat.messages', { count: input.messageCount })}</span>
       {task.status !== 'done' && <button type="button" aria-label={t('chat.removeFromRequest', { name: label(input) })} onClick={() => void change(input, null)}><X className="size-3" /></button>}
     </li>)}</ul>}
+    {/* SR 태그로 본문이 실제 들어가는 SR — estimate와 전송이 같은 조립 함수(buildChatRequest)의 srs를 쓴다. 미접수 번호는 여기 없다 */}
+    {expanded && info.srs.length > 0 && <div className={cn('mt-1.5 text-xs', revisionChanged && 'opacity-60')}>
+      <span className="font-medium">{t('chat.traySr', { count: info.srs.length })}</span>
+      <ul aria-label={t('chat.traySrLabel')} className="mt-1 flex flex-wrap gap-1">{info.srs.map((sr) => <li key={sr.code} className="inline-flex max-w-full items-center gap-1 rounded-full border bg-background px-1.5 py-0.5">
+        <ClipboardList className="size-3" /><span className="font-mono">{sr.code}</span><span className="truncate text-muted-foreground">{sr.title}</span>
+      </li>)}</ul>
+    </div>}
     {level === 'over' && <div role="alert" className="mt-2 rounded-xl border border-destructive/40 p-2 text-xs">
       <p className="flex items-center gap-1 text-destructive"><AlertTriangle className="size-3.5" /> {t('chat.overLimitAlert')}</p>
       <div className="mt-2 flex flex-wrap gap-1">

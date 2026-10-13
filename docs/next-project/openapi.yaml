@@ -469,10 +469,10 @@ paths:
   /tags/suggest:
     get:
       tags: [tasks]
-      summary: 태그 자동완성 (빈도순 + 접수 SR 코드 — SR은 S4부터)
+      summary: 태그 자동완성 — 보이는 대화의 태그 + 보이는 접수 SR 코드(열람 범위는 서버. BO는 본인 SR만). 정렬은 완전 일치 > 앞부분 > 부분, 그 안에서 사용 수(S9-4)
       parameters: [{ name: prefix, in: query, schema: { type: string } }, { name: exclude, in: query, schema: { type: array, items: { type: string } } }]
       responses:
-        '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: object, required: [tag], properties: { tag: { type: string }, count: { type: integer }, kind: { type: string } } } } } } }
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: object, required: [tag, count, isSr, srAccepted], properties: { tag: { type: string }, count: { type: integer, description: 이 태그를 쓰는 보이는 대화 수 }, isSr: { type: boolean, description: SR 번호 형식 }, srAccepted: { type: boolean, description: '접수된(코드 부여) SR이 실제로 있음. isSr인데 false면 화면은 SR 미접수로 구분' } } } } } } }
   /tasks/{taskId}/activity:
     get:
       tags: [tasks]
@@ -1096,7 +1096,8 @@ components:
         model: { type: string }
         bytes: { type: integer }
         limitBytes: { type: integer }
-        srCodes: { type: array, items: { type: string } }
+        srCodes: { type: array, items: { type: string }, description: 태그에서 뽑은 SR 번호(접수 여부 무관) }
+        srs: { type: array, description: '본문이 프롬프트에 실제 들어간 SR — 태그 중 접수된 것만. estimate와 전송이 같은 조립 결과(S9-4, 보낸 것 = 본 것)', items: { type: object, required: [code, title], properties: { code: { type: string }, title: { type: string } } } }
         inputs: { type: array, items: { $ref: '#/components/schemas/RequestInput' } }
     RequestRecord:
       allOf:

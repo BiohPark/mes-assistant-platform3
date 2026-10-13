@@ -6,7 +6,7 @@ import { ArrowRight, ExternalLink } from 'lucide-react'
 import { normalizeTag, tagKey } from '@mes/domain'
 import { TopBar } from '@/app/TopBar'
 import { useActor, useUserMap } from '@/app/hooks'
-import { useTagSuggest } from '@/app/useTagSuggest'
+import { useSrAccepted, useTagSuggest } from '@/app/useTagSuggest'
 import { startConversation, type StartConversationInput } from '@/api/tasks'
 import { appendMessage } from '@/api/tasks'
 import { queueFirstRequest } from '@/features/chat/useChat'
@@ -15,6 +15,7 @@ import { listAssistants } from '@/lib/catalog'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { AssistantStatusBadge } from '@/components/StatusBadges'
 import { TagInput } from '@/components/TagInput'
+import { RelatedStrip } from '@/features/task/RelatedStrip'
 import { Chip } from '@/components/Chip'
 import { useT } from '@/i18n'
 import { assistantLink1 } from '@/lib/links'
@@ -34,6 +35,7 @@ export function DraftConversationPage() {
   const actor = useActor()
   const users = useUserMap()
   const suggest = useTagSuggest()
+  const srAccepted = useSrAccepted()
   const { data: assistants, isPending } = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
   const assistant = assistants?.find((item) => item.id === assistantId)
   const [tags, setTags] = useState(() => params.getAll('tag').map(normalizeTag).filter(Boolean))
@@ -117,7 +119,9 @@ export function DraftConversationPage() {
             {assistant.expectedOutputs.map((item) => <span key={item} className="rounded-full border bg-tone-violet-bg px-2 py-0.5 text-tone-violet-fg">{item}</span>)}
           </div>}
           <div className="space-y-1.5"><div className="text-xs font-medium">{t('hub.tags')}</div>
-            <TagInput tags={tags} suggest={suggest} onAdd={(value) => setTags((current) => current.some((item) => tagKey(item) === tagKey(value)) ? current : [...current, value])} onRemove={(value) => setTags((current) => current.filter((item) => item !== value))} placeholder={t('hub.tagPlaceholder')} />
+            <TagInput tags={tags} suggest={suggest} srAccepted={srAccepted} onAdd={(value) => setTags((current) => current.some((item) => tagKey(item) === tagKey(value)) ? current : [...current, value])} onRemove={(value) => setTags((current) => current.filter((item) => item !== value))} placeholder={t('hub.tagPlaceholder')} />
+            {/* 첫 전송 전에도 이 태그를 쓰는 대화를 미리 본다 — 조회만, 저장 없음 */}
+            <RelatedStrip tags={tags} />
           </div>
           {refId && <div className="rounded-xl border border-tone-warning-fg/40 bg-tone-warning-bg p-3 text-xs">{t('chat.referenceConversation')}</div>}
           {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">{t('hub.retiredAssistant')} <Link to="/" className="underline">{t('hub.pickAnotherAssistant')}</Link></div>}
