@@ -12,12 +12,14 @@ import { Chip } from '@/components/Chip'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ModelSelect } from '@/components/ModelSelect'
+import { useModelList } from '@/lib/useModelList'
 import { getSettings, saveSettings, type Settings, type SettingsPatch } from '@/api/admin'
 
 function SettingsForm({ initial }: { initial: Settings }) {
   const t = useT()
-  // 기본 모델은 서버 .env 정본 — 읽기 전용으로 보여만 주고 쓰기 DTO에는 넣지 않는다 (S7 C2)
-  const { defaultModel, ...patchable } = initial
+  const { defaultModel, defaultModelSource, ...patchable } = initial
+  const modelList = useModelList()
   const [form, setForm] = useState<SettingsPatch>(patchable)
   const assistants = useAssistants()
   const options = useMemo(() => assistants.map(row => ({ value: row.id, label: row.name, status: row.status })), [assistants])
@@ -26,11 +28,21 @@ function SettingsForm({ initial }: { initial: Settings }) {
   function change<K extends keyof SettingsPatch>(key: K, value: SettingsPatch[K]) { setForm((current) => ({ ...current, [key]: value })) }
   async function submit(event: FormEvent) {
     event.preventDefault()
-    try { await saveSettings(form); void client.invalidateQueries({ queryKey: ['settings'] }); toast.success(t('admin.settings.saved')) }
+    try { await saveSettings(form); await client.invalidateQueries({ queryKey: ['settings'] }); void client.invalidateQueries({ queryKey: ['system-assistant', 'model'] }); void client.invalidateQueries({ queryKey: ['diagnostics'] }); toast.success(t('admin.settings.saved')) }
     catch (error) { toast.error(error instanceof Error ? error.message : t('admin.saveFailed')) }
   }
   return <form onSubmit={(event) => void submit(event)} className="space-y-3 rounded-xl border bg-card p-4 text-sm"><h2 className="font-semibold">{t('admin.settings.global')}</h2>
-    <div><div className="mb-1 text-xs text-muted-foreground">{t('admin.defaultModel')}</div><p className="font-mono">{defaultModel || '—'}</p><p className="mt-0.5 text-xs text-muted-foreground">{t('admin.settings.defaultModelEnvHint')}</p></div>
+    <div className="space-y-1.5">
+      <Field label={t('admin.defaultModel')}><ModelSelect aria-label={t('admin.defaultModel')} value={form.defaultModelOverride ?? ''}
+        selectionOnly disabled={modelList.loading || !!modelList.error} placeholder={t('admin.settings.useEnvModel')}
+        onChange={model => change('defaultModelOverride', model || null)} /></Field>
+      {modelList.loading && <p role="status" className="text-xs text-muted-foreground">{t('admin.test.modelLoading')}</p>}
+      {modelList.error && <div role="alert" className="text-xs text-destructive">{t('admin.settings.modelLoadFailed')} <Button type="button" variant="outline" size="sm" onClick={() => void modelList.reload()}>{t('admin.test.modelRetry')}</Button></div>}
+      <Button type="button" variant="outline" size="sm" onClick={() => change('defaultModelOverride', null)}>{t('admin.settings.clearDefaultModel')}</Button>
+      <p>{t('admin.settings.effectiveModel', { model: defaultModel || '—' })}</p>
+      <p className="text-xs text-muted-foreground">{t('admin.settings.modelSource', { source: t(`admin.settings.modelSource${defaultModelSource ?? 'default'}`) })}</p>
+      <p className="text-xs text-muted-foreground">{t('admin.settings.defaultModelEnvHint')}</p>
+    </div>
     <fieldset><legend className="mb-1">{t('admin.fileDelivery')}</legend><RadioGroup value={form.fileDelivery ?? 'inline'} onValueChange={value => change('fileDelivery', value as Settings['fileDelivery'])} aria-label={t('admin.fileDelivery')} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {(['inline', 'openwebui'] as const).map(value => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-xl border p-3 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-accent"><RadioGroupItem value={value} />{t(value === 'inline' ? 'admin.deliveryInline' : 'admin.deliveryOpenWebUi')}</label>)}
     </RadioGroup></fieldset>

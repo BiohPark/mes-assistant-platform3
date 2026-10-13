@@ -24,9 +24,9 @@ export async function uploadImage(id: string, file: File | null) {
   if (!response.ok) throw new Error(`이미지 저장 실패 (HTTP ${response.status})`)
   return response.json() as Promise<unknown>
 }
-/** 읽기 DTO — defaultModel은 서버 .env 유효값(읽기 전용). 쓰기 DTO(SettingsPatch)에는 없다 — 보내면 400 (S7 C2) */
-export type Settings = { defaultModel?: string; fileDelivery?: 'inline' | 'openwebui'; requestBudgetBytes?: number; srIntakeAssistantId?: string | null; link1Rule?: string; fileMaxPerRequest?: number }
-export type SettingsPatch = Omit<Settings, 'defaultModel'>
+/** 유효 모델·출처는 읽기 전용, override는 SO가 설정·해제한다. */
+export type Settings = { defaultModel?: string; defaultModelSource?: 'setting' | 'env' | 'default'; defaultModelOverride?: string | null; fileDelivery?: 'inline' | 'openwebui'; requestBudgetBytes?: number; srIntakeAssistantId?: string | null; link1Rule?: string; fileMaxPerRequest?: number }
+export type SettingsPatch = Omit<Settings, 'defaultModel' | 'defaultModelSource'>
 export const getSettings = async (): Promise<Settings> => {
   const response = await fetch('/api/settings', { credentials: 'same-origin' })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
