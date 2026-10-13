@@ -1,14 +1,15 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Message } from '@mes/domain'
 import { afterEach, expect, it, vi } from 'vitest'
+import { I18nProvider } from '@/i18n'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ChatMessages, failedQuestionIds } from './ChatMessages'
 
 const question: Message = { id: 'q', threadId: 'h', role: 'user', content: '첫 질문', status: 'done', attachmentIds: [], createdAt: '2026-01-01T00:00:00Z', requestId: 'r' }
 const answer: Message = { ...question, id: 'a', role: 'assistant', content: '답변', status: 'error', error: '실패' }
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 function view(messages: Message[], text?: string) {
   return <QueryClientProvider client={new QueryClient()}><TooltipProvider><div data-testid="scroll" style={{ overflowY: 'auto' }}><ChatMessages messages={messages} run={text === undefined ? null : { requestId: 'r', replyId: 'a', text }} /></div></TooltipProvider></QueryClientProvider>
 }
@@ -61,4 +62,79 @@ it('marks a question failed only by an error answer in its own span that matches
     second, { ...answer, id: 'a2', requestId: 'r2' }, third, { ...answer, id: 'a3', requestId: 'any' }, { ...answer, id: 'ok', status: 'done' },
   ])
   expect([...failed]).toEqual(['q2', 'q3'])
+})
+
+it.each([
+  { label: 'an empty conversation', messages: [] as Message[] },
+  { label: 'a conversation with a user question', messages: [question] },
+])('counts elapsed seconds in the placeholder header for $label through waiting, thinking and answering, then stops', ({ messages }) => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+  const startedAt = Date.now()
+  const client = new QueryClient()
+  const view = (run: import('./useChat').ChatRun | null, waitingSince?: number) => <QueryClientProvider client={client}><TooltipProvider><ChatMessages messages={messages} run={run} waitingSince={waitingSince} /></TooltipProvider></QueryClientProvider>
+  const { rerender } = render(view(null, startedAt))
+  const header = screen.getByRole('status').parentElement!
+  expect(screen.getByRole('status')).toHaveTextContent('대기 중')
+  expect(header).toHaveTextContent('assistant')
+  expect(within(header).getByRole('timer')).toHaveTextContent('0초 경과')
+  expect(screen.getAllByRole('timer')).toHaveLength(1)
+  expect(document.querySelector('[data-message-id="waiting-assistant"] .md-body')).not.toBeInTheDocument()
+  act(() => vi.advanceTimersByTime(2000))
+  expect(within(header).getByRole('timer')).toHaveTextContent('2초 경과')
+  rerender(view({ requestId: 'r', replyId: 'a', text: '', reasoning: '검토', phase: '생각 중', startedAt }))
+  expect(screen.getByRole('status')).toHaveTextContent('생각 중')
+  expect(screen.getByRole('status').parentElement).toContainElement(screen.getByRole('timer'))
+  expect(screen.getByText('검토')).toBeVisible()
+  act(() => vi.advanceTimersByTime(1000))
+  expect(screen.getByRole('timer')).toHaveTextContent('3초 경과')
+  rerender(view({ requestId: 'r', replyId: 'a', text: '답', phase: '답변 중', startedAt }))
+  expect(screen.getByRole('status')).toHaveTextContent('답변 중')
+  rerender(view(null))
+  expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+  expect(document.querySelector('[data-message-id="waiting-assistant"]')).not.toBeInTheDocument()
+})
+
+it('translates progress and thinking statuses in English and counts a resumed remote request', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-01-01T00:00:05Z'))
+  const client = new QueryClient()
+  const pending: Message = { ...answer, status: 'streaming', content: '', error: undefined, reasoning: '검토 중' }
+  const view = (run: import('./useChat').ChatRun | null) => <QueryClientProvider client={client}><I18nProvider locale="en"><ChatMessages messages={[pending]} run={run} /></I18nProvider></QueryClientProvider>
+  const { container, rerender } = render(view(null))
+  expect(screen.getByRole('status')).toHaveTextContent('Thinking')
+  expect(screen.getByRole('timer')).toHaveTextContent('5s elapsed')
+  expect(screen.getByText('Thinking process')).toBeInTheDocument()
+  expect(container.querySelector('details')).toHaveClass('bg-muted', 'text-foreground')
+  expect(container.querySelector('details')?.className).not.toMatch(/animate|transition/)
+  rerender(view({ requestId: 'r', replyId: 'a', text: '', phase: '파일 처리 대기 1/2 · sample.txt', startedAt: Date.parse(pending.createdAt) }))
+  expect(screen.getByRole('status')).toHaveTextContent('Waiting')
+  expect(screen.getByText('Processing file 1/2 · sample.txt')).toBeInTheDocument()
+  expect(container).not.toHaveTextContent('파일 처리 대기')
+})
+
+it('places a single phase and timer in the active assistant header and preserves manual reasoning choice after messages load', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  const client = new QueryClient()
+  const pending: Message = { ...answer, status: 'streaming', content: '', error: undefined, reasoning: '검토 중' }
+  const view = (messages: Message[], text = '', phase = '생각 중') => <QueryClientProvider client={client}><TooltipProvider><ChatMessages messages={messages}
+    run={{ requestId: 'r', replyId: 'a', text, reasoning: '검토 중', phase, startedAt: Date.parse(pending.createdAt) }} /></TooltipProvider></QueryClientProvider>
+  const { container, rerender } = render(view([question]))
+  await userEvent.setup().click(screen.getByText('생각 과정'))
+  expect(container.querySelector('details')?.open).toBe(false)
+  rerender(view([question, pending]))
+  expect(container.querySelectorAll('[data-message-id="a"]')).toHaveLength(1)
+  expect(container.querySelector('details')?.open).toBe(false)
+  const header = screen.getByRole('status').parentElement!
+  expect(header).toContainElement(screen.getByRole('timer'))
+  expect(header).toHaveTextContent('assistant')
+  expect(screen.getAllByRole('status')).toHaveLength(1)
+  expect(screen.queryByText('응답 중…')).not.toBeInTheDocument()
+  expect(container.querySelectorAll('.md-body')).toHaveLength(1)
+  rerender(view([question, pending], '실제 답변', '생각 중'))
+  expect(screen.getByRole('status')).toHaveTextContent('답변 중')
+  expect(screen.getByText('실제 답변')).toBeInTheDocument()
+  expect(container.querySelector('details')?.open).toBe(false)
 })

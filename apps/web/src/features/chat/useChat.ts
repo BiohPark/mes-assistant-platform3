@@ -4,8 +4,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { cancelRequest, streamRequest } from '@/api/requests'
 import { useT } from '@/i18n'
 
-export interface ChatRun { requestId: string; replyId: string; text: string; phase?: string }
-interface Attempt { key: string; threadId: string; requestId?: string; text: string; attachmentIds: string[]; path: string; body: unknown }
+export interface ChatRun { requestId: string; replyId: string; text: string; reasoning?: string; phase?: string; startedAt?: number }
+interface Attempt { key: string; threadId: string; requestId?: string; startedAt?: number; text: string; attachmentIds: string[]; path: string; body: unknown }
 const storageKey = (threadId: string) => `mes-chat-attempt:${threadId}`
 const load = (threadId: string): Attempt | null => {
   try {
@@ -28,6 +28,7 @@ export function useChat(threadId?: string) {
   const query = useQueryClient()
   const [run, setRun] = useState<ChatRun | null>(null)
   /** 전송 시도가 진행 중(started 이전 대기 포함)인지. run은 started 이후에만 채워진다. */
+  const [waitingSince, setWaitingSince] = useState<number | undefined>()
   const [sending, setSending] = useState(false)
   const active = useRef<Promise<void> | null>(null)
 
@@ -36,6 +37,9 @@ export function useChat(threadId?: string) {
     const work = (async () => {
       let terminal = false
       let failed: string | undefined
+      attempt.startedAt ??= Date.now()
+      save(attempt)
+      setWaitingSince(attempt.startedAt)
       setSending(true)
       try {
         for (let number = 0; number < 2 && !terminal; number++) {
@@ -44,12 +48,15 @@ export function useChat(threadId?: string) {
               if (event === 'started') {
                 attempt.requestId = String(data.requestId)
                 save(attempt)
-                setRun({ requestId: attempt.requestId, replyId: String(data.replyMessageId), text: String(data.resumedText ?? '') })
+                setRun({ requestId: attempt.requestId, replyId: String(data.replyMessageId), text: String(data.resumedText ?? ''), reasoning: String(data.resumedReasoning ?? ''),
+                  startedAt: typeof data.createdAt === 'string' ? Date.parse(data.createdAt) : attempt.startedAt })
                 void query.invalidateQueries({ queryKey: ['messages', attempt.threadId] })
               } else if (event === 'phase') {
                 setRun((current) => current ? { ...current, phase: String(data.text) } : current)
+              } else if (event === 'reasoning') {
+                setRun((current) => current ? { ...current, reasoning: (current.reasoning ?? '') + String(data.text), phase: '생각 중' } : current)
               } else if (event === 'delta') {
-                setRun((current) => current ? { ...current, text: current.text + String(data.text) } : current)
+                setRun((current) => current ? { ...current, text: current.text + String(data.text), phase: '답변 중' } : current)
               } else if (event === 'failed') {
                 failed = String(data.error)
                 terminal = true
@@ -65,6 +72,7 @@ export function useChat(threadId?: string) {
         if (terminal) clear(attempt)
         setRun(null)
         setSending(false)
+        setWaitingSince(undefined)
         await query.cancelQueries({ queryKey: ['messages', attempt.threadId] })
         await query.invalidateQueries({ queryKey: ['messages', attempt.threadId] })
         await query.invalidateQueries({ queryKey: ['activity'] })
@@ -84,6 +92,7 @@ export function useChat(threadId?: string) {
   return {
     run,
     sending,
+    waitingSince,
     hasPendingAttempt: () => !!(threadId && load(threadId)),
     send: (content: string, attachmentIds: string[] = [], oneShotFileIds: string[] = []) => {
       if (!threadId) throw new Error(t('chat.noThread'))

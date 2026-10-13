@@ -44,3 +44,22 @@ it('recovers a stored attempt after remount with its original key', async () => 
   expect(sessionStorage.length).toBe(0)
   second.unmount()
 })
+
+it('restores and appends reasoning separately without resetting the wait start on reconnect', async () => {
+  let stream!: ReadableStreamDefaultController<Uint8Array>
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller } }))))
+  const client = new QueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useChat('reasoning-thread'), { wrapper })
+  let sending!: Promise<void>
+  await act(async () => { sending = result.current.send('reasoning') })
+  expect(result.current.waitingSince).toEqual(expect.any(Number))
+  const encoder = new TextEncoder()
+  await act(async () => { stream.enqueue(encoder.encode('event: started\ndata: {"requestId":"r","replyMessageId":"m","resumedText":"","resumedReasoning":"검토","createdAt":"2026-01-01T00:00:00Z"}\n\nevent: reasoning\ndata: {"text":" 계속"}\n\n')) })
+  expect(result.current.run).toMatchObject({ text: '', reasoning: '검토 계속', phase: '생각 중', startedAt: Date.parse('2026-01-01T00:00:00Z') })
+  await act(async () => { stream.enqueue(encoder.encode('event: delta\ndata: {"text":"답"}\n\n')) })
+  expect(result.current.run).toMatchObject({ text: '답', reasoning: '검토 계속', phase: '답변 중' })
+  await act(async () => { stream.enqueue(encoder.encode('event: completed\ndata: {}\n\n')); stream.close(); await sending })
+  expect(result.current.waitingSince).toBeUndefined()
+  expect(result.current.run).toBeNull()
+})

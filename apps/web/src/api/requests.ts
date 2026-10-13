@@ -26,6 +26,7 @@ export interface RequestRecord {
   status: string
   code?: string | null
   phase?: string | null
+  createdAt?: string
   provider: string
   transport: string
   model: string

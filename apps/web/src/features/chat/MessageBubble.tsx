@@ -15,13 +15,22 @@ import { copyText } from '@/lib/clipboard'
 import { toast } from 'sonner'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
-export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithoutFiles, onRetryAsText, onRequestInfo, onAskAgain, askAgainDisabled = false, intake = false, assistantName }: {
+export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithoutFiles, onRetryAsText, onRequestInfo, onAskAgain, askAgainDisabled = false, intake = false, assistantName, progress }: {
+  progress?: { phase: string; elapsed: number; detail?: string };
   onAskAgain?: () => void; askAgainDisabled?: boolean; intake?: boolean; assistantName?: string; message: Message; onSaveAsOutput?: () => void; onRetry?: () => void; onRetryWithoutFiles?: () => void; onRetryAsText?: () => void; onRequestInfo?: () => void
 }) {
   const t = useT()
   const [preview, setPreview] = useState<FileMeta | null>(null)
   const previewOpener = useRef<HTMLButtonElement | null>(null)
   const menuTrigger = useRef<HTMLButtonElement | null>(null)
+  // Only a user gesture overrides the automatic streaming disclosure state.
+  const [reasoningChoice, setReasoningChoice] = useState<boolean>()
+  const hasContent = !!message.content.trim()
+  const reasoningOpen = reasoningChoice ?? (message.status === 'streaming' && !hasContent)
+  const reasoningScroll = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (reasoningOpen && reasoningScroll.current) reasoningScroll.current.scrollTop = reasoningScroll.current.scrollHeight
+  }, [message.reasoning, reasoningOpen])
   const menuAsk = useRef(false)
   useEffect(() => {
     if (!preview) {
@@ -47,8 +56,19 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
   }
   const actionClass = 'inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50'
   return <><div data-message-id={message.id} tabIndex={-1} className={`group/message flex gap-2.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${assistant ? '' : 'flex-row-reverse'}`}>{!assistant && <UserAvatar user={user} size="sm" className="mt-1" />}<div className={`flex max-w-[85%] min-w-0 flex-col gap-1 ${assistant ? 'items-start' : 'items-end'}`}>
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">{assistant ? assistantName ?? 'assistant' : user?.name ?? t(intake ? 'sr.requester' : 'chat.user')}</span><span>{formatDateTime(message.createdAt)}</span>{!assistant && !intake && message.kind === 'discussion' && <Badge tone="warning" className="gap-0.5 px-1.5"><MessagesSquare className="size-2.5" />{t('chat.discussionBadge')}</Badge>}</div>
-    <div className={`rounded-2xl px-3.5 py-2.5 ${assistant ? 'border bg-card' : !intake && message.kind === 'discussion' ? 'rounded-tr-sm border border-dashed border-tone-warning-fg/40 bg-tone-warning-bg' : 'rounded-tr-sm bg-primary text-primary-foreground'}`}><Markdown content={message.content} /></div>
+    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">{assistant ? assistantName ?? 'assistant' : user?.name ?? t(intake ? 'sr.requester' : 'chat.user')}</span><span>{formatDateTime(message.createdAt)}</span>{assistant && (progress || message.status === 'streaming') && <>
+      <span role="status">{progress?.phase ?? t(hasContent ? 'chat.answering' : message.reasoning ? 'chat.thinking' : 'chat.waiting')}</span>
+      {progress && <span role="timer" aria-live="off">{t('chat.elapsed', { seconds: progress.elapsed })}</span>}
+      {progress?.detail && <span>{progress.detail}</span>}
+    </>}{!assistant && !intake && message.kind === 'discussion' && <Badge tone="warning" className="gap-0.5 px-1.5"><MessagesSquare className="size-2.5" />{t('chat.discussionBadge')}</Badge>}</div>
+    {assistant && message.reasoning && <details open={reasoningOpen} className="w-full rounded-lg border bg-muted text-foreground">
+      <summary aria-expanded={reasoningOpen} onClick={(event) => { event.preventDefault(); setReasoningChoice(!reasoningOpen) }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setReasoningChoice(!reasoningOpen) }
+        }} className="min-h-11 cursor-pointer rounded-lg px-3 py-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('chat.reasoning')}</summary>
+      <div ref={reasoningScroll} aria-live="off" className="max-h-64 overflow-y-auto scroll-auto whitespace-pre-wrap break-words px-3 pb-3 text-sm">{message.reasoning}</div>
+    </details>}
+    {(!assistant || hasContent) && <div className={`rounded-2xl px-3.5 py-2.5 ${assistant ? 'border bg-card' : !intake && message.kind === 'discussion' ? 'rounded-tr-sm border border-dashed border-tone-warning-fg/40 bg-tone-warning-bg' : 'rounded-tr-sm bg-primary text-primary-foreground'}`}><Markdown content={message.content} /></div>}
     {!assistant && attachments.length > 0 && <div className="flex flex-wrap justify-end gap-1 text-xs">{attachments.map((attachment, index) => <span key={message.attachmentIds[index]} className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5"><Paperclip className="size-3" />{intake ? <a href={`/api/files/${encodeURIComponent(message.attachmentIds[index]!)}/content`} className="underline">{attachment.data?.name ?? t('sr.attachment', { number: index + 1 })}</a> : attachment.data ? <button type="button" className="hover:underline" onClick={(event) => { previewOpener.current = event.currentTarget; setPreview(attachment.data) }}>{attachment.data.name}</button> : (attachment.isError ? attachmentFallback(attachment.error) : t('chat.checkingFile'))}</span>)}</div>}
     <div className="flex items-center gap-1 text-foreground">
       <div role="group" aria-label={t('chat.messageActions')} className="hidden md:flex md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100 motion-safe:transition-opacity">
@@ -70,7 +90,6 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
       </DropdownMenu>
     </div>
     {onSaveAsOutput && <button type="button" className="text-xs underline" onClick={onSaveAsOutput}>{t('chat.saveAsOutput')}</button>}
-    {assistant && message.status === 'streaming' && <span className="text-xs text-muted-foreground">{t('chat.responding')}</span>}
     {assistant && message.error && <span role="alert" className="text-xs text-destructive">{message.error}</span>}
     {assistant && <div className="flex flex-wrap gap-2 text-xs">
       {onRequestInfo && <button type="button" className="underline" onClick={onRequestInfo}>{t('chat.requestInfo')}</button>}

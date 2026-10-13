@@ -1,6 +1,8 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render } from '@testing-library/react'
 import type { Message } from '@mes/domain'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -132,4 +134,73 @@ it('opens the mobile actions menu by keyboard and respects disabled reasking', a
   await user.keyboard('{Escape}')
   expect(trigger).toHaveFocus()
   expect(ask).not.toHaveBeenCalled()
+})
+
+const thinkingMessage: Message = { id: 'thinking', threadId: 'h', role: 'assistant', content: '', reasoning: '검토 중', status: 'streaming', createdAt: '2026-01-01T00:00:00Z', attachmentIds: [] }
+function renderThinking(message = thinkingMessage) {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  const client = new QueryClient()
+  const wrapper = ({ children }: { children: import('react').ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  return render(<MessageBubble message={message} />, { wrapper })
+}
+
+it('opens streaming reasoning, follows its last line instantly, and collapses when the answer starts', () => {
+  const { container, rerender } = renderThinking()
+  const details = container.querySelector('details')!
+  const summary = screen.getByText('생각 과정')
+  expect(details.open).toBe(true)
+  expect(summary).toHaveAttribute('aria-expanded', 'true')
+  const reasoning = screen.getByText('검토 중')
+  expect(reasoning).toHaveAttribute('aria-live', 'off')
+  expect(reasoning).toHaveClass('max-h-64', 'overflow-y-auto', 'scroll-auto')
+  Object.defineProperty(reasoning, 'scrollHeight', { configurable: true, value: 500 })
+  rerender(<MessageBubble message={{ ...thinkingMessage, reasoning: '검토 중\n다음 단계' }} />)
+  expect(reasoning.scrollTop).toBe(500)
+  rerender(<MessageBubble message={{ ...thinkingMessage, content: '답변 시작' }} />)
+  expect(details.open).toBe(false)
+  expect(summary).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.getByText('답변 시작')).toBeInTheDocument()
+})
+
+it.each(['done', 'error'] as const)('collapses reasoning when streaming ends with %s even without an answer', (status) => {
+  const { container, rerender } = renderThinking()
+  expect(container.querySelector('details')?.open).toBe(true)
+  rerender(<MessageBubble message={{ ...thinkingMessage, status }} />)
+  expect(container.querySelector('details')?.open).toBe(false)
+  expect(screen.getByText('검토 중')).toBeInTheDocument()
+})
+
+it.each(['close', 'open'] as const)('preserves the user choice to %s reasoning across tokens, answer and completion', async (choice) => {
+  const user = userEvent.setup()
+  const { container, rerender } = renderThinking()
+  const summary = screen.getByText('생각 과정')
+  summary.focus()
+  await user.keyboard('{Enter}')
+  if (choice === 'open') await user.keyboard(' ')
+  const open = choice === 'open'
+  expect(container.querySelector('details')?.open).toBe(open)
+  for (const message of [
+    { ...thinkingMessage, reasoning: '다음 단계' },
+    { ...thinkingMessage, content: '답변 시작' },
+    { ...thinkingMessage, content: '답변 완료', status: 'done' as const },
+  ]) {
+    rerender(<MessageBubble message={message} />)
+    expect(container.querySelector('details')?.open).toBe(open)
+    expect(summary).toHaveAttribute('aria-expanded', String(open))
+  }
+})
+
+it('keeps completed reasoning initially collapsed and allows reopening it', async () => {
+  const { container } = renderThinking({ ...thinkingMessage, status: 'done', content: '답변' })
+  expect(container.querySelector('details')?.open).toBe(false)
+  await userEvent.setup().click(screen.getByText('생각 과정'))
+  expect(container.querySelector('details')?.open).toBe(true)
+})
+
+it.each(['', '   '])('omits an empty assistant answer bubble for %j', (content) => {
+  const { container } = renderThinking({ ...thinkingMessage, content })
+  expect(container.querySelector('.md-body')).not.toBeInTheDocument()
+  expect(screen.queryByText('응답 중…')).not.toBeInTheDocument()
+  expect(screen.getByRole('status')).toHaveTextContent('생각 중')
+  expect(screen.getByRole('status').parentElement).toHaveTextContent('assistant')
 })
