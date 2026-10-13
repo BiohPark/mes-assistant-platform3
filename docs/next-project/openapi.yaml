@@ -73,9 +73,29 @@ paths:
   /me:
     get:
       tags: [auth]
-      summary: 현재 사용자와 역할·테마·언어 프로필
+      summary: 현재 사용자와 역할·테마·언어·이메일 프로필
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+    patch:
+      tags: [admin]
+      summary: 본인 프로필 변경 — 이름·테마·언어·이메일. SO도 타인의 이메일·테마·언어는 변경할 수 없다
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                name: { type: string, minLength: 1, maxLength: 40, description: 앞뒤 공백 제거 후 검증 }
+                email: { $ref: '#/components/schemas/EmailPatch' }
+                theme: { $ref: '#/components/schemas/Theme' }
+                locale: { $ref: '#/components/schemas/Locale' }
+      responses:
+        '200': { description: 저장된 프로필, content: { application/json: { schema: { $ref: '#/components/schemas/UserProfile' } } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
 
   /catalog/users:
     get:
@@ -93,7 +113,7 @@ paths:
   /users/me:
     patch:
       tags: [admin]
-      summary: 본인 프로필 변경 — 이름·테마·언어 (U2). SO도 타인의 테마·언어는 변경할 수 없다
+      summary: 본인 프로필 변경 — 이름·테마·언어·이메일. SO도 타인의 이메일·테마·언어는 변경할 수 없다
       requestBody:
         required: true
         content:
@@ -104,6 +124,7 @@ paths:
               minProperties: 1
               properties:
                 name: { type: string, minLength: 1, maxLength: 40, description: 앞뒤 공백 제거 후 검증 }
+                email: { $ref: '#/components/schemas/EmailPatch' }
                 theme: { $ref: '#/components/schemas/Theme' }
                 locale: { $ref: '#/components/schemas/Locale' }
       responses:
@@ -838,10 +859,18 @@ components:
         code: { type: string, enum: [active_request, task_done, in_use, budget_exceeded, delivery_failed, forbidden, conflict, not_found, validation] }
     Theme: { type: string, enum: [system, light, dark], default: system }
     Locale: { type: string, enum: [ko, en], default: ko }
+    EmailPatch:
+      description: 유효한 이메일을 저장하거나 빈 문자열·null로 해제. 기본 이메일은 DB에 저장하지 않는다
+      oneOf:
+        - { type: string, format: email, maxLength: 191 }
+        - { type: string, const: '' }
+        - { type: 'null' }
     UserProfile:
       type: object
-      required: [name, theme, locale]
+      required: [name, theme, locale, email, emailIsDefault]
       properties:
+        email: { type: [string, 'null'], description: '저장값이 null이고 DEFAULT_EMAIL_DOMAIN과 loginId가 있으면 {loginId}@{도메인}, 아니면 null. 저장값은 그대로 반환' }
+        emailIsDefault: { type: boolean, description: 응답 이메일이 설정 도메인에서 계산된 기본값인지 여부 }
         name: { type: string }
         theme: { $ref: '#/components/schemas/Theme' }
         locale: { $ref: '#/components/schemas/Locale' }
@@ -857,8 +886,10 @@ components:
         isBusinessOwner: { type: boolean }
     ManagedUser:
       type: object
-      required: [id, loginId, name, active, isSystemOwner, isBusinessOwner, mustChangePassword]
+      required: [id, loginId, name, active, isSystemOwner, isBusinessOwner, mustChangePassword, email, emailIsDefault]
       properties:
+        email: { type: [string, 'null'], description: '저장값이 null이고 DEFAULT_EMAIL_DOMAIN과 loginId가 있으면 {loginId}@{도메인}, 아니면 null. 저장값은 그대로 반환' }
+        emailIsDefault: { type: boolean, description: 응답 이메일이 설정 도메인에서 계산된 기본값인지 여부 }
         id: { type: string }
         loginId: { type: [string, 'null'] }
         name: { type: string }
@@ -868,8 +899,10 @@ components:
         mustChangePassword: { type: boolean }
     User:
       type: object
-      required: [id, name, role, roles, theme, locale]
+      required: [id, name, role, roles, theme, locale, email, emailIsDefault]
       properties:
+        email: { type: [string, 'null'], description: '저장값이 null이고 DEFAULT_EMAIL_DOMAIN과 loginId가 있으면 {loginId}@{도메인}, 아니면 null. 저장값은 그대로 반환' }
+        emailIsDefault: { type: boolean, description: 응답 이메일이 설정 도메인에서 계산된 기본값인지 여부 }
         id: { type: string }
         name: { type: string }
         role: { type: string }

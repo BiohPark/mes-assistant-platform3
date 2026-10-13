@@ -12,6 +12,12 @@ const base = {
 }
 
 describe('loadConfig', () => {
+  it('기본 이메일 도메인은 선택이며 빈 설정은 사용하지 않는다', () => {
+    expect(loadConfig(base).defaultEmailDomain).toBeUndefined()
+    expect(loadConfig({ ...base, DEFAULT_EMAIL_DOMAIN: '' }).defaultEmailDomain).toBeUndefined()
+    expect(loadConfig({ ...base, DEFAULT_EMAIL_DOMAIN: ' example.com ' }).defaultEmailDomain).toBe('example.com')
+    for (const domain of ['a@example.com', 'https://example.com', 'example.com/path']) expect(() => loadConfig({ ...base, DEFAULT_EMAIL_DOMAIN: domain })).toThrow(/DEFAULT_EMAIL_DOMAIN/)
+  })
   it('기본값을 채우고 목록형 값을 나눈다', () => {
     const c = loadConfig({ ...base, AUTH_MODE: 'oidc', INITIAL_SYSTEM_OWNERS: ' dev-owner , other ,' })
     expect(c.port).toBe(3000)

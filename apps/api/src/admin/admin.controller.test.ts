@@ -21,7 +21,7 @@ describe('관리 API 서버 권한', () => {
   beforeEach(async () => {
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CONFIG).useValue(config)
-      .overrideProvider(SESSION_STORE).useValue({ resolve: async (token: string) => token === 'so' ? { id: 'so', name: 'SO', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: true } : token === 'forced' ? { id: 'forced', name: '사용자', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false, mustChangePassword: true } : token === 'member' ? { id: 'member', name: '사용자', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false } : null })
+      .overrideProvider(SESSION_STORE).useValue({ resolve: async (token: string) => token === 'bo' ? { id: 'bo', name: 'BO', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false, isBusinessOwner: true } : token === 'so' ? { id: 'so', name: 'SO', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: true } : token === 'forced' ? { id: 'forced', name: '사용자', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false, mustChangePassword: true } : token === 'member' ? { id: 'member', name: '사용자', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false } : null })
       .overrideProvider(AdminService).useValue(admin)
       .overrideProvider(DbCatalogReader).useValue({ assistants: async () => [{ id: 'new-agent', order: 1, checklistTemplate: [] }] })
       .overrideProvider(AccountsService).useValue(accounts)
@@ -31,6 +31,20 @@ describe('관리 API 서버 권한', () => {
   })
   afterEach(async () => { await app.close(); vi.clearAllMocks() })
 
+  it('PATCH /me는 본인 이메일만 수정하며 빈 값은 null로 전달한다', async () => {
+    await request(app.getHttpServer()).patch('/api/me').set('Cookie', 'mes_session=forced').send({ email: 'a@example.com' }).expect(403)
+    await request(app.getHttpServer()).patch('/api/me').set('Cookie', 'mes_session=bo').send({ email: 'bo@example.com' }).expect(200)
+    expect(accounts.profile).toHaveBeenCalledWith('bo', { email: 'bo@example.com' })
+    await request(app.getHttpServer()).patch('/api/me').send({ email: 'a@example.com' }).expect(401)
+    await request(app.getHttpServer()).patch('/api/me').set('Cookie', 'mes_session=member').send({ email: 'Mixed.Case@example.com' }).expect(200)
+    expect(accounts.profile).toHaveBeenCalledWith('member', { email: 'Mixed.Case@example.com' })
+    await request(app.getHttpServer()).patch('/api/me').set('Cookie', 'mes_session=member').send({ email: '' }).expect(200)
+    expect(accounts.profile).toHaveBeenCalledWith('member', { email: null })
+    for (const input of [{ email: 'invalid' }, { email: 'a@example.com', id: 'so' }, {}]) {
+      await request(app.getHttpServer()).patch('/api/me').set('Cookie', 'mes_session=member').send(input).expect(400)
+    }
+    await request(app.getHttpServer()).patch('/api/users/other').set('Cookie', 'mes_session=so').send({ email: 'a@example.com' }).expect(400)
+  })
   it('에이전트 이미지 업로드는 UTF-8 파일 이름을 그대로 넘긴다', async () => {
     await request(app.getHttpServer()).post('/api/assistants/new-agent/image').set('Cookie', 'mes_session=so').attach('file', Buffer.from('png'), { filename: '아이콘 🙂.png', contentType: 'image/png' }).expect(201)
     expect(admin.image).toHaveBeenCalledWith('so', 'new-agent', expect.objectContaining({ originalname: '아이콘 🙂.png', mimetype: 'image/png' }))

@@ -52,6 +52,7 @@ export const appUser = mysqlTable('app_user', {
   createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
   loginId: varchar('login_id', { length: 191 }).unique('app_user_login_id_key'),
   passwordHash: text('password_hash'),
+  email: varchar('email', { length: 191 }),
   theme: varchar('theme', { length: 8 }).$type<Theme>().notNull().default('system'),
   locale: varchar('locale', { length: 8 }).$type<Locale>().notNull().default('ko'),
 }, (t) => [

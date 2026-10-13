@@ -24,7 +24,8 @@ it('upgrades the pre-D schema preserving inactive original pairs, reruns safely 
     await writeFile(join(folder, 'meta/_journal.json'), JSON.stringify(journal))
     for (const entry of journal.entries) await copyFile(join(source, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
     const db = drizzle(pool); await migrate(db, { migrationsFolder: folder })
-    await db.insert(appUser).values({ id: 'upgrade-owner', name: 'Owner', initials: 'O', color: '#123456' })
+    // 이 시점은 이메일 컬럼도 없는 구형 스키마이므로 현재 appUser 정의를 쓰지 않는다.
+    await pool.query("insert into app_user (id, name, initials, color) values ('upgrade-owner', 'Owner', 'O', '#123456')")
     await db.insert(codeGroup).values([{ key: 'assistant_level1', name: 'Level 1' }, { key: 'assistant_level2', name: 'Level 2' }])
     await db.insert(code).values([{ id: 'old-one', groupKey: 'assistant_level1', code: 'one', name: 'One', active: false }, { id: 'old-two', groupKey: 'assistant_level2', code: 'two', name: 'Two', active: false }])
     await db.insert(assistant).values({ id: 'old-agent', name: 'Old', link1: 'https://example.invalid/legacy', level1CodeId: 'old-one', level2CodeId: 'old-two', ownerId: 'upgrade-owner', createdBy: 'upgrade-owner', sortOrder: 1, status: 'open', color: '#123456' })

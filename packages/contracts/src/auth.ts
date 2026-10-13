@@ -16,16 +16,20 @@ export const ThemeSchema = z.enum(['system', 'light', 'dark'])
 export type Theme = z.infer<typeof ThemeSchema>
 export const LocaleSchema = z.enum(['ko', 'en'])
 export type Locale = z.infer<typeof LocaleSchema>
+export const EmailPatchSchema = z.union([z.email().max(191), z.literal('').transform(() => null), z.null()])
+const EmailViewShape = { email: z.string().nullable(), emailIsDefault: z.boolean() }
 export const ProfilePatchSchema = z.object({
   name: UserNameSchema.optional(),
+  email: EmailPatchSchema.optional(),
   theme: ThemeSchema.optional(),
   locale: LocaleSchema.optional(),
 }).strict().refine((input) => Object.values(input).some((value) => value !== undefined))
 export type ProfilePatch = z.infer<typeof ProfilePatchSchema>
-export const ProfileSchema = z.object({ name: z.string(), theme: ThemeSchema, locale: LocaleSchema })
+export const ProfileSchema = z.object({ name: z.string(), theme: ThemeSchema, locale: LocaleSchema, ...EmailViewShape })
 
 /** GET /api/me 응답 — openapi.yaml `User` */
 export const MeSchema = z.object({
+  ...EmailViewShape,
   id: z.string(),
   name: z.string(),
   role: z.string(),
