@@ -1,9 +1,9 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ListTodo } from 'lucide-react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { listTasks } from '@/api/tasks'
-import { useMe } from '@/app/auth'
+import { HttpError, useMe } from '@/app/auth'
 import { TopBar } from '@/app/TopBar'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { EmptyState } from '@/components/EmptyState'
@@ -15,13 +15,31 @@ import { Switch } from '@/components/ui/switch'
 import { useT } from '@/i18n'
 import { listAssistants } from '@/lib/catalog'
 import { useDates } from '@/lib/dates'
+import { sameParams } from '@/features/home/filters'
+
+function completedParams(params: URLSearchParams, includeCompleted = params.get('done') === '1') {
+  const next = new URLSearchParams(params)
+  next.delete('done')
+  if (includeCompleted) next.set('done', '1')
+  return next
+}
 
 export function MyWorkPage() {
   const t = useT()
   const me = useMe()
   const dates = useDates()
-  const [includeCompleted, setIncludeCompleted] = useState(false)
+  const client = useQueryClient()
+  const [params, setParams] = useSearchParams()
+  const includeCompleted = params.get('done') === '1'
+  const normalized = sameParams(completedParams(params), params)
+  useEffect(() => {
+    if (!normalized) setParams(prev => completedParams(prev), { replace: true })
+  }, [normalized, setParams])
+  const setIncludeCompleted = (checked: boolean) => setParams(prev => completedParams(prev, checked))
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => listTasks() })
+  useEffect(() => {
+    if (tasks.error instanceof HttpError && tasks.error.status === 403) void client.invalidateQueries({ queryKey: ['me'] })
+  }, [client, tasks.error])
   const catalog = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
   const assistants = new Map((catalog.data ?? []).map(assistant => [assistant.id, assistant]))
   // Same mine rule as domain/kanban: owner or participant; creating a conversation alone does not qualify.

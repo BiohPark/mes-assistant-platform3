@@ -1,9 +1,11 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
-import { Routes, Route } from 'react-router'
+import { Routes, Route, useLocation, useNavigate } from 'react-router'
 import type { Task } from '@mes/domain'
+import { AuthGate } from '@/app/AuthGate'
 import { MeContext } from '@/app/auth'
+import { StaffOnly } from '@/app/router'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { MyWorkPage } from './MyWorkPage'
@@ -21,12 +23,17 @@ function setup(tasks: Task[], locale: 'ko' | 'en' = 'ko') {
   vi.stubGlobal('fetch', fetcher)
   return fetcher
 }
-function renderPage() {
-  return renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><Routes>
+function Navigation() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  return <><output data-testid="url">{location.pathname}{location.search}</output><button onClick={() => void navigate(-1)}>뒤로</button><button onClick={() => void navigate(1)}>앞으로</button></>
+}
+function renderPage(route = '/my-work') {
+  return renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><Navigation /><Routes>
     <Route path="/my-work" element={<MyWorkPage />} />
     <Route path="/c/:taskId" element={<div>대화 상세</div>} />
     <Route path="/" element={<div>허브 화면</div>} />
-  </Routes></TooltipProvider></MeContext>, { route: '/my-work' })
+  </Routes></TooltipProvider></MeContext>, { route })
 }
 afterEach(() => { vi.unstubAllGlobals(); localStorage.removeItem('mes-locale') })
 
@@ -65,6 +72,78 @@ it('toggles completed work with the keyboard and opens a conversation with Enter
   screen.getByRole('link', { name: /WK-2026-0001/ }).focus()
   await user.keyboard('{Enter}')
   expect(await screen.findByText('대화 상세')).toBeInTheDocument()
+})
+
+it('restores completed work from the URL after remounting and returning from a conversation', async () => {
+  setup([task('0001', { status: 'done' })])
+  const user = userEvent.setup()
+  const page = renderPage('/my-work?tag=keep')
+  await screen.findByText('내 작업이 없습니다')
+  await user.click(screen.getByRole('switch', { name: '완료 포함' }))
+  expect(screen.getByTestId('url')).toHaveTextContent('/my-work?tag=keep&done=1')
+  const route = screen.getByTestId('url').textContent!
+  page.unmount()
+  renderPage(route)
+  expect(screen.getByRole('switch', { name: '완료 포함' })).toHaveAttribute('aria-checked', 'true')
+  await user.click(await screen.findByRole('link', { name: /WK-2026-0001/ }))
+  await screen.findByText('대화 상세')
+  await user.click(screen.getByRole('button', { name: '뒤로' }))
+  expect(await screen.findByText('대화 0001')).toBeInTheDocument()
+  expect(screen.getByRole('switch', { name: '완료 포함' })).toHaveAttribute('aria-checked', 'true')
+  expect(screen.getByTestId('url')).toHaveTextContent(route)
+})
+
+it('removes the default query and follows back and forward navigation', async () => {
+  setup([task('0001', { status: 'done' })])
+  renderPage('/my-work?done=1&tag=keep')
+  await screen.findByText('대화 0001')
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('switch', { name: '완료 포함' }))
+  expect(screen.getByTestId('url')).toHaveTextContent('/my-work?tag=keep')
+  expect(screen.queryByText('대화 0001')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '뒤로' }))
+  expect(await screen.findByText('대화 0001')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '앞으로' }))
+  expect(await screen.findByText('내 작업이 없습니다')).toBeInTheDocument()
+  expect(screen.getByRole('switch', { name: '완료 포함' })).toHaveAttribute('aria-checked', 'false')
+})
+
+it.each(['done=0', 'done=invalid', 'done='])('normalizes %s to the default without discarding other parameters', async query => {
+  setup([task('0001', { status: 'done' })])
+  renderPage(`/my-work?${query}&tag=keep`)
+  await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('/my-work?tag=keep'))
+  expect(screen.getByRole('switch', { name: '완료 포함' })).toHaveAttribute('aria-checked', 'false')
+  expect(await screen.findByText('내 작업이 없습니다')).toBeInTheDocument()
+})
+
+it.each([403, 500])('refreshes roles and lets the guard redirect only when task access returns %s', async status => {
+  let forbidden = false
+  const fetcher = vi.fn(async (url: string) => {
+    if (url === '/api/me') return jsonResponse(200, { id: 'u', name: '사용자', role: '', roles: forbidden ? ['requester'] : ['member'], theme: 'system', locale: 'ko' })
+    if (url === '/api/tasks') return forbidden ? jsonResponse(status, { message: '작업 조회 거부' }) : jsonResponse(200, [task('0001')])
+    if (url === '/api/assistants') return jsonResponse(200, [assistant])
+    return jsonResponse(200, [])
+  })
+  vi.stubGlobal('fetch', fetcher)
+  renderWithProviders(<AuthGate><TooltipProvider><Navigation /><Routes>
+    <Route path="/my-work" element={<StaffOnly><MyWorkPage /></StaffOnly>} />
+    <Route path="/c/:taskId" element={<div>대화 상세</div>} />
+    <Route path="/sr" element={<div>SR 접수 화면</div>} />
+  </Routes></TooltipProvider></AuthGate>, { route: '/my-work' })
+  await screen.findByText('대화 0001')
+  // /me is still fresh; a failed task refetch must explicitly invalidate it.
+  forbidden = true
+  await userEvent.click(screen.getByRole('link', { name: /WK-2026-0001/ }))
+  await userEvent.click(screen.getByRole('button', { name: '뒤로' }))
+  if (status === 403) {
+    expect(await screen.findByText('SR 접수 화면')).toBeInTheDocument()
+    expect(screen.getByTestId('url')).toHaveTextContent('/sr')
+    expect(fetcher.mock.calls.filter(([url]) => url === '/api/me')).toHaveLength(2)
+  } else {
+    expect(await screen.findByRole('alert')).toHaveTextContent('내 작업을 불러오지 못했습니다.')
+    expect(screen.getByTestId('url')).toHaveTextContent('/my-work')
+    expect(fetcher.mock.calls.filter(([url]) => url === '/api/me')).toHaveLength(1)
+  }
 })
 
 it('offers the hub when no active conversations remain, including when only completed work exists', async () => {
