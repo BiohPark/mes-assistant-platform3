@@ -29,7 +29,7 @@ function Navigation() {
   return <><output data-testid="url">{location.pathname}{location.search}</output><button onClick={() => void navigate(-1)}>뒤로</button><button onClick={() => void navigate(1)}>앞으로</button></>
 }
 function renderPage(route = '/my-work') {
-  return renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><Navigation /><Routes>
+  return renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko', email: null, emailIsDefault: false }}><TooltipProvider><Navigation /><Routes>
     <Route path="/my-work" element={<MyWorkPage />} />
     <Route path="/c/:taskId" element={<div>대화 상세</div>} />
     <Route path="/" element={<div>허브 화면</div>} />
@@ -119,7 +119,7 @@ it.each(['done=0', 'done=invalid', 'done='])('normalizes %s to the default witho
 it.each([403, 500])('refreshes roles and lets the guard redirect only when task access returns %s', async status => {
   let forbidden = false
   const fetcher = vi.fn(async (url: string) => {
-    if (url === '/api/me') return jsonResponse(200, { id: 'u', name: '사용자', role: '', roles: forbidden ? ['requester'] : ['member'], theme: 'system', locale: 'ko' })
+    if (url === '/api/me') return jsonResponse(200, { id: 'u', name: '사용자', role: '', roles: forbidden ? ['requester'] : ['member'], theme: 'system', locale: 'ko', email: null, emailIsDefault: false })
     if (url === '/api/tasks') return forbidden ? jsonResponse(status, { message: '작업 조회 거부' }) : jsonResponse(200, [task('0001')])
     if (url === '/api/assistants') return jsonResponse(200, [assistant])
     return jsonResponse(200, [])
