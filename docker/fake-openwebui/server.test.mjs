@@ -2,10 +2,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 
-async function withServer(enabled, run) {
+async function withServer(enabled, run, extraEnv = {}) {
   const port = 35000 + Math.floor(Math.random() * 20000)
   const child = spawn(process.execPath, [new URL('./server.mjs', import.meta.url).pathname], {
-    env: { ...process.env, PORT: String(port), FAKE_OWUI_E2E: enabled ? '1' : '' }, stdio: 'ignore',
+    env: { ...process.env, PORT: String(port), FAKE_OWUI_E2E: enabled ? '1' : '', ...extraEnv }, stdio: 'ignore',
   })
   const base = `http://127.0.0.1:${port}`
   try {
@@ -31,3 +31,30 @@ test('E2E request capture keeps only the latest 200', async () => withServer(tru
   assert.equal(requests[0].messages[0].content, '1')
   assert.equal(requests[199].messages[0].content, '200')
 }))
+
+const chat = (base, body) => fetch(`${base}/api/chat/completions`, { method: 'POST', body: JSON.stringify({ model: 'fake-general', messages: [{ role: 'user', content: 'hi' }], stream: true, ...body }) })
+
+test('version and model meta mimic OpenWebUI for the diagnostics probe', async () => withServer(false, async (base) => {
+  assert.deepEqual(await (await fetch(`${base}/api/version`)).json(), { version: '0.0.0-fake' })
+  const { data } = await (await fetch(`${base}/api/models`)).json()
+  const general = data.find((m) => m.id === 'fake-general')
+  assert.deepEqual(general.info.meta.toolIds, ['fake_tool'])
+  assert.deepEqual(general.info.meta.defaultFeatureIds, ['web_search'])
+  assert.equal(general.info.meta.knowledge.length, 1)
+  assert.equal(general.info.params.function_calling, 'native')
+  assert.equal(data.find((m) => m.id === 'fake-writer').info, undefined)
+}))
+
+test('legacy tool calls stream a sources frame first; tool_ids are rejected (400) in reject mode', async () => {
+  await withServer(false, async (base) => {
+    const text = await (await chat(base, { tool_ids: ['fake_tool'], params: { function_calling: 'legacy' } })).text()
+    assert.match(text.split('\n\n')[0], /^data: \{"sources":/)
+    assert.doesNotMatch(await (await chat(base, {})).text(), /sources/)
+  })
+  await withServer(false, async (base) => {
+    const rejected = await chat(base, { tool_ids: ['fake_tool'] })
+    assert.equal(rejected.status, 400)
+    assert.match((await rejected.json()).detail, /tool_ids/)
+    assert.equal((await chat(base, {})).status, 200)
+  }, { FAKE_OWUI_REJECT_TOOL_IDS: '1' })
+})
