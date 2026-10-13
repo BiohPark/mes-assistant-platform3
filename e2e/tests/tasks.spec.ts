@@ -65,20 +65,21 @@ test('대화 헤더의 사내 어시스턴트 바로가기는 링크가 설정�
   const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string; status: string; link1?: string }>
   const target = assistants.find((item) => item.status !== 'retired' && !item.link1)!
   const link1 = `https://openwebui.example/?model=e2e-shortcut-${Date.now()}`
-  await page.route('**/api/assistants', async (route) => {
-    const response = await route.fetch()
-    const rows = await response.json() as Array<{ id: string }>
-    await route.fulfill({ response, json: rows.map((row) => row.id === target.id ? { ...row, link1 } : row) })
-  })
-  const created = await page.request.post('/api/tasks', { data: { assistantId: target.id, tags: [], title: '바로가기 대화' } })
-  expect(created.ok()).toBe(true)
-  const task = await created.json() as { id: string }
-  await page.goto(`/c/${task.id}`)
-  const shortcut = page.getByRole('link', { name: 'OpenWebUI에서 열기' })
-  await expect(shortcut).toHaveAttribute('href', link1)
-  await expect(shortcut).toHaveAttribute('target', '_blank')
-  await expect(shortcut).toHaveAttribute('rel', 'noreferrer')
-  await page.unroute('**/api/assistants') // 실제 응답(링크 없음)으로 돌아오면 바로가기가 숨는다
+  await page.route('**/api/assistants', route => route.fulfill({
+    json: assistants.map((row) => row.id === target.id ? { ...row, link1 } : row),
+  }))
+  try {
+    const created = await page.request.post('/api/tasks', { data: { assistantId: target.id, tags: [], title: '바로가기 대화' } })
+    expect(created.ok()).toBe(true)
+    const task = await created.json() as { id: string }
+    await page.goto(`/c/${task.id}`)
+    const shortcut = page.getByRole('link', { name: 'OpenWebUI에서 열기' })
+    await expect(shortcut).toHaveAttribute('href', link1)
+    await expect(shortcut).toHaveAttribute('target', '_blank')
+    await expect(shortcut).toHaveAttribute('rel', 'noreferrer')
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' }) // 진행 중인 핸들러가 끝난 뒤 실제 응답(링크 없음)으로 복원
+  }
   await page.reload()
   await expect(page.getByRole('button', { name: '업무 완료' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'OpenWebUI에서 열기' })).toHaveCount(0)

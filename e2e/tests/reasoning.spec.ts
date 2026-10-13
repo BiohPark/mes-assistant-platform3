@@ -42,23 +42,31 @@ test(`S10 ${mode}: opens elapsed thinking, collapses on answer, preserves reason
   await savedDisclosure.locator('summary').click()
   await expect(savedDisclosure).toHaveAttribute('open', '')
   await expect(savedDisclosure.getByText(/PRIVATE_REASONING/)).toBeVisible()
-  const estimate = await (await page.request.post(`/api/threads/${created.threadId}/requests/estimate`, { data: { draft: '후속 질문' } })).json() as { bytes: number }
-  await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('후속 질문')
+  const followUp = `후속 질문 ${created.id}` // 공유 가짜 서버에서도 이 대화의 요청만 찾는다.
+  const estimate = await (await page.request.post(`/api/threads/${created.threadId}/requests/estimate`, { data: { draft: followUp } })).json() as { bytes: number }
+  await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill(followUp)
   await page.getByRole('button', { name: '전송', exact: true }).click()
-  await expect(async () => {
+  await expect.poll(async () => {
     const rows = await (await page.request.get(`/api/threads/${created.threadId}/messages`)).json() as typeof messages
-    const next = rows.findLast(item => item.role === 'assistant')!
-    expect(next.id).not.toBe(reply.id)
+    const next = rows.findLast(item => item.role === 'assistant')
+    if (!next?.requestId || next.id === reply.id) return undefined
     const record = await (await page.request.get(`/api/requests/${next.requestId}`)).json() as { bytes: number; status: string }
-    expect(record.status).toBe('succeeded')
-    expect(record.bytes).toBe(estimate.bytes)
-    const snapshot = await (await page.request.get(`/api/requests/${next.requestId}/snapshot`)).json()
-    expect(JSON.stringify(snapshot)).not.toContain('PRIVATE_REASONING')
-  }).toPass()
+    return record.status
+  }).toBe('succeeded')
+  const rows = await (await page.request.get(`/api/threads/${created.threadId}/messages`)).json() as typeof messages
+  const next = rows.findLast(item => item.role === 'assistant')!
+  expect(next.id).not.toBe(reply.id)
+  const record = await (await page.request.get(`/api/requests/${next.requestId}`)).json() as { bytes: number; status: string }
+  expect(record.status).toBe('succeeded')
+  expect(record.bytes).toBe(estimate.bytes)
+  const snapshotResponse = await page.request.get(`/api/requests/${next.requestId}/snapshot`)
+  expect(snapshotResponse.ok()).toBe(true)
+  const snapshot = await snapshotResponse.json()
+  expect(JSON.stringify(snapshot)).not.toContain('PRIVATE_REASONING')
   await expect(page.getByRole('timer')).toHaveCount(0)
   if (mode === 'live') {
     const captured = await (await page.request.get(`http://127.0.0.1:${process.env.E2E_FAKE_OWUI_PORT ?? '3102'}/__e2e/requests`)).json() as Array<{ messages: Array<{ content: string }> }>
-    const next = captured.findLast(entry => entry.messages.at(-1)?.content === '후속 질문')!
+    const next = captured.findLast(entry => entry.messages.at(-1)?.content === followUp)!
     expect(next).toBeTruthy()
     expect(JSON.stringify(next)).not.toContain('PRIVATE_REASONING')
   }

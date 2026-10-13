@@ -7,6 +7,8 @@ import { AuthGate } from '@/app/AuthGate'
 import type { Me } from '@mes/contracts'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { MyInfoPage } from './MyInfoPage'
+import { useUiStore } from '@/app/uiStore'
+import { takeTutorialReplay, tutorialKey } from '@/features/assistant-pill/tutorial'
 
 vi.mock('@/app/NotificationBell', () => ({ NotificationBell: () => null }))
 const me = { id: 'u1', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'] as const, theme: 'system' as const, locale: 'ko' as const }
@@ -17,6 +19,18 @@ function RefreshMe() {
 
 describe('내 정보 프로필 세그먼트', () => {
   afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
+  it('튜토리얼 재실행은 도우미를 열고 프로필 저장 API를 호출하지 않는다', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => jsonResponse(200, me))
+    vi.stubGlobal('fetch', fetchMock)
+    useUiStore.setState({ assistantOpen: false })
+    renderWithProviders(<AuthGate><TooltipProvider><MyInfoPage /></TooltipProvider></AuthGate>)
+    await userEvent.click(await screen.findByRole('button', { name: '튜토리얼 다시 보기' }))
+    expect(useUiStore.getState().assistantOpen).toBe(true)
+    expect(localStorage.getItem(tutorialKey(me.id))).toBe('accepted')
+    expect(takeTutorialReplay(me.id)).toBe(true)
+    expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(true)
+    act(() => useUiStore.setState({ assistantOpen: false }))
+  })
   it.each(['u1@example-.com', `u1@${'a'.repeat(64)}.com`, `u1@${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.com`])('기본 이메일 %s를 그대로 두면 이름 저장을 막지 않고 이메일은 전송하지 않는다', async (defaultEmail) => {
     let server = { ...me, email: defaultEmail, emailIsDefault: true }
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
