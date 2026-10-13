@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Field } from '@/components/Field'
 import { Input } from '@/components/ui/input'
 import { useT } from '@/i18n'
+import { useUiStore } from '@/app/uiStore'
+import { requestTutorial } from '@/features/assistant-pill/tutorial'
 
 export function MyInfoPage() {
   const t = useT()
@@ -46,5 +48,6 @@ export function MyInfoPage() {
       {localeOptions.map((option) => <label key={option.value} className="flex-1 cursor-pointer rounded-lg px-2 py-1.5 text-center has-checked:bg-background has-checked:font-medium has-checked:shadow-xs focus-within:ring-2 focus-within:ring-ring"><input className="sr-only" type="radio" name="locale" value={option.value} checked={profile.locale === option.value} onChange={() => profile.save({ locale: option.value })} />{t(option.key)}</label>)}
     </div></fieldset>
     <Button type="submit" disabled={profile.pending || saving}>{t('admin.save')}</Button>
+    <Button type="button" variant="outline" onClick={() => { requestTutorial(me.id); useUiStore.getState().setAssistantOpen(true) }}>{t('tutorial.replay')}</Button>
   </form></div></>
 }

@@ -73,6 +73,7 @@ it('shows successfully applied system assistant proposals with a success tone', 
   useUiStore.getState().setAssistantOpen(true)
   renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SystemAssistantDrawer /></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: /FDS 작성 도우미로/ }))
+  fireEvent.click(screen.getByRole('button', { name: '전송' })) // S11 U5: 예시는 프리필만, 전송은 사람이
   fireEvent.click(await screen.findByRole('button', { name: '적용' }))
   await waitFor(() => expect(writes).toEqual(['/api/tasks/t/tags/release']))
   expect(await screen.findByText('WK-2026-0001에 release 태그를 붙였습니다.')).toHaveClass('text-tone-success-fg')

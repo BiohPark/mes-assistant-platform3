@@ -6,18 +6,21 @@ import { ArrowRight, Bot, Check, Sparkles, Trash2, Wrench, X } from 'lucide-reac
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Markdown } from '@/components/Markdown'
-import { Composer } from '@/features/chat/Composer'
+import { Composer, type ComposerHandle } from '@/features/chat/Composer'
+import { useActor } from '@/app/hooks'
+import { AssistantMenu } from '@/features/assistant-pill/AssistantMenu'
 import { getSystemModel } from '@/api/systemAssistant'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/app/uiStore'
 import { useSystemAssistantChat, type SystemAssistantChat } from './useSystemAssistantChat'
 
-interface BodyProps { chat: SystemAssistantChat; onClose: () => void }
+interface BodyProps { chat: SystemAssistantChat; onClose: () => void; performPageAction?: (action: () => void) => void }
 
 /** 도우미 창 본문 — 데스크톱 팝오버와 좁은 화면 시트가 같이 쓴다. 도구 호출은 제안으로만 표시하고 적용 버튼을 누른 경우에만 기존 API를 호출한다 */
-export function SystemAssistantBody({ chat, onClose }: BodyProps) {
+export function SystemAssistantBody({ chat, onClose, performPageAction }: BodyProps) {
   const t = useT()
-  const EXAMPLES = [t('systemAssistant.exampleStart'), t('admin.createAssistantExample'), t('systemAssistant.exampleTagRelease'), t('systemAssistant.exampleTagSr')]
+  const { userId } = useActor()
+  const composer = useRef<ComposerHandle>(null)
   const navigate = useNavigate()
   const model = useQuery({ queryKey: ['system-assistant', 'model'], queryFn: getSystemModel })
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -34,7 +37,7 @@ export function SystemAssistantBody({ chat, onClose }: BodyProps) {
       <p className="mt-1 text-xs text-muted-foreground">{t('systemAssistant.intro')}</p>
     </div>
     <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
-      {messages.length === 0 && <div className="space-y-2"><p className="text-xs text-muted-foreground">{t('systemAssistant.examples')}</p>{EXAMPLES.map((example) => <button key={example} type="button" onClick={() => void chat.send(example)} className="block w-full rounded-lg border bg-card px-3 py-2 text-left text-xs hover:bg-muted">{example}</button>)}</div>}
+      <AssistantMenu userId={userId} prefill={(text) => composer.current?.setText(text)} perform={performPageAction ?? ((action) => { onClose(); requestAnimationFrame(action) })} />
       {messages.map((message) => <div key={message.id} className={cn('flex gap-2', message.role === 'user' && 'flex-row-reverse')}>
         {message.role === 'assistant' && <span className="mt-1 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><Bot className="size-3.5" /></span>}
         <div className={cn('max-w-[88%] space-y-2', message.role === 'user' && 'text-right')}>
@@ -54,17 +57,18 @@ export function SystemAssistantBody({ chat, onClose }: BodyProps) {
       </div>)}
     </div>
     {messages.length > 0 && <div className="flex justify-end px-4 pb-1"><Button variant="ghost" size="xs" onClick={chat.clear}><Trash2 />{t('systemAssistant.clear')}</Button></div>}
-    <Composer streaming={waiting} onSend={async (text) => chat.send(text)} onStop={chat.stop} placeholder={t('systemAssistant.placeholder')} allowAttachments={false} clearOnSubmit />
+    <Composer ref={composer} streaming={waiting} onSend={async (text) => chat.send(text)} onStop={chat.stop} placeholder={t('systemAssistant.placeholder')} allowAttachments={false} clearOnSubmit />
   </>
 }
 
 /** 좁은 화면(<1024)용 우측 시트. 모달이라 열린 동안 바깥 포커스가 막히므로 닫힘 뒤 포커스 복귀는 returnFocus로 받는다 */
 export function SystemAssistantSheet({ open, chat, onClose, returnFocus }: BodyProps & { open: boolean; returnFocus: () => void }) {
   const t = useT()
+  const pageAction = useRef<(() => void) | null>(null)
   return <Sheet open={open} onOpenChange={(next) => { if (!next) onClose() }}>
     <SheetContent aria-label={t('systemAssistant.title')} aria-describedby={undefined} showCloseButton={false} className="w-full gap-0 overflow-hidden p-0 sm:max-w-md"
-      onCloseAutoFocus={(event) => { event.preventDefault(); returnFocus() }}>
-      <SystemAssistantBody chat={chat} onClose={onClose} />
+      onCloseAutoFocus={(event) => { event.preventDefault(); const action = pageAction.current; pageAction.current = null; if (action) action(); else returnFocus() }}>
+      <SystemAssistantBody chat={chat} onClose={onClose} performPageAction={(action) => { pageAction.current = action; onClose() }} />
     </SheetContent>
   </Sheet>
 }
