@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { Task } from '@mes/domain'
 import { expect, it } from 'vitest'
 import { MeContext } from '@/app/auth'
@@ -97,4 +97,18 @@ it('renders a normal empty estimate once data is available', () => {
   mount({ data: { ...data, inputs: [], bytes: 100 }, pending: false, revisionChanged: false })
   expect(tray()).toBeVisible()
   expect(screen.getByText('이번 요청에 사용 · 0')).toBeVisible()
+})
+
+it('collapses to summary chips (files · conversations · SR) and expands back to the full list', () => {
+  const conversationInput = { kind: 'conversation' as const, sourceTaskId: 's', code: 'WK-2026-0002', title: '원본', assistantName: 'A', mode: 'full' as const, weight: 'reference' as const, snapshotId: 'snap', messageCount: 3, bytes: 50 }
+  mount({ data: { ...data, inputs: [...data.inputs, conversationInput], srs: [{ code: 'SR-2026-0001', title: '알람 필터' }] }, pending: false, revisionChanged: false })
+  expect(screen.queryByRole('list', { name: '담긴 자료 요약' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: /이번 요청에 사용 · 2/ }))
+  expect(screen.queryByText('spec.txt')).not.toBeInTheDocument()
+  const chips = screen.getByRole('list', { name: '담긴 자료 요약' })
+  expect(within(chips).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['파일 1', '대화 1', 'SR 1'])
+  expect(screen.getByRole('meter')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: /이번 요청에 사용 · 2/ }))
+  expect(screen.getByText('spec.txt')).toBeVisible()
+  expect(screen.queryByRole('list', { name: '담긴 자료 요약' })).not.toBeInTheDocument()
 })
