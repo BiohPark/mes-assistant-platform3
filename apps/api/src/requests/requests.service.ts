@@ -15,7 +15,7 @@ import { LLM_PROVIDER } from '../llm/provider.token.js'
 import { assertThreadAccess } from '../sr/access.js'
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
-type EventName = 'started' | 'phase' | 'delta' | 'completed' | 'failed'
+type EventName = 'started' | 'phase' | 'delta' | 'reasoning' | 'completed' | 'failed'
 export type RequestEvent = { event: EventName; data: Record<string, unknown> }
 type Listener = (event: RequestEvent) => void
 export interface StartBody { content: string; attachmentIds?: string[]; oneShotFileIds?: string[] }
@@ -52,6 +52,7 @@ export class RequestsService implements OnModuleDestroy {
   private readonly events = new Map<string, RequestEvent[]>()
   private readonly truncated = new Set<string>()
   private readonly streamText = new Map<string, string>()
+  private readonly streamReasoning = new Map<string, string>()
   private readonly auxiliaryUsers = new Set<string>()
   /** DB 행이 없는 모델 호출(시험 대화·연결 시험)이 쥔 전역 슬롯 — 단일 인스턴스 전제(D43) */
   private extraActive = 0
@@ -155,20 +156,20 @@ export class RequestsService implements OnModuleDestroy {
   private emit(id: string, event: RequestEvent) {
     const history = this.events.get(id) ?? []
     history.push(event)
-    if (event.event === 'delta' || event.event === 'phase') {
+    if (event.event === 'delta' || event.event === 'reasoning' || event.event === 'phase') {
       let bytes = history.reduce((sum, item) => sum + Buffer.byteLength(JSON.stringify(item)), 0)
       while (history.length > 2001 || bytes > 256 * 1024) {
         const first = history.findIndex((item) => item.event !== 'started')
         if (first < 0) break
         bytes -= Buffer.byteLength(JSON.stringify(history[first]))
-        if (history[first]!.event === 'delta') this.truncated.add(id)
+        if (history[first]!.event === 'delta' || history[first]!.event === 'reasoning') this.truncated.add(id)
         history.splice(first, 1)
       }
     }
     this.events.set(id, history)
     for (const listener of this.listeners.get(id) ?? []) listener(event)
     if (event.event === 'completed' || event.event === 'failed') {
-      const timer = setTimeout(() => { this.events.delete(id); this.truncated.delete(id); this.streamText.delete(id) }, 60_000)
+      const timer = setTimeout(() => { this.events.delete(id); this.truncated.delete(id); this.streamText.delete(id); this.streamReasoning.delete(id) }, 60_000)
       timer.unref?.()
     }
   }
@@ -250,10 +251,10 @@ export class RequestsService implements OnModuleDestroy {
 
   private async replay(row: typeof chatRequest.$inferSelect): Promise<StartedRequest> {
     const record = await this.get(row.id)
-    const started = { event: 'started', data: { requestId: row.id, replyMessageId: row.replyMessageId, userMessageId: row.userMessageId } } as const
+    const started = { event: 'started', data: { requestId: row.id, replyMessageId: row.replyMessageId, userMessageId: row.userMessageId, createdAt: row.createdAt.toISOString() } } as const
     if (this.truncated.has(row.id) || !this.events.has(row.id)) {
-      const [reply] = await this.db.select({ content: message.content }).from(message).where(eq(message.id, row.replyMessageId))
-      this.events.set(row.id, [{ event: 'started', data: { ...started.data, resumedText: this.streamText.get(row.id) ?? reply?.content ?? '' } }])
+      const [reply] = await this.db.select({ content: message.content, reasoning: message.reasoning }).from(message).where(eq(message.id, row.replyMessageId))
+      this.events.set(row.id, [{ event: 'started', data: { ...started.data, resumedText: this.streamText.get(row.id) ?? reply?.content ?? '', resumedReasoning: this.streamReasoning.get(row.id) ?? reply?.reasoning ?? '' } }])
       if (record.phase) this.emit(row.id, { event: 'phase', data: { text: record.phase } })
       if (record.status === 'succeeded') this.emit(row.id, { event: 'completed', data: { requestInfo: record } })
       if (['failed', 'cancelled', 'interrupted'].includes(record.status)) this.emit(row.id, { event: 'failed', data: { error: record.error ?? '요청 실패', code: record.code, requestInfo: record } })
@@ -336,7 +337,7 @@ export class RequestsService implements OnModuleDestroy {
       if (attachments.some((id) => !oneShot.includes(id))) this.appEvents?.publish('input.updated', { taskId: acquired.taskId })
     }
     this.appEvents?.publish('request.updated', { requestId: acquired.id, threadId, taskId: acquired.taskId ?? null, status: 'pending', phase: null })
-    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId } })
+    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString() } })
     const done = this.run(acquired.id, oneShot, [], acquired.deadlineAt!)
     return { ...acquired, done }
   }
@@ -396,7 +397,7 @@ export class RequestsService implements OnModuleDestroy {
     }
     this.appEvents?.publish('request.updated', { requestId: acquired.id, threadId: original.threadId,
       taskId: acquired.taskId ?? null, status: 'pending', phase: null })
-    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId } })
+    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString() } })
     return { ...acquired, done: this.run(acquired.id, acquired.oneShot, inline, acquired.deadlineAt!) }
   }
 
@@ -449,7 +450,8 @@ export class RequestsService implements OnModuleDestroy {
         snapshot: snapshot ?? row.snapshot, leaseUntil: null }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE), ...(expired ? [lt(chatRequest.leaseUntil, sql`current_timestamp(6)`)] : [])))
       if (!updated[0].affectedRows) return false
       const reply = await tx.update(message).set({ status: status === 'succeeded' ? 'done' : 'error', error: error ?? null,
-        ...(content !== undefined ? { content: content || (error ? `⚠️ ${error}` : '') } : {}) }).where(and(eq(message.id, row.replyMessageId), eq(message.status, 'streaming')))
+        ...(content !== undefined ? { content: content || (error ? `⚠️ ${error}` : '') } : {}),
+        ...(this.streamReasoning.has(id) ? { reasoning: this.streamReasoning.get(id) } : {}) }).where(and(eq(message.id, row.replyMessageId), eq(message.status, 'streaming')))
       if (!reply[0].affectedRows) throw new FencedTransition()
       await tx.insert(activityLog).values({ id: randomUUID(), type: `request.${status === 'succeeded' ? 'completed' : status === 'cancelled' ? 'cancelled' : 'failed'}`,
         userId: row.requestedBy, taskId: owner?.taskId ?? null, srId: owner?.srId ?? null, payload: { requestId: id, bytes: info?.bytes ?? row.bytes, model: info?.model ?? row.model } })
@@ -507,14 +509,14 @@ export class RequestsService implements OnModuleDestroy {
       .where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
       .then((result) => { if (!result[0].affectedRows) controller.abort('lost') }).catch(() => controller.abort('lost')) }, this.config.request.keepaliveMs)
     lease.unref?.()
-    let acc = '', info: RequestInfo | undefined, snapshot: unknown, snapshotBytes: Buffer | undefined, failure: string | undefined
+    let acc = '', reasoning = '', phase = '', info: RequestInfo | undefined, snapshot: unknown, snapshotBytes: Buffer | undefined, failure: string | undefined
     let dirty = false
     let replyId = ''
     const flush = async () => {
       if (!dirty || !replyId || controller.signal.aborted) return
       dirty = false
       const content = acc
-      const updated = await this.db.update(message).set({ content }).where(and(eq(message.id, replyId), eq(message.status, 'streaming')))
+      const updated = await this.db.update(message).set({ content, reasoning: reasoning || null }).where(and(eq(message.id, replyId), eq(message.status, 'streaming')))
       if (!updated[0].affectedRows) controller.abort('lost')
     }
     const flushTimer = setInterval(() => { void flush().catch(() => controller.abort('lost')) }, this.config.request.flushMs)
@@ -564,12 +566,25 @@ export class RequestsService implements OnModuleDestroy {
         if (chunk.done) break
         if (controller.signal.aborted) break
         if (chunk.value.type === 'error') { failure = chunk.value.message; break }
-        if (chunk.value.type !== 'delta') continue
-        acc += chunk.value.text
-        this.streamText.set(id, acc)
-        dirty = true
-        this.emit(id, { event: 'delta', data: { text: chunk.value.text } })
+        if ((chunk.value.type !== 'delta' && chunk.value.type !== 'reasoning') || !chunk.value.text) continue
         arm(this.config.request.idleMs)
+        const nextPhase = chunk.value.type === 'reasoning' ? '생각 중' : '답변 중'
+        if (phase !== nextPhase) {
+          phase = nextPhase
+          const updated = await this.db.update(chatRequest).set({ phase }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
+          if (!updated[0].affectedRows || controller.signal.aborted) { controller.abort('lost'); break }
+          this.appEvents?.publish('request.updated', { requestId: id, threadId: row.threadId, taskId: owner.taskId, status: 'streaming', phase })
+          this.emit(id, { event: 'phase', data: { text: phase } })
+        }
+        if (chunk.value.type === 'reasoning') {
+          reasoning += chunk.value.text
+          this.streamReasoning.set(id, reasoning)
+        } else {
+          acc += chunk.value.text
+          this.streamText.set(id, acc)
+        }
+        dirty = true
+        this.emit(id, { event: chunk.value.type, data: { text: chunk.value.text } })
       }
     } catch (error) { failure = controller.signal.reason === 'timeout' ? '응답 시간 초과 — 제한 시간 안에 응답이 오지 않았습니다.' : this.safeError(error) }
     finally {

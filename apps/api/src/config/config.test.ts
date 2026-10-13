@@ -116,3 +116,9 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...base, LLM_MODE: 'live', LLM_PRESET: 'openai-compatible', LLM_BASE_URL: 'https://api.openai.com/v1', LLM_API_KEY: 'secret' }).llm.preset).toBe('openai-compatible')
   })
 })
+
+it('defaults chat waits to minutes and preserves explicit environment values', () => {
+  expect(loadConfig(base).request).toMatchObject({ firstTokenMs: 300_000, filesFirstTokenMs: 600_000, idleMs: 300_000 })
+  expect(loadConfig({ ...base, REQUEST_FIRST_TOKEN_MS: '60000', REQUEST_FILES_FIRST_TOKEN_MS: '360000', REQUEST_IDLE_MS: '12345' }).request)
+    .toMatchObject({ firstTokenMs: 60_000, filesFirstTokenMs: 360_000, idleMs: 12_345 })
+})

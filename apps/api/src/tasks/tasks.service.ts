@@ -350,7 +350,7 @@ export class DbTasksService {
     const requests = await this.db.select({ id: chatRequest.id, replyMessageId: chatRequest.replyMessageId }).from(chatRequest).where(eq(chatRequest.threadId, threadId))
     return rows.map((row) => ({
       id: row.id, threadId: row.threadId, seq: row.seq, role: row.role, kind: row.kind,
-      content: row.content, authorId: row.authorId, status: row.status, error: row.error, createdAt: row.createdAt.toISOString(), attachmentIds: attachments.filter((item) => item.messageId === row.id).map((item) => item.fileId),
+      content: row.content, reasoning: row.reasoning, authorId: row.authorId, status: row.status, error: row.error, createdAt: row.createdAt.toISOString(), attachmentIds: attachments.filter((item) => item.messageId === row.id).map((item) => item.fileId),
       ...(requests.find((item) => item.replyMessageId === row.id) ? { requestId: requests.find((item) => item.replyMessageId === row.id)!.id } : {}),
     }))
   }
