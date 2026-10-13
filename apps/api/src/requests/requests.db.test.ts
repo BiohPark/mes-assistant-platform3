@@ -51,6 +51,65 @@ describe('RequestService DB', () => {
   })
   afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); await rm(root, { recursive: true, force: true }) })
 
+  it.each(['succeeded', 'failed', 'cancelled', 'interrupted'] as const)('updates task activity atomically when a response becomes %s', async status => {
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let ready!: () => void
+    const streaming = new Promise<void>(resolve => { ready = resolve })
+    const gated: ChatProvider = { ...provider, async *stream() {
+      yield { type: 'delta', text: '부분 응답' }
+      ready()
+      await gate
+      if (status === 'failed') yield { type: 'error', message: '모델 오류' }
+      else yield { type: 'done' }
+    } }
+    const events = new EventsService()
+    const published = vi.spyOn(events, 'publish')
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), gated, events)
+    const created = await tasks.create('member', { assistantId, title: 'Activity test' })
+    const other = await tasks.create('member', { assistantId, title: 'Unrelated conversation' })
+    const viewedAt = new Date('2026-01-01T00:00:00Z')
+    try {
+      const run = await runner.start('member', created.thread.id, { content: '새 응답' }, `activity-${status}`)
+      await streaming
+      await db.update(task).set({ lastActivityAt: viewedAt }).where(eq(task.id, created.task.id))
+      const beforeFinish = Date.now()
+      if (status === 'cancelled') await runner.cancel(run.id)
+      if (status === 'interrupted') {
+        await db.update(chatRequest).set({ leaseUntil: sql`timestampadd(second, -1, current_timestamp(6))` }).where(eq(chatRequest.id, run.id))
+        expect(await runner.sweep()).toBe(1)
+      }
+      release()
+      await run.done
+      expect(await runner.get(run.id)).toMatchObject({ status })
+      const refreshed = await tasks.get(created.task.id)
+      expect(Date.parse(refreshed.lastActivityAt)).toBeGreaterThanOrEqual(beforeFinish)
+      expect(Date.parse(refreshed.lastActivityAt)).toBeGreaterThan(viewedAt.getTime())
+      expect((await tasks.list({}, 'member')).find(item => item.id === created.task.id)?.lastActivityAt).toBe(refreshed.lastActivityAt)
+      expect((await tasks.get(other.task.id)).lastActivityAt).toBe(other.task.lastActivityAt)
+      expect(published).toHaveBeenCalledWith('request.updated', expect.objectContaining({ taskId: created.task.id, status }))
+      // Replaying a finished request and cancelling it again are both no-ops.
+      expect((await runner.start('member', created.thread.id, { content: '새 응답' }, `activity-${status}`)).id).toBe(run.id)
+      await runner.cancel(run.id)
+      expect((await tasks.get(created.task.id)).lastActivityAt).toBe(refreshed.lastActivityAt)
+    } finally { release(); runner.onModuleDestroy() }
+  })
+
+  it('does not change task activity when a fenced terminal transition rolls back', async () => {
+    const created = await tasks.create('member', { assistantId, title: 'Fenced activity' })
+    const run = await service.start('member', created.thread.id, { content: '경쟁 응답' }, 'fenced-activity')
+    await run.done
+    const viewedAt = new Date('2026-01-01T00:00:00Z')
+    await db.update(task).set({ lastActivityAt: viewedAt }).where(eq(task.id, created.task.id))
+    await db.update(chatRequest).set({ status: 'streaming' }).where(eq(chatRequest.id, run.id))
+    // The reply is already done, so the request transition must be rolled back.
+    const fenced = service as unknown as { transition: (id: string, status: 'cancelled') => Promise<boolean> }
+    expect(await fenced.transition(run.id, 'cancelled')).toBe(false)
+    expect((await tasks.get(created.task.id)).lastActivityAt).toBe(viewedAt.toISOString())
+    expect((await service.get(run.id)).status).toBe('streaming')
+    await db.update(chatRequest).set({ status: 'succeeded' }).where(eq(chatRequest.id, run.id))
+  })
+
   it('resumes held AI requests atomically, reports it in SSE and does not repeat on replay', async () => {
     const created = await tasks.create('member', { assistantId })
     await tasks.setStatus('member', created.task.id, 'on_hold')

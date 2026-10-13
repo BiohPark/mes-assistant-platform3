@@ -45,13 +45,14 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   const [typing, setTyping] = useState<Record<string, { name: string; until: number }>>({})
   const lastTyping = useRef(0)
   const composer = useRef<ComposerHandle>(null)
+  const conversationPanel = useRef<HTMLDivElement>(null)
   const [saveTarget, setSaveTarget] = useState<Message | null>(null)
   const [infoId, setInfoId] = useState<string | null>(null)
   const [retryChoice, setRetryChoice] = useState<{ record: RequestRecord; mode: 'exclude' | 'inline' } | null>(null)
   const chat = useChat(task.threadId, holdReleased)
   const messages = useQuery({ queryKey: ['messages', task.threadId], queryFn: ({ signal }) => getMessages(task.threadId!, signal), enabled: !!task.threadId,
   })
-  useConversationViewed(selfId, task.id, task.lastActivityAt)
+  useConversationViewed(selfId, task.id, task.lastActivityAt, conversationPanel)
   const remoteRequestId = messages.data?.find((item) => item.status === 'streaming' && item.requestId !== chat.run?.requestId)?.requestId
   const remoteRequest = useQuery({ queryKey: ['request', remoteRequestId], queryFn: () => getRequest(remoteRequestId!), enabled: !!remoteRequestId })
   const remoteStreaming = !!remoteRequestId
@@ -183,7 +184,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   }
   return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={sending} onFiles={(files) => composer.current?.dropFiles(files)}>
     <div ref={setQuestionIndexContainer} data-testid="chat-question-toolbar" className="shrink-0 border-b px-4 py-2 empty:hidden" />
-    <div data-testid="chat-message-scroll" className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+    <div ref={conversationPanel} data-testid="chat-message-scroll" className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
     <ChatMessages key={task.id} assistantName={assistant?.name} messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince} questionIndexContainer={questionIndexContainer} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
       actions={(item) => ({
         onAskAgain: item.role === 'user' && item.kind !== 'discussion' ? () => askAgain(item) : undefined,

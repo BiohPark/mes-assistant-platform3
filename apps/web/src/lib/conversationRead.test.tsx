@@ -70,14 +70,35 @@ it.each([
   expect(screen.getByRole('status')).toHaveTextContent('false')
 })
 
-it('survives denied localStorage reads and writes without fetching', () => {
-  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
+it.each(['reads and writes', 'writes'])('retains read state and notifies subscribers with denied localStorage %s', (denied) => {
+  if (denied === 'reads and writes') vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
   vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied') })
   vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
-  expect(() => markConversationViewed(me.id, task.id, Date.parse(task.lastActivityAt))).not.toThrow()
-  mount()
+  const currentTask = { ...task, id: `denied-${denied}` }
+  const viewed = Date.parse(task.lastActivityAt)
+  const { unmount } = mount(me.id, currentTask)
+  expect(screen.getByRole('status')).toHaveTextContent('true')
+  act(() => markConversationViewed('another-user', currentTask.id, viewed))
+  act(() => markConversationViewed(me.id, 'another-denied-task', viewed))
+  expect(screen.getByRole('status')).toHaveTextContent('true')
+  act(() => markConversationViewed(me.id, currentTask.id, viewed))
+  expect(screen.getByRole('status')).toHaveTextContent('false')
+  act(() => markConversationViewed(me.id, currentTask.id, viewed - 1000))
+  unmount()
+  const remounted = mount(me.id, currentTask)
+  expect(screen.getByRole('status')).toHaveTextContent('false')
+  remounted.rerender(<Probe currentTask={{ ...currentTask, lastActivityAt: new Date(viewed + 1000).toISOString() }} />)
   expect(screen.getByRole('status')).toHaveTextContent('true')
   expect(fetch).not.toHaveBeenCalled()
+})
+
+it('shows completed response activity after leaving the conversation', () => {
+  const currentTask = { ...task, id: 'completed-after-leaving' }
+  markConversationViewed(me.id, currentTask.id, Date.parse(currentTask.lastActivityAt))
+  const { rerender } = mount(me.id, currentTask)
+  expect(screen.getByRole('status')).toHaveTextContent('false')
+  rerender(<Probe currentTask={{ ...currentTask, lastActivityAt: '2026-10-13T00:00:10Z', aiRequest: null }} />)
+  expect(screen.getByRole('status')).toHaveTextContent('true')
 })
 
 it.each([['ko', '새 활동'], ['en', 'New activity']] as const)('renders cards in %s with zero messages requests', async (locale: Locale, label) => {

@@ -52,6 +52,32 @@ it('records task activity while viewing, including own activity, and waits until
   }
 })
 
+it('reads activity only when the mounted conversation panel is displayed, including mobile tab and breakpoint changes', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const task = { id: 'mobile-viewed-task', threadId: 'mobile-viewed-thread', status: 'in_progress', inputs: [], tags: [], lastActivityAt: '2026-10-13T00:00:00Z' } as unknown as Task
+  const key = 'mes:last-viewed:mobile-viewed-user:mobile-viewed-task'
+  const view = (task: Task, hidden: boolean) => <QueryClientProvider client={client}><MeContext value={{ id: 'mobile-viewed-user', name: 'User', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><section style={{ display: hidden ? 'none' : 'flex' }}><ChatView task={task} /></section></TooltipProvider></MeContext></QueryClientProvider>
+  try {
+    const { rerender, container } = render(view(task, true))
+    const chat = screen.getByTestId('chat-message-scroll')
+    expect(localStorage.getItem(key)).toBeNull()
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    expect(localStorage.getItem(key)).toBeNull()
+    rerender(view(task, false))
+    await waitFor(() => expect(localStorage.getItem(key)).toBe(String(Date.parse(task.lastActivityAt))))
+    rerender(view(task, true))
+    const newActivity = { ...task, lastActivityAt: '2026-10-13T00:00:01Z' }
+    rerender(view(newActivity, true))
+    expect(localStorage.getItem(key)).toBe(String(Date.parse(task.lastActivityAt)))
+    // A desktop breakpoint reveals the chat even while the mobile materials tab remains selected.
+    act(() => { container.querySelector('section')!.style.display = 'flex'; window.dispatchEvent(new Event('resize')) })
+    expect(localStorage.getItem(key)).toBe(String(Date.parse(newActivity.lastActivityAt)))
+    expect(screen.getByTestId('chat-message-scroll')).toBe(chat)
+  } finally { visibility.mockRestore(); localStorage.removeItem(key); client.clear() }
+})
+
 it('reloads messages after the first AI request when the initial message fetch returns empty late', async () => {
   let finishInitialFetch!: (response: Response) => void
   const initialFetch = new Promise<Response>((resolve) => { finishInitialFetch = resolve })
