@@ -194,6 +194,12 @@ export const en = {
     },
   },
   chat: {
+    copyMessage: 'Copy', copiedMessage: 'Message copied.', copyMessageFailed: 'Could not copy. Please try again.',
+    messageActions: 'Message actions', messageMenu: 'Message menu', askAgain: 'Ask again',
+    askAgainHint: 'New request with current materials and model, including previous messages',
+    pendingAttemptHint: 'A request could not be sent. Press Send to resend the same content. Ask again is unavailable until then.',
+    replaceDraftTitle: 'Replace your draft text?', replaceDraftDescription: 'Only text changes. Current attachments and team comment mode are kept.', replaceDraftConfirm: 'Replace text',
+    questionIndex: 'Question index', newAnswer: 'Go to new answer', questionFailed: 'Failed',
     openWebUi: 'Open in OpenWebUI',
     documentation: 'Documentation',
     referenceConversation: 'On the first send, this conversation is selected as the reference conversation (primary input). Add at least one tag. You can remove it from the tray later.',

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Message } from '@mes/domain'
 import { useQueries } from '@tanstack/react-query'
-import { MessagesSquare, Paperclip } from 'lucide-react'
+import { Copy, MoreHorizontal, RotateCcw, MessagesSquare, Paperclip } from 'lucide-react'
 import type { FileMeta } from '@/api/files'
 import { FilePreviewDialog } from '@/features/task/FilePreviewDialog'
 import { HttpError } from '@/app/auth'
@@ -11,13 +11,18 @@ import { Badge } from '@/components/ui/badge'
 import { useUserMap } from '@/app/hooks'
 import { useDates } from '@/lib/dates'
 import { useT } from '@/i18n'
+import { copyText } from '@/lib/clipboard'
+import { toast } from 'sonner'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
-export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithoutFiles, onRetryAsText, onRequestInfo, intake = false, assistantName }: {
-  intake?: boolean; assistantName?: string; message: Message; onSaveAsOutput?: () => void; onRetry?: () => void; onRetryWithoutFiles?: () => void; onRetryAsText?: () => void; onRequestInfo?: () => void
+export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithoutFiles, onRetryAsText, onRequestInfo, onAskAgain, askAgainDisabled = false, intake = false, assistantName }: {
+  onAskAgain?: () => void; askAgainDisabled?: boolean; intake?: boolean; assistantName?: string; message: Message; onSaveAsOutput?: () => void; onRetry?: () => void; onRetryWithoutFiles?: () => void; onRetryAsText?: () => void; onRequestInfo?: () => void
 }) {
   const t = useT()
   const [preview, setPreview] = useState<FileMeta | null>(null)
   const previewOpener = useRef<HTMLButtonElement | null>(null)
+  const menuTrigger = useRef<HTMLButtonElement | null>(null)
+  const menuAsk = useRef(false)
   useEffect(() => {
     if (!preview) {
       previewOpener.current?.focus()
@@ -36,10 +41,34 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
     const status = error instanceof HttpError ? error.status : undefined
     return status === 404 || status === 410 ? t('chat.deletedFile') : status === 403 ? t('chat.attachmentForbidden') : t('chat.attachmentUnavailable')
   }
-  return <><div className={`flex gap-2.5 ${assistant ? '' : 'flex-row-reverse'}`}>{!assistant && <UserAvatar user={user} size="sm" className="mt-1" />}<div className={`flex max-w-[85%] min-w-0 flex-col gap-1 ${assistant ? 'items-start' : 'items-end'}`}>
+  async function copy() {
+    if (await copyText(message.content)) toast.success(t('chat.copiedMessage'))
+    else toast.error(t('chat.copyMessageFailed'))
+  }
+  const actionClass = 'inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50'
+  return <><div data-message-id={message.id} tabIndex={-1} className={`group/message flex gap-2.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${assistant ? '' : 'flex-row-reverse'}`}>{!assistant && <UserAvatar user={user} size="sm" className="mt-1" />}<div className={`flex max-w-[85%] min-w-0 flex-col gap-1 ${assistant ? 'items-start' : 'items-end'}`}>
     <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">{assistant ? assistantName ?? 'assistant' : user?.name ?? t(intake ? 'sr.requester' : 'chat.user')}</span><span>{formatDateTime(message.createdAt)}</span>{!assistant && !intake && message.kind === 'discussion' && <Badge tone="warning" className="gap-0.5 px-1.5"><MessagesSquare className="size-2.5" />{t('chat.discussionBadge')}</Badge>}</div>
     <div className={`rounded-2xl px-3.5 py-2.5 ${assistant ? 'border bg-card' : !intake && message.kind === 'discussion' ? 'rounded-tr-sm border border-dashed border-tone-warning-fg/40 bg-tone-warning-bg' : 'rounded-tr-sm bg-primary text-primary-foreground'}`}><Markdown content={message.content} /></div>
     {!assistant && attachments.length > 0 && <div className="flex flex-wrap justify-end gap-1 text-xs">{attachments.map((attachment, index) => <span key={message.attachmentIds[index]} className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5"><Paperclip className="size-3" />{intake ? <a href={`/api/files/${encodeURIComponent(message.attachmentIds[index]!)}/content`} className="underline">{attachment.data?.name ?? t('sr.attachment', { number: index + 1 })}</a> : attachment.data ? <button type="button" className="hover:underline" onClick={(event) => { previewOpener.current = event.currentTarget; setPreview(attachment.data) }}>{attachment.data.name}</button> : (attachment.isError ? attachmentFallback(attachment.error) : t('chat.checkingFile'))}</span>)}</div>}
+    <div className="flex items-center gap-1 text-foreground">
+      <div role="group" aria-label={t('chat.messageActions')} className="hidden md:flex md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100 motion-safe:transition-opacity">
+        <button type="button" className={actionClass} onClick={() => void copy()}><Copy aria-hidden="true" className="size-3.5" />{t('chat.copyMessage')}</button>
+        {!assistant && onAskAgain && <button type="button" className={actionClass} disabled={askAgainDisabled} title={t('chat.askAgainHint')} onClick={onAskAgain}><RotateCcw aria-hidden="true" className="size-3.5" />{t('chat.askAgain')}</button>}
+      </div>
+      <DropdownMenu><DropdownMenuTrigger asChild><button ref={menuTrigger} type="button" aria-label={t('chat.messageMenu')} className="inline-flex size-11 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"><span className="flex size-8 items-center justify-center rounded-md border bg-card text-card-foreground"><MoreHorizontal aria-hidden="true" className="size-4" /></span></button></DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="motion-reduce:animate-none! motion-reduce:transition-none!"
+          onCloseAutoFocus={(event) => {
+            if (!menuAsk.current) return
+            event.preventDefault()
+            menuAsk.current = false
+            menuTrigger.current?.focus()
+            onAskAgain?.()
+          }}>
+          <DropdownMenuItem className="min-h-11" onSelect={() => void copy()}><Copy aria-hidden="true" />{t('chat.copyMessage')}</DropdownMenuItem>
+          {!assistant && onAskAgain && <DropdownMenuItem className="min-h-11" disabled={askAgainDisabled} onSelect={() => { menuAsk.current = true }}><RotateCcw aria-hidden="true" />{t('chat.askAgain')}</DropdownMenuItem>}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
     {onSaveAsOutput && <button type="button" className="text-xs underline" onClick={onSaveAsOutput}>{t('chat.saveAsOutput')}</button>}
     {assistant && message.status === 'streaming' && <span className="text-xs text-muted-foreground">{t('chat.responding')}</span>}
     {assistant && message.error && <span role="alert" className="text-xs text-destructive">{message.error}</span>}

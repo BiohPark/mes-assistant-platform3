@@ -21,6 +21,8 @@ export interface PendingAttachment {
 export interface ComposerHandle {
   /** 추가됐으면 true, 한도 초과로 거부됐으면 false */
   dropFiles: (files: File[]) => boolean
+  /** 텍스트만 바꾸고 입력에 포커스한다. 첨부·팀 의견 모드는 유지한다 */
+  setText: (text: string) => void
 }
 
 interface ComposerProps {
@@ -56,6 +58,8 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
   const settings = useQuery({ queryKey: ['settings'], queryFn: getSettings, enabled: maxAttachments === undefined }).data
   const attachmentLimit = maxAttachments ?? settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST
   const inputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const submitting = useRef(false)
   const blocked = !discussion && !!blockedReason
   const canSend = !disabled && !blocked && (discussion || !streaming) && (text.trim().length > 0 || pending.length > 0)
 
@@ -72,6 +76,11 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
     return true
   }
   useImperativeHandle(ref, () => ({
+    setText: (value) => {
+      if (disabled) return
+      setText(value)
+      textareaRef.current?.focus()
+    },
     dropFiles: (files) => {
       if (disabled || !allowAttachments || !addFiles(files)) return false
       toast.success(t('dropzone.attached', { count: files.length }))
@@ -80,7 +89,8 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
   }))
 
   async function submit() {
-    if (!canSend) return
+    if (!canSend || submitting.current) return
+    submitting.current = true
     const submittedText = text
     const f = pending
     if (clearOnSubmit) { setText(''); setPending([]) }
@@ -90,7 +100,7 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
     } catch (e) {
       if (clearOnSubmit) { setTextState((current) => current || submittedText); setPending((current) => current.length ? current : f) }
       toast.error(t('chat.sendFailed'), { description: e instanceof Error ? e.message : String(e) })
-    }
+    } finally { submitting.current = false }
   }
 
   return (
@@ -152,6 +162,7 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
           }}
         />
         <Textarea
+          ref={textareaRef}
           aria-label={inputLabel ?? (discussion ? t('chat.composerLabel') : t('chat.requestLabel'))}
           value={text}
           onChange={(e) => {

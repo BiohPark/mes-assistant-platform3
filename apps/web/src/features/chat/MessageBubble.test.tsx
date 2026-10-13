@@ -6,7 +6,10 @@ import { jsonResponse, renderWithProviders } from '@/test/render'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { MessageBubble } from './MessageBubble'
 
-afterEach(() => vi.unstubAllGlobals())
+const { copy, copyError, copySuccess } = vi.hoisted(() => ({ copy: vi.fn(), copyError: vi.fn(), copySuccess: vi.fn() }))
+vi.mock('@/lib/clipboard', () => ({ copyText: copy }))
+vi.mock('sonner', () => ({ toast: { error: copyError, success: copySuccess } }))
+afterEach(() => { vi.unstubAllGlobals(); copy.mockReset(); copyError.mockClear(); copySuccess.mockClear() })
 
 it('labels an assistant reply as assistant when it offers output saving', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
@@ -90,8 +93,7 @@ it.each(['Escape', 'close button'] as const)('returns focus to the keyboard atta
   const message = { id: 'focus', threadId: 'h', seq: 7, role: 'user', content: '첨부 확인', status: 'done', createdAt: '2026-01-01', attachmentIds: ['f1', 'f2'] } as Message
   renderWithProviders(<TooltipProvider><MessageBubble message={message} /></TooltipProvider>)
   const opener = await screen.findByRole('button', { name: 'second.txt' })
-  await user.tab()
-  await user.tab()
+  for (let i = 0; i < 12 && document.activeElement !== opener; i++) await user.tab()
   expect(opener).toHaveFocus()
   await user.keyboard('{Enter}')
   const dialog = await screen.findByRole('dialog', { name: 'second.txt' })
@@ -100,4 +102,34 @@ it.each(['Escape', 'close button'] as const)('returns focus to the keyboard atta
   else await user.click(within(dialog).getByRole('button', { name: 'Close' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   await waitFor(() => expect(opener).toHaveFocus())
+})
+
+
+it.each(['user', 'assistant'] as const)('copies raw Markdown from a %s bubble and reports failure', async (role) => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  copy.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+  const message = { id: 'copy', threadId: 'h', role, content: '# Title\n\n**bold** [link](https://example.com)', status: 'done', createdAt: '2026-01-01', attachmentIds: [] } as Message
+  renderWithProviders(<TooltipProvider><MessageBubble message={message} /></TooltipProvider>)
+  const toolbar = screen.getByRole('group', { name: '메시지 동작' })
+  const button = within(toolbar).getByRole('button', { name: '복사' })
+  fireEvent.click(button)
+  await waitFor(() => expect(copySuccess).toHaveBeenCalledWith('메시지를 복사했습니다.'))
+  expect(copy).toHaveBeenCalledWith(message.content)
+  fireEvent.click(button)
+  await waitFor(() => expect(copyError).toHaveBeenCalledWith('복사하지 못했습니다. 다시 시도해 주세요.'))
+})
+
+it('opens the mobile actions menu by keyboard and respects disabled reasking', async () => {
+  const user = userEvent.setup()
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  const ask = vi.fn()
+  const message = { id: 'menu', threadId: 'h', role: 'user', content: '질문', status: 'done', createdAt: '2026-01-01', attachmentIds: [] } as Message
+  renderWithProviders(<TooltipProvider><MessageBubble message={message} onAskAgain={ask} askAgainDisabled /></TooltipProvider>)
+  const trigger = screen.getByRole('button', { name: '메시지 메뉴' })
+  trigger.focus()
+  await user.keyboard('{Enter}')
+  expect(await screen.findByRole('menuitem', { name: '다시 묻기' })).toHaveAttribute('data-disabled')
+  await user.keyboard('{Escape}')
+  expect(trigger).toHaveFocus()
+  expect(ask).not.toHaveBeenCalled()
 })
