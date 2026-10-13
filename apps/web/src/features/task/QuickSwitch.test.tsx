@@ -25,7 +25,8 @@ it('lists my in-progress conversations with responding ones first, marks the cur
   ]
   renderSwitch(tasks)
   const trigger = screen.getByRole('button', { name: /빠른 전환/ })
-  await waitFor(() => expect(trigger).toHaveTextContent('1')) // 응답 중 1건
+  await waitFor(() => expect(trigger).toHaveAccessibleName(/^빠른 전환\s*응답 중 1$/)) // 카운트는 sr-only 텍스트(인라인 사이 공백은 엔진마다 다름)
+  expect(trigger).toHaveClass('after:-inset-y-2.5') // 24px 칩에 상하 10px씩 더해 44px 터치 영역
   await userEvent.click(trigger)
   const items = await screen.findAllByRole('menuitem')
   expect(items).toHaveLength(10)

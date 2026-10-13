@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRef, useState } from 'react'
 import { Composer, type ComposerHandle } from './Composer'
-import { clearDrafts } from './drafts'
+import { clearDrafts, getDraft } from './drafts'
 
 const toastSuccess = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: toastSuccess } }))
@@ -216,4 +216,40 @@ it('clears only what was sent: text and attachments staged while the send was st
   fireEvent.change(input(), { target: { value: '다음 질문을 고친다' } })
   await act(async () => { finish() })
   expect(input()).toHaveValue('다음 질문을 고친다') // 보내는 동안 고친 텍스트는 남긴다
+})
+
+it('drops the sent text and attachments from the draft at submit time, so a conversation revisited during streaming starts empty and the late completion does not erase the new draft', async () => {
+  let finish!: () => void
+  const send = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+  const noop = async () => undefined
+  const first = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, draftKey: 'draft-sent' })
+  fireEvent.change(first.container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'q1.txt', { type: 'text/plain' })] } })
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: 'Q1' } })
+  expect(getDraft('draft-sent')).toMatchObject({ text: 'Q1' })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('Q1') // 보내는 동안 화면은 그대로
+  expect(getDraft('draft-sent')).toBeUndefined() // 하지만 초안에서는 보낸 부분이 빠진다
+  first.unmount() // 응답 중 다른 대화로 전환
+  const second = renderComposer({ streaming: true, onSend: noop, onStop: () => undefined, allowAttachments: true, draftKey: 'draft-sent' })
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('') // 돌아와도 Q1이 되살아나지 않는다
+  expect(screen.queryByText('q1.txt')).not.toBeInTheDocument()
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '다음 질문' } })
+  await act(async () => { finish() }) // 옛 인스턴스의 전송이 끝나도
+  expect(getDraft('draft-sent')).toMatchObject({ text: '다음 질문' }) // 새 초안을 지우지 않는다
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('다음 질문')
+  second.unmount()
+  clearDrafts()
+})
+
+it('puts the sent draft back when the send fails, so switching away keeps it', async () => {
+  const send = vi.fn().mockRejectedValueOnce(new Error('실패'))
+  const view = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, draftKey: 'draft-failed' })
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: 'Q1' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+  await waitFor(() => expect(getDraft('draft-failed')).toMatchObject({ text: 'Q1' }))
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('Q1')
+  view.unmount()
+  clearDrafts()
 })

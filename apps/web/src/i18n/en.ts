@@ -77,7 +77,7 @@ export const en = {
     openWebUi: 'Open in OpenWebUI', descriptionPage: 'Description page', description: 'Docs',
     expandSummary: 'Expand summary of {name}', collapseSummary: 'Collapse summary of {name}',
     openConversation: 'Open {code} {title}', aiTitle: 'AI title', selectedInputs: 'Selected inputs',
-    aiResponding: 'AI responding', aiFailed: 'AI failed', aiInterrupted: 'AI interrupted', aiFilter: 'AI state filter',
+    aiResponding: 'AI responding', aiFailed: 'AI failed', aiInterrupted: 'AI interrupted', aiFailedFilter: 'AI failed·interrupted', aiFilter: 'AI state filter',
     daysOverdue: '{days}d overdue', today: 'Today', changeStatus: 'Change status', status: 'Status',
     statusChanged: "Status changed to '{status}'.", statusChangeFailed: 'Could not change the status',
     searchConversations: 'Search code · title · tag', stage: 'Stage', stagesTitle: 'Work stages (multi-select)',
