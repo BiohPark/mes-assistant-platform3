@@ -282,7 +282,7 @@ it.each(['error', 'nonempty'] as const)('does not offer empty-conversation mater
 it('turns a file dropped on the conversation area into a pending attachment chip', () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
   const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const, email: null, emailIsDefault: false }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   const zone = screen.getByTestId('chat-dropzone')
   const drag = { dataTransfer: { types: ['Files'], files: [new File(['a'], 'dropped.txt', { type: 'text/plain' })], items: [] } }
   fireEvent.dragEnter(zone, drag)
@@ -297,7 +297,7 @@ it('turns a file dropped on the conversation area into a pending attachment chip
 it('does not accept drops on a completed conversation', () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
   const task = { id: 't', threadId: 'h', status: 'done', inputs: [], tags: [] } as unknown as Task
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const, email: null, emailIsDefault: false }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.dragEnter(screen.getByTestId('chat-dropzone'), { dataTransfer: { types: ['Files'], files: [], items: [] } })
   expect(screen.queryByText('놓으면 첨부 대기에 추가')).not.toBeInTheDocument()
 })
