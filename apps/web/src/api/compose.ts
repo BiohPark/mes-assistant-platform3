@@ -19,18 +19,46 @@ function run(taskId: string, op: ComposeOp) {
   return send(`${task}/inputs/${encodeURIComponent(op.fromFileId)}/switch-version`, 'POST', { toFileId: op.toFileId })
 }
 
+/** 담는 중인 클라이언트별 보류 상태 — 그동안 들어온 추정 무효화(SSE 항목별 이벤트 포함)는 모았다가 끝에서 1회만 */
+const holds = new WeakMap<QueryClient, { depth: number; held: boolean; restore: () => void }>()
+function holdEstimate(client: QueryClient) {
+  const current = holds.get(client)
+  if (current) { current.depth += 1; return current }
+  const own = Object.hasOwn(client, 'invalidateQueries')
+  const original = client.invalidateQueries
+  const hold = { depth: 1, held: false, restore: () => { if (own) client.invalidateQueries = original; else delete (client as Partial<QueryClient>).invalidateQueries } }
+  client.invalidateQueries = ((filters, options) => {
+    if (filters?.queryKey?.[0] === 'estimate') { hold.held = true; return Promise.resolve() }
+    return original.call(client, filters, options)
+  }) as QueryClient['invalidateQueries']
+  holds.set(client, hold)
+  return hold
+}
+function releaseEstimate(client: QueryClient) {
+  const hold = holds.get(client)!
+  hold.depth -= 1
+  if (hold.depth > 0) return false
+  hold.restore()
+  holds.delete(client)
+  return hold.held
+}
+
 /**
  * 기존 API로 하나씩 순서대로 담는다(일괄 API 없음). 첫 실패에서 멈추고 사유를 남기며, 나머지는 미처리로 돌려준다.
- * 하나라도 담겼으면 끝에서 한 번만 새로 고친다 — 추정은 1회만 다시 계산된다.
+ * 담는 동안의 추정 무효화는 보류하고, 끝에서 한 번만 새로 고친다 — 추정은 1회만 다시 계산된다.
  */
 export async function composeInputs(taskId: string, ops: ComposeOp[], client: QueryClient = queryClient): Promise<ComposeResult[]> {
   const results: ComposeResult[] = ops.map((op) => ({ op, status: 'pending' }))
-  for (const [index, op] of ops.entries()) {
-    try { await run(taskId, op); results[index] = { op, status: 'done' } }
-    catch (error) { results[index] = { op, status: 'failed', reason: error instanceof Error ? error.message : String(error) }; break }
-  }
-  if (results.some((item) => item.status === 'done')) {
-    for (const queryKey of [['candidates'], ['files'], ['conversation-inputs', taskId], ['task', taskId], ['estimate']]) void client.invalidateQueries({ queryKey })
-  }
+  holdEstimate(client)
+  let held = false
+  try {
+    for (const [index, op] of ops.entries()) {
+      try { await run(taskId, op); results[index] = { op, status: 'done' } }
+      catch (error) { results[index] = { op, status: 'failed', reason: error instanceof Error ? error.message : String(error) }; break }
+    }
+  } finally { held = releaseEstimate(client) }
+  const added = results.some((item) => item.status === 'done')
+  if (added) for (const queryKey of [['candidates'], ['files'], ['conversation-inputs', taskId], ['task', taskId]]) void client.invalidateQueries({ queryKey })
+  if (added || held) void client.invalidateQueries({ queryKey: ['estimate'] })
   return results
 }

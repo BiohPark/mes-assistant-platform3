@@ -117,7 +117,7 @@ it('describes the tag relationship in both locales with the count intact', () =>
 })
 
 // S11 U2 — 같은 태그 펼침 패널에서 대화 본문·파일 버전을 골라 담기
-type Route = (url: string, init?: RequestInit) => Response | undefined
+type Route = (url: string, init?: RequestInit) => Response | Promise<Response> | undefined
 const file = (id: string, name: string, version: number, previousId?: string) => ({ id, originTaskId: 'd', name, mime: 'text/plain', size: 10, sha256: id, source: 'upload' as const, isOutput: false, version, ...(previousId && { previousId }), uploadedBy: 'u', uploadedAt: `2026-09-28T00:00:0${version}.000Z` })
 const direct = { ...base, id: 'd', code: 'WK-2026-0011', title: '직접 공유', tags: ['첫째'] }
 const conversation = (taskId: string, code: string, selected?: boolean) => ({ taskId, code, title: code, status: 'in_progress', assistant: { id: 'a', name: 'A', color: '' }, sharedTags: ['첫째'], messageCount: 2, bytes: 10, lastActivityAt: base.lastActivityAt,
@@ -126,7 +126,7 @@ function serve(related: Task[], route: Route) {
   const calls: Array<[string, string]> = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push([init?.method ?? 'GET', url])
-    const routed = route(url, init)
+    const routed = await route(url, init)
     if (routed) return routed
     if (url === '/api/assistants') return jsonResponse(200, [])
     if (url === '/api/tasks/t') return jsonResponse(200, base)
@@ -247,4 +247,108 @@ it('disables adding into a completed conversation', async () => {
   await openPanel(1)
   expect(await screen.findByText('완료된 대화에는 담을 수 없습니다')).toBeInTheDocument()
   expect(screen.getByRole('checkbox', { name: 'WK-2026-0011 대화 본문(전체 스냅샷) 담기' })).toBeDisabled()
+})
+
+// S11 U2 리뷰 반영 — 재시도는 현재 선택, 성공 항목 잠금, 대상 전환 초기화, 완료 대화 재시도 차단
+const writesOf = (calls: Array<[string, string]>) => calls.filter(([method]) => method !== 'GET').map(([method, url]) => `${method} ${url}`)
+
+it('retries with the current choice — a cleared pick is not sent and a changed version sends the new one', async () => {
+  const other = { ...base, id: 'e', code: 'WK-2026-0013', title: '두 번째', tags: ['첫째'] }
+  const calls = serve([direct, other], (url, init) => {
+    if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [], conversations: [conversation('d', direct.code), conversation('e', other.code)] })
+    if (url === '/api/tasks/d/files') return jsonResponse(200, [file('f1', 'spec.txt', 1), file('f2', 'spec.txt', 2, 'f1')])
+    if (url === '/api/tasks/t/inputs/f1' && init?.method === 'PUT') return jsonResponse(400, { message: '후보에 없는 파일입니다' })
+    if (init?.method === 'PUT') return url.includes('conversation-inputs') ? jsonResponse(200, {}) : new Response(null, { status: 204 })
+    return undefined
+  })
+  mount(['첫째'])
+  await openPanel(2)
+  fireEvent.click(await screen.findByRole('button', { name: 'WK-2026-0011 파일 펼치기' }))
+  const chain = await screen.findByRole('radiogroup', { name: 'spec.txt 버전' })
+  fireEvent.click(within(chain).getByRole('radio', { name: 'v1' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'WK-2026-0013 대화 본문(전체 스냅샷) 담기' }))
+  fireEvent.click(screen.getByRole('button', { name: '담기 · 2' }))
+  await screen.findByText('담음 0 · 실패 1 · 미처리 1')
+  fireEvent.click(within(chain).getByRole('radio', { name: 'v2' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'WK-2026-0013 대화 본문(전체 스냅샷) 담기' }))
+  const before = calls.length
+  fireEvent.click(screen.getByRole('button', { name: '재시도' }))
+  await screen.findByText('담음 1 · 실패 0 · 미처리 0')
+  expect(writesOf(calls.slice(before))).toEqual(['PUT /api/tasks/t/inputs/f2'])
+})
+
+it('keeps an added conversation locked until the candidate refetch confirms it, even if that refetch is slow or fails', async () => {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  let candidateCalls = 0
+  const calls = serve([direct], (url, init) => {
+    if (url === '/api/tasks/t/candidates') {
+      candidateCalls += 1
+      // 첫 조회만 성공 — 담은 뒤의 재조회는 늦게 실패한다
+      return candidateCalls === 1 ? jsonResponse(200, { files: [], conversations: [conversation('d', direct.code)] }) : gate.then(() => jsonResponse(500, { message: '조회 실패' }))
+    }
+    if (url === '/api/tasks/t/conversation-inputs/d' && init?.method === 'PUT') return jsonResponse(200, {})
+    return undefined
+  })
+  mount(['첫째'])
+  await openPanel(1)
+  const box = await screen.findByRole('checkbox', { name: 'WK-2026-0011 대화 본문(전체 스냅샷) 담기' })
+  await waitFor(() => expect(box).toBeEnabled())
+  fireEvent.click(box)
+  fireEvent.click(screen.getByRole('button', { name: '담기 · 1' }))
+  await screen.findByText('담음 1 · 실패 0 · 미처리 0')
+  expect(screen.getByRole('checkbox', { name: 'WK-2026-0011 대화 본문(전체 스냅샷) 담기' })).toBeChecked()
+  expect(screen.getByRole('checkbox', { name: 'WK-2026-0011 대화 본문(전체 스냅샷) 담기' })).toBeDisabled()
+  release()
+  await waitFor(() => expect(calls.filter(([, url]) => url === '/api/tasks/t/candidates').length).toBeGreaterThan(1))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  // 재조회가 실패해도(아직 담긴 것으로 확인되지 않아도) 다시 담을 수 없다
+  expect(screen.getByRole('checkbox', { name: 'WK-2026-0011 대화 본문(전체 스냅샷) 담기' })).toBeChecked()
+  expect(screen.getByRole('checkbox', { name: 'WK-2026-0011 대화 본문(전체 스냅샷) 담기' })).toBeDisabled()
+  expect(writesOf(calls)).toEqual(['PUT /api/tasks/t/conversation-inputs/d'])
+})
+
+it('resets picks and results when the panel moves to another conversation', async () => {
+  serve([direct], (url) => {
+    if (url === '/api/tasks/t2') return jsonResponse(200, { ...base, id: 't2' })
+    if (url === '/api/tasks/t/candidates' || url === '/api/tasks/t2/candidates') return jsonResponse(200, { files: [], conversations: [conversation('d', direct.code)] })
+    return undefined
+  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const tree = (target: string) => <QueryClientProvider client={client}><ThemeProvider attribute="class" defaultTheme="system" storageKey="mes-theme" disableTransitionOnChange><ProfileProvider><MeContext value={me}><TooltipProvider><MemoryRouter><RelatedStrip tags={['첫째']} excludeTaskId={target} /></MemoryRouter></TooltipProvider></MeContext></ProfileProvider></ThemeProvider></QueryClientProvider>
+  const view = render(tree('t'))
+  await openPanel(1)
+  const box = await screen.findByRole('checkbox', { name: 'WK-2026-0011 대화 본문(전체 스냅샷) 담기' })
+  await waitFor(() => expect(box).toBeEnabled())
+  fireEvent.click(box)
+  expect(screen.getByRole('button', { name: '담기 · 1' })).toBeEnabled()
+  view.rerender(tree('t2'))
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'WK-2026-0011 대화 본문(전체 스냅샷) 담기' })).toBeEnabled())
+  expect(screen.getByRole('checkbox', { name: 'WK-2026-0011 대화 본문(전체 스냅샷) 담기' })).not.toBeChecked()
+  expect(screen.getByRole('button', { name: '담기 · 0' })).toBeDisabled()
+})
+
+it('disables retry once the conversation is completed after a failed add', async () => {
+  let status: Task['status'] = 'in_progress'
+  const calls = serve([direct], (url, init) => {
+    if (url === '/api/tasks/t') return jsonResponse(200, { ...base, status })
+    if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [], conversations: [conversation('d', direct.code)] })
+    if (init?.method === 'PUT') return jsonResponse(500, { message: '일시 오류' })
+    return undefined
+  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><ThemeProvider attribute="class" defaultTheme="system" storageKey="mes-theme" disableTransitionOnChange><ProfileProvider><MeContext value={me}><TooltipProvider><MemoryRouter><RelatedStrip tags={['첫째']} excludeTaskId="t" /></MemoryRouter></TooltipProvider></MeContext></ProfileProvider></ThemeProvider></QueryClientProvider>)
+  await openPanel(1)
+  const box = await screen.findByRole('checkbox', { name: 'WK-2026-0011 대화 본문(전체 스냅샷) 담기' })
+  await waitFor(() => expect(box).toBeEnabled())
+  fireEvent.click(box)
+  fireEvent.click(screen.getByRole('button', { name: '담기 · 1' }))
+  await screen.findByText('담음 0 · 실패 1 · 미처리 0')
+  expect(screen.getByRole('button', { name: '재시도' })).toBeEnabled()
+  status = 'done'
+  await client.invalidateQueries({ queryKey: ['task', 't'] })
+  await screen.findByText('완료된 대화에는 담을 수 없습니다')
+  expect(screen.getByRole('button', { name: '재시도' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: '재시도' }))
+  expect(writesOf(calls)).toEqual(['PUT /api/tasks/t/conversation-inputs/d'])
 })

@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryObserver } from '@tanstack/react-query'
+import { applyEvent } from '@/app/useEvents'
 import { composeInputs, type ComposeOp } from './compose'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -51,4 +52,27 @@ it('does not refresh anything when nothing was added', async () => {
   const results = await composeInputs('t', ops, client)
   expect(results.map((item) => item.status)).toEqual(['failed', 'pending', 'pending'])
   expect(invalidate).not.toHaveBeenCalled()
+})
+
+it('collects estimate invalidations from per-item SSE events while adding and recalculates once at the end', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  let estimates = 0
+  const observer = new QueryObserver(client, { queryKey: ['estimate', 'h'], queryFn: async () => ++estimates })
+  const unsubscribe = observer.subscribe(() => {})
+  await observer.refetch()
+  const before = estimates
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    // 서버는 항목마다 SSE를 보낸다 — 그 이벤트가 담는 도중에 도착한 상황
+    applyEvent(client, url.includes('conversation-inputs') ? 'context.updated' : 'input.updated', { taskId: 't' })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    return new Response(null, { status: 204 })
+  }))
+  await composeInputs('t', ops.slice(0, 2), client)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(estimates - before).toBe(1)
+  // 담기가 끝난 뒤의 이벤트는 그대로 반영된다
+  applyEvent(client, 'input.updated', { taskId: 't' })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(estimates - before).toBe(2)
+  unsubscribe()
 })

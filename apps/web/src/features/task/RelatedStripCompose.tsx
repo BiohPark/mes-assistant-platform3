@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, X } from 'lucide-react'
 import { composeInputs, type ComposeOp, type ComposeResult } from '@/api/compose'
@@ -28,41 +28,76 @@ function chainsOf(files: FileMeta[]) {
 
 export type Compose = ReturnType<typeof useCompose>
 
+interface ComposeState {
+  targetId?: string
+  /** 고른 것 — 키(대화 c:… / 체인 f:…)별 현재 선택. 재시도도 이것을 다시 읽는다 */
+  picks: ReadonlyMap<string, ComposeOp>
+  results?: Array<ComposeResult & { key: string }>
+  /** 방금 담긴 항목(키 → 대화·파일 ID) — 후보 재조회가 성공할 때까지 체크·비활성으로 잠근다 */
+  locked: ReadonlyMap<string, string>
+}
+const fresh = (targetId?: string): ComposeState => ({ targetId, picks: new Map(), locked: new Map() })
+const lockId = (op: ComposeOp) => op.kind === 'conversation' ? op.sourceTaskId : op.kind === 'file' ? op.fileId : op.toFileId
+
 /**
  * 같은 태그 패널의 담기 상태 — 기본은 아무것도 고르지 않는다. 이미 담긴 대화·버전은 체크·비활성(덮어쓰기 없음),
  * 담긴 체인에서 다른 버전을 고르면 switch-version. 패널을 열 때만 대상 대화·후보를 조회한다.
+ * 상태는 대상 대화별 — 다른 대화로 옮기면 선택·결과를 버린다.
  */
 export function useCompose(targetId: string | undefined, open: boolean) {
   const client = useQueryClient()
   const enabled = open && !!targetId
   const target = useQuery({ queryKey: ['task', targetId], queryFn: () => getTask(targetId!), enabled })
   const candidates = useQuery({ queryKey: ['candidates', targetId], queryFn: () => getCandidates(targetId!), enabled })
-  const [picks, setPicks] = useState<ReadonlyMap<string, ComposeOp>>(new Map())
-  const [results, setResults] = useState<ComposeResult[]>()
+  const [stored, setState] = useState(() => fresh(targetId))
+  const state = stored.targetId === targetId ? stored : fresh(targetId)
+  if (stored !== state) setState(state)
   const [running, setRunning] = useState(false)
+  const inflight = useRef(false)
   const addedConversations = new Set(candidates.data?.conversations.filter((item) => item.selected).map((item) => item.taskId))
   const addedFiles = new Set(candidates.data?.files.filter((item) => item.selected).map((item) => item.file.id))
   const closed = target.data?.status === 'done'
-  const update = (key: string, op: ComposeOp | null) => setPicks((current) => {
-    const next = new Map(current)
+  const disabled = !target.data || !candidates.data || closed || running
+  const { picks, results, locked } = state
+  const retryKeys = (results ?? []).filter((item) => item.status !== 'done' && picks.has(item.key)).map((item) => item.key)
+  const change = (runTarget: string | undefined, apply: (current: ComposeState) => ComposeState) =>
+    setState((current) => current.targetId === runTarget ? apply(current) : current)
+  const update = (key: string, op: ComposeOp | null) => change(targetId, (current) => {
+    const next = new Map(current.picks)
     if (op) next.set(key, op)
     else next.delete(key)
-    return next
+    return { ...current, picks: next }
   })
-  async function run(ops: ComposeOp[]) {
-    if (!targetId) return
+  async function run(keys: string[]) {
+    const ops = keys.flatMap((key) => { const op = picks.get(key); return op ? [{ key, op }] : [] })
+    if (!targetId || disabled || inflight.current || ops.length === 0) return
+    const runTarget = targetId
+    inflight.current = true
     setRunning(true)
     try {
-      const outcome = await composeInputs(targetId, ops, client)
-      setResults(outcome)
-      setPicks((current) => new Map([...current].filter(([, op]) => !outcome.some((item) => item.status === 'done' && item.op === op))))
-    } finally { setRunning(false) }
+      const outcome = await composeInputs(runTarget, ops.map((item) => item.op), client)
+      const done = new Map(ops.filter((_, index) => outcome[index]!.status === 'done').map((item) => [item.key, lockId(item.op)]))
+      change(runTarget, (current) => ({
+        ...current,
+        picks: new Map([...current.picks].filter(([key]) => !done.has(key))),
+        results: outcome.map((item, index) => ({ ...item, key: ops[index]!.key })),
+        locked: new Map([...current.locked, ...done]),
+      }))
+      if (done.size === 0) return
+      // 담긴 것이 후보에 반영될 때까지 잠금 유지 — 재조회가 실패하면 잠금을 풀지 않는다
+      const startedAt = Date.now()
+      await client.refetchQueries({ queryKey: ['candidates', runTarget], exact: true })
+      const confirmed = client.getQueryState(['candidates', runTarget])
+      if (confirmed?.status === 'success' && confirmed.dataUpdatedAt >= startedAt) {
+        change(runTarget, (current) => ({ ...current, locked: new Map([...current.locked].filter(([key, id]) => done.get(key) !== id)) }))
+      }
+    } finally { inflight.current = false; setRunning(false) }
   }
   return {
-    disabled: !target.data || !candidates.data || closed || running,
-    closed, running, picks, results, addedConversations, addedFiles, update,
-    submit: () => run([...picks.values()]),
-    retry: () => run((results ?? []).filter((item) => item.status !== 'done').map((item) => item.op)),
+    disabled, closed, running, picks, results, locked, addedConversations, addedFiles, update,
+    canRetry: !disabled && retryKeys.length > 0,
+    submit: () => run([...picks.keys()]),
+    retry: () => run(retryKeys),
   }
 }
 
@@ -78,7 +113,8 @@ function FileChains({ taskId, compose }: { taskId: string; compose: Compose }) {
     {chains.slice(0, MAX_CHAINS).map(({ root, versions }) => {
       const key = `f:${taskId}:${root}`
       const label = versions[0]!.name
-      const added = versions.find((file) => compose.addedFiles.has(file.id))
+      const lockedId = compose.locked.get(key)
+      const added = lockedId ? versions.find((file) => file.id === lockedId) : versions.find((file) => compose.addedFiles.has(file.id))
       const pick = compose.picks.get(key)
       const checked = pick?.kind === 'file' ? pick.fileId : pick?.kind === 'switch' ? pick.toFileId : added?.id
       const choose = (file: FileMeta) => compose.update(key, file.id === added?.id ? null
@@ -104,7 +140,7 @@ export function ComposeRow({ taskId, code, compose }: { taskId: string; code: st
   const t = useT()
   const [filesOpen, setFilesOpen] = useState(false)
   const key = `c:${taskId}`
-  const added = compose.addedConversations.has(taskId)
+  const added = compose.addedConversations.has(taskId) || compose.locked.has(key)
   return <div className="space-y-1 px-2 pb-1.5 text-xs">
     <div className="flex items-center gap-3 pl-7">
       <label className="inline-flex items-center gap-1">
@@ -139,7 +175,7 @@ export function ComposeBar({ compose }: { compose: Compose }) {
         <span className={cn('shrink-0', item.status === 'failed' ? 'text-destructive' : 'text-muted-foreground')}>{item.status === 'done' ? t('task.related.compose.done')
           : item.status === 'failed' ? t('task.related.compose.failed', { reason: item.reason }) : t('task.related.compose.pending')}</span>
       </li>)}</ul>
-      {count('failed') + count('pending') > 0 && <Button size="xs" variant="outline" disabled={compose.running} onClick={() => void compose.retry()}>{t('task.related.compose.retry')}</Button>}
+      {count('failed') + count('pending') > 0 && <Button size="xs" variant="outline" disabled={!compose.canRetry} onClick={() => void compose.retry()}>{t('task.related.compose.retry')}</Button>}
     </div>}
   </div>
 }
