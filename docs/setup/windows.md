@@ -335,3 +335,6 @@ WHERE status IN ('succeeded','failed','cancelled','interrupted')
 | (OIDC) Keycloak 로그인 뒤 `Invalid parameter: redirect_uri` | `APP_ORIGIN`이 Keycloak에 등록된 콜백과 다름. `.env` 수정 후 `docker compose --profile oidc up -d --force-recreate keycloak` |
 | `docker compose up`이 `.env에 … 필요` 로 멈춤 | `.env`가 없음 → `pnpm setup:env` |
 | `pnpm db:migrate`가 `Access denied for user` | `DATABASE_URL`의 사용자·비밀번호가 4장에서 만든 값과 다름 |
+
+선택 설정 `DEFAULT_EMAIL_DOMAIN=example.com`은 이메일 미설정 계정의 응답에 `{loginId}@{도메인}`을 기본값으로 표시하며 DB에 저장·백필하지 않는다. 설정을 비우면 기본 이메일은 `null`이다.
+도메인은 전체 253자 이하이며 각 구간은 1–63자의 영숫자·하이픈만 허용하고 앞뒤 하이픈은 금지한다. 최상위 도메인은 영문 2자 이상이어야 한다. 잘못된 값이면 기동 시 `DEFAULT_EMAIL_DOMAIN` 설정 오류를 낸다.

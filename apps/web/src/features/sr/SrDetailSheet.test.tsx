@@ -18,7 +18,7 @@ it('요청자 이름과 번역한 상태를 표시하고 내부 ID는 숨긴다'
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/catalog/users' ? jsonResponse(200, [
     { id: 'internal-requester-uuid', name: '요청한 사람', initials: '요', color: '#000', isSystemOwner: false, isBusinessOwner: false },
   ]) : jsonResponse(200, [])))
-  const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={sr} onSaved={() => undefined} /></MeContext></TooltipProvider>)
+  const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={sr} onSaved={() => undefined} /></MeContext></TooltipProvider>)
   await screen.findByText('요청자 요청한 사람 · 상태 접수됨')
   expect(container).not.toHaveTextContent('internal-requester-uuid')
   expect(container).not.toHaveTextContent('submitted')
@@ -28,7 +28,7 @@ it('요청자 이름과 번역한 상태를 표시하고 내부 ID는 숨긴다'
 
 it('요청자 목록에 없어도 ID 대신 일반 요청자 이름을 표시한다', () => {
   vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
-  const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={sr} onSaved={() => undefined} /></MeContext></TooltipProvider>)
+  const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={sr} onSaved={() => undefined} /></MeContext></TooltipProvider>)
   expect(container).not.toHaveTextContent('internal-requester-uuid')
   expect(container).toHaveTextContent('요청자')
 })
@@ -46,7 +46,7 @@ it('연결 에이전트 추천·검색은 폐기를 제외하고 선택한 에�
     return jsonResponse(200, [])
   }))
   const user = userEvent.setup()
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={sr} onSaved={() => undefined} /></MeContext></TooltipProvider>)
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={sr} onSaved={() => undefined} /></MeContext></TooltipProvider>)
   expect(screen.getByRole('button', { name: '연결 업무 시작' })).toBeDisabled()
   const pick = await screen.findByRole('button', { name: '추천 도우미' })
   pick.focus(); await user.keyboard('{Enter}')
@@ -71,7 +71,7 @@ it('상태 select 대신 단계와 다음 단계 버튼을 보여 주고, 사유
     if (url === '/api/service-requests/internal-sr-uuid/status') { patches.push(JSON.parse(String(init?.body))); return jsonResponse(200, { ...sr, status: 'reviewing' }) }
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={sr} onSaved={() => undefined} /></MeContext></TooltipProvider>)
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={sr} onSaved={() => undefined} /></MeContext></TooltipProvider>)
   const steps = screen.getByRole('list', { name: '요청 진행 단계' })
   expect(within(steps).getByText('접수됨')).toHaveAttribute('aria-current', 'step')
   await userEvent.click(screen.getByRole('button', { name: '다음 단계: 검토 중' }))
@@ -85,7 +85,7 @@ it.each([['반려', 'rejected'], ['완료', 'done']])('다른 상태 메뉴에�
     if (url === '/api/service-requests/internal-sr-uuid/status') { patches.push(JSON.parse(String(init?.body))); return jsonResponse(200, { ...sr, status }) }
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={sr} onSaved={() => undefined} /></MeContext></TooltipProvider>)
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={sr} onSaved={() => undefined} /></MeContext></TooltipProvider>)
   await userEvent.click(screen.getByRole('button', { name: '다른 상태로' }))
   expect(screen.queryByRole('menuitem', { name: '접수됨' })).not.toBeInTheDocument()
   await userEvent.click(await screen.findByRole('menuitem', { name: label }))
@@ -104,7 +104,7 @@ it('상태 이력에 시각·처리자·변경·사유를 보여 준다', async 
     { id: 'h1', at: '2026-10-01T01:00:00.000Z', by: 'u', byName: '요청한 사람', from: 'draft', to: 'submitted' },
     { id: 'h2', at: '2026-10-02T02:00:00.000Z', by: 's', byName: '담당자', from: 'submitted', to: 'rejected', reason: '범위 밖 요청' },
   ]
-  const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={{ ...sr, status: 'rejected', statusHistory: history }} onSaved={() => undefined} /></MeContext></TooltipProvider>)
+  const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={{ ...sr, status: 'rejected', statusHistory: history }} onSaved={() => undefined} /></MeContext></TooltipProvider>)
   const list = screen.getByRole('list', { name: '상태 이력' })
   expect(within(list).getAllByRole('listitem')).toHaveLength(2)
   expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('담당자')
@@ -124,7 +124,7 @@ it('Sheet는 접수 첨부·원문 Markdown·연결 상태를 보여주고 생�
     if (url.endsWith('/tasks')) return jsonResponse(201, { id: 'created-task' })
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={{ ...sr, attachmentIds: ['file'] }} onSaved={() => undefined} /><Location /></MeContext></TooltipProvider>)
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={{ ...sr, attachmentIds: ['file'] }} onSaved={() => undefined} /><Location /></MeContext></TooltipProvider>)
   expect(await screen.findByText('알람.txt v1')).toBeInTheDocument()
   expect(await screen.findByText('원문 요청', { selector: 'strong' })).toBeInTheDocument()
   await userEvent.click(await screen.findByRole('button', { name: '접수 도우미' }))
@@ -136,7 +136,7 @@ it('Sheet는 접수 첨부·원문 Markdown·연결 상태를 보여주고 생�
 it('영문 Sheet의 파일 목록과 SR 액션은 번역된 이름을 사용한다', async () => {
   localStorage.setItem('mes-locale', 'en')
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/files/file' ? jsonResponse(200, { id: 'file', name: 'alarm.txt', version: 1, size: 10, source: 'upload' }) : jsonResponse(200, [])))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: 'User', role: '', roles: ['member'], theme: 'system', locale: 'en' }}><SrDetailSheet sr={{ ...sr, attachmentIds: ['file'] }} onSaved={() => undefined} /></MeContext></TooltipProvider>)
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: 'User', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'en' }}><SrDetailSheet sr={{ ...sr, attachmentIds: ['file'] }} onSaved={() => undefined} /></MeContext></TooltipProvider>)
   await screen.findByText('alarm.txt v1')
   expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Version history' })).toBeInTheDocument()

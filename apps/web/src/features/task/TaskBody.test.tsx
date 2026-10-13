@@ -21,7 +21,7 @@ it.each(['narrow', 'wide'] as const)('moves keyboard focus to the visible materi
   // jsdom does not load Tailwind: model the tablist and chat visibility at each breakpoint.
   renderWithProviders(<><style>{layout === 'narrow'
     ? '[role="tablist"][aria-label="보조 패널"], section.hidden { display: none; }'
-    : '[role="tablist"][aria-label="대화 화면 탭"] { display: none; }'}</style><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext></>)
+    : '[role="tablist"][aria-label="대화 화면 탭"] { display: none; }'}</style><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext></>)
   const opener = await screen.findByRole('button', { name: '자료 열기' })
   opener.focus()
   await user.keyboard('{Enter}')
@@ -37,7 +37,7 @@ it('offers narrow-screen tabs, placeholders, and the activity panel', async () =
     if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
   const mobileTabs = within(screen.getByRole('tablist', { name: '대화 화면 탭' }))
   fireEvent.click(mobileTabs.getByRole('tab', { name: '자료' }))
   expect(screen.getByRole('tablist', { name: '자료 탭' })).toBeInTheDocument()
@@ -51,7 +51,7 @@ it('방향키로 보조 패널 탭을 옮기고 단일 tabpanel이 활성 탭을
     if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
   const panelTabs = within(screen.getByRole('tablist', { name: '보조 패널' }))
   const history = panelTabs.getByRole('tab', { name: '이력' })
   expect(history).toHaveAttribute('id', 'task-tab-history')
@@ -98,7 +98,7 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
     }
     if (url === '/api/threads/h-pending/requests/estimate') return jsonResponse(200, {
       at: task.createdAt, provider: 'mock', transport: 'inline', model: 'mock', bytes: 100, limitBytes: 10_000,
-      inputs: [], srCodes: [], overLimit: false, attachmentLimit: 20,
+      inputs: [], srCodes: [], srs: [], overLimit: false, attachmentLimit: 20,
     })
     if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
     if (url === '/api/settings') return jsonResponse(200, { fileMaxPerRequest: 20 })
@@ -106,7 +106,7 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
     return jsonResponse(200, [])
   })
   vi.stubGlobal('fetch', fetchMock)
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><TaskBody task={{ ...task, threadId: 'h-pending' }} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><TaskBody task={{ ...task, threadId: 'h-pending' }} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
   const chat = () => within(screen.getByRole('region', { name: '대화' }))
   const input = chat().getByRole('textbox')
   const composer = input.parentElement!.parentElement!
@@ -159,7 +159,7 @@ it('keeps history as the default and opens materials on both layouts without rem
     if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [], conversations: [] })
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
   const desktop = within(screen.getByRole('tablist', { name: '보조 패널' }))
   const mobile = within(screen.getByRole('tablist', { name: '대화 화면 탭' }))
   expect(desktop.getByRole('tab', { name: '이력' })).toHaveAttribute('aria-selected', 'true')

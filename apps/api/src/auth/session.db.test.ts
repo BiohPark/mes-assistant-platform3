@@ -37,7 +37,7 @@ describe('세션·사용자 저장소 (MariaDB)', () => {
   }
 
   it('local 회원가입 → 비밀번호 조회 → 로그인 세션 resolve', async () => {
-    const local = { ...config, authMode: 'local' as const, oidc: undefined }
+    const local = { ...config, authMode: 'local' as const, oidc: undefined, defaultEmailDomain: 'example.com' }
     const users = new DbUserDirectory(db, local)
     const created = await users.createLocal('local-member', 'hash-for-test')
     expect(created?.name).toBe('local-member')
@@ -49,7 +49,7 @@ describe('세션·사용자 저장소 (MariaDB)', () => {
   })
 
   it('실제 DB에서 signup → login → 세션 resolve', async () => {
-    const local = { ...config, authMode: 'local' as const, oidc: undefined }
+    const local = { ...config, authMode: 'local' as const, oidc: undefined, defaultEmailDomain: 'example.com' }
     const apiClient = createPool(temp.url, 2)
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CONFIG).useValue(local)
@@ -64,11 +64,16 @@ describe('세션·사용자 저장소 (MariaDB)', () => {
       const signup = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'api-local-member', password: 'password-1234', name: '홍 길동' }).expect(expectStatus(201))
       expect(signup.body.roles).toEqual(['member'])
       expect(signup.body.name).toBe('홍 길동')
+      expect(signup.body).toMatchObject({ email: 'api-local-member@example.com', emailIsDefault: true })
       expect((await db.select().from(appUser).where(eq(appUser.id, signup.body.id as string)))[0]).toMatchObject({ name: '홍 길동', initials: '홍' })
       const login = await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'api-local-member', password: 'password-1234' }).expect(expectStatus(200))
       const cookie = String(login.headers['set-cookie']).split(';')[0]!
       const me = await request(app.getHttpServer()).get('/api/me').set('Cookie', cookie).expect(200)
       expect(me.body.id).toBe(signup.body.id)
+      expect(login.body).toMatchObject({ email: 'api-local-member@example.com', emailIsDefault: true })
+      await db.update(appUser).set({ email: 'Mixed.Case@example.net' }).where(eq(appUser.id, signup.body.id))
+      const again = await request(app.getHttpServer()).post('/api/auth/login').send({ loginId: 'api-local-member', password: 'password-1234' }).expect(200)
+      expect(again.body).toMatchObject({ email: 'Mixed.Case@example.net', emailIsDefault: false })
     } finally {
       await app.close()
     }
@@ -88,9 +93,12 @@ describe('세션·사용자 저장소 (MariaDB)', () => {
   it('첫 로그인 때 사용자를 만들고, 다시 로그인하면 같은 사용자 (이름은 갱신)', async () => {
     const users = new DbUserDirectory(db, config)
     const a = await users.upsertFromClaims({ sub: 'kc-100', preferred_username: 'dev-member', name: '이담당' })
+    await db.update(appUser).set({ email: 'SSO@example.net' }).where(eq(appUser.id, a.id))
     const b = await users.upsertFromClaims({ sub: 'kc-100', preferred_username: 'dev-member', name: '이담당2' })
     expect(b.id).toBe(a.id)
     expect(b.name).toBe('이담당2')
+    expect(b.email).toBe('SSO@example.net')
+    expect(b.loginId).toBeNull()
     expect(a.isSystemOwner).toBe(false)
     const [row] = await db.select().from(appUser).where(eq(appUser.id, a.id))
     expect(row?.ssoSubject).toBe('http://localhost:8180/realms/mes-dev#kc-100')

@@ -93,7 +93,7 @@ describe('api 골격', () => {
 
   it('GET /api/me — 세션 사용자와 역할', async () => {
     const res = await request(app.getHttpServer()).get('/api/me').set('Cookie', 'mes_session=owner').expect(200)
-    expect(MeSchema.parse(res.body)).toEqual({ id: 'u-owner', name: '김운영', role: '', roles: ['member', 'system_owner'], theme: 'system', locale: 'ko' })
+    expect(MeSchema.parse(res.body)).toEqual({ id: 'u-owner', name: '김운영', role: '', roles: ['member', 'system_owner'], theme: 'system', locale: 'ko', email: null, emailIsDefault: false })
   })
 
   it('mock 모드 모델 목록은 예시 모델을 서버에서 반환한다', async () => {

@@ -23,7 +23,7 @@ afterEach(() => { vi.unstubAllGlobals(); assistantRows = [assistant]; users = [{
 it('enables order editing after assistants load and shows every card', () => {
   assistantRows = []
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const page = () => <QueryClientProvider client={client}><MemoryRouter><ThemeProvider attribute="class" defaultTheme="system" storageKey="mes-theme" disableTransitionOnChange><ProfileProvider><MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext></ProfileProvider></ThemeProvider></MemoryRouter></QueryClientProvider>
+  const page = () => <QueryClientProvider client={client}><MemoryRouter><ThemeProvider attribute="class" defaultTheme="system" storageKey="mes-theme" disableTransitionOnChange><ProfileProvider><MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext></ProfileProvider></ThemeProvider></MemoryRouter></QueryClientProvider>
   const { container, rerender } = render(page())
   expect(screen.getByRole('button', { name: '순서 편집' })).toBeDisabled()
 
@@ -42,7 +42,7 @@ it('removes an image without submitting unsaved assistant edits', async () => {
     if (url === '/api/codes?includeInactive=true') return jsonResponse(200, [])
     return jsonResponse(200, {})
   }))
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: '편집' }))
   fireEvent.change(screen.getByLabelText('이름'), { target: { value: '저장하지 않은 이름' } })
   expect(screen.getByRole('button', { name: '이미지 제거' })).toHaveAttribute('type', 'button')
@@ -57,7 +57,7 @@ it('removes an image without submitting unsaved assistant edits', async () => {
 it('관리 표·검색·편집기에서 내부 ID를 노출하지 않는다', async () => {
   assistantRows = [{ ...assistant, id: 'internal-agent-uuid' }]
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/llm/models' ? jsonResponse(200, { models: ['mapped-model'] }) : jsonResponse(200, [])))
-  const { container } = renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  const { container } = renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   expect(container).not.toHaveTextContent('internal-agent-uuid')
   expect(container).not.toHaveTextContent('open')
   fireEvent.change(screen.getByPlaceholderText('에이전트 검색'), { target: { value: 'internal-agent-uuid' } })
@@ -86,7 +86,7 @@ it('새 에이전트는 ID 없이 생성하고 연결 모델을 직접 입력할
     if (url === '/api/assistants' && init?.method === 'POST') { body = JSON.parse(String(init.body)) as Record<string, unknown>; return jsonResponse(201, { ...assistant, id: 'a-123456789abc' }) }
     return jsonResponse(200, {})
   }))
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: '새 에이전트' }))
   expect(screen.queryByLabelText('ID')).not.toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('이름'), { target: { value: '새 도우미' } })
@@ -123,7 +123,7 @@ it.each([false, true])('편집 저장은 바꾸지 않은 분류 ID를 보존하
     if (url === '/api/assistants/a' && init?.method === 'PATCH') { body = JSON.parse(String(init.body)); return jsonResponse(200, assistant) }
     return jsonResponse(200, {})
   }))
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: '편집' }))
   fireEvent.change(screen.getByLabelText('설명'), { target: { value: '설명만 수정' } })
   if (changeLevel1) {
@@ -148,7 +148,7 @@ it.each([
     { id: assistant.level1CodeId, groupKey: 'assistant_level1', code: 'SDLC', name: 'SDLC', sortOrder: 1, active: true, isAuto: false },
     { id: assistant.level2CodeId, groupKey: 'assistant_level2', code: '분석', name: '분석', sortOrder: 2, active: true, isAuto: true },
   ])))
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: labels.locale }}><I18nProvider locale={labels.locale}><TooltipProvider><ManagePage /></TooltipProvider></I18nProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: labels.locale }}><I18nProvider locale={labels.locale}><TooltipProvider><ManagePage /></TooltipProvider></I18nProvider></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: labels.tab }))
   expect(await screen.findByRole('heading', { name: labels.level1 })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: labels.level2 })).toBeInTheDocument()
@@ -182,7 +182,7 @@ it('코드 이름·순서·활성을 계속 수정하고 비활성 코드도 관
     if (url === '/api/codes?includeInactive=true') return jsonResponse(200, [item])
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: '분류 코드' }))
   const name = await screen.findByRole('textbox', { name: 'SDLC 이름' })
   fireEvent.change(name, { target: { value: '새 이름' } })
@@ -210,7 +210,7 @@ it('담당자·상태·필수 항목을 키보드로 변경해 저장하고 담�
     return jsonResponse(200, [])
   }))
   const user = userEvent.setup()
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   await user.click(screen.getByRole('button', { name: '편집' }))
   expect(screen.getByRole('combobox', { name: '담당자' })).toHaveAttribute('aria-required', 'true')
   await user.click(screen.getByRole('button', { name: '운영자 제거' }))
@@ -239,7 +239,7 @@ it('담당자·상태·필수 항목을 키보드로 변경해 저장하고 담�
 it('편집 Sheet는 포커스를 가두고 Escape로 닫은 뒤 편집 버튼에 돌려준다', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => jsonResponse(200, url === '/api/llm/models' ? { models: [] } : [])))
   const user = userEvent.setup()
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   const trigger = screen.getByRole('button', { name: '편집' })
   await user.click(trigger)
   const sheet = screen.getByRole('dialog', { name: '에이전트 편집' })
@@ -269,7 +269,7 @@ it.each(['즉시', '지연'])('에이전트 목록이 %s 갱신되어도 삭제 
     return jsonResponse(200, url === '/api/llm/models' ? { models: [] } : [])
   }))
   const user = userEvent.setup()
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   const editTrigger = screen.getByRole('button', { name: '편집' })
   await user.click(editTrigger)
   const trigger = screen.getByRole('button', { name: '삭제' })
@@ -308,7 +308,7 @@ it('관리 표는 읽기 전용이며 비대표 경로 검색·I/O 2+N 배지를
   ] }]
   const fetcher = vi.fn(async () => jsonResponse(200, []))
   vi.stubGlobal('fetch', fetcher)
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   const table = screen.getByRole('table')
   expect(within(table).queryByRole('textbox')).not.toBeInTheDocument()
   expect(within(table).getByText('read-only-model')).toBeInTheDocument()
@@ -329,7 +329,7 @@ it('link1 재정의는 값이 있을 때만 표시하며 지우기·저장 실�
     return jsonResponse(200, url === '/api/llm/models' ? { models: [] } : [])
   }))
   const user = userEvent.setup()
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   await user.click(screen.getByRole('button', { name: '편집' }))
   expect(screen.getByText('기존 링크 재정의 있음')).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('연결 모델'), { target: { value: 'draft-model' } })
@@ -360,7 +360,7 @@ it('다중 경로 순서를 바꿔도 기존 비활성 코드 ID를 전송한다
     if (init?.method === 'PATCH') { body = JSON.parse(String(init.body)); return jsonResponse(200, assistantRows[0]) }
     return jsonResponse(200, url === '/api/llm/models' ? { models: [] } : [])
   }))
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: '편집' }))
   fireEvent.click(screen.getByRole('button', { name: '경로 2 위로' }))
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
@@ -377,7 +377,7 @@ it('허브 edit URL로 열고 취소하면 URL을 지우며 다시 열 때 저�
     if (init?.method === 'PATCH') patches.push(init.body)
     return jsonResponse(200, url === '/api/llm/models' ? { models: [] } : [])
   }))
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>, { route: '/assistants/manage?edit=a' })
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>, { route: '/assistants/manage?edit=a' })
   const editor = await screen.findByRole('dialog', { name: '에이전트 편집' })
   fireEvent.change(within(editor).getByLabelText('이름'), { target: { value: '취소할 값' } })
   fireEvent.click(within(editor).getByRole('button', { name: '닫기' }))
@@ -390,7 +390,7 @@ it('허브 edit URL로 열고 취소하면 URL을 지우며 다시 열 때 저�
 
 it('비SO는 편집·생성·시험 대화와 edit URL 동작이 없다', () => {
   vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
-  renderWithProviders(<MeContext value={{ id: 'member', name: '담당자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>, { route: '/assistants/manage?edit=a' })
+  renderWithProviders(<MeContext value={{ id: 'member', name: '담당자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>, { route: '/assistants/manage?edit=a' })
   expect(screen.queryByRole('button', { name: '편집' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '새 에이전트' })).not.toBeInTheDocument()
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -403,7 +403,7 @@ it('경로 추가·제거는 최소 한 경로를 유지하고 기존 ID와 신�
     if (init?.method === 'PATCH') { body = JSON.parse(String(init.body)); return jsonResponse(200, assistant) }
     return jsonResponse(200, url === '/api/llm/models' ? { models: [] } : [])
   }))
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: '편집' }))
   expect(screen.getByRole('button', { name: '경로 1 제거' })).toBeDisabled()
   fireEvent.click(screen.getByRole('button', { name: /경로 추가/ }))

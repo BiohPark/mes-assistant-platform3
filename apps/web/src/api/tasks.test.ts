@@ -30,6 +30,11 @@ it('encodes shared list filters in the URL', async () => {
   expect(seen).toBe('/api/tasks?assistantId=a&status%5B%5D=done&tag%5B%5D=a+b&mine=true')
 })
 
+it('preserves the HTTP status and server message when task access is forbidden', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ message: '작업 조회 거부' }), { status: 403 })))
+  await expect(listTasks()).rejects.toMatchObject({ status: 403, message: '작업 조회 거부' })
+})
+
 it('passes the message query cancellation signal to fetch', async () => {
   const signal = new AbortController().signal
   const fetch = vi.fn(async () => new Response('[]', { status: 200 }))

@@ -36,10 +36,11 @@ export const saveSettings = (patch: SettingsPatch) => adminRequest('settings', '
 export const listManagedCodes = async () => CodeSchema.array().parse(await adminRequest('codes?includeInactive=true', 'GET'))
 export const createCode = (input: { groupKey: string; code: string; name: string; sortOrder?: number }) => adminRequest('codes', 'POST', input)
 export const updateCode = (id: string, patch: { name?: string; sortOrder?: number; active?: boolean }) => adminRequest(`codes/${encodeURIComponent(id)}`, 'PATCH', patch)
-export type ManagedUser = { id: string; loginId: string | null; name: string; active: boolean; isSystemOwner: boolean; isBusinessOwner: boolean; mustChangePassword: boolean }
+export type ManagedUser = { id: string; loginId: string | null; name: string; email: string | null; emailIsDefault: boolean; active: boolean; isSystemOwner: boolean; isBusinessOwner: boolean; mustChangePassword: boolean }
 export const listManagedUsers = async () => await adminRequest('users', 'GET') as ManagedUser[]
 export const setUserName = (id: string, name: string) => adminRequest(`users/${encodeURIComponent(id)}`, 'PATCH', { name })
 export const setMyProfile = async (input: ProfilePatch) => ProfileSchema.parse(await adminRequest('users/me', 'PATCH', input))
+export const setMyAccountProfile = async (input: ProfilePatch) => ProfileSchema.parse(await adminRequest('me', 'PATCH', input))
 export const setMyName = (name: string) => setMyProfile({ name })
 export const setUserFlag = (id: string, field: 'system-owner' | 'business-owner' | 'active', enabled: boolean) => adminRequest(`users/${encodeURIComponent(id)}/${field}`, 'PUT', { enabled })
 export const temporaryPassword = async (id: string) => await adminRequest(`users/${encodeURIComponent(id)}/temporary-password`, 'POST') as { temporaryPassword: string }

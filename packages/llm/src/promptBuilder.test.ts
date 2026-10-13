@@ -94,7 +94,7 @@ describe('buildChatRequest — files', () => {
     expect(actual.info.bytes).toBe(new TextEncoder().encode(JSON.stringify({ model: actual.model, messages: actual.messages, files: [{ type: 'file', id: file.id }], stream: true })).length)
     expect(actual.info.bytes).toBe(actual.info.limitBytes)
     const comparable = (value: typeof dry.info) => ({ provider: value.provider, transport: value.transport, model: value.model,
-      bytes: value.bytes, limitBytes: value.limitBytes, srCodes: value.srCodes,
+      bytes: value.bytes, limitBytes: value.limitBytes, srCodes: value.srCodes, srs: value.srs,
       inputs: value.inputs.map((item) => item.kind === 'file' ? { kind: item.kind, fileId: item.fileId, version: item.version,
         weight: item.weight, source: item.source, oneShot: item.oneShot, delivery: item.delivery, bytes: item.bytes }
         : { kind: item.kind, sourceTaskId: item.sourceTaskId, snapshotId: item.snapshotId, mode: item.mode, messageCount: item.messageCount, bytes: item.bytes }) })
@@ -123,10 +123,14 @@ describe('buildChatRequest — linked SR by tag', () => {
   it('normalizes lower-case and #-prefixed SR tag labels before looking up the SR, and reports the canonical code', async () => {
     const sr = await startSrConversation(dev)
     await db.serviceRequests.update(sr.id, { code: 'SR-2026-0001', status: 'submitted', title: '알람', body: 'SR-BODY' })
-    const me = await startConversation(dev, { assistantId: 'fds', tags: ['#sr-2026-0001', 'sr-2026-0001', 'plain'] })
+    const me = await startConversation(dev, { assistantId: 'fds', tags: ['#sr-2026-0001', 'sr-2026-0001', 'plain', 'SR-2026-0404'] })
     const { scope, thread } = await scopeOf(me.task.id)
     const built = await buildChatRequest(scope, thread, [])
-    expect(built.info.srCodes).toEqual(['SR-2026-0001'])
+    expect(built.info.srCodes).toEqual(['SR-2026-0001', 'SR-2026-0404'])
+    // 접수되지 않은 번호(SR-2026-0404)는 본문이 없으므로 srs에 없다 — 트레이는 srs를 보여 준다(보낸 것 = 본 것)
+    expect(built.info.srs).toEqual([{ code: 'SR-2026-0001', title: '알람' }])
+    const dry = await buildChatRequest(scope, thread, [], { dryRun: true })
+    expect(dry.info.srs).toEqual(built.info.srs)
     expect(built.messages[0].content).toContain('## 연결된 SR (1)')
     expect(built.messages[0].content).toContain('SR-BODY')
   })

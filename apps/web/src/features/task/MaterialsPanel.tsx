@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { listAssistants } from '@/lib/catalog'
 import { useT } from '@/i18n'
 import { useTablistKeys } from '@/lib/useTablistKeys'
+import { FileDropZone } from '@/components/FileDropZone'
 import { FileList } from './FileList'
 import { FilePreviewDialog } from './FilePreviewDialog'
 import { InputToggle } from './InputToggle'
@@ -42,7 +43,7 @@ export function MaterialsPanel({ task }: { task: Task }) {
     try { await setInput(actor, task.id, fileId, weight) }
     catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
   }
-  async function upload(list: FileList | null) {
+  async function upload(list: FileList | File[] | null) {
     if (!list?.length) return
     try {
       for (const file of Array.from(list)) await uploadFile(actor, { taskId: task.id }, file)
@@ -88,11 +89,11 @@ export function MaterialsPanel({ task }: { task: Task }) {
         {expanded === item.file.id && <OlderVersions file={item.file} task={task} disabled={disabled} onPreview={setPreview} onChange={change} />}
       </div>)])}
     </div>}
-    {tab === 'own' && <div data-testid="materials-own" className="space-y-2">
+    {tab === 'own' && <FileDropZone data-testid="materials-own" label={t('dropzone.toUpload')} disabled={disabled} onFiles={(files) => void upload(files)}><div className="space-y-2">
       <p className="text-muted-foreground">{t('task.materials.inputsHelp')}</p>
       <FileList files={own.data ?? []} taskId={task.id} onPreview={setPreview} onToggleOutput={disabled ? undefined : (fileId, isOutput) => void setOutputTag(actor, task.id, fileId, isOutput).catch((error: unknown) => toast.error(String(error)))} canDelete={!disabled} renderActions={(file) => <InputToggle weight={task.inputs.find((input) => input.fileId === file.id)?.weight} label={file.name} disabled={disabled} onChange={(weight) => void change(file.id, weight)} />} />
       {!disabled && <><button type="button" className="flex w-full items-center justify-center gap-1 rounded-lg border p-1.5" onClick={() => uploadRef.current?.click()}><Upload className="size-3.5" />{t('task.materials.upload')}</button><input ref={uploadRef} type="file" multiple className="hidden" onChange={(event) => { void upload(event.target.files); event.target.value = '' }} /></>}
-    </div>}
+    </div></FileDropZone>}
     </div>
     <FilePreviewDialog file={preview} onClose={() => setPreview(null)} />
   </div>

@@ -9,6 +9,8 @@ import { appSession, appUser } from '../db/schema.js'
 export interface AuthUser {
   id: string
   name: string
+  loginId?: string | null
+  email?: string | null
   role: string
   theme: Theme
   locale: Locale
@@ -49,7 +51,7 @@ export class DbSessionStore implements SessionStore {
 
   async resolve(token: string): Promise<AuthUser | null> {
     const [row] = await this.db
-      .select({ id: appUser.id, name: appUser.name, role: appUser.role, theme: appUser.theme, locale: appUser.locale, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner, mustChangePassword: appUser.mustChangePassword, createdAt: appSession.createdAt, now: sql<Date>`current_timestamp(6)`.mapWith(appSession.createdAt) })
+      .select({ id: appUser.id, loginId: appUser.loginId, email: appUser.email, name: appUser.name, role: appUser.role, theme: appUser.theme, locale: appUser.locale, isSystemOwner: appUser.isSystemOwner, isBusinessOwner: appUser.isBusinessOwner, mustChangePassword: appUser.mustChangePassword, createdAt: appSession.createdAt, now: sql<Date>`current_timestamp(6)`.mapWith(appSession.createdAt) })
       .from(appSession)
       .innerJoin(appUser, eq(appUser.id, appSession.userId))
       .where(and(eq(appSession.id, hashToken(token)), gt(appSession.expiresAt, sql`current_timestamp(6)`), eq(appUser.active, true)))

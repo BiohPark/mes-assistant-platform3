@@ -13,7 +13,7 @@ const assistants = [
 ]
 vi.mock('@/app/hooks', () => ({ useAssistants: () => assistants }))
 afterEach(() => vi.unstubAllGlobals())
-const me = { id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' } as const
+const me = { id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' } as const
 function renderPage(locale: 'ko' | 'en' = 'ko') { return renderWithProviders(<MeContext value={{ ...me, locale, roles: [...me.roles] }}><I18nProvider locale={locale}><TooltipProvider><SettingsPage /></TooltipProvider></I18nProvider></MeContext>) }
 
 it('라디오 카드·접수 에이전트 키보드 선택과 지정 해제를 설정에 저장한다', async () => {

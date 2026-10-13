@@ -51,7 +51,11 @@ export const en = {
     addTag: 'Add tag',
     newTag: 'New tag',
     tagInput: 'Tag input',
-    tagInputHint: 'SR number or keyword. Press Enter or comma to add',
+    tagInputHint: 'SR number or keyword. Enter or comma adds what you typed; use ↑↓ to pick a suggestion',
+    srAccepted: 'SR',
+    srUnaccepted: 'SR not filed',
+    srUnknown: 'SR not visible',
+    tagSaveFailed: 'Could not save the tag',
     delete: 'Delete',
     reasonPlaceholder: 'Enter a reason',
     unknownUser: 'Unknown',
@@ -83,6 +87,17 @@ export const en = {
     draftLeft: 'Conversation {code} was kept. You can resend the attachments.',
     tags: 'Tags', tagPlaceholder: 'SR number · keyword', retiredAssistant: 'This agent is retired.', pickAnotherAssistant: 'Choose another agent',
   },
+  myWork: {
+    description: 'Conversations you own or participate in, ordered by recent activity.',
+    includeCompleted: 'Include completed',
+    list: 'My work conversations',
+    recentActivity: 'Recent activity',
+    empty: 'No work assigned to you',
+    emptyDescription: 'Start a new conversation in the agent hub.',
+    goToHub: 'Go to agent hub',
+    loadFailed: 'Could not load your work.',
+    unknownAssistant: 'Unknown agent',
+  },
   reports: {
     owner: 'Assignee', ownerFilter: 'Assignee: {name}',
     periodLabel: 'Report period and interval', days: { one: '{count} day', other: '{count} days' }, day: 'Day', week: 'Week',
@@ -100,6 +115,7 @@ export const en = {
     noChartData: 'No data to display.',
   },
   admin: {
+    email: 'Email', emailDefaultLabel: 'Default', emailDefault: 'This is your default email. Enter and save another address to change it.', emailClearHint: 'Save an empty value to use the default email. Without a default domain, no email is set.', emailUnset: 'Email not set', profileSaved: 'Profile saved',
     owner: 'Owner', ownerRequired: 'Choose an owner', assistantStatus: 'Status', checklistRequired: 'Required', requiredItem: '{name} required',
     fileDelivery: 'Input file delivery', deliveryInline: 'Paste as text', deliveryOpenWebUi: 'Attach files in OpenWebUI',
     intakeAssistant: 'SR intake agent', noAssistant: 'Unassigned', active: 'Active', userFlag: '{name} {flag}',
@@ -211,6 +227,8 @@ export const en = {
     trayLabel: 'Materials for this request',
     trayInputs: 'Used in this request · {count}',
     trayEstimate: 'Est. {bytes} / {limit}',
+    traySr: 'SR bodies included · {count}',
+    traySrLabel: 'SR bodies in this request',
     requestSize: 'Request size',
     toggleMain: 'Toggle {name} as primary input',
     removeFromRequest: 'Deselect {name} as input',
@@ -391,7 +409,7 @@ export const en = {
       uploadShareHint: 'Available as a material in conversations with the same tags.',
     },
     notes: { title: 'Notes', loadFailed: 'Could not load notes.', body: 'Note text', placeholder: 'Write a note', attach: 'Attach shared files', add: 'Add note' },
-    related: { linked: 'Same-tag conversations {count}', sameTag: 'Conversations with the same tags', more: '+{count}' },
+    related: { linked: 'Same-tag conversations {count}', sameTag: 'Conversations with the same tags', more: '+{count}', loading: 'Finding same-tag conversations…', loadFailed: 'Could not load same-tag conversations', retry: 'Retry', none: 'No same-tag conversations' },
     body: { materials: 'Materials', checklist: 'Checklist', notes: 'Notes', history: 'History', tabs: 'Conversation tabs', panel: 'Conversation side panel', panelTabs: 'Side panel' },
     complete: {
       done: 'Task completed. The completion report was saved to the files.', title: 'Complete task',
@@ -482,6 +500,7 @@ export const en = {
   nav: {
     requests: 'Requests', work: 'Work', admin: 'Admin',
     hub: 'Agent Hub',
+    myWork: 'My work',
     sr: 'My SR requests',
     reports: 'Reports',
     srManage: 'SR inbox',
@@ -547,5 +566,11 @@ export const en = {
   },
   u10Admin: {
     codeActive: '{name} Active',
+  },
+  dropzone: {
+    toAttach: 'Drop to add as pending attachments',
+    toUpload: 'Drop to save as this conversation\'s files',
+    attached: { one: 'Added {count} file to the pending attachments.', other: 'Added {count} files to the pending attachments.' },
+    rejected: { one: 'Skipped {count} item: folders and empty files cannot be uploaded.', other: 'Skipped {count} items: folders and empty files cannot be uploaded.' },
   },
 } as const satisfies Messages

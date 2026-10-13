@@ -19,6 +19,7 @@ const DiagnosticsPage = lazyPage(() => import('@/features/admin/DiagnosticsPage'
 const SrIntakePage = lazyPage(() => import('@/features/sr/SrIntakePage'), (module) => module.SrIntakePage)
 const SrManagePage = lazyPage(() => import('@/features/sr/SrManagePage'), (module) => module.SrManagePage)
 const ReportsPage = lazyPage(() => import('@/features/reports/ReportsPage'), (module) => module.ReportsPage)
+const MyWorkPage = lazyPage(() => import('@/features/my-work/MyWorkPage'), (module) => module.MyWorkPage)
 const LegacyTaskRedirect = lazyPage(() => import('@/features/task/TaskPage'), (module) => module.LegacyTaskRedirect)
 
 /** chunk 로드 중 셸 안에 보이는 화면 뼈대 — TopBar 높이의 머리띠 + 본문 블록. 페이지별 뼈대는 각 화면 몫 */
@@ -50,6 +51,7 @@ export const router = createBrowserRouter([{ errorElement: <RouteErrorPage />, c
     element: <AppShell />,
     children: [{ errorElement: <RouteErrorPage />, children: [
       { index: true, element: <StaffOnly><HomePage /></StaffOnly> },
+      { path: 'my-work', element: <StaffOnly><Lazy><MyWorkPage /></Lazy></StaffOnly> },
       { path: 'new/:assistantId', element: <StaffOnly><Lazy><DraftConversationPage /></Lazy></StaffOnly> },
       { path: 'sr', element: <Lazy><SrIntakePage /></Lazy> },
       { path: 'sr/manage', element: <StaffOnly><Lazy><SrManagePage /></Lazy></StaffOnly> },

@@ -19,7 +19,7 @@ it('offers a materials action after saving that waits for the user before openin
   }))
   const onClose = vi.fn()
   const onOpenMaterials = vi.fn()
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SaveAsOutputDialog
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SaveAsOutputDialog
     message={{ content: '분석 결과' } as Message} task={{ id: 't', code: 'WK-1' } as Task} assistant={{ level2: '분석' } as Assistant}
     onClose={onClose} onOpenMaterials={onOpenMaterials} /></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: '저장' }))

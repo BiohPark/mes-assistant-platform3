@@ -10,7 +10,7 @@ import { useProfile } from './profile'
 
 vi.mock('./NotificationBell', () => ({ NotificationBell: () => null }))
 
-const me = { theme: 'system' as const, locale: 'ko' as const, id: 'u1', name: '김운영', role: '', roles: ['member', 'system_owner'] as const }
+const me = { theme: 'system' as const, locale: 'ko' as const, id: 'u1', name: '김운영', role: '', email: null, emailIsDefault: false, roles: ['member', 'system_owner'] as const }
 
 function ProfileState() {
   const profile = useProfile()
@@ -78,7 +78,7 @@ describe('TopBar', () => {
     expect(localStorage.getItem('mes-theme')).toBe('dark')
     expect(fetchMock).toHaveBeenLastCalledWith('/api/users/me', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ theme: 'dark' }) }))
     server = { ...server, theme: 'dark' }
-    finish(jsonResponse(200, { name: me.name, theme: 'dark', locale: 'ko' }))
+    finish(jsonResponse(200, { name: me.name, theme: 'dark', locale: 'ko', email: null, emailIsDefault: false }))
     await userEvent.click(screen.getByRole('button', { name: /김운영/ }))
     await waitFor(() => expect(screen.getByRole('menuitemradio', { name: 'English' })).not.toHaveAttribute('aria-disabled', 'true'))
     await userEvent.click(screen.getByRole('menuitemradio', { name: 'English' }))
@@ -86,13 +86,13 @@ describe('TopBar', () => {
     expect(localStorage.getItem('mes-locale')).toBe('en')
     expect(fetchMock).toHaveBeenLastCalledWith('/api/users/me', expect.objectContaining({ body: JSON.stringify({ locale: 'en' }) }))
     server = { ...server, locale: 'en' }
-    finish(jsonResponse(200, { name: me.name, theme: 'dark', locale: 'en' }))
+    finish(jsonResponse(200, { name: me.name, theme: 'dark', locale: 'en', email: null, emailIsDefault: false }))
     await userEvent.click(screen.getByRole('button', { name: /김운영/ }))
     await waitFor(() => expect(screen.getByRole('menuitemradio', { name: 'English' })).not.toHaveAttribute('aria-disabled', 'true'))
     await userEvent.click(screen.getByRole('menuitemradio', { name: 'Light' }))
     await waitFor(() => expect(document.documentElement).not.toHaveClass('dark'))
     server = { ...server, theme: 'light' }
-    finish(jsonResponse(200, { name: me.name, theme: 'light', locale: 'en' }))
+    finish(jsonResponse(200, { name: me.name, theme: 'light', locale: 'en', email: null, emailIsDefault: false }))
   })
   it('저장 실패 시 테마·언어와 캐시를 되돌리고 토스트로 알린다', async () => {
     const { toast } = await import('sonner')

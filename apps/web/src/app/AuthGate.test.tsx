@@ -18,7 +18,7 @@ describe('AuthGate', () => {
   it('/me 프로필이 로그인 전 캐시를 덮어쓰고 사용자 변경도 반영한다', async () => {
     localStorage.setItem('mes-theme', 'light')
     localStorage.setItem('mes-locale', 'ko')
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { id: 'u1', name: '이담당', role: '', roles: ['member'], theme: 'dark', locale: 'en' })))
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { id: 'u1', name: '이담당', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'dark', locale: 'en' })))
     renderWithProviders(<AuthGate redirectToLogin={vi.fn()}><Who /></AuthGate>)
     expect(await screen.findByText('안녕하세요 이담당')).toBeInTheDocument()
     await waitFor(() => expect(document.documentElement).toHaveClass('dark'))
@@ -50,7 +50,7 @@ describe('AuthGate', () => {
   })
 
   it('로그인 사용자를 아래 화면에 넘긴다', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { id: 'u1', name: '이담당', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const })))
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { id: 'u1', name: '이담당', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const })))
     renderWithProviders(<AuthGate redirectToLogin={vi.fn()}><Who /></AuthGate>)
     expect(await screen.findByText('안녕하세요 이담당')).toBeInTheDocument()
   })
@@ -65,7 +65,7 @@ describe('AuthGate', () => {
     expect(redirect).not.toHaveBeenCalled()
 
     // 서버가 돌아오면 "다시 시도"로 새로고침 없이 들어간다
-    fetchMock.mockResolvedValue(jsonResponse(200, { id: 'u1', name: '이담당', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }))
+    fetchMock.mockResolvedValue(jsonResponse(200, { id: 'u1', name: '이담당', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }))
     await userEvent.click(screen.getByRole('button', { name: '다시 시도' }))
     expect(await screen.findByText('안녕하세요 이담당')).toBeInTheDocument()
   })
@@ -88,7 +88,7 @@ describe('AuthGate', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(502))
-      .mockResolvedValueOnce(jsonResponse(200, { id: 'u1', name: '이담당', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }))
+      .mockResolvedValueOnce(jsonResponse(200, { id: 'u1', name: '이담당', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }))
     vi.stubGlobal('fetch', fetchMock)
     renderWithProviders(<AuthGate redirectToLogin={vi.fn()} retryDelayMs={1}><Who /></AuthGate>)
     expect(await screen.findByText('안녕하세요 이담당')).toBeInTheDocument()

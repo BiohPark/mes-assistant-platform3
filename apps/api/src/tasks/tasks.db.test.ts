@@ -4,7 +4,7 @@ import type { Pool } from 'mysql2/promise'
 import { createPool } from '../db/connection.js'
 import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { appSetting, appUser, assistant, assistantChecklistTemplate, checklistItem, checklistReview, fileObject, message, messageAttachment, noteAttachment, task, taskInput, thread } from '../db/schema.js'
+import { appSetting, appUser, assistant, assistantChecklistTemplate, checklistItem, checklistReview, fileObject, message, messageAttachment, noteAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -63,6 +63,25 @@ describe('tasks DB', () => {
       await db.update(checklistItem).set({ templateItemId: null }).where(eq(checklistItem.templateItemId, templateId))
       await db.delete(assistantChecklistTemplate).where(eq(assistantChecklistTemplate.id, templateId))
     }
+  })
+
+  it('suggests accepted SR codes within the viewer scope and marks SR-pattern tags without an accepted SR', async () => {
+    await db.insert(appUser).values({ id: 'bo-suggest', name: 'BO', initials: 'B', color: '#000000', isBusinessOwner: true })
+    await db.insert(serviceRequest).values([
+      { id: 'sr-suggest-member', code: 'SR-2099-0001', requesterId: 'member', title: '접수', titleSource: 'manual', body: '', status: 'submitted' },
+      { id: 'sr-suggest-bo', code: 'SR-2099-0002', requesterId: 'bo-suggest', title: 'BO 접수', titleSource: 'manual', body: '', status: 'submitted' },
+      { id: 'sr-suggest-draft', requesterId: 'member', title: '초안', titleSource: 'default', body: '', status: 'draft' },
+    ])
+    await service.create('member', { assistantId, tags: ['SR-2099-0009'] })
+    // BO가 담당자로 들어간 대화에 남의 접수 SR 태그 — BO에게는 '미접수'가 아니라 '확인 불가'
+    await service.create('member', { assistantId, tags: ['SR-2099-0001'], assigneeIds: ['member', 'bo-suggest'] })
+    const member = await service.suggestions('member', 'sr-2099')
+    expect(member.srScope).toBe('all')
+    expect(member.items.map((item) => [item.tag, item.srStatus, item.count])).toEqual([['SR-2099-0001', 'accepted', 1], ['SR-2099-0009', 'unfiled', 1], ['SR-2099-0002', 'accepted', 0]])
+    // BO: 본인 SR 코드 + 보이는 대화의 태그만. 남의 SR은 unknown(초안·남의 대화 태그는 안 보임)
+    const bo = await service.suggestions('bo-suggest', 'sr-2099')
+    expect(bo.srScope).toBe('partial')
+    expect(bo.items.map((item) => [item.tag, item.srStatus])).toEqual([['SR-2099-0001', 'unknown'], ['SR-2099-0002', 'accepted']])
   })
 
   it('keeps AI review separate from checks and applies only met items', async () => {

@@ -6,7 +6,7 @@ import { ArrowRight, ExternalLink } from 'lucide-react'
 import { normalizeTag, tagKey } from '@mes/domain'
 import { TopBar } from '@/app/TopBar'
 import { useActor, useUserMap } from '@/app/hooks'
-import { useTagSuggest } from '@/app/useTagSuggest'
+import { useSrStatus, useTagSuggest } from '@/app/useTagSuggest'
 import { startConversation, type StartConversationInput } from '@/api/tasks'
 import { appendMessage } from '@/api/tasks'
 import { queueFirstRequest } from '@/features/chat/useChat'
@@ -15,12 +15,14 @@ import { listAssistants } from '@/lib/catalog'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { AssistantStatusBadge } from '@/components/StatusBadges'
 import { TagInput } from '@/components/TagInput'
+import { RelatedStrip } from '@/features/task/RelatedStrip'
 import { Chip } from '@/components/Chip'
 import { useT } from '@/i18n'
 import { assistantLink1 } from '@/lib/links'
 import { getSettings } from '@/api/admin'
 import { UserAvatar } from '@/components/UserAvatar'
-import { Composer, type PendingAttachment } from '@/features/chat/Composer'
+import { Composer, type ComposerHandle, type PendingAttachment } from '@/features/chat/Composer'
+import { FileDropZone } from '@/components/FileDropZone'
 import { suggestionsFrom } from '@/features/chat/suggestions'
 import { toast } from 'sonner'
 
@@ -34,11 +36,13 @@ export function DraftConversationPage() {
   const actor = useActor()
   const users = useUserMap()
   const suggest = useTagSuggest()
+  const srStatus = useSrStatus()
   const { data: assistants, isPending } = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
   const assistant = assistants?.find((item) => item.id === assistantId)
   const [tags, setTags] = useState(() => params.getAll('tag').map(normalizeTag).filter(Boolean))
   const [busy, setBusy] = useState(false)
   const sending = useRef(false)
+  const composer = useRef<ComposerHandle>(null)
   const created = useRef<{ id: string; code: string; threadId: string } | null>(null)
   const refId = params.get('ref')
 
@@ -94,7 +98,7 @@ export function DraftConversationPage() {
 
   return <>
     <TopBar title={t('hub.newConversationTitle', { name: assistant.name })} />
-    <div className="flex min-h-0 flex-1 flex-col">
+    <FileDropZone data-testid="draft-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={retired || busy} onFiles={(files) => composer.current?.dropFiles(files)}>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-2xl space-y-4 px-4 py-6">
           <div className="flex items-start gap-3">
@@ -117,13 +121,15 @@ export function DraftConversationPage() {
             {assistant.expectedOutputs.map((item) => <span key={item} className="rounded-full border bg-tone-violet-bg px-2 py-0.5 text-tone-violet-fg">{item}</span>)}
           </div>}
           <div className="space-y-1.5"><div className="text-xs font-medium">{t('hub.tags')}</div>
-            <TagInput tags={tags} suggest={suggest} onAdd={(value) => setTags((current) => current.some((item) => tagKey(item) === tagKey(value)) ? current : [...current, value])} onRemove={(value) => setTags((current) => current.filter((item) => item !== value))} placeholder={t('hub.tagPlaceholder')} />
+            <TagInput tags={tags} suggest={suggest} srStatus={srStatus} onAdd={(value) => setTags((current) => current.some((item) => tagKey(item) === tagKey(value)) ? current : [...current, value])} onRemove={(value) => setTags((current) => current.filter((item) => item !== value))} placeholder={t('hub.tagPlaceholder')} />
+            {/* 첫 전송 전에도 이 태그를 쓰는 대화를 미리 본다 — 조회만, 저장 없음 */}
+            <RelatedStrip tags={tags} />
           </div>
           {refId && <div className="rounded-xl border border-tone-warning-fg/40 bg-tone-warning-bg p-3 text-xs">{t('chat.referenceConversation')}</div>}
           {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">{t('hub.retiredAssistant')} <Link to="/" className="underline">{t('hub.pickAnotherAssistant')}</Link></div>}
         </div>
       </div>
-      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer disabled={busy} streaming={false} allowAttachments allowPin allowDiscussion placeholder={t('chat.composerPlaceholderFor', { assistant: assistant.name })} onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
-    </div>
+      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer ref={composer} disabled={busy} streaming={false} allowAttachments allowPin allowDiscussion placeholder={t('chat.composerPlaceholderFor', { assistant: assistant.name })} onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
+    </FileDropZone>
   </>
 }

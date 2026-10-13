@@ -10,7 +10,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 it('비밀번호 불일치 오류를 확인 입력의 Field 설명으로 연결한다', async () => {
   const user = userEvent.setup()
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><PasswordPage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><PasswordPage /></TooltipProvider></MeContext>)
   await user.type(screen.getByLabelText('현재 비밀번호'), 'current123')
   await user.type(screen.getByLabelText('새 비밀번호'), 'next12345')
   await user.type(screen.getByLabelText('새 비밀번호 확인'), 'different123')
@@ -25,7 +25,7 @@ it('서버 오류는 폼 하단 alert에 표시하고 확인 입력을 오류로
     return jsonResponse(200, [])
   }))
   const user = userEvent.setup()
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><PasswordPage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><PasswordPage /></TooltipProvider></MeContext>)
   await user.type(screen.getByLabelText('현재 비밀번호'), 'wrong1234')
   await user.type(screen.getByLabelText('새 비밀번호'), 'next12345')
   const confirm = screen.getByLabelText('새 비밀번호 확인')

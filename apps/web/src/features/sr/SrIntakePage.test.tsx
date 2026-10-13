@@ -14,7 +14,7 @@ it.each([
   { roles: ['member', 'system_owner'] as const, theme: 'system' as const, locale: 'ko' as const, link: true },
 ])('접수 에이전트가 없으면 안내를 보이고 SO에게만 설정 링크를 준다: $roles', async ({ roles, link }) => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/intake-assistant' ? jsonResponse(200, { srIntakeAssistantId: null }) : jsonResponse(200, [])))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: [...roles], theme: 'system' as const, locale: 'ko' as const }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: [...roles], theme: 'system' as const, locale: 'ko' as const }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
   expect(await screen.findByRole('status')).toHaveTextContent('System Owner가 설정에서 SR 접수 에이전트를 지정해야 합니다')
   expect(screen.queryByRole('button', { name: '새 요청' })).not.toBeInTheDocument()
   expect(!!screen.queryByRole('link', { name: '설정으로 이동' })).toBe(link)
@@ -31,7 +31,7 @@ it('접수 상태와 첨부를 읽을 수 있는 이름으로 표시하고 UUID�
     if (url === '/api/service-requests?scope=mine') return jsonResponse(200, [{ id: 'internal-sr', code: 'SR-2026-0001', title: '요청', status: 'reviewing', createdAt: '2026-10-01', updatedAt: '2026-10-01' }])
     return jsonResponse(200, [])
   }))
-  const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['requester'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=internal-sr' })
+  const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['requester'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=internal-sr' })
   expect(await screen.findAllByText('검토 중')).toHaveLength(3)
   expect(await screen.findByRole('link', { name: '첨부 1' })).toHaveAttribute('href', '/api/files/internal-file-uuid/content')
   expect(container).not.toHaveTextContent('internal-file-uuid')
@@ -58,7 +58,7 @@ it('새 요청 클릭은 저장하지 않고 첫 Enter 전송만 초안과 접�
     }
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
   await userEvent.click(await screen.findByRole('button', { name: '새 요청' }))
   expect(posts).toEqual([])
   expect(reads).not.toContain('/api/settings')
@@ -84,7 +84,7 @@ it('첫 생성 응답을 잃으면 같은 멱등 키로 재시도하고 입력�
     }
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
   await userEvent.click(await screen.findByRole('button', { name: '새 요청' }))
   await userEvent.type(screen.getByRole('textbox', { name: '접수 메시지' }), '전송할 내용{Enter}')
   await waitFor(() => expect(keys).toHaveLength(1))
@@ -106,7 +106,7 @@ it('내 요청 목록은 진행/완료를 나누고 초안 삭제는 확인 후 
     if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, { srIntakeAssistantId: 'a' })
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
   const listItem = await screen.findByRole('button', { name: /첫 메시지의 제목/ })
   expect(listItem).toHaveTextContent('대화 중')
   expect(screen.queryByRole('button', { name: /종료된 요청/ })).not.toBeInTheDocument()
@@ -129,7 +129,7 @@ it('내 요청 목록은 진행/완료를 나누고 초안 삭제는 확인 후 
 it.each(['done', 'rejected'])('%s 요청은 입력을 닫고 접수 내용은 읽기 전용으로 보여준다', async status => {
   const sr = { id: 'closed', requesterId: 'u', code: 'SR-2026-0001', title: '종료 요청', titleSource: 'manual', body: '접수 본문', status, threadId: 'thread', attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/closed' ? jsonResponse(200, sr) : url === '/api/service-requests/intake-assistant' ? jsonResponse(200, { srIntakeAssistantId: 'a' }) : jsonResponse(200, [])))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=closed' })
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=closed' })
   expect(await screen.findByText('접수 본문')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '접수 내용 보기' })).toBeInTheDocument()
   expect(screen.queryByRole('textbox', { name: '접수 메시지' })).not.toBeInTheDocument()
@@ -150,7 +150,7 @@ it('첫 응답 시작을 기다리는 동안 새 요청·목록 이동을 막아
     if (url === '/api/threads/intake/requests') return new Promise<Response>(resolve => { release = resolve })
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
   await userEvent.click(await screen.findByRole('button', { name: '새 요청' }))
   await userEvent.type(screen.getByRole('textbox', { name: '접수 메시지' }), '첫 요청{Enter}')
   await waitFor(() => expect(release).toBeTypeOf('function'))
@@ -176,7 +176,7 @@ it('요청 기록이 있는 초안은 삭제 버튼을 숨긴다(서버 hasReque
     if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, { srIntakeAssistantId: 'a' })
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=draft' })
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=draft' })
   expect(await screen.findByRole('textbox', { name: '접수 메시지' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '초안 삭제' })).not.toBeInTheDocument()
 })
@@ -189,7 +189,7 @@ it('요청자(BO) 화면의 접수 첨부는 내려받기만 보이고 버전 �
     if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, { srIntakeAssistantId: 'a' })
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['requester'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=sr' })
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['requester'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=sr' })
   expect(await screen.findByText('알람.txt v1')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '다운로드' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '버전 기록' })).not.toBeInTheDocument()
@@ -199,7 +199,7 @@ it('접수자 화면에서 상태 이력을 펼치면 시각·처리자·변경�
   const sr = { id: 'sr', requesterId: 'u', code: 'SR-2026-0001', title: '이력 요청', titleSource: 'manual', body: '본문', status: 'rejected', threadId: 'thread', attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01',
     statusHistory: [{ id: 'h1', at: '2026-10-01T01:00:00.000Z', by: 'u', byName: '사용자', from: 'draft', to: 'submitted' }, { id: 'h2', at: '2026-10-02T02:00:00.000Z', by: 's', byName: '담당자', from: 'submitted', to: 'rejected', reason: '범위 밖 요청' }] }
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/sr' ? jsonResponse(200, sr) : url === '/api/service-requests/intake-assistant' ? jsonResponse(200, { srIntakeAssistantId: 'a' }) : jsonResponse(200, [])))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['requester'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=sr' })
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['requester'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=sr' })
   await userEvent.click(await screen.findByRole('button', { name: '상태 이력' }))
   const list = screen.getByRole('list', { name: '상태 이력' })
   expect(within(list).getAllByRole('listitem')).toHaveLength(2)
@@ -208,7 +208,7 @@ it('접수자 화면에서 상태 이력을 펼치면 시각·처리자·변경�
   expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('사유: 범위 밖 요청')
 })
 
-const me = { id: 'u', name: '사용자', role: '', roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
+const me = { id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
 const intake = { srIntakeAssistantId: 'a', name: '접수 도우미', summary: '요청을 정리합니다', usageExample: '### 사용법\n- 시작\n- "설비 알람 확인"\n- 첨부 파일을 올리세요\n- "리포트 요청"' }
 const row = (id: string, status: string) => ({ id, requesterId: 'u', code: `SR-${id}`, title: `요청 ${id}`, titleSource: 'manual', body: '', status, threadId: `thread-${id}`, attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' })
 

@@ -71,7 +71,7 @@ it('shows successfully applied system assistant proposals with a success tone', 
     return jsonResponse(404)
   }))
   useUiStore.getState().setAssistantOpen(true)
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><SystemAssistantDrawer /></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SystemAssistantDrawer /></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: /FDS 작성 도우미로/ }))
   fireEvent.click(await screen.findByRole('button', { name: '적용' }))
   await waitFor(() => expect(writes).toEqual(['/api/tasks/t/tags/release']))

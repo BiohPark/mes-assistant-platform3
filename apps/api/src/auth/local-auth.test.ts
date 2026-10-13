@@ -60,7 +60,7 @@ describe('local 인증 API', () => {
 
   it('회원가입은 세션 쿠키와 Me를 돌려주고 중복은 409', async () => {
     const res = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'member-1', password: 'password-1234' }).expect(201)
-    expect(res.body).toEqual({ id: 'u-member-1', name: 'member-1', role: '', roles: ['member'], theme: 'system', locale: 'ko' })
+    expect(res.body).toEqual({ id: 'u-member-1', name: 'member-1', role: '', roles: ['member'], theme: 'system', locale: 'ko', email: null, emailIsDefault: false })
     expect(String(res.headers['set-cookie'])).toMatch(/mes_session=local-token.*HttpOnly/)
     expect(rows.get('member-1')?.hash).toMatch(/^scrypt\$/)
     const hash = vi.spyOn(passwordService, 'hashPassword')
