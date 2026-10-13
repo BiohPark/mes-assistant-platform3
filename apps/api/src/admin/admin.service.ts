@@ -18,8 +18,8 @@ type AssistantInput = {
   checklistTemplate: { id: string; label: string; required: boolean }[]
 }
 type AssistantPatch = Partial<Omit<AssistantInput, 'id'>>
-/** 기본 모델은 .env 정본(effectiveDefaultModel) — 쓰기 DTO에 없다 (S7 C2) */
-type SettingsPatch = Partial<{ fileDelivery: 'inline' | 'openwebui'; requestBudgetBytes: number; srIntakeAssistantId: string | null; link1Rule: string; fileMaxPerRequest: number }>
+/** 새 전역 모델 키만 쓴다. 구형 defaultModel은 읽기·쓰기 모두 무시한다. */
+type SettingsPatch = Partial<{ defaultModelOverride: string | null; fileDelivery: 'inline' | 'openwebui'; requestBudgetBytes: number; srIntakeAssistantId: string | null; link1Rule: string; fileMaxPerRequest: number }>
 const normalizeCodeName = (value: string) => value.trim().replace(/\s+/gu, ' ').normalize('NFC')
 const defaultChecklist = () => [
   { id: randomUUID(), label: '입력 자료 선택', required: true },
@@ -192,7 +192,7 @@ export class AdminService {
   }
   async getSettings() {
     const rows = await this.db.select().from(appSetting)
-    // 구형 defaultModel 행은 지우지 않고 숨긴다 — 읽기 DTO의 defaultModel은 컨트롤러가 .env 유효값으로 채운다 (S7 C2)
+    // 구형 defaultModel 행은 지우지 않고 숨긴다. 유효 모델과 출처는 컨트롤러가 해석한다.
     return Object.fromEntries(rows.filter((row) => row.key !== 'defaultModel').map((row) => [row.key, row.value])) as Record<string, unknown>
   }
   async settings(patch: SettingsPatch) {
@@ -203,7 +203,7 @@ export class AdminService {
         if (row.status === 'retired') throw new ConflictException('폐기된 에이전트는 접수 에이전트로 지정할 수 없습니다')
       }
       for (const [key, value] of Object.entries(patch)) {
-        if (key === 'srIntakeAssistantId' && value === null) await tx.delete(appSetting).where(eq(appSetting.key, key))
+        if ((key === 'srIntakeAssistantId' || key === 'defaultModelOverride') && value === null) await tx.delete(appSetting).where(eq(appSetting.key, key))
         else await tx.insert(appSetting).values({ key, value }).onDuplicateKeyUpdate({ set: { value } })
       }
     })

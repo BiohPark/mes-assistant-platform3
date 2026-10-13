@@ -815,11 +815,11 @@ paths:
   /settings:
     get:
       tags: [misc]
-      summary: 전역 설정 조회 (로그인 사용자 전원 — 웹이 기본 모델·한도를 표시). defaultModel은 서버 .env LLM_DEFAULT_MODEL 유효값(읽기 전용, 구형 DB 행은 무시). S4 ① · S7 C2
+      summary: 전역 설정 조회 (로그인 사용자 전원). 유효 모델·출처(setting|env|default)를 반환. 구형 defaultModel DB 행은 무시. S9
       responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Settings' } } } } }
     patch:
       tags: [misc]
-      summary: 전역 설정 (SO 전용). OpenWebUI 키는 여기서 다루지 않음(서버 비밀). 쓰기 DTO(SettingsPatch)에 defaultModel은 없다 — 보내면 400 (S7 C2)
+      summary: 전역 설정 (SO 전용). defaultModelOverride 저장·해제는 재기동 없이 다음 요청부터 반영. defaultModel·defaultModelSource 및 알 수 없는 키는 400. S9
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/SettingsPatch' } } } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Settings' } } } }
@@ -1169,7 +1169,9 @@ components:
     Settings:
       type: object
       properties:
-        defaultModel: { type: string, readOnly: true, description: '서버 .env LLM_DEFAULT_MODEL 유효값(미설정·공백이면 도메인 기본). 요청 시작·SR 보조·요약·시스템 assistant·진단·시험 API가 같은 함수(effectiveDefaultModel)를 쓴다. 구형 app_setting.defaultModel 행은 무시(기동 경고 1줄). S7 C2' }
+        defaultModel: { type: string, readOnly: true, description: 'DB defaultModelOverride → .env LLM_DEFAULT_MODEL → 도메인 기본값. 모든 기본 모델 소비처는 effectiveDefaultModel의 해석을 사용한다. 구형 app_setting.defaultModel은 무시하고 기동 경고를 유지한다.' }
+        defaultModelSource: { type: string, enum: [setting, env, default], readOnly: true, description: 현재 적용 모델의 출처 }
+        defaultModelOverride: { type: string, nullable: true, maxLength: 191, description: '전역 모델 ID. trim 후 1–191자. 빈 값·공백·null은 해제이며 미지정 시 응답에서 생략될 수 있다.' }
         fileDelivery: { enum: [inline, openwebui] }
         requestBudgetBytes: { type: integer, minimum: 1024, maximum: 16777216 }
         srIntakeAssistantId: { type: string, nullable: true, description: '중단된 에이전트는 409' }
@@ -1177,9 +1179,10 @@ components:
         fileMaxPerRequest: { type: integer, minimum: 1, maximum: 100 }
     SettingsPatch:
       type: object
-      description: 전역 설정 쓰기 DTO (SO). Settings에서 defaultModel을 뺀 것 — 알 수 없는 키(defaultModel 포함)는 400. S7 C2
+      description: 전역 설정 쓰기 DTO (SO). defaultModelOverride는 trim 후 1–191자 또는 빈 값·null(설정 해제). 읽기 전용 defaultModel·defaultModelSource 및 알 수 없는 키는 400. S9
       additionalProperties: false
       properties:
+        defaultModelOverride: { type: string, nullable: true, maxLength: 191, description: 'trim 후 빈 값·null이면 새 키를 해제하여 .env 폴백을 사용. 다음 요청부터 적용.' }
         fileDelivery: { enum: [inline, openwebui] }
         requestBudgetBytes: { type: integer, minimum: 1024, maximum: 16777216 }
         srIntakeAssistantId: { type: string, nullable: true, description: '중단된 에이전트는 409 · null이면 지정 해제' }

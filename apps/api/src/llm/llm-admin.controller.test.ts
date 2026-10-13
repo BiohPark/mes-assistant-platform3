@@ -24,11 +24,12 @@ const sessions: SessionStore = {
   resolve: vi.fn(async (token: string) => token === 'owner' ? user('o1', true) : token === 'owner2' ? user('o2', true) : token === 'member' ? user('m', false) : null),
   destroy: vi.fn(async () => undefined),
 }
-/** 읽기는 진행 중 chat_request 수만 돌려주고, 쓰기는 전부 실패시킨다 — 시험 API는 DB에 행을 쓰지 않는다 */
+/** 읽기는 전역 모델 설정·진행 중 chat_request 수를 돌려주고, 쓰기는 전부 실패시킨다 — 시험 API는 DB에 행을 쓰지 않는다 */
 let activeRows = 0
+let modelOverride: string | undefined
 const writes = vi.fn(() => { throw new Error('시험 API는 DB에 쓰지 않는다') })
 const rows = async () => [{ count: activeRows }]
-const reads = { select: () => ({ from: () => ({ where: () => Object.assign(rows(), { for: () => rows() }) }) }) }
+const reads = { select: () => ({ from: () => ({ where: (condition: { queryChunks: { value?: unknown }[] }) => Object.assign(condition.queryChunks.some(chunk => chunk.value === 'defaultModelOverride') ? Promise.resolve(modelOverride ? [{ value: modelOverride }] : []) : rows(), { for: () => rows() }) }) }) }
 /** admit의 전역 용량 잠금(db_lock upsert + for update)만 허용하고 다른 쓰기는 전부 실패시킨다 */
 const tx = { ...reads, update: writes, delete: writes, insert: (table: unknown) => { if (table !== dbLock) writes(); return { values: () => ({ onDuplicateKeyUpdate: async () => undefined }) } } }
 const db = { ...reads, insert: writes, update: writes, delete: writes, transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx) }
@@ -51,7 +52,7 @@ describe('LLM admin test API', () => {
     app = configureApp(moduleRef.createNestApplication(), bootConfig)
     await app.init()
   }
-  beforeEach(async () => { activeRows = 0; await boot(new MockProvider()) })
+  beforeEach(async () => { activeRows = 0; modelOverride = undefined; await boot(new MockProvider()) })
   afterEach(async () => { await app.close(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
   it('시험 본문 한도는 전역 100 kB 파서가 아니라 requestBudgetBytes — 그 아래면 통과하고 넘으면 413 (S7 C2)', async () => {
@@ -64,6 +65,21 @@ describe('LLM admin test API', () => {
     expect(writes).not.toHaveBeenCalled()
   })
 
+  it('다음 시험 대화·연결 시험은 override 변경·해제를 즉시 반영하고 명시 모델은 우선한다', async () => {
+    await app.close()
+    await boot({ kind: 'live', ping: async () => ({ ok: true, detail: '' }), listModels: async () => [], async *stream() { yield { type: 'done' } } })
+    for (const override of ['setting-a', 'setting-b', undefined]) {
+      modelOverride = override
+      const expected = override ?? 'fake-general'
+      const tested = await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send(userMessage()).expect(200)
+      expect(tested.body.model).toBe(expected)
+      const connected = await request(app.getHttpServer()).post(CONNECTION).set('Cookie', 'mes_session=owner').send({}).expect(200)
+      expect(connected.body.completion.model).toBe(expected)
+      const explicit = await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send({ ...userMessage(), model: 'explicit' }).expect(200)
+      expect(explicit.body.model).toBe('explicit')
+    }
+    expect(writes).not.toHaveBeenCalled()
+  })
   it('SO만 호출할 수 있다 (401·403)', async () => {
     await request(app.getHttpServer()).post(TEST).send(userMessage()).expect(401)
     await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=member').send(userMessage()).expect(403)

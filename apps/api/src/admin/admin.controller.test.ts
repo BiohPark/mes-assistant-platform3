@@ -60,14 +60,35 @@ describe('관리 API 서버 권한', () => {
   it('기본 모델은 읽기 DTO에서 .env 유효값으로만 보이고, 쓰기 DTO에 defaultModel이 오면 400 (S7 C2)', async () => {
     admin.getSettings.mockResolvedValueOnce({ defaultModel: 'db-model', fileMaxPerRequest: 3 })
     const read = await request(app.getHttpServer()).get('/api/settings').set('Cookie', 'mes_session=member').expect(200)
-    expect(read.body).toEqual({ defaultModel: 'glm-5.2', fileMaxPerRequest: 3 })
+    expect(read.body).toEqual({ defaultModel: 'glm-5.2', defaultModelSource: 'default', fileMaxPerRequest: 3 })
     await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ defaultModel: 'm' }).expect(400)
     await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ defaultModel: 'm', fileMaxPerRequest: 5 }).expect(400)
     expect(admin.settings).not.toHaveBeenCalled()
     admin.settings.mockResolvedValueOnce({ defaultModel: 'db-model', fileMaxPerRequest: 5 })
     const written = await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ fileMaxPerRequest: 5 }).expect(200)
     expect(admin.settings).toHaveBeenCalledWith({ fileMaxPerRequest: 5 })
-    expect(written.body).toEqual({ defaultModel: 'glm-5.2', fileMaxPerRequest: 5 })
+    expect(written.body).toEqual({ defaultModel: 'glm-5.2', defaultModelSource: 'default', fileMaxPerRequest: 5 })
+  })
+  it('SO만 새 override를 trim하여 설정·해제하고 유효 모델과 출처를 읽는다', async () => {
+    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=member').send({ defaultModelOverride: 'new-model' }).expect(403)
+    admin.settings.mockResolvedValueOnce({ defaultModelOverride: 'new-model' })
+    const written = await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ defaultModelOverride: ' new-model ' }).expect(200)
+    expect(admin.settings).toHaveBeenLastCalledWith({ defaultModelOverride: 'new-model' })
+    expect(written.body).toEqual({ defaultModelOverride: 'new-model', defaultModel: 'new-model', defaultModelSource: 'setting' })
+    admin.getSettings.mockResolvedValueOnce({ defaultModelOverride: 'new-model' })
+    expect((await request(app.getHttpServer()).get('/api/settings').set('Cookie', 'mes_session=member')).body.defaultModelSource).toBe('setting')
+    for (const value of [null, '', '   ']) {
+      await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ defaultModelOverride: value }).expect(200)
+      expect(admin.settings).toHaveBeenLastCalledWith({ defaultModelOverride: null })
+    }
+    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ defaultModelOverride: 'x'.repeat(191) }).expect(200)
+  })
+  it('override의 길이·타입과 읽기 전용·알 수 없는 키는 원자적으로 거부한다', async () => {
+    for (const input of [{ defaultModelOverride: 'x'.repeat(192) }, { defaultModelOverride: 123 }, { defaultModelOverride: {} },
+      { defaultModelOverride: 'ok', defaultModel: 'legacy' }, { defaultModelOverride: 'ok', defaultModelSource: 'setting' }, { defaultModelOverride: 'ok', unknown: true }]) {
+      await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ ...input, fileMaxPerRequest: 5 }).expect(400)
+    }
+    expect(admin.settings).not.toHaveBeenCalled()
   })
   it('SO만 다른 사용자의 이름을 수정하고 본인은 내 정보를 수정한다', async () => {
     await request(app.getHttpServer()).patch('/api/users/u1').set('Cookie', 'mes_session=member').send({ name: '새 이름' }).expect(403)
