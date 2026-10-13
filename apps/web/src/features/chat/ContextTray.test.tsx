@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import type { Task } from '@mes/domain'
-import { expect, it } from 'vitest'
+import { beforeEach, expect, it } from 'vitest'
 import { MeContext } from '@/app/auth'
 import { ContextTray } from './ContextTray'
+import { resetBubbles, useBubbleStore } from '@/features/assistant-pill/bubbles'
 import type { RequestEstimateState } from './useRequestEstimate'
 
 const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [], assistantId: 'a' } as unknown as Task
@@ -21,6 +22,8 @@ function mount(estimate: RequestEstimateState) {
 }
 
 const tray = () => screen.getByLabelText('이번 요청에 사용할 자료')
+
+beforeEach(() => resetBubbles())
 
 it('shows the persist hint and labels × as deselecting the input', () => {
   mount({ data, pending: false, revisionChanged: false })
@@ -111,4 +114,21 @@ it('collapses to summary chips (files · conversations · SR) and expands back t
   fireEvent.click(screen.getByRole('button', { name: /이번 요청에 사용 · 2/ }))
   expect(screen.getByText('spec.txt')).toBeVisible()
   expect(screen.queryByRole('list', { name: '담긴 자료 요약' })).not.toBeInTheDocument()
+})
+
+it('pushes an assistant bubble once when the budget level rises, and its click expands the tray and focuses the toggle', () => {
+  const { rerender } = mount({ data: { ...data, bytes: 400 }, pending: false, revisionChanged: false })
+  expect(useBubbleStore.getState().current).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /이번 요청에 사용 · 1/ })) // 접어 둔다
+  expect(screen.getByRole('button', { name: /이번 요청에 사용 · 1/ })).toHaveAttribute('aria-expanded', 'false')
+  rerender({ data: { ...data, bytes: 850 }, pending: false, revisionChanged: false }) // > 80% → warn
+  rerender({ data: { ...data, bytes: 900 }, pending: false, revisionChanged: false }) // 같은 레벨 — 추가 없음
+  expect(useBubbleStore.getState().current).toMatchObject({ source: 'budget.warn' })
+  expect(useBubbleStore.getState().queued).toBeNull()
+  act(() => useBubbleStore.getState().current?.onOpen?.())
+  const toggle = screen.getByRole('button', { name: /이번 요청에 사용 · 1/ })
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  expect(toggle).toHaveFocus()
+  rerender({ data: { ...data, bytes: 1200 }, pending: false, revisionChanged: false }) // over — 한 번 더
+  expect(useBubbleStore.getState().queued).toMatchObject({ source: 'budget.over' })
 })

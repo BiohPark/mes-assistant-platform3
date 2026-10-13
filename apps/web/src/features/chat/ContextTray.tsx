@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ChevronDown, ClipboardList, FileText, MessagesSquare, Star, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { RequestEstimateState } from './useRequestEstimate'
 import { ConversationPickerDialog } from '@/features/task/ConversationPickerDialog'
+import { useBudgetBubble } from '@/features/assistant-pill/bubbles'
 import { useT } from '@/i18n'
 
 const delivery = { attached: 'chat.deliveryShort.attached', inline: 'chat.deliveryShort.inline', metadata_only: 'chat.deliveryShort.metadata_only', failed: 'chat.deliveryShort.failed' } as const
@@ -26,6 +27,9 @@ export function ContextTray({ task, estimate }: { task: Task; estimate: RequestE
   const inputs = info?.inputs ?? []
   const level = info ? budgetLevel(info.bytes, info.limitBytes) : 'ok'
   const expanded = open ?? true
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  // 도우미 말풍선(U6) — 레벨이 올라갈 때 1회(추정 로딩 중에는 비교하지 않음), 클릭하면 트레이를 펼치고 토글에 포커스
+  useBudgetBubble(task.id, info ? level : undefined, () => { setOpen(true); toggleRef.current?.focus() })
   if (!info) return null
 
   async function change(input: RequestInput, weight: 'main' | 'reference' | null) {
@@ -45,7 +49,7 @@ export function ContextTray({ task, estimate }: { task: Task; estimate: RequestE
     sharedTags: [], messageCount: current.messageCount, bytes: current.bytes, lastActivityAt: '',
   } : undefined)
   return <div className="border-t bg-muted/20 px-2.5 py-2" aria-label={t('chat.trayLabel')} aria-busy={pending}>
-    <button type="button" className="flex w-full items-center gap-2 text-left text-xs" onClick={() => setOpen(!expanded)} aria-expanded={expanded}>
+    <button ref={toggleRef} type="button" className="flex w-full items-center gap-2 text-left text-xs" onClick={() => setOpen(!expanded)} aria-expanded={expanded}>
       <span className="font-medium">{t('chat.trayInputs', { count: inputs.length })}</span>
       <span className="ml-auto text-muted-foreground">{pending ? t('chat.calculating') : null}</span>
       <ChevronDown className={cn('size-3.5', expanded && 'rotate-180')} />

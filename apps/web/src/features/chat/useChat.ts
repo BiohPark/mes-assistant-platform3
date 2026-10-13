@@ -2,6 +2,7 @@ import { newId } from '@/lib/ids'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cancelRequest, streamRequest } from '@/api/requests'
+import { useSlowRequestBubble } from '@/features/assistant-pill/bubbles'
 import { useT } from '@/i18n'
 
 export interface ChatRun { requestId: string; replyId: string; text: string; reasoning?: string; phase?: string; startedAt?: number }
@@ -29,6 +30,7 @@ export function useChat(threadId?: string, onAutoStarted?: () => void) {
   const autoStarted = useRef(onAutoStarted)
   autoStarted.current = onAutoStarted
   const [run, setRun] = useState<ChatRun | null>(null)
+  useSlowRequestBubble(run) // 도우미 말풍선(U6) — 마지막 본문·생각 delta 뒤 30초 무진행이면 요청당 1회
   /** 전송 시도가 진행 중(started 이전 대기 포함)인지. run은 started 이후에만 채워진다. */
   const [waitingSince, setWaitingSince] = useState<number | undefined>()
   const [sending, setSending] = useState(false)
