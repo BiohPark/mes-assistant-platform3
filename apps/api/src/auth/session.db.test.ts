@@ -58,7 +58,7 @@ describe('세션·사용자 저장소 (MariaDB)', () => {
       .compile()
     const app = configureApp(moduleRef.createNestApplication(), local)
     try {
-      await app.init()
+      await app.listen(0, '127.0.0.1')
       const health = await request(app.getHttpServer()).get('/api/health').expect(200)
       expect(health.body).toEqual({ status: 'ok', db: 'up', version: expect.any(String), commit: expect.any(String) })
       const signup = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'api-local-member', password: 'password-1234', name: '홍 길동' }).expect(expectStatus(201))
@@ -192,7 +192,7 @@ describe('세션·사용자 저장소 (MariaDB)', () => {
       .compile()
     const app = configureApp(moduleRef.createNestApplication(), local)
     try {
-      await app.init()
+      await app.listen(0, '127.0.0.1')
       const first = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(expectStatus(201))
       expect(first.body.roles).toEqual(['member', 'system_owner'])
       await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'dev-owner', password: 'password-1234' }).expect(expectStatus(409))

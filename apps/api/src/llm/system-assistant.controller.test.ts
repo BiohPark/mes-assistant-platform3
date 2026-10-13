@@ -30,7 +30,7 @@ describe('system assistant HTTP', () => {
       .overrideProvider(LLM_PROVIDER).useValue({ kind: 'live', ping: () => provider.ping(), listModels: () => provider.listModels(), stream: (req: ChatRequest) => provider.stream(req) })
       .compile()
     app = configureApp(moduleRef.createNestApplication(), config)
-    await app.init()
+    await app.listen(0, '127.0.0.1')
   })
   afterEach(async () => { await app.close(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 

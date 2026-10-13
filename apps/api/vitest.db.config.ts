@@ -9,5 +9,5 @@ if (!process.env.DATABASE_URL && existsSync(envFile)) process.loadEnvFile(envFil
 
 export default defineConfig({
   ...sourceConditions,
-  test: { include: ['src/**/*.db.test.ts'], fileParallelism: false, testTimeout: 30_000, hookTimeout: 60_000 },
+  test: { include: ['src/**/*.db.test.ts'], setupFiles: ['src/test/loopbackListen.ts'], fileParallelism: false, testTimeout: 30_000, hookTimeout: 60_000 },
 })

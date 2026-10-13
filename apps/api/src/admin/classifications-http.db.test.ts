@@ -40,7 +40,7 @@ beforeAll(async () => {
     { provide: DB, useValue: db }, { provide: CONFIG, useValue: config }, { provide: SESSION_STORE, useValue: sessions },
     { provide: APP_GUARD, useClass: SessionGuard }, { provide: APP_GUARD, useClass: RolesGuard },
   ] }).compile()
-  app = module.createNestApplication(); app.setGlobalPrefix('api'); app.use(cookieParser()); await app.init()
+  app = module.createNestApplication(); app.setGlobalPrefix('api'); app.use(cookieParser()); await app.listen(0, '127.0.0.1')
 })
 afterAll(async () => { await app?.close(); await pool?.end(); await temp?.drop() })
 const fields = { name: 'HTTP paths', summary: '', ownerId: 'owner', status: 'open', usageExample: '', expectedInputs: [], expectedOutputs: [] }

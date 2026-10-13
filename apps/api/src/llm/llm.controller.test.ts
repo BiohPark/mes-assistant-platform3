@@ -30,7 +30,7 @@ describe('LLM API', () => {
       .overrideProvider(LLM_PROVIDER).useValue(provider)
       .compile()
     app = configureApp(moduleRef.createNestApplication(), config)
-    await app.init()
+    await app.listen(0, '127.0.0.1')
   })
   afterEach(async () => { await app.close(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
@@ -60,7 +60,7 @@ describe('LLM API', () => {
       .overrideProvider(LLM_PROVIDER).useValue(new OpenAICompatibleProvider(toLlmSettings(config.llm)))
       .compile()
     app = configureApp(moduleRef.createNestApplication(), config)
-    await app.init()
+    await app.listen(0, '127.0.0.1')
     vi.stubGlobal('fetch', vi.fn(async () => new Response('top-secret http://localhost:3101/api/models', { status: 500 })))
     const res = await request(app.getHttpServer()).get('/api/llm/models').set('Cookie', 'mes_session=member').expect(502)
     expect(res.body.message).toMatch(/모델 목록/)

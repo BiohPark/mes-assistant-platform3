@@ -418,7 +418,7 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
       .compile()
     const app = configureApp(moduleRef.createNestApplication(), config)
     try {
-      await app.init()
+      await app.listen(0, '127.0.0.1')
       const get = (actor: keyof typeof users, path: string) => request(app.getHttpServer()).get(path).set('Cookie', `mes_session=${actor}`)
       const own = await get('requester', '/api/files/http-own-attachment').expect(200)
       expect(own.body).toMatchObject({ id: 'http-own-attachment', name: 'http-own-attachment.txt', originSrId: draft.id })

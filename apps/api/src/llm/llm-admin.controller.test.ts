@@ -50,7 +50,7 @@ describe('LLM admin test API', () => {
       .overrideProvider(LLM_PROVIDER).useValue({ kind: 'live', ping: () => provider.ping(), listModels: () => provider.listModels(), stream: (req: ChatRequest) => provider.stream(req) })
       .compile()
     app = configureApp(moduleRef.createNestApplication(), bootConfig)
-    await app.init()
+    await app.listen(0, '127.0.0.1')
   }
   beforeEach(async () => { activeRows = 0; modelOverride = undefined; await boot(new MockProvider()) })
   afterEach(async () => { await app.close(); vi.clearAllMocks(); vi.unstubAllGlobals() })
@@ -182,10 +182,9 @@ describe('LLM admin test API', () => {
       yield { type: 'error', message: '요청이 취소되었습니다.' }
     } })
     const server = app.getHttpServer()
-    await new Promise<void>((resolve) => server.listen(0, resolve))
     const { port } = server.address() as AddressInfo
     const body = JSON.stringify(userMessage())
-    const req = httpRequest({ port, path: TEST, method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), cookie: 'mes_session=owner' } })
+    const req = httpRequest({ host: '127.0.0.1', port, path: TEST, method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), cookie: 'mes_session=owner' } })
     req.on('error', () => undefined)
     req.end(body)
     await begun
