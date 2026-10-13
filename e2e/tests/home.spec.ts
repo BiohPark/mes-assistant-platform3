@@ -54,7 +54,7 @@ test.describe('390px 카드', () => {
     const count = card.getByText('진행', { exact: false })
     await expect(count).toBeVisible()
     await card.hover()
-    await expect(card.getByRole('link', { name: '대화' })).toBeVisible() // hover 액션이 떠도
+    await expect(card.getByRole('link', { name: '대화', exact: true })).toBeVisible() // hover 액션이 떠도
     await expect(count).toBeVisible() // 진행 수는 그대로 보인다
     const toggle = card.getByRole('button', { name: /요약 펼치기$/ })
     const box = await toggle.boundingBox()
