@@ -548,6 +548,12 @@ export const ko = {
   pill: {
     open: 'AI 도우미 열기', close: 'AI 도우미 닫기', characterAlt: 'AI 도우미 캐릭터', moveHint: '끌거나 화살표 키로 옮기고, Home 키로 원위치',
   },
+  bubble: {
+    region: 'AI 도우미 말풍선', close: '말풍선 닫기',
+    budgetWarn: '요청 크기가 한도의 80%를 넘었어요. 눌러서 자료 트레이를 확인하세요',
+    budgetOver: '요청 크기가 한도를 넘어 전송이 막혀요. 눌러서 자료 트레이에서 조정하세요',
+    requestSlow: '응답이 30초 넘게 오지 않아요. 눌러서 요청 정보를 확인하세요',
+  },
   nav: {
     requests: '요청', work: '업무', admin: '관리',
     hub: '에이전트 허브',

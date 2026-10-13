@@ -8,6 +8,7 @@ import { useIsDesktop, useMediaQuery } from '@/app/useMediaQuery'
 import { useUiStore, type PillPos } from '@/app/uiStore'
 import { SystemAssistantBody, SystemAssistantSheet } from '@/features/system-assistant/SystemAssistantDrawer'
 import { useSystemAssistantChat, type SystemAssistantChat } from '@/features/system-assistant/useSystemAssistantChat'
+import { AssistantBubble } from './AssistantBubble'
 
 const PILL = 48
 const MARGIN = 8
@@ -129,6 +130,7 @@ export function AssistantPill() {
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd} onKeyDown={onKeyDown} onClick={onClick}>
       {image ? <img src={`/api/settings/assistant-image?v=${encodeURIComponent(image)}`} alt={t('pill.characterAlt')} draggable={false} className="size-full rounded-full object-cover" /> : <Sparkles className="size-5" aria-hidden />}
     </button>
+    <AssistantBubble pillRef={pillRef} pos={pos} />
     {desktop ? <AssistantWindow open={open} chat={chat} pillRef={pillRef} pos={pos} onClose={close} /> : <SystemAssistantSheet open={open} chat={chat} onClose={() => setOpen(false)} returnFocus={() => pillRef.current?.focus()} />}
   </>
 }

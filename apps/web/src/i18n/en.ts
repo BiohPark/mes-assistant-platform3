@@ -550,6 +550,12 @@ export const en = {
   pill: {
     open: 'Open AI assistant', close: 'Close AI assistant', characterAlt: 'AI assistant character', moveHint: 'Drag or use the arrow keys to move; Home resets the position',
   },
+  bubble: {
+    region: 'AI assistant bubble', close: 'Close bubble',
+    budgetWarn: 'The request is over 80% of the size limit. Tap to check the inputs tray',
+    budgetOver: 'The request exceeds the size limit, so it cannot be sent. Tap to adjust it in the inputs tray',
+    requestSlow: 'No reply for over 30 seconds. Tap to see the request details',
+  },
   nav: {
     requests: 'Requests', work: 'Work', admin: 'Admin',
     hub: 'Agent Hub',
