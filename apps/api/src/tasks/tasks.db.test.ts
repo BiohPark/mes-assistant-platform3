@@ -41,6 +41,23 @@ describe('tasks DB', () => {
   })
   afterAll(async () => { await client?.end(); await temp?.drop(); if (reportRoot) await rm(reportRoot, { recursive: true, force: true }) })
 
+  it('resumes held discussions once, preserves startedAt, and allows a one-click hold', async () => {
+    const created = await service.create('member', { assistantId })
+    await service.setStatus('member', created.task.id, 'on_hold')
+    await expect(service.appendMessage('member', created.thread.id, { content: 'invalid', kind: 'discussion', attachmentIds: ['missing'] })).rejects.toMatchObject({ status: 400 })
+    expect((await service.get(created.task.id)).status).toBe('on_hold')
+    await Promise.all(['one', 'two'].map(content => service.appendMessage('member', created.thread.id, { content, kind: 'discussion' })))
+    expect(await service.get(created.task.id)).toMatchObject({ status: 'in_progress', startedAt: created.task.startedAt })
+    const started = (await service.activity(created.task.id)).filter(item => item.type === 'task.started')
+    expect(started).toHaveLength(1)
+    expect(started[0]).toMatchObject({ userId: 'member', payload: { from: 'on_hold', to: 'in_progress', auto: true } })
+    await service.setStatus('member', created.task.id, 'on_hold')
+    expect((await service.get(created.task.id)).status).toBe('on_hold')
+    await service.setStatus('member', created.task.id, 'done', 'test completion')
+    await expect(service.appendMessage('member', created.thread.id, { content: 'closed', kind: 'discussion' })).rejects.toMatchObject({ status: 409 })
+    expect((await service.get(created.task.id)).status).toBe('done')
+  })
+
   it('creates one thread, normalized tags and unique year codes under concurrency', async () => {
     const created = await Promise.all(Array.from({ length: 10 }, () => service.create('member', { assistantId, tags: ['#sr-2026-0002', 'SR-2026-0002', ' cca item '] })))
     expect(new Set(created.map((item) => item.task.code)).size).toBe(10)

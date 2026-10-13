@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { resumeHeldTask } from '../tasks/resume-held-task.js'
 import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common'
 import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { buildChatRequest, createProvider, refineSrDraft, suggestTitle, summarizeConversation, SummaryBudgetError, type ChatProvider, type ChatScope, type SrDraftText } from '@mes/llm'
@@ -282,7 +283,7 @@ export class RequestsService implements OnModuleDestroy {
     if ((!body.content?.trim() && !attachments.length) || oneShot.some((id) => !attachments.includes(id))) throw new BadRequestException('요청 내용 또는 첨부가 올바르지 않습니다')
     const existing = await this.db.select().from(chatRequest).where(and(eq(chatRequest.threadId, threadId), eq(chatRequest.idempotencyKey, key)))
     if (existing[0]) return this.replay(existing[0])
-    let acquired: { id: string; replyMessageId: string; userMessageId: string; taskId?: string | null; deadlineAt?: number; duplicate?: boolean }
+    let acquired: { id: string; replyMessageId: string; userMessageId: string; taskId?: string | null; deadlineAt?: number; duplicate?: boolean; autoStarted?: boolean }
     try {
       acquired = await this.db.transaction(async (tx) => {
         await this.lockGlobalCapacity(tx)
@@ -326,7 +327,8 @@ export class RequestsService implements OnModuleDestroy {
           bytes: 0, limitBytes, leaseUntil: dbLeaseUntil(this.config.request.leaseMs) })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'message.sent', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
-        return { id: requestId, replyMessageId, userMessageId, taskId: owner.taskId, deadlineAt }
+        const autoStarted = await resumeHeldTask(tx, currentTask, actor)
+        return { id: requestId, replyMessageId, userMessageId, taskId: owner.taskId, deadlineAt, autoStarted }
       })
     } catch (error) {
       if (isDuplicateKey(error) && await this.hasActiveOrKey(threadId, key)) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
@@ -334,12 +336,13 @@ export class RequestsService implements OnModuleDestroy {
     }
     if (acquired.duplicate) return this.replay(await this.getRow(acquired.id))
     if (acquired.taskId) {
+      if (acquired.autoStarted) this.appEvents?.publish('task.updated', { taskId: acquired.taskId })
       this.appEvents?.publish('message.appended', { threadId, taskId: acquired.taskId, messageId: acquired.userMessageId })
       this.appEvents?.publish('message.appended', { threadId, taskId: acquired.taskId, messageId: acquired.replyMessageId })
       if (attachments.some((id) => !oneShot.includes(id))) this.appEvents?.publish('input.updated', { taskId: acquired.taskId })
     }
     this.appEvents?.publish('request.updated', { requestId: acquired.id, threadId, taskId: acquired.taskId ?? null, status: 'pending', phase: null })
-    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString() } })
+    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString(), autoStarted: acquired.autoStarted ?? false } })
     const done = this.run(acquired.id, oneShot, [], acquired.deadlineAt!)
     return { ...acquired, done }
   }
@@ -386,7 +389,10 @@ export class RequestsService implements OnModuleDestroy {
         transport: this.config.llm.mode === 'live' && (deliverySetting?.value ?? (this.config.llm.preset === 'openwebui' ? 'openwebui' : 'inline')) === 'openwebui' ? 'openwebui' : 'inline',
         model: original.model, bytes: 0, limitBytes, leaseUntil: dbLeaseUntil(this.config.request.leaseMs) })
       await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId: id, retryOf: original.id } })
-      return { id, replyMessageId, userMessageId: original.userMessageId, taskId: owner.taskId, deadlineAt,
+      const [currentTask] = owner.taskId ? await tx.select().from(task).where(eq(task.id, owner.taskId)) : []
+      const autoStarted = await resumeHeldTask(tx, currentTask, actor)
+      if (owner.taskId) await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, owner.taskId))
+      return { id, replyMessageId, userMessageId: original.userMessageId, taskId: owner.taskId, deadlineAt, autoStarted,
         oneShot: files.map((item) => item.fileId).filter((fileId) => !exclude.includes(fileId) && !selected.some((item) => item.fileId === fileId)) }
     }).catch(async (error: unknown) => {
       if (isDuplicateKey(error) && await this.hasActiveOrKey(original.threadId, key)) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
@@ -394,12 +400,13 @@ export class RequestsService implements OnModuleDestroy {
     })
     if (acquired.duplicate) return this.replay(await this.getRow(acquired.id))
     if (acquired.taskId) {
+      if (acquired.autoStarted) this.appEvents?.publish('task.updated', { taskId: acquired.taskId })
       this.appEvents?.publish('message.appended', { threadId: original.threadId, taskId: acquired.taskId, messageId: acquired.replyMessageId })
       if (exclude.length) this.appEvents?.publish('input.updated', { taskId: acquired.taskId })
     }
     this.appEvents?.publish('request.updated', { requestId: acquired.id, threadId: original.threadId,
       taskId: acquired.taskId ?? null, status: 'pending', phase: null })
-    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString() } })
+    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString(), autoStarted: acquired.autoStarted ?? false } })
     return { ...acquired, done: this.run(acquired.id, acquired.oneShot, inline, acquired.deadlineAt!) }
   }
 
