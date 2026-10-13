@@ -111,12 +111,12 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     expect(forged.task.tags).toContain(submitted.code)
     await expect(assertSrAccess(db, 'other', draft.id)).rejects.toMatchObject({ status: 403 })
     await expect(new DbTasksService(db).messages(draft.threadId, 'other')).rejects.toMatchObject({ status: 403 })
-    await expect(sr.status('other', draft.id, 'reviewing')).rejects.toMatchObject({ status: 403 })
+    await expect(sr.status('other', draft.id, 'rejected', '위조')).rejects.toMatchObject({ status: 403 })
     await expect(sr.share('other', draft.id, { text: '위조' })).rejects.toMatchObject({ status: 403 })
     const staffForgery = await new DbTasksService(db).create('staff', { assistantId, tags: [submitted.code] })
     expect(staffForgery.task.tags).toContain(submitted.code)
     await expect(assertSrAccess(db, 'staff', draft.id)).rejects.toMatchObject({ status: 403 })
-    await expect(sr.status('staff', draft.id, 'reviewing')).rejects.toMatchObject({ status: 403 })
+    await expect(sr.status('staff', draft.id, 'rejected', '위조')).rejects.toMatchObject({ status: 403 })
     await expect(sr.share('staff', draft.id, { text: '위조' })).rejects.toMatchObject({ status: 403 })
   })
 
@@ -242,6 +242,33 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     await expect(assertFileAccess(db, 'other', fileId)).rejects.toMatchObject({ status: 403 })
     await db.update(assistant).set({ imageFileId: null }).where(eq(assistant.id, assistantId))
     await expect(assertFileAccess(db, 'other', fileId)).rejects.toMatchObject({ status: 403 })
+  })
+
+  it('S9-7: 접수·연결 대화 시작·결과 공유가 상태를 자동 전환하고, 수동 변경은 완료·반려·다시 열기만 허용한다', async () => {
+    const draft = await sr.create('requester')
+    expect((await sr.submit('requester', draft.id, { title: '자동 전환', body: '' })).status).toBe('submitted')
+    // 접수됨에서 다시 열기는 불가(닫힌 SR만). 완료·반려는 접수 뒤 언제든 가능.
+    await expect(sr.status('owner', draft.id, 'in_progress')).rejects.toMatchObject({ status: 409 })
+    await sr.startTask('staff', draft.id, { assistantId })
+    expect((await sr.get('staff', draft.id)).status).toBe('in_progress')
+    await sr.share('staff', draft.id, { text: '결과' })
+    expect((await sr.get('staff', draft.id)).status).toBe('responded')
+    await expect(sr.status('staff', draft.id, 'in_progress')).rejects.toMatchObject({ status: 409 })
+    await sr.status('staff', draft.id, 'rejected', '범위 밖')
+    expect((await sr.status('staff', draft.id, 'in_progress')).status).toBe('in_progress')
+    const history = (await sr.get('requester', draft.id)).statusHistory.map((item) => [item.from, item.to])
+    expect(history).toEqual([['draft', 'submitted'], ['submitted', 'in_progress'], ['in_progress', 'responded'], ['responded', 'rejected'], ['rejected', 'in_progress']])
+    const notified = await db.select().from(notification).where(eq(notification.userId, 'requester')).orderBy(desc(notification.at)).limit(1)
+    expect(notified[0]!.title).toContain('처리 중')
+  })
+
+  it('기존 reviewing 행은 그대로 두되 접수됨처럼 연결 대화 시작으로 처리 중이 된다', async () => {
+    const draft = await sr.create('requester')
+    await sr.submit('requester', draft.id, { title: '옛 검토 중', body: '' })
+    await db.update(serviceRequest).set({ status: 'reviewing' }).where(eq(serviceRequest.id, draft.id))
+    expect((await sr.get('staff', draft.id)).status).toBe('reviewing')
+    await sr.startTask('staff', draft.id, { assistantId })
+    expect((await sr.get('staff', draft.id)).status).toBe('in_progress')
   })
 
   it.each(['done', 'rejected'] as const)('preserves %s when sharing another result', async (closed) => {

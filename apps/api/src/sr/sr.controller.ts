@@ -1,11 +1,13 @@
 import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Patch, Post, Query, Req } from '@nestjs/common'
 import { z } from 'zod'
+import { SR_MANUAL_STATUSES } from '@mes/domain'
 import type { AuthedRequest } from '../auth/guards.js'
 import { SrService } from './sr.service.js'
 
 const submitSchema = z.object({ title: z.string(), titleSource: z.enum(['ai', 'manual']).optional(), body: z.string(), attachmentIds: z.array(z.string()).optional() }).strict()
 const titleSchema = z.object({ title: z.string() }).strict()
-const statusSchema = z.object({ status: z.enum(['submitted', 'reviewing', 'in_progress', 'responded', 'done', 'rejected']), reason: z.string().max(500).optional() }).strict()
+/** 수동 변경은 완료·반려·다시 열기(in_progress)만. 접수됨·결과 공유는 자동 전환으로만 들어간다. */
+const statusSchema = z.object({ status: z.enum(SR_MANUAL_STATUSES), reason: z.string().max(500).optional() }).strict()
 const refineSchema = z.object({ title: z.string(), body: z.string() }).strict()
 const taskSchema = z.object({ assistantId: z.string().min(1), forceNew: z.boolean().optional() }).strict()
 const resultSchema = z.object({ taskId: z.string().optional(), text: z.string().optional(), fileIds: z.array(z.string()).optional() }).strict()
