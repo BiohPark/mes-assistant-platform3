@@ -5,7 +5,7 @@ import { cancelRequest, streamRequest } from '@/api/requests'
 import { useT } from '@/i18n'
 
 export interface ChatRun { requestId: string; replyId: string; text: string; reasoning?: string; phase?: string; startedAt?: number }
-interface Attempt { key: string; threadId: string; requestId?: string; startedAt?: number; text: string; attachmentIds: string[]; path: string; body: unknown }
+interface Attempt { key: string; threadId: string; requestId?: string; startedAt?: number; text: string; attachmentIds: string[]; path: string; body: unknown; autoStartNotified?: boolean }
 const storageKey = (threadId: string) => `mes-chat-attempt:${threadId}`
 const load = (threadId: string): Attempt | null => {
   try {
@@ -48,9 +48,12 @@ export function useChat(threadId?: string, onAutoStarted?: () => void) {
           try {
             await streamRequest(attempt.path, attempt.body, (event, data) => {
               if (event === 'started') {
-                if (data.autoStarted === true && !attempt.requestId) autoStarted.current?.()
+                // 재시도는 처음부터 requestId가 있으므로 요청 ID가 아니라 시도별 표시로 알림 중복(재연결 재생)을 막는다
+                const notify = data.autoStarted === true && !attempt.autoStartNotified
+                if (notify) attempt.autoStartNotified = true
                 attempt.requestId = String(data.requestId)
                 save(attempt)
+                if (notify) autoStarted.current?.()
                 setRun({ requestId: attempt.requestId, replyId: String(data.replyMessageId), text: String(data.resumedText ?? ''), reasoning: String(data.resumedReasoning ?? ''),
                   startedAt: typeof data.createdAt === 'string' ? Date.parse(data.createdAt) : attempt.startedAt })
                 void query.invalidateQueries({ queryKey: ['messages', attempt.threadId] })
@@ -97,6 +100,8 @@ export function useChat(threadId?: string, onAutoStarted?: () => void) {
     sending,
     waitingSince,
     hasPendingAttempt: () => !!(threadId && load(threadId)),
+    /** 보관된(전송하지 못한) 시도의 내용 — 다음 전송이 이것을 그대로 다시 보낸다 */
+    pendingAttempt: (): { text: string; attachmentIds: string[] } | null => { const attempt = threadId ? load(threadId) : null; return attempt && { text: attempt.text, attachmentIds: attempt.attachmentIds } },
     send: (content: string, attachmentIds: string[] = [], oneShotFileIds: string[] = []) => {
       if (!threadId) throw new Error(t('chat.noThread'))
       const attempt = load(threadId) ?? { key: newId(), threadId, text: content, attachmentIds,

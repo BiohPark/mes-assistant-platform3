@@ -207,6 +207,8 @@ export const en = {
   chat: {
     reopenTitle: 'Reopen this conversation?',
     reopenDescription: 'This conversation is complete. Enter a reason to reopen it and send your draft.',
+    reopenStoredDescription: 'This conversation is complete. Enter a reason to reopen it and resend the request that could not be sent. Your new draft stays in the composer.',
+    pendingAttemptDraftKept: 'Resent the earlier request. Your new draft was kept in the composer.',
     owuiTools: 'Tool delivery', owuiBasic: 'Basic request', owuiFallback: 'Fallback (basic request)',
     copyMessage: 'Copy', copiedMessage: 'Message copied.', copyMessageFailed: 'Could not copy. Please try again.',
     messageActions: 'Message actions', messageMenu: 'Message menu', askAgain: 'Ask again',

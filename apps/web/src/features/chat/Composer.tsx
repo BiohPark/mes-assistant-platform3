@@ -36,7 +36,7 @@ interface ComposerProps {
   /** discussion=true 이면 팀 의견(AI 미전송) */
   onSend: (text: string, attachments: PendingAttachment[], discussion: boolean) => Promise<void | boolean>
   /** Ask for confirmation before marking the draft as sent; false preserves it without an error. */
-  beforeSend?: () => Promise<boolean>
+  beforeSend?: (discussion: boolean) => Promise<boolean>
   onStop: () => void
   suggestions?: string[]
   allowAttachments?: boolean
@@ -117,7 +117,7 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
     const submittedText = text
     const f = pending
     try {
-      if (beforeSend && !await beforeSend()) return
+      if (beforeSend && !await beforeSend(discussion)) return
       if (!mounted.current) return
       if (clearOnSubmit) { setText(''); setPending([]) }
       else { sent.current = { text: submittedText, pending: f }; commit({}) }

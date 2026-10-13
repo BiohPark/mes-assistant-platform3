@@ -37,6 +37,8 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   const confirmedAsk = useRef(false)
   const sendLock = useRef(false)
   const [reopenForSend, setReopenForSend] = useState(false)
+  // 재개 확인 안내는 실제로 보낼 것과 같아야 한다 — 보관된 시도가 있으면 그것을 다시 보낸다
+  const [reopenResendsStored, setReopenResendsStored] = useState(false)
   const reopenDecision = useRef<((accepted: boolean) => void) | null>(null)
   useEffect(() => () => { reopenDecision.current?.(false) }, [])
   const [typing, setTyping] = useState<Record<string, { name: string; until: number }>>({})
@@ -116,9 +118,10 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
       return false
     }
   }
-  async function beforeSend() {
+  async function beforeSend(discussion = false) {
     if (sendLock.current) return false
     if (task.status !== 'done') return true
+    setReopenResendsStored(!discussion && chat.hasPendingAttempt())
     setSending(true)
     try {
       return await new Promise<boolean>(resolve => { reopenDecision.current = resolve; setReopenForSend(true) })
@@ -130,9 +133,14 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
     const content = text.trim()
     setSending(true)
     try {
-      if (!discussion && chat.hasPendingAttempt()) {
+      const stored = discussion ? null : chat.pendingAttempt()
+      if (stored) {
+        // 보관된 시도를 그대로 다시 보낸다(안내와 같음). 그 시도에 없던 글·첨부는 보내지 않았으므로 입력창에 남긴다
         await chat.send(content)
-        return
+        const same = content === stored.text && attachments.every((item) => item.uploadedId && item.uploadedTaskId === task.id && stored.attachmentIds.includes(item.uploadedId))
+        if (same) return
+        toast.info(t('chat.pendingAttemptDraftKept'))
+        return false
       }
       const uploaded = []
       for (const attachment of attachments) {
@@ -187,7 +195,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   </div>{Object.values(typing).some((item) => item.until > Date.now()) && <p className="px-4 py-1 text-xs text-muted-foreground">{t('chat.typing', { names: Object.values(typing).filter((item) => item.until > Date.now()).map((item) => item.name).join(', ') })}</p>}
   <ContextTray task={task} estimate={estimate} />
   {prefilled && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.askAgainHint')}</p>}
-  {pendingAttempt && !sending && !chat.sending && task.status !== 'done' && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.pendingAttemptHint')}</p>}
+  {pendingAttempt && !sending && !chat.sending && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.pendingAttemptHint')}</p>}
   <Composer ref={composer} disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowPin allowDiscussion
     blockedReason={task.status !== 'done' && estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping} draftKey={task.id}
     placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}
@@ -196,7 +204,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   <ReasonDialog key={String(reopenForSend)} open={reopenForSend} onOpenChange={open => {
     setReopenForSend(open)
     if (!open) { reopenDecision.current?.(false); reopenDecision.current = null }
-  }} title={t('chat.reopenTitle')} description={t('chat.reopenDescription')} confirmLabel={t('task.header.reopenConfirm')} onConfirm={confirmReopen} />
+  }} title={t('chat.reopenTitle')} description={t(reopenResendsStored ? 'chat.reopenStoredDescription' : 'chat.reopenDescription')} confirmLabel={t('task.header.reopenConfirm')} onConfirm={confirmReopen} />
   <ConfirmDialog open={!!askTarget} onOpenChange={(open) => { if (!open) setAskTarget(null) }} title={t('chat.replaceDraftTitle')}
     description={t('chat.replaceDraftDescription')} confirmLabel={t('chat.replaceDraftConfirm')} destructive={false}
     onConfirm={() => { if (askTarget && !askAgainDisabled) { confirmedAsk.current = true; prefill(askTarget) } }}

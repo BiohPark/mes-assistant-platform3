@@ -13,8 +13,9 @@ import { clearDrafts, getDraft } from './drafts'
 
 const toastError = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
-vi.mock('sonner', () => ({ toast: { error: toastError, success: toastSuccess, warning: vi.fn() } }))
-afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear(); toastSuccess.mockClear(); queryClient.clear(); clearDrafts() })
+const toastInfo = vi.hoisted(() => vi.fn())
+vi.mock('sonner', () => ({ toast: { error: toastError, success: toastSuccess, info: toastInfo, warning: vi.fn() } }))
+afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear(); toastSuccess.mockClear(); toastInfo.mockClear(); queryClient.clear(); clearDrafts() })
 
 it('reloads messages after the first AI request when the initial message fetch returns empty late', async () => {
   let finishInitialFetch!: (response: Response) => void
@@ -543,4 +544,56 @@ it('keeps the draft when navigating away during the reopen confirmation', async 
   expect(getDraft('t')).toMatchObject({ text: '다시 방문할 초안', pending: [{ file: expect.any(File) }] })
   unmount()
   expect(getDraft('t')?.text).toBe('다시 방문할 초안')
+})
+
+it('resends only the stored attempt after reopening and keeps the new draft that was not sent', async () => {
+  const bodies: unknown[] = []
+  let reopened = false
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/tasks/t/status') { reopened = true; return Response.json({ id: 't', status: 'in_progress' }) }
+    if (url === '/api/threads/h/requests') {
+      bodies.push(JSON.parse(String(init?.body)))
+      return reopened ? new Response('event: started\ndata: {"requestId":"r","replyMessageId":"a"}\n\nevent: completed\ndata: {}\n\n', { status: 201 })
+        : Response.json({ message: '완료된 대화입니다' }, { status: 409 })
+    }
+    if (url.endsWith('/estimate')) return Response.json({ inputs: [], srs: [], srCodes: [], bytes: 0, limitBytes: 100000, overLimit: false, attachmentLimit: 10 })
+    return Response.json([])
+  }))
+  queueFirstRequest('h', { content: 'OLD', attachmentIds: [], oneShotFileIds: [] })
+  const { container } = progressView('done')
+  await waitFor(() => expect(bodies).toHaveLength(2))
+  // 화면 안내: 전송하면 보관된 요청을 다시 보낸다
+  expect(await screen.findByText(/전송하지 못한 요청이 있습니다/)).toBeVisible()
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  fireEvent.change(input, { target: { value: 'NEW' } })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['n'], 'NEW.txt', { type: 'text/plain' })] } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  const dialog = await screen.findByRole('dialog', { name: '재개할까요?' })
+  expect(dialog).toHaveTextContent('전송하지 못한 이전 요청')
+  fireEvent.change(screen.getByPlaceholderText('사유를 입력하세요'), { target: { value: '추가 검토' } })
+  fireEvent.click(screen.getByRole('button', { name: '재개 확인' }))
+  await waitFor(() => expect(bodies).toHaveLength(3))
+  expect(bodies[2]).toEqual({ content: 'OLD', attachmentIds: [], oneShotFileIds: [] })
+  await waitFor(() => expect(toastInfo).toHaveBeenCalledWith('이전 요청을 다시 보냈습니다. 새로 작성한 내용은 입력창에 남겨 두었습니다.'))
+  expect(input).toHaveValue('NEW')
+  expect(screen.getByText('NEW.txt')).toBeInTheDocument()
+  expect(getDraft('t')).toMatchObject({ text: 'NEW', pending: [{ file: expect.any(File) }] })
+})
+
+it('announces an automatic hold release once when retrying a failed reply, even if the stream reconnects', async () => {
+  let retries = 0
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/threads/h/messages') return Response.json([{ id: 'a', threadId: 'h', role: 'assistant', content: '', status: 'error', createdAt: '2026-01-01T00:00:00Z', attachmentIds: [], requestId: 'old' }])
+    if (url === '/api/requests/old/retry') {
+      retries++
+      return new Response(`event: started\ndata: {"requestId":"r2","replyMessageId":"a2","autoStarted":true}\n\n${retries > 1 ? 'event: completed\ndata: {}\n\n' : ''}`, { status: 201 })
+    }
+    if (url.endsWith('/estimate')) return Response.json({ inputs: [], srs: [], srCodes: [], bytes: 0, limitBytes: 100000, overLimit: false, attachmentLimit: 10 })
+    return Response.json([])
+  }))
+  progressView('on_hold')
+  fireEvent.click(await screen.findByRole('button', { name: '다시 시도' }))
+  await waitFor(() => expect(retries).toBe(2))
+  await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('보류를 해제했습니다', expect.objectContaining({ action: expect.objectContaining({ label: '보류' }) })))
+  expect(toastSuccess.mock.calls.filter(call => call[0] === '보류를 해제했습니다')).toHaveLength(1)
 })

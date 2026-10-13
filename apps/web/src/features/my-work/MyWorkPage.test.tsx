@@ -200,6 +200,6 @@ it.each([['ko', '정체'], ['en', 'Stalled']] as const)('shows stalled work in %
     task('held', { status: 'on_hold', lastActivityAt: old }), task('waiting', { status: 'todo', lastActivityAt: old }), task('done', { status: 'done', lastActivityAt: old })], locale)
   renderPage('/my-work?done=1')
   await screen.findByRole('link', { name: /WK-2026-old/ })
-  expect(screen.getAllByText(label)).toHaveLength(1)
+  expect(await screen.findAllByText(label)).toHaveLength(1)
   expect(within(screen.getByRole('link', { name: /WK-2026-old/ })).getByText(label)).toBeInTheDocument()
 })
