@@ -1,0 +1,1 @@
+CREATE INDEX `chat_request_thread_created` ON `chat_request` (`thread_id`,`created_at`);
