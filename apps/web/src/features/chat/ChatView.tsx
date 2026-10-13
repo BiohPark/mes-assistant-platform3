@@ -28,6 +28,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   const query = useQueryClient()
   const [sending, setSending] = useState(false)
   const [draft, setDraft] = useState('')
+  const [questionIndexContainer, setQuestionIndexContainer] = useState<HTMLDivElement | null>(null)
   const [askTarget, setAskTarget] = useState<Message | null>(null)
   const [prefilled, setPrefilled] = useState(false)
   const askOpener = useRef<HTMLElement | null>(null)
@@ -118,8 +119,10 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
     try { setRetryChoice({ record: await getRequest(requestId), mode }) }
     catch { toast.error(t('chat.requestLoadFailed')) }
   }
-  return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={task.status === 'done'} onFiles={(files) => composer.current?.dropFiles(files)}><div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-    <ChatMessages messages={messages.data ?? []} run={chat.run} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
+  return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={task.status === 'done'} onFiles={(files) => composer.current?.dropFiles(files)}>
+    <div ref={setQuestionIndexContainer} data-testid="chat-question-toolbar" className="shrink-0 border-b px-4 py-2 empty:hidden" />
+    <div data-testid="chat-message-scroll" className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+    <ChatMessages messages={messages.data ?? []} run={chat.run} questionIndexContainer={questionIndexContainer} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
       actions={(item) => ({
         onAskAgain: item.role === 'user' && item.kind !== 'discussion' ? () => askAgain(item) : undefined,
         askAgainDisabled,

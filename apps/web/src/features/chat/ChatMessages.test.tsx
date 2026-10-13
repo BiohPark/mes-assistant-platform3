@@ -53,6 +53,17 @@ it('lists question times and failure labels and focuses the selected message aft
   expect(document.querySelector('[data-message-id="q"]')).toHaveFocus()
 })
 
+it('keeps the inline question index in normal flow for shared message views', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  render(view([question, answer]))
+  const trigger = screen.getByRole('button', { name: '질문 목차' })
+  const toolbar = trigger.parentElement!
+  expect(toolbar.nextElementSibling).toHaveAttribute('data-message-id', question.id)
+  expect(toolbar).not.toHaveClass('sticky')
+  expect(toolbar).not.toHaveClass('absolute')
+  expect(toolbar).not.toHaveClass('fixed')
+})
+
 it('marks a question failed only by an error answer in its own span that matches its request', () => {
   const second: Message = { ...question, id: 'q2', content: '둘째 질문', requestId: 'r2' }
   const third: Message = { ...question, id: 'q3', content: '셋째 질문', requestId: undefined }
