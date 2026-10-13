@@ -58,3 +58,33 @@ test('새 대화의 첫 입력을 AI에 한 번 보내고 답변을 표시한다
   await expect(page.getByRole('paragraph').filter({ hasText: /^첫 AI 질문 E2E$/ })).toHaveCount(1) // 사용자 말풍선 1개 — 제목·답변 인용은 제외
   await expect(page.getByRole('button', { name: '사용한 자료' })).toHaveCount(1) // AI 답변 1개
 })
+
+test('대화 헤더의 사내 어시스턴트 바로가기는 링크가 설정된 에이전트에서만 새 탭으로 열린다', async ({ page, playwright, baseURL }) => {
+  // 시드 에이전트에는 link1·modelId가 없다 — dev-owner로 잠시 link1을 넣고 끝나면 되돌린다
+  const api = await playwright.request.newContext({ baseURL, timeout: 5_000 })
+  expect((await api.post('/api/auth/login', { data: { loginId: 'dev-owner', password } })).ok()).toBe(true)
+  const assistants = await (await api.get('/api/assistants')).json() as Array<{ id: string; status: string; link1?: string }>
+  const target = assistants.find((item) => item.status !== 'retired' && !item.link1)!
+  const link1 = `https://openwebui.example/?model=e2e-shortcut-${Date.now()}`
+  expect((await api.patch(`/api/assistants/${target.id}`, { data: { link1 } })).ok()).toBe(true)
+  try {
+    await signUp(page, `e2e-shortcut-${Date.now()}`)
+    const created = await page.request.post('/api/tasks', { data: { assistantId: target.id, tags: [], title: '바로가기 대화' } })
+    expect(created.ok()).toBe(true)
+    const task = await created.json() as { id: string }
+    await page.goto(`/c/${task.id}`)
+    const shortcut = page.getByRole('link', { name: 'OpenWebUI에서 열기' })
+    await expect(shortcut).toHaveAttribute('href', link1)
+    await expect(shortcut).toHaveAttribute('target', '_blank')
+    await expect(shortcut).toHaveAttribute('rel', 'noreferrer')
+    const other = assistants.find((item) => item.status !== 'retired' && item.id !== target.id && !item.link1)!
+    const plain = await page.request.post('/api/tasks', { data: { assistantId: other.id, tags: [], title: '바로가기 없음' } })
+    expect(plain.ok()).toBe(true)
+    await page.goto(`/c/${((await plain.json()) as { id: string }).id}`)
+    await expect(page.getByRole('button', { name: '업무 완료' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'OpenWebUI에서 열기' })).toHaveCount(0)
+  } finally {
+    expect((await api.patch(`/api/assistants/${target.id}`, { data: { link1: null } })).ok()).toBe(true)
+    await api.dispose()
+  }
+})
