@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { resumeHeldTask } from './resume-held-task.js'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type TagSuggestion, type Task, type TaskAiRequestStatus, type TaskStatus, type Thread } from '@mes/domain'
 import { and, desc, eq, exists, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
@@ -90,29 +91,38 @@ export class DbTasksService {
         .from(thread).innerJoin(chatRequest, eq(chatRequest.id, pickedRequestId))
         .where(and(inArray(thread.taskId, ids), inArray(chatRequest.status, SHOWN_AI_STATUSES))),
     ])
+    // 행마다 전체 배열을 훑으면 O(N²) — 대화 수천 건에서 이벤트 루프를 수 초 막는다. taskId로 한 번만 묶는다(원래 순서 유지).
+    const byTask = <T extends { taskId: string | null }>(items: T[]) => {
+      const groups = new Map<string, T[]>()
+      for (const item of items) if (item.taskId !== null) { const list = groups.get(item.taskId); if (list) list.push(item); else groups.set(item.taskId, [item]) }
+      return (taskId: string) => groups.get(taskId) ?? []
+    }
+    const detailsOf = byTask(details), extrasOf = byTask(extras), materialsOf = byTask(materials), aiRequestsOf = byTask(aiRequests)
     return rows.map((row) => {
       const taskId = row.id
-      const taskThread = details.find((item) => item.taskId === taskId)?.taskThread
-      const extra = extras.filter((item) => item.taskId === taskId)
+      const taskDetails = detailsOf(taskId)
+      const taskMaterials = materialsOf(taskId)
+      const taskThread = taskDetails[0]?.taskThread
+      const extra = extrasOf(taskId)
       const checks = [...new Map(extra.filter((item) => item.check).map((item) => [item.check!.id, item.check!])).values()].sort((a, b) => a.sortOrder - b.sortOrder)
       const reviews = [...new Map(extra.filter((item) => item.review).map((item) => [item.review!.id, item.review!])).values()].sort((a, b) => b.at.getTime() - a.at.getTime())
       const review = reviews[0]
       const reviewItems = review ? [...new Map(extra.filter((item) => item.review?.id === review.id && item.reviewItem).map((item) => [item.reviewItem!.itemId, item.reviewItem!])).values()] : []
       const feedback = extra.find((item) => item.feedback)?.feedback
-      const aiRequest = aiRequests.find((item) => item.taskId === taskId)
+      const aiRequest = aiRequestsOf(taskId)[0]
       return {
         id: row.id, code: row.code, assistantId: row.assistantId, title: row.title,
         titleSource: row.titleSource as Task['titleSource'], summary: row.summary,
         status: row.status as TaskStatus, ownerId: row.ownerId,
-        assigneeIds: [...new Set(details.filter((item) => item.taskId === taskId && item.userId !== null).map((item) => item.userId!))], priority: row.priority as Task['priority'],
-        ...(row.dueDate && { dueDate: row.dueDate }), tags: [...new Set(details.filter((item) => item.taskId === taskId && item.label !== null).map((item) => item.label!))],
+        assigneeIds: [...new Set(taskDetails.filter((item) => item.userId !== null).map((item) => item.userId!))], priority: row.priority as Task['priority'],
+        ...(row.dueDate && { dueDate: row.dueDate }), tags: [...new Set(taskDetails.filter((item) => item.label !== null).map((item) => item.label!))],
         checklist: checks.map((item) => ({ id: item.id, label: item.label, required: item.required, checked: item.checked,
           ...(item.checkedBy && { checkedBy: item.checkedBy }), ...(item.checkedAt && { checkedAt: item.checkedAt.toISOString() }) })),
         ...(review && { checklistReview: { by: review.byUser, at: review.at.toISOString(), met: review.met, total: review.total,
           source: review.source as 'ai' | 'rule', items: reviewItems.map((item) => ({ itemId: item.itemId, met: item.met, note: item.note })) } }),
         ...(feedback && { feedback: { rating: feedback.rating, comment: feedback.comment, by: feedback.byUser, at: feedback.at.toISOString() } }),
-        inputs: materials.filter((item) => item.taskId === taskId && !item.isOutput).sort((a, b) => (a.weight === b.weight ? a.sortOrder! - b.sortOrder! : a.weight === 'main' ? -1 : 1)).map((item) => ({ fileId: item.fileId, weight: item.weight as 'main' | 'reference', selectedBy: item.selectedBy!, selectedAt: item.selectedAt!.toISOString() })),
-        outputFileIds: materials.filter((item) => item.taskId === taskId && item.isOutput).map((item) => item.fileId), ...(taskThread && { threadId: taskThread.id,
+        inputs: taskMaterials.filter((item) => !item.isOutput).sort((a, b) => (a.weight === b.weight ? a.sortOrder! - b.sortOrder! : a.weight === 'main' ? -1 : 1)).map((item) => ({ fileId: item.fileId, weight: item.weight as 'main' | 'reference', selectedBy: item.selectedBy!, selectedAt: item.selectedAt!.toISOString() })),
+        outputFileIds: taskMaterials.filter((item) => item.isOutput).map((item) => item.fileId), ...(taskThread && { threadId: taskThread.id,
           thread: { id: taskThread.id, taskId, title: taskThread.title, createdAt: taskThread.createdAt.toISOString(), createdBy: taskThread.createdBy, archived: false, ...(taskThread.modelId && { modelId: taskThread.modelId }) } }),
         ...(row.modelId && { modelId: row.modelId }), createdAt: row.createdAt.toISOString(),
         createdBy: row.createdBy, lastActivityAt: row.lastActivityAt.toISOString(),
@@ -359,11 +369,11 @@ export class DbTasksService {
     if (input.kind !== 'discussion') throw new BadRequestException('AI 요청은 S3에서 지원합니다')
     if (!input.content?.trim() && !input.attachmentIds?.length) throw new BadRequestException('내용이 필요합니다')
     const messageId = id()
-    const taskId = await this.db.transaction(async (tx) => {
+    const accepted = await this.db.transaction(async (tx) => {
       const [target] = await tx.select().from(thread).where(eq(thread.id, threadId))
       if (!target) throw new NotFoundException('스레드를 찾을 수 없습니다')
       await assertThreadAccess(this.db, actor, threadId)
-      if (target.taskId) await this.ensureEditable(tx, target.taskId)
+      const owner = target.taskId ? await this.ensureEditable(tx, target.taskId) : undefined
       const attachmentIds = [...new Set(input.attachmentIds ?? [])]
       if (attachmentIds.length) {
         const valid = await tx.select({ id: fileObject.id }).from(fileObject).where(and(inArray(fileObject.id, attachmentIds), target.srId ? eq(fileObject.originSrId, target.srId) : eq(fileObject.originTaskId, target.taskId!), sql`${fileObject.deletedAt} is null`))
@@ -375,10 +385,12 @@ export class DbTasksService {
       if (attachmentIds.length) await tx.insert(messageAttachment).values(attachmentIds.map((fileId) => ({ messageId, fileId })))
       if (target.taskId) await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, target.taskId))
       await tx.insert(activityLog).values({ id: id(), type: 'message.sent', userId: actor, taskId: target.taskId, srId: target.srId, payload: { kind: 'discussion' } })
-      return target.taskId ?? ''
+      const autoStarted = await resumeHeldTask(tx, owner, actor)
+      return { taskId: target.taskId ?? '', autoStarted }
     })
-    this.events?.publish('message.appended', { threadId, taskId, messageId })
-    return (await this.messages(threadId, actor)).find((item) => item.id === messageId)
+    if (accepted.autoStarted) this.events?.publish('task.updated', { taskId: accepted.taskId })
+    this.events?.publish('message.appended', { threadId, taskId: accepted.taskId, messageId })
+    return { ...(await this.messages(threadId, actor)).find((item) => item.id === messageId)!, autoStarted: accepted.autoStarted }
   }
 
   async activity(taskId: string, actor?: string) {
