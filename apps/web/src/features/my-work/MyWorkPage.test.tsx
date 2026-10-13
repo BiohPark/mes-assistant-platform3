@@ -193,3 +193,13 @@ it.each(['/api/tasks', '/api/assistants'])('shows a retryable error for %s inste
   await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
   expect(await screen.findByText('대화 0001')).toBeInTheDocument()
 })
+
+it.each([['ko', '정체'], ['en', 'Stalled']] as const)('shows stalled work in %s without changing statuses', async (locale, label) => {
+  const old = '2020-01-01T00:00:00Z'
+  setup([task('old', { lastActivityAt: old }), task('recent', { lastActivityAt: new Date().toISOString() }),
+    task('held', { status: 'on_hold', lastActivityAt: old }), task('waiting', { status: 'todo', lastActivityAt: old }), task('done', { status: 'done', lastActivityAt: old })], locale)
+  renderPage('/my-work?done=1')
+  await screen.findByRole('link', { name: /WK-2026-old/ })
+  expect(await screen.findAllByText(label)).toHaveLength(1)
+  expect(within(screen.getByRole('link', { name: /WK-2026-old/ })).getByText(label)).toBeInTheDocument()
+})

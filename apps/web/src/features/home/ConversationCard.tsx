@@ -11,6 +11,7 @@ import { primarySrTag, srTagColor, TASK_STATUSES, type Task, type TaskStatus } f
 import { daysUntil, useDates } from '@/lib/dates'
 import { TASK_STATUS_KEY } from '@/lib/labels'
 import { cn } from '@/lib/utils'
+import { StalledBadge } from '@/features/task/StalledBadge'
 import { AiRequestChip } from './AiRequestChip'
 
 const MAX_TAGS = 3
@@ -41,10 +42,11 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
       style={{ borderLeftColor: sr ? srTagColor(sr) : undefined, borderLeftWidth: sr ? 3 : undefined }}
     >
       <Link to={`/c/${task.id}`} className="absolute inset-0 rounded-xl" aria-label={t('hub.openConversation', { code: task.code, title: task.title })} />
-      <div className="pointer-events-none flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div className="pointer-events-none flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
         <span className="shrink-0 font-mono whitespace-nowrap">{task.code}</span>
         <TaskStatusBadge status={task.status} className="h-5 shrink-0 px-1.5 text-[11px]" />
         {task.aiRequest && <AiRequestChip aiRequest={task.aiRequest} className="h-5 shrink-0 px-1.5 text-[11px]" />}
+        <StalledBadge task={task} className="h-5 shrink-0 px-1.5 text-[11px]" />
         {task.titleSource === 'ai' && <Sparkles className="size-2.5 shrink-0 text-tone-violet-fg" aria-label={t('hub.aiTitle')} />}
         <span className="ml-auto min-w-0 truncate">{formatRelative(task.lastActivityAt)}</span>
       </div>
@@ -83,7 +85,7 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
             <DropdownMenuContent align="end">
               <DropdownMenuLabel className="text-xs">{t('hub.status')}</DropdownMenuLabel>
               <DropdownMenuRadioGroup value={task.status} onValueChange={(v) => onStatusChange(v as TaskStatus)}>
-                {TASK_STATUSES.filter((s) => s !== 'done').map((s) => (
+                {TASK_STATUSES.filter((s) => s !== 'done' && s !== 'todo').map((s) => (
                   <DropdownMenuRadioItem key={s} value={s} className="text-xs">
                     {t(TASK_STATUS_KEY[s])}
                   </DropdownMenuRadioItem>

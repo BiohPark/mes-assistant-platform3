@@ -203,6 +203,10 @@ export const ko = {
     },
   },
   chat: {
+    reopenTitle: '재개할까요?',
+    reopenDescription: '완료된 대화입니다. 재개 사유를 입력하면 작성한 내용을 전송합니다.',
+    reopenStoredDescription: '완료된 대화입니다. 재개 사유를 입력하면 전송하지 못한 이전 요청을 다시 보냅니다. 새로 작성한 내용은 입력창에 남습니다.',
+    pendingAttemptDraftKept: '이전 요청을 다시 보냈습니다. 새로 작성한 내용은 입력창에 남겨 두었습니다.',
     owuiTools: '도구 전달', owuiBasic: '기본 방식', owuiFallback: '폴백 (기본 방식)',
     copyMessage: '복사', copiedMessage: '메시지를 복사했습니다.', copyMessageFailed: '복사하지 못했습니다. 다시 시도해 주세요.',
     messageActions: '메시지 동작', messageMenu: '메시지 메뉴', askAgain: '다시 묻기',
@@ -385,6 +389,11 @@ export const ko = {
     sharedFile: '공유 파일 {number}',
   },
   task: {
+    progress: {
+      stalled: '정체',
+      stalledHint: '7일 넘게 활동이 없는 진행 중 대화',
+      holdReleased: '보류를 해제했습니다',
+    },
     conversation: '대화', delete: '삭제', download: '다운로드', mainInput: '주 입력', reference: '참고', thisConversation: '이 대화',
     activity: {
       count: { one: '{count}건', other: '{count}건' }, system: '시스템', empty: '이력이 없습니다.', loadFailed: '이력을 불러오지 못했습니다.',

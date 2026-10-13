@@ -51,6 +51,29 @@ describe('RequestService DB', () => {
   })
   afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); await rm(root, { recursive: true, force: true }) })
 
+  it('resumes held AI requests atomically, reports it in SSE and does not repeat on replay', async () => {
+    const created = await tasks.create('member', { assistantId })
+    await tasks.setStatus('member', created.task.id, 'on_hold')
+    await expect(service.start('member', created.thread.id, { content: 'invalid', attachmentIds: ['missing'] }, 'held-invalid')).rejects.toMatchObject({ status: 400 })
+    expect((await tasks.get(created.task.id)).status).toBe('on_hold')
+    const run = await service.start('member', created.thread.id, { content: 'resume' }, 'held-request')
+    const events: Array<{ event: string; data: Record<string, unknown> }> = []
+    const unsubscribe = service.subscribe(run.id, event => events.push(event))
+    await run.done
+    unsubscribe()
+    expect(events.find(event => event.event === 'started')?.data.autoStarted).toBe(true)
+    expect(await tasks.get(created.task.id)).toMatchObject({ status: 'in_progress', startedAt: created.task.startedAt })
+    await tasks.setStatus('member', created.task.id, 'on_hold')
+    expect((await service.start('member', created.thread.id, { content: 'resume' }, 'held-request')).id).toBe(run.id)
+    expect((await tasks.get(created.task.id)).status).toBe('on_hold')
+    const started = (await tasks.activity(created.task.id)).filter(item => item.type === 'task.started')
+    expect(started).toHaveLength(1)
+    expect(started[0]).toMatchObject({ userId: 'member', payload: { from: 'on_hold', to: 'in_progress', auto: true } })
+    await tasks.setStatus('member', created.task.id, 'done', 'test completion')
+    await expect(service.start('member', created.thread.id, { content: 'closed' }, 'held-done')).rejects.toMatchObject({ status: 409 })
+    expect((await tasks.get(created.task.id)).status).toBe('done')
+  })
+
   it.each([false, true])('live OpenWebUI dispatch persists final tools/body and one request (reject=%s)', async reject => {
     const bodies: Record<string, unknown>[] = []
     const server = createServer((req, res) => {
