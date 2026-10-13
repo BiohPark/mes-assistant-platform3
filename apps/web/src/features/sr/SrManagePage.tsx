@@ -34,7 +34,7 @@ export function SrManagePage() {
   const taskCount = (row: typeof submitted[number]) => row.taskCount ?? row.conversations.length
   const elapsed = (row: typeof submitted[number]) => row.elapsedDays ?? srElapsedDays(row.submittedAt)
   const visible = submitted.filter(row => (!status || srStage(row.status) === status) &&
-    (!queue || (queue === 'unstarted' ? srStage(row.status) === 'submitted' && taskCount(row) === 0 : row.conversations.some(task => task.assigneeIds?.includes(actor)))) &&
+    (!queue || (queue === 'unstarted' ? srStage(row.status) === 'submitted' && taskCount(row) === 0 : row.conversations.some(task => task.ownerId === actor || task.assigneeIds?.includes(actor)))) &&
     (!needle || `${row.code} ${row.title} ${row.body}`.toLocaleLowerCase().includes(needle)))
     .sort((a, b) => elapsed(b) - elapsed(a) || Date.parse(a.updatedAt) - Date.parse(b.updatedAt) || a.id.localeCompare(b.id))
   const emptyKey = needle ? 'sr.noMatching' : queue === 'unstarted' ? 'sr.noUnstarted' : queue === 'mine' ? 'sr.noMyLinked' : status ? 'sr.noMatchingStatus' : 'sr.noRequests'

@@ -13,6 +13,42 @@ const draft: SrDetail = { id: 'sr', code: '', requesterId: 'u', title: '', title
 const files: Record<string, unknown> = { f1: { id: 'f1', name: '알람.txt', version: 1, size: 10, source: 'upload' }, f2: { id: 'f2', name: '화면.png', version: 1, size: 10, source: 'upload' } }
 afterEach(() => vi.unstubAllGlobals())
 
+it.each(['status', 'version'] as const)('discards a pending draft when the SR %s changes', async (change) => {
+  let release!: (value: Response) => void
+  let current = draft
+  const writes: unknown[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/draft')) return new Promise<Response>((resolve) => { release = resolve })
+    if (url.startsWith('/api/files/')) return jsonResponse(200, files[url.split('/')[3]!])
+    if (init?.method === 'PATCH') writes.push(JSON.parse(String(init.body)))
+    return jsonResponse(200, current)
+  }))
+  let refresh!: (value: SrDetail) => void
+  function Harness() {
+    const [value, setValue] = useState(draft)
+    refresh = setValue
+    return <TooltipProvider><SrConvertSheet sr={value} open onOpenChange={() => undefined} onSaved={() => undefined} /></TooltipProvider>
+  }
+  renderWithProviders(<Harness />)
+  const sheet = await screen.findByRole('dialog')
+  expect(within(sheet).getByRole('status')).toBeInTheDocument()
+  current = { ...draft, title: '다른 창의 제목', body: '다른 창의 본문', titleSource: 'manual', attachmentIds: ['f1'],
+    status: change === 'status' ? 'submitted' : 'draft', updatedAt: change === 'version' ? '2026-10-02' : draft.updatedAt }
+  act(() => refresh(current))
+  expect(within(sheet).queryByRole('status')).not.toBeInTheDocument()
+  await act(async () => { release(jsonResponse(200, { title: '늦은 AI 제목', body: '늦은 AI 본문' })) })
+  expect(within(sheet).queryByRole('status')).not.toBeInTheDocument()
+  if (change === 'status') {
+    expect(within(sheet).getByRole('textbox', { name: 'SR 제목' })).toHaveValue(current.title)
+    expect(within(sheet).getByRole('textbox', { name: 'SR 본문' })).toHaveValue(current.body)
+    await userEvent.click(within(sheet).getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(writes).toEqual([{ title: current.title, body: current.body, titleSource: 'manual', attachmentIds: ['f1'], updatedAt: current.updatedAt }]))
+  } else {
+    expect(within(sheet).getByRole('textbox', { name: 'SR 제목' })).toHaveValue('')
+    expect(within(sheet).getByRole('textbox', { name: 'SR 본문' })).toHaveValue('')
+  }
+})
+
 function mount(sr: SrDetail, fetchImpl: (url: string, init?: RequestInit) => Promise<Response>) {
   vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => url === '/api/service-requests/sr' && init?.method === 'GET' ? Promise.resolve(jsonResponse(200, sr)) : fetchImpl(url, init)))
   const onSaved = vi.fn()

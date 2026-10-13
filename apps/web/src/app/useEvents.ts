@@ -18,6 +18,8 @@ export function applyEvent(query: QueryClient, event: string, data: Record<strin
     invalidate(['tasks']); invalidate(['assistant-stats']); invalidate(['tag-suggest']); invalidate(['candidates']); invalidate(['estimate'])
     if (taskId) { invalidate(['task', taskId]); invalidate(['activity', taskId]); invalidate(['notes', taskId]); invalidate(['task-report-preview', taskId]) }
   }
+  // 연결 대화의 소유자·담당자 변경과 삭제도 SR 큐에 반영한다. GET에서 현재 권한을 다시 적용한다.
+  if (event === 'task.updated') invalidate(['sr'])
   if (event === 'message.appended' || event === 'request.updated') {
     if (threadId) {
       void query.cancelQueries({ queryKey: ['messages', threadId] })

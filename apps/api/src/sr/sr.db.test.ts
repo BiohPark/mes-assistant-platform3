@@ -75,6 +75,19 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     expect((await sr.list('requester')).find(row => row.id === draft.id)).toMatchObject({ elapsedDays: 3, conversations: [] })
   })
 
+  it('list and detail include linked owners without assignees only for internal users', async () => {
+    const draft = await sr.create('requester')
+    await sr.submit('requester', draft.id, { title: '소유자 연결', body: '' })
+    const linked = await sr.startTask('staff', draft.id, { assistantId })
+    if (!('id' in linked)) throw new Error('Expected a newly linked task')
+    await db.delete(taskAssignee).where(eq(taskAssignee.taskId, linked.id))
+    const conversation = expect.objectContaining({ id: linked.id, ownerId: 'staff', assigneeIds: [] })
+    expect((await sr.list('staff', 'inbox')).find(row => row.id === draft.id)?.conversations).toEqual([conversation])
+    expect((await sr.get('staff', draft.id)).conversations).toEqual([conversation])
+    expect((await sr.list('requester', 'mine')).find(row => row.id === draft.id)?.conversations).toEqual([])
+    expect((await sr.get('requester', draft.id)).conversations).toEqual([])
+  })
+
   it.each(['live', 'replay'] as const)('BO receives only own sr.updated on %s; linked assignees and SO also receive it', async (delivery) => {
     const draft = await sr.create('requester'), other = await sr.create('other')
     const events = new EventsService(), controller = new EventsController(events, db)

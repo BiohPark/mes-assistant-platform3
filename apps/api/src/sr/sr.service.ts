@@ -92,7 +92,7 @@ export class SrService {
       // 후보 = 이 SR에 업로드된 파일 전체(데모 SrIntakePage의 originSrId 조회와 같음). 전환·수정 Sheet가 나열하고 사람이 고른다.
       this.db.select({ id: fileObject.id }).from(fileObject).where(and(eq(fileObject.originSrId, row.id), isNull(fileObject.deletedAt))).orderBy(fileObject.uploadedAt, fileObject.id),
       this.db.select().from(sharedResult).where(eq(sharedResult.srId, row.id)).orderBy(sharedResult.at),
-      this.db.select({ id: task.id, code: task.code, title: task.title, status: task.status, threadId: thread.id }).from(task)
+      this.db.select({ id: task.id, code: task.code, title: task.title, status: task.status, ownerId: task.ownerId, threadId: thread.id }).from(task)
         .leftJoin(thread, eq(thread.taskId, task.id)).where(and(eq(task.srId, row.id), isNull(task.deletedAt))),
     ])
     const assignees = includeInternal && linked.length ? await this.db.select().from(taskAssignee).where(inArray(taskAssignee.taskId, linked.map(item => item.id))) : []

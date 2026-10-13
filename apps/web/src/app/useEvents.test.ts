@@ -2,6 +2,30 @@ import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import { expect, it, vi } from 'vitest'
 import { applyEvent } from './useEvents'
 
+it.each(['reassigned', 'deleted'] as const)('task.updated refetches SR list and detail after a linked conversation is %s', async (change) => {
+  const query = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const previous = { id: 's', taskCount: 1, conversations: [{ id: 't', ownerId: 'u', assigneeIds: ['u'] }] }
+  const current = { ...previous, taskCount: change === 'deleted' ? 0 : 1,
+    conversations: change === 'deleted' ? [] : [{ id: 't', ownerId: 'other', assigneeIds: ['other'] }] }
+  const getList = vi.fn(async () => [current]), getDetail = vi.fn(async () => current)
+  query.setQueryData(['sr', 'inbox'], [previous])
+  query.setQueryData(['sr', 's'], previous)
+  const observers = [
+    new QueryObserver(query, { queryKey: ['sr', 'inbox'], queryFn: getList, staleTime: Infinity }),
+    new QueryObserver(query, { queryKey: ['sr', 's'], queryFn: getDetail, staleTime: Infinity }),
+  ]
+  const unsubscribes = observers.map(observer => observer.subscribe(() => undefined))
+  try {
+    applyEvent(query, 'task.updated', { taskId: 't' })
+    await vi.waitFor(() => {
+      expect(getList).toHaveBeenCalledTimes(1)
+      expect(getDetail).toHaveBeenCalledTimes(1)
+      expect(query.getQueryData(['sr', 'inbox'])).toEqual([current])
+      expect(query.getQueryData(['sr', 's'])).toEqual(current)
+    })
+  } finally { unsubscribes.forEach(unsubscribe => unsubscribe()); query.clear() }
+})
+
 it('maps live events to affected queries and resyncs all queries', () => {
   const query = new QueryClient()
   const invalidate = vi.spyOn(query, 'invalidateQueries')

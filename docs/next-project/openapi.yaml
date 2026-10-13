@@ -1210,7 +1210,7 @@ components:
         submittedAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-        conversations: { type: array, description: BO는 빈 배열. 내부 사용자에게 연결 대화 코드와 담당자 ID 제공, items: { type: object, properties: { id: { type: string }, code: { type: string }, title: { type: string }, status: { type: string }, threadId: { type: [string, 'null'] }, assigneeIds: { type: array, items: { type: string } } } } }
+        conversations: { type: array, description: BO는 빈 배열. 내부 사용자에게 연결 대화 코드와 소유자·담당자 ID 제공, items: { type: object, properties: { id: { type: string }, code: { type: string }, title: { type: string }, status: { type: string }, threadId: { type: [string, 'null'] }, ownerId: { type: string }, assigneeIds: { type: array, items: { type: string } } } } }
         attachmentIds: { type: array, items: { type: string }, description: 접수 첨부 정본 — 접수 본문 메시지의 첨부. submit·content에서 사람이 고른 것만(초안은 빈 배열) }
         candidateAttachmentIds: { type: array, items: { type: string }, description: 첨부 후보 — 이 SR에 업로드된 파일 전체(채팅 메시지 첨부 포함, 업로드순). 전환·수정 Sheet가 나열하고 선택은 attachmentIds로 보낸다 (U9) }
         results: { type: array, items: { type: object, properties: { id: { type: string }, taskId: { type: string }, text: { type: string }, fileIds: { type: array, items: { type: string } }, by: { type: string }, byName: { type: string }, at: { type: string, format: date-time } } } }

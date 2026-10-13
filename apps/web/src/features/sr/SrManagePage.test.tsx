@@ -9,6 +9,22 @@ import { SrManagePage } from './SrManagePage'
 vi.mock('@/app/TopBar', () => ({ TopBar: () => null }))
 afterEach(() => vi.unstubAllGlobals())
 
+it('내 연결 SR includes owners without assignees as well as assigned users', async () => {
+  const conversation = { id: 'task', code: 'C-42', title: '대화', status: 'in_progress', threadId: 'h' }
+  const rows = [
+    { ...row('owned', 'in_progress'), conversations: [{ ...conversation, ownerId: 'u', assigneeIds: [] }] },
+    { ...row('assigned', 'in_progress'), conversations: [{ ...conversation, ownerId: 'other', assigneeIds: ['u'] }] },
+    { ...row('other', 'in_progress'), conversations: [{ ...conversation, ownerId: 'other', assigneeIds: [] }] },
+  ]
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests?scope=inbox' ? jsonResponse(200, rows) : jsonResponse(200, [])))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrManagePage /></MeContext></TooltipProvider>)
+  await screen.findByRole('table')
+  await userEvent.click(screen.getByRole('button', { name: '내 연결 SR' }))
+  expect(screen.getByRole('table')).toHaveTextContent('요청 owned')
+  expect(screen.getByRole('table')).toHaveTextContent('요청 assigned')
+  expect(screen.queryByText('요청 other')).not.toBeInTheDocument()
+})
+
 it('inbox 표는 초안을 제외하고 코드·제목·본문 검색 및 상태 칩을 적용해 Sheet를 연다', async () => {
   const rows = [
     { id: 'a', code: 'SR-2026-0001', title: '알람', body: '설비 오류', status: 'submitted' },

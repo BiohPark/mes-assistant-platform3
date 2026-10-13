@@ -39,10 +39,13 @@ export function SrConvertSheet({ sr, open, onOpenChange, onSaved }: { sr: SrDeta
   const baseline = useRef(sr.updatedAt)
   const latest = useRef(sr)
   latest.current = sr
+  const cancelDraft = useRef<(() => void) | null>(null)
   const [conflict, setConflict] = useState(false)
   // 후보(이 SR의 파일 전체)를 나열하고 선택만 보낸다. 초안은 전부 선택이 기본, 수정·보기는 저장된 선택(attachmentIds)을 복원한다(데모 SrConvertDialog).
   const candidates = sr.candidateAttachmentIds
   const files = useSrFiles(candidates)
+  // 열린 Sheet의 SR 상태·버전이 바뀌면 이전 초안 요청을 폐기한다. 초기화는 열기·SR 전환 때만 한다.
+  useEffect(() => { cancelDraft.current?.() }, [sr.id, sr.status, sr.updatedAt])
   useEffect(() => {
     if (!open) return
     const sr = latest.current
@@ -53,12 +56,14 @@ export function SrConvertSheet({ sr, open, onOpenChange, onSaved }: { sr: SrDeta
     if (sr.status !== 'draft') { setTitle(sr.title); setBody(sr.body); setSource(sr.titleSource === 'manual' ? 'manual' : 'ai'); return }
     setTitle(''); setBody(''); setSource('ai'); setLoading(true)
     let cancelled = false
+    const isCurrent = () => !cancelled && latest.current.id === sr.id && latest.current.status === sr.status && latest.current.updatedAt === sr.updatedAt
+    cancelDraft.current = () => { cancelled = true; setLoading(false) }
     void draftSr(sr.id).then((draft) => {
-      if (cancelled) return
+      if (!isCurrent()) return
       if (!manualTitle.current) setTitle(draft.title)
       if (!manualBody.current) setBody(draft.body)
-    }).catch((error) => { if (!cancelled) toast.error(String(error)) }).finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
+    }).catch((error) => { if (isCurrent()) toast.error(String(error)) }).finally(() => { if (isCurrent()) setLoading(false) })
+    return () => { cancelled = true; cancelDraft.current = null }
   }, [open, sr.id])
   useEffect(() => {
     if (!open || dirty.current) return
