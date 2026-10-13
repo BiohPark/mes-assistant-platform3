@@ -4,9 +4,9 @@ const password = 'e2e-password-1234'
 const appOrigin = process.env.APP_ORIGIN ?? 'http://localhost:5173'
 
 async function owner(page: Page) {
-  const signup = await page.request.post('/api/auth/signup', { data: { loginId: 'dev-owner', password } })
-  if (signup.status() === 409) expect((await page.request.post('/api/auth/login', { data: { loginId: 'dev-owner', password } })).ok()).toBe(true)
-  else expect(signup.ok()).toBe(true)
+  // 로그인 먼저 — 가입 409도 시도 제한 실패로 집계된다
+  const signup = await page.request.post('/api/auth/login', { data: { loginId: 'dev-owner', password } })
+  if (!signup.ok()) expect((await page.request.post('/api/auth/signup', { data: { loginId: 'dev-owner', password } })).ok()).toBe(true)
 }
 async function member(page: Page) {
   const loginId = `e2e-nav-${Date.now().toString(36)}`
@@ -57,9 +57,9 @@ test('BO 사이드바: 내 SR 요청 1개뿐이고 구획 머리말이 없다', 
   const { id, loginId } = await member(page)
   const admin = await browser.newContext({ baseURL: appOrigin })
   try {
-    const signup = await admin.request.post('/api/auth/signup', { data: { loginId: 'dev-owner', password } })
-    if (signup.status() === 409) expect((await admin.request.post('/api/auth/login', { data: { loginId: 'dev-owner', password } })).ok()).toBe(true)
-    else expect(signup.ok()).toBe(true)
+    // 로그인 먼저 — 가입 409도 시도 제한 실패로 집계된다
+    const signup = await admin.request.post('/api/auth/login', { data: { loginId: 'dev-owner', password } })
+    if (!signup.ok()) expect((await admin.request.post('/api/auth/signup', { data: { loginId: 'dev-owner', password } })).ok()).toBe(true)
     expect((await admin.request.put(`/api/users/${id}/business-owner`, { data: { enabled: true } })).status()).toBe(204)
   } finally { await admin.close() }
   await page.request.post('/api/auth/logout')

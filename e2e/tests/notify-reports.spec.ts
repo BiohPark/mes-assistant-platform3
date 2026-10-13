@@ -17,9 +17,9 @@ test('대화 배정 알림이 두 컨텍스트의 벨에 즉시 표시되고 읽
     expect(signed.ok()).toBe(true)
     const assigneeId = ((await signed.json()) as { id: string }).id
     expect((await second.request.post('/api/auth/login', { data: { loginId, password } })).ok()).toBe(true)
-    const ownerSignup = await owner.request.post('/api/auth/signup', { data: { loginId: 'dev-owner', password } })
-    if (ownerSignup.status() === 409) expect((await owner.request.post('/api/auth/login', { data: { loginId: 'dev-owner', password } })).ok()).toBe(true)
-    else expect(ownerSignup.ok()).toBe(true)
+    // 로그인 먼저 — 가입 409도 시도 제한 실패로 집계된다
+    const ownerSignup = await owner.request.post('/api/auth/login', { data: { loginId: 'dev-owner', password } })
+    if (!ownerSignup.ok()) expect((await owner.request.post('/api/auth/signup', { data: { loginId: 'dev-owner', password } })).ok()).toBe(true)
     expect((await (await owner.request.get('/api/me')).json() as { roles: string[] }).roles).toContain('system_owner')
     await first.goto('/')
     await second.goto('/')
