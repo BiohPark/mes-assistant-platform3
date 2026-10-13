@@ -100,6 +100,7 @@ export const en = {
     noChartData: 'No data to display.',
   },
   admin: {
+    email: 'Email', emailDefaultLabel: 'Default', emailDefault: 'This is your default email. Enter and save another address to change it.', emailClearHint: 'Save an empty value to use the default email. Without a default domain, no email is set.', emailUnset: 'Email not set', profileSaved: 'Profile saved',
     owner: 'Owner', ownerRequired: 'Choose an owner', assistantStatus: 'Status', checklistRequired: 'Required', requiredItem: '{name} required',
     fileDelivery: 'Input file delivery', deliveryInline: 'Paste as text', deliveryOpenWebUi: 'Attach files in OpenWebUI',
     intakeAssistant: 'SR intake agent', noAssistant: 'Unassigned', active: 'Active', userFlag: '{name} {flag}',

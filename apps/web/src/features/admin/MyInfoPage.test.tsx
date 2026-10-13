@@ -9,7 +9,7 @@ import { jsonResponse, renderWithProviders } from '@/test/render'
 import { MyInfoPage } from './MyInfoPage'
 
 vi.mock('@/app/NotificationBell', () => ({ NotificationBell: () => null }))
-const me = { id: 'u1', name: '사용자', role: '', roles: ['member'] as const, theme: 'system' as const, locale: 'ko' as const }
+const me = { id: 'u1', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'] as const, theme: 'system' as const, locale: 'ko' as const }
 function RefreshMe() {
   const client = useQueryClient()
   return <button onClick={() => void client.refetchQueries({ queryKey: ['me'] })}>프로필 새로고침</button>
@@ -17,10 +17,47 @@ function RefreshMe() {
 
 describe('내 정보 프로필 세그먼트', () => {
   afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
+  it.each(['ko', 'en'] as const)('이메일 표시·저장·해제와 기본값 구분 (%s)', async locale => {
+    let server = { ...me, roles: [...me.roles], locale, email: 'u1@example.com', emailIsDefault: true }
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        const input = JSON.parse(init.body as string)
+        server = { ...server, ...input, ...(input.email !== undefined && { email: input.email || 'u1@example.com', emailIsDefault: !input.email }) }
+      }
+      return jsonResponse(200, server)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithProviders(<AuthGate><TooltipProvider><MyInfoPage /></TooltipProvider></AuthGate>)
+    const email = await screen.findByLabelText(locale === 'ko' ? '이메일' : 'Email')
+    expect(email).toHaveValue('u1@example.com')
+    expect(email).toHaveAttribute('type', 'email')
+    expect(email).toHaveAttribute('maxlength', '191')
+    await userEvent.click(screen.getByRole('button', { name: locale === 'ko' ? '저장' : 'Save' }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/me', expect.objectContaining({ body: JSON.stringify({ name: me.name }) }))
+    await userEvent.clear(email)
+    await userEvent.type(email, 'Mixed.Case@example.net')
+    await userEvent.click(screen.getByRole('button', { name: locale === 'ko' ? '저장' : 'Save' }))
+    await waitFor(() => expect(server.email).toBe('Mixed.Case@example.net'))
+    expect(fetchMock).toHaveBeenCalledWith('/api/me', expect.objectContaining({ body: JSON.stringify({ name: me.name, email: 'Mixed.Case@example.net' }) }))
+    await userEvent.clear(email)
+    await userEvent.click(screen.getByRole('button', { name: locale === 'ko' ? '저장' : 'Save' }))
+    await waitFor(() => expect(email).toHaveValue('u1@example.com'))
+    expect(fetchMock).toHaveBeenCalledWith('/api/me', expect.objectContaining({ body: JSON.stringify({ name: me.name, email: null }) }))
+    expect(server.emailIsDefault).toBe(true)
+  })
+  it('이메일 저장 실패 시 입력값은 유지하고 저장 버튼을 다시 활성화한다', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => jsonResponse(init?.method === 'PATCH' ? 400 : 200, init?.method === 'PATCH' ? { message: 'invalid email' } : { ...me, email: null, emailIsDefault: false })))
+    renderWithProviders(<AuthGate><TooltipProvider><MyInfoPage /></TooltipProvider></AuthGate>)
+    const email = await screen.findByLabelText('이메일')
+    await userEvent.type(email, 'a@example.com')
+    await userEvent.click(screen.getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '저장' })).toBeEnabled())
+    expect(email).toHaveValue('a@example.com')
+  })
   it('테마 저장 중 /me의 다른 필드 변경을 유지하고 실패 시 바꾼 필드만 되돌린다', async () => {
     let server: Me = { ...me, roles: [...me.roles] }
     let finish!: (response: Response) => void
-    vi.stubGlobal('fetch', vi.fn((url: string) => url === '/api/me' ? Promise.resolve(jsonResponse(200, server)) : new Promise<Response>((resolve) => { finish = resolve })))
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => url === '/api/me' && init?.method !== 'PATCH' ? Promise.resolve(jsonResponse(200, server)) : new Promise<Response>((resolve) => { finish = resolve })))
     renderWithProviders(<AuthGate><TooltipProvider><MyInfoPage /><RefreshMe /></TooltipProvider></AuthGate>)
     await screen.findByLabelText('이름')
     await userEvent.click(screen.getByRole('radio', { name: '다크' }))
@@ -47,8 +84,8 @@ describe('내 정보 프로필 세그먼트', () => {
     let finishSave!: (response: Response) => void
     let finishStaleMe!: (response: Response) => void
     let reads = 0
-    vi.stubGlobal('fetch', vi.fn((url: string) => {
-      if (url !== '/api/me') return new Promise<Response>((resolve) => { finishSave = resolve })
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (url !== '/api/me' || init?.method === 'PATCH') return new Promise<Response>((resolve) => { finishSave = resolve })
       reads++
       if (reads === 2) return new Promise<Response>((resolve) => { finishStaleMe = resolve })
       return Promise.resolve(jsonResponse(200, server))
@@ -61,7 +98,7 @@ describe('내 정보 프로필 세그먼트', () => {
     await act(async () => { staleRead = client.refetchQueries({ queryKey: ['me'] }) })
     const staleMe = jsonResponse(200, server)
     server = { ...server, ...input, name: '서버의 최신 이름' }
-    await act(async () => { finishSave(jsonResponse(200, { name: me.name, theme: server.theme, locale: server.locale })) })
+    await act(async () => { finishSave(jsonResponse(200, { name: me.name, theme: server.theme, locale: server.locale, email: null, emailIsDefault: false })) })
     await waitFor(() => expect(screen.getByRole('radio', { name: label })).toBeEnabled())
     await act(async () => { finishStaleMe(staleMe); await staleRead })
     expect(client.getQueryData<Me>(['me'])).toMatchObject({ theme, locale, name: '서버의 최신 이름' })
@@ -77,7 +114,7 @@ describe('내 정보 프로필 세그먼트', () => {
     let finishName!: (response: Response) => void
     let finishTheme!: (response: Response) => void
     vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
-      if (url === '/api/me') return Promise.resolve(jsonResponse(200, server))
+      if (url === '/api/me' && init?.method !== 'PATCH') return Promise.resolve(jsonResponse(200, server))
       const input = JSON.parse(init!.body as string) as { name?: string }
       return new Promise<Response>((resolve) => { if (input.name) finishName = resolve; else finishTheme = resolve })
     }))
@@ -88,10 +125,10 @@ describe('내 정보 프로필 세그먼트', () => {
     await userEvent.click(screen.getByRole('button', { name: '저장' }))
     await userEvent.click(screen.getByRole('radio', { name: '다크' }))
     server = { ...server, name: '새 이름' }
-    finishName(jsonResponse(200, { name: '새 이름', theme: 'dark', locale: 'ko' }))
+    finishName(jsonResponse(200, { name: '새 이름', theme: 'dark', locale: 'ko', email: null, emailIsDefault: false }))
     await screen.findByRole('button', { name: /새 이름/ })
     server = { ...server, theme: 'dark' }
-    finishTheme(jsonResponse(200, { name: me.name, theme: 'dark', locale: 'ko' }))
+    finishTheme(jsonResponse(200, { name: me.name, theme: 'dark', locale: 'ko', email: null, emailIsDefault: false }))
     await waitFor(() => expect(screen.getByRole('radio', { name: '다크' })).toBeEnabled())
     expect(screen.getByRole('button', { name: /새 이름/ })).toBeInTheDocument()
     expect(document.documentElement).toHaveClass('dark')
@@ -99,9 +136,9 @@ describe('내 정보 프로필 세그먼트', () => {
   it('테마와 언어를 선택해 저장하고 이름도 계속 수정할 수 있다', async () => {
     let user: Me = { ...me, roles: [...me.roles] }
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url === '/api/me') return jsonResponse(200, user)
+      if (url === '/api/me' && init?.method !== 'PATCH') return jsonResponse(200, user)
       user = { ...user, ...JSON.parse(init!.body as string) }
-      return jsonResponse(200, { name: user.name, theme: user.theme, locale: user.locale })
+      return jsonResponse(200, { name: user.name, theme: user.theme, locale: user.locale, email: null, emailIsDefault: false })
     })
     vi.stubGlobal('fetch', fetchMock)
     renderWithProviders(<AuthGate><TooltipProvider><MyInfoPage /></TooltipProvider></AuthGate>)

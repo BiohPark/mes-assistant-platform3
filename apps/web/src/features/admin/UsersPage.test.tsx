@@ -8,7 +8,7 @@ import { UsersPage } from './UsersPage'
 
 vi.mock('@/app/NotificationBell', () => ({ NotificationBell: () => null }))
 afterEach(() => vi.unstubAllGlobals())
-const me = { id: 'owner', name: '운영자', role: '', roles: ['system_owner'], theme: 'system', locale: 'ko' } as const
+const me = { id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' } as const
 function renderPage() { return renderWithProviders(<MeContext value={{ ...me, roles: [...me.roles] }}><TooltipProvider><UsersPage /></TooltipProvider></MeContext>) }
 
 it('사용자 관리 화면은 사용자·역할 목록만 보이고 전역 설정은 조회하지 않는다', async () => {
@@ -145,4 +145,16 @@ it('임시 비밀번호 확인창은 닫기 애니메이션 동안 발급 제목
   await waitFor(() => expect(dialog).not.toBeInTheDocument())
   expect(trigger).toHaveFocus()
   expect(screen.queryByText('사용자를 비활성화할까요?')).not.toBeInTheDocument()
+})
+
+it('SO 목록은 저장 이메일·기본 이메일·미설정을 표시한다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [
+    { id: 'one', loginId: 'one', name: 'One', email: 'one@example.net', emailIsDefault: false },
+    { id: 'two', loginId: 'two', name: 'Two', email: 'two@example.com', emailIsDefault: true },
+    { id: 'three', loginId: null, name: 'Three', email: null, emailIsDefault: false },
+  ].map(user => ({ ...user, active: true, isSystemOwner: false, isBusinessOwner: false, mustChangePassword: false })))))
+  renderPage()
+  expect(await screen.findByText('one@example.net')).toBeInTheDocument()
+  expect(screen.getByText(/two@example.com/)).toHaveTextContent('기본값')
+  expect(screen.getByText('이메일 미설정')).toBeInTheDocument()
 })

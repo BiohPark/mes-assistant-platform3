@@ -98,6 +98,7 @@ export const ko = {
     noChartData: '표시할 데이터가 없습니다.',
   },
   admin: {
+    email: '이메일', emailDefaultLabel: '기본값', emailDefault: '기본 이메일입니다. 다른 주소를 입력해 저장할 수 있습니다.', emailClearHint: '빈 값으로 저장하면 기본 이메일을 사용합니다. 기본 도메인이 없으면 미설정 상태가 됩니다.', emailUnset: '이메일 미설정', profileSaved: '프로필을 저장했습니다',
     owner: '담당자', ownerRequired: '담당자를 선택하세요', assistantStatus: '상태', checklistRequired: '필수', requiredItem: '{name} 필수',
     fileDelivery: '입력 파일 전달 방식', deliveryInline: '텍스트로 붙이기', deliveryOpenWebUi: 'OpenWebUI 파일 첨부',
     intakeAssistant: 'SR 접수 에이전트', noAssistant: '지정 안 함', active: '활성', userFlag: '{name} {flag}',

@@ -20,7 +20,7 @@ it('8개 섹션을 보여주고 기간·단위 변경 시 서버에 다시 요�
     }
     return jsonResponse(404)
   }))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><ReportsPage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><ReportsPage /></TooltipProvider></MeContext>)
   for (const title of ['완료 추이', '에이전트별 평균 리드타임', '사용자별 활동', 'SR 상태 분포', '자료 흐름', '태그별 대화', '에이전트별 현황', 'assistant 피드백 다이제스트']) {
     expect(await screen.findByRole('heading', { name: new RegExp(title) })).toBeInTheDocument()
   }
@@ -39,7 +39,7 @@ it('Popover 담당자 검색·키보드 선택과 전체 해제는 서버 필터
     return jsonResponse(404)
   }))
   const user = userEvent.setup()
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ReportsPage /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ReportsPage /></TooltipProvider></MeContext>)
   const filter = await screen.findByRole('button', { name: '담당자: 전체' })
   filter.focus(); await user.keyboard('{Enter}')
   const picker = screen.getByRole('combobox', { name: '담당자' })
@@ -62,7 +62,7 @@ it('uses semantic foregrounds for SR progress, warning signals and feedback icon
     digest: [{ assistantId: 'a', assistantName: '도우미', avgRating: 4, count: 1, comments: [] }],
     assistants: [], users: [],
   }) : jsonResponse(404)))
-  const { container } = renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ReportsPage /></TooltipProvider></MeContext>)
+  const { container } = renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ReportsPage /></TooltipProvider></MeContext>)
   await screen.findByText('재개 사유')
   const bars = container.querySelectorAll('div.h-full')
   expect(bars).toHaveLength(2)
