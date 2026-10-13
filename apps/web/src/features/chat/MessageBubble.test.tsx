@@ -235,10 +235,7 @@ it('copies fenced code without controls or inline code and preserves raw Markdow
   await waitFor(() => expect(copy).toHaveBeenCalledWith(content))
 })
 
-it('removes only the reasoning protocol prefix from display', () => {
-  const message = { ...thinkingMessage, reasoning: 'PRIVATE_REASONING: original reasoning' }
-  renderThinking(message)
+it('shows reasoning text as received from the model', () => {
+  renderThinking({ ...thinkingMessage, reasoning: 'original reasoning' })
   expect(screen.getByText('original reasoning')).toBeVisible()
-  expect(screen.queryByText(/PRIVATE_REASONING/)).not.toBeInTheDocument()
-  expect(message.reasoning).toBe('PRIVATE_REASONING: original reasoning')
 })

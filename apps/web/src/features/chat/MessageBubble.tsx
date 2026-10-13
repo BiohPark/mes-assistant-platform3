@@ -26,7 +26,7 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
   const menuTrigger = useRef<HTMLButtonElement | null>(null)
   // Only a user gesture overrides the automatic streaming disclosure state.
   const [reasoningChoice, setReasoningChoice] = useState<boolean>()
-  const reasoning = message.reasoning?.replace(/^\s*PRIVATE_REASONING(?:\s*:\s*|\s*$)/, '')
+  const reasoning = message.reasoning
   const hasContent = !!message.content.trim()
   const reasoningOpen = reasoningChoice ?? (message.status === 'streaming' && !hasContent)
   const reasoningScroll = useRef<HTMLDivElement>(null)

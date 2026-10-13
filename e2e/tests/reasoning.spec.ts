@@ -11,7 +11,7 @@ test(`S10 ${mode}: opens elapsed thinking, collapses on answer, preserves reason
   await page.getByLabel('비밀번호 확인').fill('e2e-password-1234')
   await page.getByRole('button', { name: '회원가입' }).click()
   await expect(page).toHaveURL(/\/$/)
-  const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
+  const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string; name: string }>
   const created = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id } })).json() as { id: string; threadId: string }
   await page.goto(`/c/${created.id}`)
   await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('[reasoning] 응답 대기 확인')
@@ -24,7 +24,7 @@ test(`S10 ${mode}: opens elapsed thinking, collapses on answer, preserves reason
   await expect(disclosure.getByText(/PRIVATE_REASONING/)).toBeVisible()
   await expect(replyBubble.locator('.md-body')).toHaveCount(0)
   const header = replyBubble.getByRole('status').locator('..')
-  await expect(header).toContainText('assistant')
+  await expect(header).toContainText(assistants[0]!.name) // S11 U1: 'assistant' 대신 에이전트 이름
   await expect(header.getByRole('timer')).toHaveText(/[1-9]\d*초 경과/)
   await expect(disclosure.getByText(/답변을 준비합니다\./)).toBeVisible()
   await expect(replyBubble.locator('.md-body')).toBeVisible()
