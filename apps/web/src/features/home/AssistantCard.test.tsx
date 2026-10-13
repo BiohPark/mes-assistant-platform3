@@ -74,6 +74,16 @@ describe('AssistantCard (S9-8 U2)', () => {
     expect(screen.getByRole('link', { name: 'OpenWebUI' })).toHaveAttribute('title', 'Open in OpenWebUI')
   })
 
+  it('wraps an unbroken long string inside the card when the summary is expanded', async () => {
+    const user = userEvent.setup()
+    const url = `https://openwebui.example/workspace/models/${'x'.repeat(160)}?model=very-long-model-id`
+    renderCard({ summary: url })
+    await user.click(screen.getByRole('button', { name: '도우미 요약 펼치기' }))
+    const summary = screen.getByText(url)
+    expect(summary).not.toHaveClass('line-clamp-2')
+    expect(summary).toHaveClass('wrap-anywhere', 'min-w-0')
+  })
+
   it('fits a narrow card and relies on theme tokens only', () => {
     renderCard()
     const toggle = screen.getByRole('button', { name: '도우미 요약 펼치기' })

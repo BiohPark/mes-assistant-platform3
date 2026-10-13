@@ -40,7 +40,7 @@ export function AssistantCardBody({ row, owner, dimmed, actions }: { row: Assist
           {a.name}
         </div>
         {a.summary && <div className="mt-1 flex items-start gap-1">
-          <p id={summaryId} className={cn('min-w-0 flex-1 text-xs text-muted-foreground', !expanded && 'line-clamp-2')}>{a.summary}</p>
+          <p id={summaryId} className={cn('min-w-0 flex-1 wrap-anywhere text-xs text-muted-foreground', !expanded && 'line-clamp-2')}>{a.summary}</p>
           {/* 요약 토글: 카드 링크 위(z-10)에 있어 눌러도 이동하지 않는다. 시각 32px, 터치 영역 44px(D47) */}
           <button type="button" aria-expanded={expanded} aria-controls={summaryId} aria-label={t(expanded ? 'hub.collapseSummary' : 'hub.expandSummary', { name: a.name })} onClick={() => setExpanded((value) => !value)}
             className="relative z-10 -mt-1.5 -mr-1.5 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none pointer-events-auto hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-1.5">
