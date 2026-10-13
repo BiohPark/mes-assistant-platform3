@@ -135,8 +135,8 @@ export class TagsController {
   constructor(@Inject(DbTasksService) private readonly tasks: DbTasksService) {}
 
   @Get('suggest')
-  suggest(@Query() query: Record<string, unknown>) {
-    return this.tasks.suggestions(typeof query.prefix === 'string' ? query.prefix : '', values(query['exclude[]'] ?? query.exclude))
+  suggest(@Req() req: AuthedRequest, @Query() query: Record<string, unknown>) {
+    return this.tasks.suggestions(req.user!.id, typeof query.prefix === 'string' ? query.prefix : '', values(query['exclude[]'] ?? query.exclude))
   }
 }
 

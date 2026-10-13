@@ -4,7 +4,7 @@ import type { Pool } from 'mysql2/promise'
 import { createPool } from '../db/connection.js'
 import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { appUser, assistant, assistantChecklistTemplate, checklistItem, checklistReview, fileObject, message, messageAttachment, noteAttachment, task, taskInput, thread } from '../db/schema.js'
+import { appUser, assistant, assistantChecklistTemplate, checklistItem, checklistReview, fileObject, message, messageAttachment, noteAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -63,6 +63,20 @@ describe('tasks DB', () => {
       await db.update(checklistItem).set({ templateItemId: null }).where(eq(checklistItem.templateItemId, templateId))
       await db.delete(assistantChecklistTemplate).where(eq(assistantChecklistTemplate.id, templateId))
     }
+  })
+
+  it('suggests accepted SR codes within the viewer scope and marks SR-pattern tags without an accepted SR', async () => {
+    await db.insert(appUser).values({ id: 'bo-suggest', name: 'BO', initials: 'B', color: '#000000', isBusinessOwner: true })
+    await db.insert(serviceRequest).values([
+      { id: 'sr-suggest-member', code: 'SR-2099-0001', requesterId: 'member', title: '접수', titleSource: 'manual', body: '', status: 'submitted' },
+      { id: 'sr-suggest-bo', code: 'SR-2099-0002', requesterId: 'bo-suggest', title: 'BO 접수', titleSource: 'manual', body: '', status: 'submitted' },
+      { id: 'sr-suggest-draft', requesterId: 'member', title: '초안', titleSource: 'default', body: '', status: 'draft' },
+    ])
+    await service.create('member', { assistantId, tags: ['SR-2099-0009'] })
+    const member = await service.suggestions('member', 'sr-2099')
+    expect(member.map((item) => [item.tag, item.srAccepted, item.count])).toEqual([['SR-2099-0009', false, 1], ['SR-2099-0001', true, 0], ['SR-2099-0002', true, 0]])
+    // BO: 본인 SR 코드만, 남의 대화 태그는 보이지 않는다
+    expect((await service.suggestions('bo-suggest', 'sr-2099')).map((item) => item.tag)).toEqual(['SR-2099-0002'])
   })
 
   it('keeps AI review separate from checks and applies only met items', async () => {

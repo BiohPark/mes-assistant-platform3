@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type Task, type TaskStatus, type Thread } from '@mes/domain'
-import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
+import { and, desc, eq, exists, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import { unionAll } from 'drizzle-orm/mysql-core'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appUser, assistant, assistantChecklistTemplate, chatRequest, chatRequestInput, checklistItem, checklistReview, checklistReviewItem, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, tag, task, taskAssignee, taskFeedback, taskInput, taskTag, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, assistantChecklistTemplate, chatRequest, chatRequestInput, checklistItem, checklistReview, checklistReviewItem, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, serviceRequest, tag, task, taskAssignee, taskFeedback, taskInput, taskTag, thread } from '../db/schema.js'
 import { EventsService } from '../events/events.service.js'
 import { assertTaskAccess, assertThreadAccess } from '../sr/access.js'
 import type { TaskExtrasService } from './task-extras.service.js'
@@ -308,8 +308,18 @@ export class DbTasksService {
     this.events?.publish('task.updated', { taskId })
   }
 
-  async suggestions(prefix: string, exclude: string[] = []) {
-    return tagSuggestions(await this.list(), [], prefix, exclude)
+  /** 접수된(코드가 부여된) SR 코드 — 열람 범위는 SR 목록과 같다: BO는 본인 SR만, 그 외는 전체 */
+  private async acceptedSrCodes(actor?: string): Promise<string[]> {
+    const [viewer] = actor ? await this.db.select({ isBusinessOwner: appUser.isBusinessOwner, isSystemOwner: appUser.isSystemOwner }).from(appUser).where(eq(appUser.id, actor)) : []
+    const rows = await this.db.select({ code: serviceRequest.code }).from(serviceRequest)
+      .where(and(isNotNull(serviceRequest.code), ...(viewer?.isBusinessOwner && !viewer.isSystemOwner ? [eq(serviceRequest.requesterId, actor!)] : [])))
+    return rows.map((row) => row.code).filter((code): code is string => !!code)
+  }
+
+  /** 자동완성 후보: 보이는 대화의 태그 + 보이는 접수 SR 코드. 열람 범위는 서버(이 함수)가 적용한다 */
+  async suggestions(actor: string | undefined, prefix: string, exclude: string[] = []) {
+    const [tasks, srCodes] = await Promise.all([this.list({}, actor), this.acceptedSrCodes(actor)])
+    return tagSuggestions(tasks, srCodes, prefix, exclude)
   }
 
   async messages(threadId: string, actor?: string) {
