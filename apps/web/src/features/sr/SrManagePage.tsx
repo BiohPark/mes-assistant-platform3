@@ -14,8 +14,7 @@ import { SrStatusBadge } from '@/components/StatusBadges'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { SrDetailSheet } from './SrDetailSheet'
 import { SrLoadError, SrSkeleton } from './SrStates'
-
-const statuses = ['submitted', 'reviewing', 'in_progress', 'responded', 'done', 'rejected'] as const
+import { SR_STAGES, srStage, type SrStage } from '@mes/domain'
 
 export function SrManagePage() {
   const t = useT()
@@ -25,15 +24,15 @@ export function SrManagePage() {
   const list = useQuery({ queryKey: ['sr', 'inbox'], queryFn: () => listSr('inbox') })
   const [selectedId, setSelectedId] = useState('')
   const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('')
+  const [status, setStatus] = useState<SrStage | ''>('')
   const selected = useQuery({ queryKey: ['sr', selectedId], queryFn: () => getSr(selectedId), enabled: !!selectedId })
   const needle = search.trim().toLocaleLowerCase()
   const submitted = (list.data ?? []).filter(row => row.status !== 'draft')
-  const visible = submitted.filter(row => (!status || row.status === status) && (!needle || `${row.code} ${row.title} ${row.body}`.toLocaleLowerCase().includes(needle)))
+  const visible = submitted.filter(row => (!status || srStage(row.status) === status) && (!needle || `${row.code} ${row.title} ${row.body}`.toLocaleLowerCase().includes(needle)))
   return <><TopBar title={t('nav.srManage')} /><div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
     <p className="text-sm text-muted-foreground">{t('sr.manageDescription')}</p>
     <Input aria-label={t('sr.search')} placeholder={t('sr.searchPlaceholder')} value={search} onChange={event => setSearch(event.target.value)} />
-    <div className="flex flex-wrap gap-2"><Chip variant="filter" label={t('sr.all')} selected={!status} onClick={() => setStatus('')} />{statuses.map(value => <Chip key={value} variant="filter" label={t(`status.sr.${value}`)} selected={status === value} onClick={() => setStatus(status === value ? '' : value)} />)}</div>
+    <div className="flex flex-wrap gap-2"><Chip variant="filter" label={t('sr.all')} selected={!status} onClick={() => setStatus('')} />{SR_STAGES.map(value => <Chip key={value} variant="filter" label={t(`status.sr.${value}`)} selected={status === value} onClick={() => setStatus(status === value ? '' : value)} />)}</div>
     {list.isPending && <SrSkeleton rows={4} className="h-12" />}
     {list.isError && <SrLoadError error={list.error} retrying={list.isFetching} onRetry={() => { void list.refetch() }} />}
     {list.data && submitted.length === 0 && <EmptyState icon={Inbox} title={t('sr.noRequests')} />}

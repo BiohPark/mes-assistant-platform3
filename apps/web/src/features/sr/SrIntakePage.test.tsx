@@ -32,10 +32,11 @@ it('접수 상태와 첨부를 읽을 수 있는 이름으로 표시하고 UUID�
     return jsonResponse(200, [])
   }))
   const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['requester'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=internal-sr' })
-  expect(await screen.findAllByText('검토 중')).toHaveLength(3)
+  expect(await screen.findAllByText('접수됨')).toHaveLength(3)
+  expect(container).not.toHaveTextContent('검토 중')
   expect(await screen.findByRole('link', { name: '첨부 1' })).toHaveAttribute('href', '/api/files/internal-file-uuid/content')
   expect(container).not.toHaveTextContent('internal-file-uuid')
-  expect(screen.getByRole('button', { name: /SR-2026-0001/ })).toHaveTextContent('검토 중')
+  expect(screen.getByRole('button', { name: /SR-2026-0001/ })).toHaveTextContent('접수됨')
   expect(container).not.toHaveTextContent('reviewing')
 })
 

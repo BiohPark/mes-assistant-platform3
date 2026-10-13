@@ -510,7 +510,7 @@ export const ko = {
   status: {
     task: { todo: '대기', in_progress: '진행 중', on_hold: '보류', done: '완료' },
     assistant: { open: '오픈', developing: '개발 중', testing: '테스트', retired: '폐기' },
-    sr: { draft: '대화 중', submitted: '접수됨', reviewing: '검토 중', in_progress: '진행 중', responded: '답변 공유', done: '완료', rejected: '반려' },
+    sr: { draft: '대화 중', submitted: '접수됨', in_progress: '처리 중', responded: '결과 공유', done: '완료', rejected: '반려' },
     priority: { low: '낮음', normal: '보통', high: '높음', urgent: '긴급' },
     activity: {
       task: { created: '대화 시작', started: '업무 시작', completed: '업무 완료', reopened: '업무 재개', hold: '업무 보류', status_changed: '상태 변경' },
@@ -530,8 +530,10 @@ export const ko = {
   },
   // --- U9: SR 상태 흐름·접수 전환 Sheet·완료 사유 (새 그룹 — 다른 브랜치 사전과 병합 충돌 최소화) ---
   srFlow: {
-    nextStep: '다음 단계: {status}',
-    otherStatus: '다른 상태로',
+    complete: '완료',
+    reject: '반려',
+    reopen: '다시 열기',
+    autoHint: '접수·연결 대화 시작·결과 공유는 자동으로 단계가 바뀝니다.',
     doneReasonTitle: 'SR 완료 사유',
     rejectedReasonTitle: 'SR 반려 사유',
     reasonDescription: '사유는 요청자에게 알림으로 전달되고 상태 이력에 남습니다. (1–500자)',
@@ -555,7 +557,7 @@ export const ko = {
     dismissProposal: '제안 닫기',
     attachmentsHint: '체크한 파일만 접수 첨부로 보냅니다.',
     noAttachments: '대화에 첨부한 파일이 없습니다.',
-    readOnlyDescription: '검토가 시작되어 접수 내용은 읽기 전용입니다.',
+    readOnlyDescription: '처리가 시작되어 접수 내용은 읽기 전용입니다.',
   },
   taskComplete: {
     reasonLabel: '완료 사유',

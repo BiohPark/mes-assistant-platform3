@@ -1,4 +1,4 @@
-import type { ActivityType, AssistantStatus, ModelSource, Priority, SrStatus, TaskStatus } from '@mes/domain'
+import type { ActivityType, AssistantStatus, ModelSource, Priority, SrStage, TaskStatus } from '@mes/domain'
 import type { TranslationKey } from '@/i18n'
 
 export const TASK_STATUS_KEY = {
@@ -15,15 +15,15 @@ export const ASSISTANT_STATUS_KEY = {
   retired: 'status.assistant.retired',
 } as const satisfies Record<AssistantStatus, TranslationKey>
 
+/** 화면 단계(srStage) 기준 — DB 상태는 srStage()로 먼저 접는다(reviewing → submitted). */
 export const SR_STATUS_KEY = {
   draft: 'status.sr.draft',
   submitted: 'status.sr.submitted',
-  reviewing: 'status.sr.reviewing',
   in_progress: 'status.sr.in_progress',
   responded: 'status.sr.responded',
   done: 'status.sr.done',
   rejected: 'status.sr.rejected',
-} as const satisfies Record<SrStatus, TranslationKey>
+} as const satisfies Record<SrStage, TranslationKey>
 
 export const PRIORITY_KEY = {
   low: 'status.priority.low',

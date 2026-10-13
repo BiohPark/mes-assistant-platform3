@@ -1,4 +1,5 @@
 import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
+import { SR_STAGE_FLOW, srStage } from '@mes/domain'
 import { useT } from '@/i18n'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -27,7 +28,7 @@ import { SharedResults } from './SharedResults'
 import { SrAttachments } from './SrAttachments'
 import { useMe } from '@/app/auth'
 
-const steps = ['draft', 'submitted', 'reviewing', 'in_progress', 'responded', 'done'] as const
+const steps = ['draft', ...SR_STAGE_FLOW] as const
 
 export function SrIntakePage() {
   const t = useT()
@@ -117,7 +118,7 @@ export function SrIntakePage() {
             {canEdit ? <SrTitleEditor key={selected.id} sr={selected} onSaved={refresh} /> : <h1 className="font-semibold">{selected.title}</h1>}
             {canEdit && (selected.status !== 'draft' || messages.some(message => message.role === 'user')) && <Button className="ml-auto" onClick={() => setConvert(true)}>{t(selected.status === 'draft' ? 'sr.convert' : selected.status === 'submitted' ? 'sr.editContent' : 'sr.viewContent')}</Button>}
           </div>
-            <div className="flex flex-wrap items-center gap-2"><ol aria-label={t('sr.steps')} className="flex flex-wrap gap-2 text-xs text-muted-foreground">{steps.map((step, index) => <li key={step} aria-current={selected.status === step ? 'step' : undefined} className={selected.status === step ? 'font-semibold text-primary' : ''}>{index > 0 && <span aria-hidden>→ </span>}{t(`status.sr.${step}`)}</li>)}</ol>
+            <div className="flex flex-wrap items-center gap-2"><ol aria-label={t('sr.steps')} className="flex flex-wrap gap-2 text-xs text-muted-foreground">{steps.map((step, index) => <li key={step} aria-current={srStage(selected.status) === step ? 'step' : undefined} className={srStage(selected.status) === step ? 'font-semibold text-primary' : ''}>{index > 0 && <span aria-hidden>→ </span>}{t(`status.sr.${step}`)}</li>)}</ol>
               {selected.status !== 'draft' && <Button variant="ghost" size="xs" aria-expanded={historyOpen} onClick={() => setHistoryOpen((value) => !value)}>{t('srFlow.statusHistory')}</Button>}</div>
             {historyOpen && <SrStatusHistory history={selected.statusHistory ?? []} />}
           </header>

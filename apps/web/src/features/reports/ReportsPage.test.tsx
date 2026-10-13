@@ -57,7 +57,7 @@ it('Popover 담당자 검색·키보드 선택과 전체 해제는 서버 필터
 it('uses semantic foregrounds for SR progress, warning signals and feedback icons', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url.startsWith('/api/reports?') ? jsonResponse(200, {
     kpi: { done: 0, reopens: 0 }, buckets: [], assistantStats: [], userStats: [], flow: [], tags: [],
-    srDist: [{ status: 'reviewing', count: 2 }, { status: 'submitted', count: 1 }],
+    srDist: [{ status: 'in_progress', count: 2 }, { status: 'submitted', count: 1 }],
     signals: [{ kind: 'reopen', taskId: 't', taskCode: 'WK-2026-0001', taskTitle: '대화', detail: '재개 사유', at: '2026-10-01T00:00:00.000Z' }],
     digest: [{ assistantId: 'a', assistantName: '도우미', avgRating: 4, count: 1, comments: [] }],
     assistants: [], users: [],

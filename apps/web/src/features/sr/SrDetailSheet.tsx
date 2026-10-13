@@ -3,9 +3,8 @@ import { Link, useNavigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { startSrTask, statusSr, type SrDetail } from '@/api/sr'
-import type { SrStatus } from '@mes/domain'
+import { isSrClosed, SR_STAGE_FLOW, srReasonRequired, srStage, type SrManualStatus } from '@mes/domain'
 import { ReasonDialog } from '@/components/ReasonDialog'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { SrStatusHistory } from './SrStatusHistory'
 import { listAssistants } from '@/lib/catalog'
 import { AssistantPicker } from '@/components/AssistantPicker'
@@ -23,11 +22,6 @@ import { SrAttachments } from './SrAttachments'
 import { SrStatusBadge } from '@/components/StatusBadges'
 import { useMe } from '@/app/auth'
 
-/** 정상 흐름의 단계. 반려는 "다른 상태로" 메뉴에서만 고른다. */
-const FLOW: SrStatus[] = ['submitted', 'reviewing', 'in_progress', 'responded', 'done']
-const OTHER: SrStatus[] = [...FLOW, 'rejected']
-const needsReason = (status: SrStatus) => status === 'done' || status === 'rejected'
-
 export function SrDetailSheet({ sr, onSaved }: { sr: SrDetail; onSaved: () => void }) {
   const t = useT()
   const navigate = useNavigate()
@@ -38,13 +32,14 @@ export function SrDetailSheet({ sr, onSaved }: { sr: SrDetail; onSaved: () => vo
   const [candidates, setCandidates] = useState<SrDetail['conversations']>([])
   const [shareOpen, setShareOpen] = useState(false)
   const [reasonFor, setReasonFor] = useState<'done' | 'rejected' | null>(null)
-  const position = FLOW.indexOf(sr.status)
-  const next = position >= 0 ? FLOW[position + 1] : undefined
-  async function changeStatus(status: SrStatus, reason?: string) {
+  const stage = srStage(sr.status)
+  // 접수됨·처리 중·결과 공유는 자동 전환 전용. 사람은 완료·반려와, 닫힌 SR을 다시 열기만 한다.
+  const closed = isSrClosed(sr.status)
+  async function changeStatus(status: SrManualStatus, reason?: string) {
     try { await statusSr(sr.id, status, reason); toast.success(t('srFlow.statusChanged', { status: t(`status.sr.${status}`) })); onSaved(); return true }
     catch (error) { toast.error(String(error)); return false }
   }
-  const pick = (status: SrStatus) => { if (needsReason(status)) setReasonFor(status as 'done' | 'rejected'); else void changeStatus(status) }
+  const pick = (status: SrManualStatus) => { if (srReasonRequired(status)) setReasonFor(status as 'done' | 'rejected'); else void changeStatus(status) }
   const { data: assistants = [] } = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
   const options = useMemo(() => assistants.map(item => ({ value: item.id, label: item.name, status: item.status })), [assistants])
   const assistantSource = useCallback(() => options, [options])
@@ -57,13 +52,14 @@ export function SrDetailSheet({ sr, onSaved }: { sr: SrDetail; onSaved: () => vo
     } catch (error) { toast.error(String(error)) }
   }
   return <div className="space-y-4 rounded-lg border p-4"><header><h2 className="text-lg font-semibold">{sr.code} {sr.title}</h2>
-    <p className="text-sm text-muted-foreground">{t('sr.requesterStatus', { name: sr.requesterName || users.get(sr.requesterId)?.name || t('sr.requester'), status: t(`status.sr.${sr.status}`) })}</p></header>
+    <p className="text-sm text-muted-foreground">{t('sr.requesterStatus', { name: sr.requesterName || users.get(sr.requesterId)?.name || t('sr.requester'), status: t(`status.sr.${stage}`) })}</p></header>
     <SrStatusBadge status={sr.status} />
-    <ol aria-label={t('sr.steps')} className="flex flex-wrap gap-2 text-xs text-muted-foreground">{FLOW.map((step, index) => <li key={step} aria-current={sr.status === step ? 'step' : undefined} className={sr.status === step ? 'font-semibold text-primary' : ''}>{index > 0 && <span aria-hidden>→ </span>}{t(`status.sr.${step}`)}</li>)}</ol>
+    <ol aria-label={t('sr.steps')} className="flex flex-wrap gap-2 text-xs text-muted-foreground">{SR_STAGE_FLOW.map((step, index) => <li key={step} aria-current={stage === step ? 'step' : undefined} className={stage === step ? 'font-semibold text-primary' : ''}>{index > 0 && <span aria-hidden>→ </span>}{t(`status.sr.${step}`)}</li>)}</ol>
+    <p className="text-xs text-muted-foreground">{t('srFlow.autoHint')}</p>
     <div className="flex flex-wrap gap-2">
-      {next && sr.status !== 'draft' && <Button onClick={() => pick(next)}>{t('srFlow.nextStep', { status: t(`status.sr.${next}`) })}</Button>}
-      <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" disabled={sr.status === 'draft'}>{t('srFlow.otherStatus')}</Button></DropdownMenuTrigger>
-        <DropdownMenuContent align="start">{OTHER.filter((status) => status !== sr.status).map((status) => <DropdownMenuItem key={status} onSelect={() => pick(status)}>{t(`status.sr.${status}`)}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
+      {sr.status !== 'draft' && (closed
+        ? <Button variant="outline" onClick={() => pick('in_progress')}>{t('srFlow.reopen')}</Button>
+        : <><Button onClick={() => pick('done')}>{t('srFlow.complete')}</Button><Button variant="outline" onClick={() => pick('rejected')}>{t('srFlow.reject')}</Button></>)}
       <Button variant="outline" onClick={() => setShareOpen(true)} disabled={sr.status === 'draft'}>{t('sr.shareResult')}</Button>
     </div>
     <section className="space-y-1"><h3 className="font-medium">{t('srFlow.statusHistory')}</h3><SrStatusHistory history={sr.statusHistory ?? []} /></section>

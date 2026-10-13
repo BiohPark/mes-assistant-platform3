@@ -65,30 +65,29 @@ it('연결 에이전트 추천·검색은 폐기를 제외하고 선택한 에�
   expect(screen.queryByRole('combobox', { name: 'SR 상태' })).not.toBeInTheDocument()
 })
 
-it('상태 select 대신 단계와 다음 단계 버튼을 보여 주고, 사유 없는 전이는 바로 요청한다', async () => {
-  const patches: unknown[] = []
-  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
-    if (url === '/api/service-requests/internal-sr-uuid/status') { patches.push(JSON.parse(String(init?.body))); return jsonResponse(200, { ...sr, status: 'reviewing' }) }
-    return jsonResponse(200, [])
-  }))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={sr} onSaved={() => undefined} /></MeContext></TooltipProvider>)
+it('4단계 진행 표시와 완료·반려 버튼만 보이고, 옛 reviewing은 접수됨 단계로 표시한다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={{ ...sr, status: 'reviewing' }} onSaved={() => undefined} /></MeContext></TooltipProvider>)
   const steps = screen.getByRole('list', { name: '요청 진행 단계' })
+  expect(within(steps).getAllByRole('listitem').map((item) => item.textContent?.replace('→ ', ''))).toEqual(['접수됨', '처리 중', '결과 공유', '완료'])
   expect(within(steps).getByText('접수됨')).toHaveAttribute('aria-current', 'step')
-  await userEvent.click(screen.getByRole('button', { name: '다음 단계: 검토 중' }))
-  await waitFor(() => expect(patches).toEqual([{ status: 'reviewing' }]))
-  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(container).not.toHaveTextContent('검토 중')
+  expect(container).not.toHaveTextContent('reviewing')
+  expect(screen.getByRole('button', { name: '완료' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '반려' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /다음 단계/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '다른 상태로' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '다시 열기' })).not.toBeInTheDocument()
 })
 
-it.each([['반려', 'rejected'], ['완료', 'done']])('다른 상태 메뉴에서 %s를 고르면 사유를 받아 함께 보낸다', async (label, status) => {
+it.each([['반려', 'rejected'], ['완료', 'done']])('%s 버튼은 사유를 받아 함께 보낸다', async (label, status) => {
   const patches: unknown[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/service-requests/internal-sr-uuid/status') { patches.push(JSON.parse(String(init?.body))); return jsonResponse(200, { ...sr, status }) }
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={sr} onSaved={() => undefined} /></MeContext></TooltipProvider>)
-  await userEvent.click(screen.getByRole('button', { name: '다른 상태로' }))
-  expect(screen.queryByRole('menuitem', { name: '접수됨' })).not.toBeInTheDocument()
-  await userEvent.click(await screen.findByRole('menuitem', { name: label }))
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={{ ...sr, status: 'responded' }} onSaved={() => undefined} /></MeContext></TooltipProvider>)
+  await userEvent.click(screen.getByRole('button', { name: label }))
   const dialog = await screen.findByRole('dialog')
   expect(dialog).toHaveTextContent(`SR ${label} 사유`)
   expect(within(dialog).getByRole('button', { name: '확인' })).toBeDisabled()
@@ -98,11 +97,26 @@ it.each([['반려', 'rejected'], ['완료', 'done']])('다른 상태 메뉴에�
   await waitFor(() => expect(patches).toEqual([{ status, reason: '범위 밖 요청' }]))
 })
 
+it.each(['done', 'rejected'] as const)('%s 상태에서는 다시 열기만 보이고 사유 없이 처리 중으로 되돌린다', async (status) => {
+  const patches: unknown[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/service-requests/internal-sr-uuid/status') { patches.push(JSON.parse(String(init?.body))); return jsonResponse(200, { ...sr, status: 'in_progress' }) }
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={{ ...sr, status }} onSaved={() => undefined} /></MeContext></TooltipProvider>)
+  expect(screen.queryByRole('button', { name: '완료' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '반려' })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '다시 열기' }))
+  await waitFor(() => expect(patches).toEqual([{ status: 'in_progress' }]))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
 it('상태 이력에 시각·처리자·변경·사유를 보여 준다', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
   const history = [
     { id: 'h1', at: '2026-10-01T01:00:00.000Z', by: 'u', byName: '요청한 사람', from: 'draft', to: 'submitted' },
-    { id: 'h2', at: '2026-10-02T02:00:00.000Z', by: 's', byName: '담당자', from: 'submitted', to: 'rejected', reason: '범위 밖 요청' },
+    { id: 'h1b', at: '2026-10-01T02:00:00.000Z', by: 's', byName: '담당자', from: 'submitted', to: 'reviewing' },
+    { id: 'h2', at: '2026-10-02T02:00:00.000Z', by: 's', byName: '담당자', from: 'reviewing', to: 'rejected', reason: '범위 밖 요청' },
   ]
   const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={{ ...sr, status: 'rejected', statusHistory: history }} onSaved={() => undefined} /></MeContext></TooltipProvider>)
   const list = screen.getByRole('list', { name: '상태 이력' })
@@ -111,6 +125,7 @@ it('상태 이력에 시각·처리자·변경·사유를 보여 준다', async 
   expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('접수됨 → 반려')
   expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('사유: 범위 밖 요청')
   expect(container).not.toHaveTextContent('rejected')
+  expect(container).not.toHaveTextContent('검토 중')
   expect(screen.queryByRole('button', { name: /다음 단계/ })).not.toBeInTheDocument()
 })
 
@@ -141,6 +156,7 @@ it('영문 Sheet의 파일 목록과 SR 액션은 번역된 이름을 사용한�
   expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Version history' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Start linked task' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Next step: Under review' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Other status' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Complete' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument()
+  expect(screen.getByRole('list', { name: 'Request progress' })).toHaveTextContent('Result shared')
 })

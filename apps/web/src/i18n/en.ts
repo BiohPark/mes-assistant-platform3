@@ -512,7 +512,7 @@ export const en = {
   status: {
     task: { todo: 'Pending', in_progress: 'In progress', on_hold: 'On hold', done: 'Done' },
     assistant: { open: 'Open', developing: 'In development', testing: 'Testing', retired: 'Retired' },
-    sr: { draft: 'In conversation', submitted: 'Submitted', reviewing: 'Under review', in_progress: 'In progress', responded: 'Response shared', done: 'Done', rejected: 'Rejected' },
+    sr: { draft: 'In conversation', submitted: 'Submitted', in_progress: 'In progress', responded: 'Result shared', done: 'Done', rejected: 'Rejected' },
     priority: { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' },
     activity: {
       task: { created: 'Conversation started', started: 'Task started', completed: 'Task completed', reopened: 'Task reopened', hold: 'Task put on hold', status_changed: 'Status changed' },
@@ -532,8 +532,10 @@ export const en = {
   },
   // --- U9: SR status flow, conversion sheet, completion reason (new group to ease merging) ---
   srFlow: {
-    nextStep: 'Next step: {status}',
-    otherStatus: 'Other status',
+    complete: 'Complete',
+    reject: 'Reject',
+    reopen: 'Reopen',
+    autoHint: 'Submission, starting a linked task and sharing a result move the stage automatically.',
     doneReasonTitle: 'Reason for completing the SR',
     rejectedReasonTitle: 'Reason for rejecting the SR',
     reasonDescription: 'The reason is sent to the requester as a notification and kept in the status history. (1–500 characters)',
@@ -557,7 +559,7 @@ export const en = {
     dismissProposal: 'Dismiss proposal',
     attachmentsHint: 'Only checked files are attached to the submission.',
     noAttachments: 'No files were attached in the conversation.',
-    readOnlyDescription: 'Review has started, so the submission is read-only.',
+    readOnlyDescription: 'Processing has started, so the submission is read-only.',
   },
   taskComplete: {
     reasonLabel: 'Completion reason',
