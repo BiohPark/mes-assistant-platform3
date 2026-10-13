@@ -70,7 +70,7 @@ describe('api 골격', () => {
       })
       .compile()
     app = configureApp(moduleRef.createNestApplication(), config)
-    await app.init()
+    await app.listen(0, '127.0.0.1')
   })
 
   afterEach(async () => {

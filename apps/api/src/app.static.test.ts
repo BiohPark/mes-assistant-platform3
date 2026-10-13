@@ -31,7 +31,7 @@ describe('web 정적 제공', () => {
     })
     const moduleRef = await Test.createTestingModule({ imports: [StaticTestModule] }).compile()
     app = configureApp(moduleRef.createNestApplication(), config)
-    await app.init()
+    await app.listen(0, '127.0.0.1')
     return request(app.getHttpServer())
   }
 
