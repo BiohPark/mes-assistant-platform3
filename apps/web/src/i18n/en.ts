@@ -545,4 +545,10 @@ export const en = {
   u10Admin: {
     codeActive: '{name} Active',
   },
+  dropzone: {
+    toAttach: 'Drop to add as pending attachments',
+    toUpload: 'Drop to save as this conversation\'s files',
+    attached: { one: 'Added {count} file to the pending attachments.', other: 'Added {count} files to the pending attachments.' },
+    rejected: { one: 'Skipped {count} item: folders and empty files cannot be uploaded.', other: 'Skipped {count} items: folders and empty files cannot be uploaded.' },
+  },
 } as const satisfies Messages

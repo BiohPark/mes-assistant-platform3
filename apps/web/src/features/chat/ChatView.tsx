@@ -8,7 +8,8 @@ import { estimateRequest, getRequest, type RequestRecord } from '@/api/requests'
 import { subscribeEvent } from '@/app/useEvents'
 import { useActor, useCurrentUserId } from '@/app/hooks'
 import { Button } from '@/components/ui/button'
-import { Composer, type PendingAttachment } from './Composer'
+import { Composer, type ComposerHandle, type PendingAttachment } from './Composer'
+import { FileDropZone } from '@/components/FileDropZone'
 import { ChatMessages } from './ChatMessages'
 import { SaveAsOutputDialog } from './SaveAsOutputDialog'
 import { RequestInfoDialog } from './RequestInfoDialog'
@@ -28,6 +29,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   const [draft, setDraft] = useState('')
   const [typing, setTyping] = useState<Record<string, { name: string; until: number }>>({})
   const lastTyping = useRef(0)
+  const composer = useRef<ComposerHandle>(null)
   const [saveTarget, setSaveTarget] = useState<Message | null>(null)
   const [infoId, setInfoId] = useState<string | null>(null)
   const [retryChoice, setRetryChoice] = useState<{ record: RequestRecord; mode: 'exclude' | 'inline' } | null>(null)
@@ -91,7 +93,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
     try { setRetryChoice({ record: await getRequest(requestId), mode }) }
     catch { toast.error(t('chat.requestLoadFailed')) }
   }
-  return <><div className="flex min-h-0 flex-1 flex-col"><div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+  return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={task.status === 'done'} onFiles={(files) => composer.current?.dropFiles(files)}><div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
     <ChatMessages messages={messages.data ?? []} run={chat.run} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
       actions={(item) => ({
         onSaveAsOutput: item.role === 'assistant' && assistant && item.status === 'done' ? () => setSaveTarget(item) : undefined,
@@ -103,11 +105,11 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
     {remoteStreaming && !chat.run?.phase && <p className="text-xs text-muted-foreground">{remoteRequest.data?.phase || t('chat.responding')}</p>}
   </div>{Object.values(typing).some((item) => item.until > Date.now()) && <p className="px-4 py-1 text-xs text-muted-foreground">{t('chat.typing', { names: Object.values(typing).filter((item) => item.until > Date.now()).map((item) => item.name).join(', ') })}</p>}
   <ContextTray task={task} estimate={estimate} />
-  {task.status !== 'done' && <Composer disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowPin allowDiscussion
+  {task.status !== 'done' && <Composer ref={composer} disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowPin allowDiscussion
     blockedReason={estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping}
     placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}
     onSend={send} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />}
-  {saveTarget && assistant && <SaveAsOutputDialog key={saveTarget.id} message={saveTarget} task={task} assistant={assistant} onOpenMaterials={onOpenMaterials} onClose={() => setSaveTarget(null)} />}</div>
+  {saveTarget && assistant && <SaveAsOutputDialog key={saveTarget.id} message={saveTarget} task={task} assistant={assistant} onOpenMaterials={onOpenMaterials} onClose={() => setSaveTarget(null)} />}</FileDropZone>
   {infoId && <RequestInfoDialog requestId={infoId} onClose={() => setInfoId(null)} />}
   {retryChoice && <RetryFilesDialog record={retryChoice.record} mode={retryChoice.mode} onClose={() => setRetryChoice(null)}
     onSubmit={(ids) => retry(retryChoice!.record.id, retryChoice!.mode === 'exclude' ? { excludeFileIds: ids } : { forceInlineFileIds: ids })} />}</>

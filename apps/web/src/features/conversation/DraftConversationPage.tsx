@@ -20,7 +20,8 @@ import { useT } from '@/i18n'
 import { assistantLink1 } from '@/lib/links'
 import { getSettings } from '@/api/admin'
 import { UserAvatar } from '@/components/UserAvatar'
-import { Composer, type PendingAttachment } from '@/features/chat/Composer'
+import { Composer, type ComposerHandle, type PendingAttachment } from '@/features/chat/Composer'
+import { FileDropZone } from '@/components/FileDropZone'
 import { suggestionsFrom } from '@/features/chat/suggestions'
 import { toast } from 'sonner'
 
@@ -39,6 +40,7 @@ export function DraftConversationPage() {
   const [tags, setTags] = useState(() => params.getAll('tag').map(normalizeTag).filter(Boolean))
   const [busy, setBusy] = useState(false)
   const sending = useRef(false)
+  const composer = useRef<ComposerHandle>(null)
   const created = useRef<{ id: string; code: string; threadId: string } | null>(null)
   const refId = params.get('ref')
 
@@ -94,7 +96,7 @@ export function DraftConversationPage() {
 
   return <>
     <TopBar title={t('hub.newConversationTitle', { name: assistant.name })} />
-    <div className="flex min-h-0 flex-1 flex-col">
+    <FileDropZone data-testid="draft-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={retired || busy} onFiles={(files) => composer.current?.dropFiles(files)}>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-2xl space-y-4 px-4 py-6">
           <div className="flex items-start gap-3">
@@ -123,7 +125,7 @@ export function DraftConversationPage() {
           {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">{t('hub.retiredAssistant')} <Link to="/" className="underline">{t('hub.pickAnotherAssistant')}</Link></div>}
         </div>
       </div>
-      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer disabled={busy} streaming={false} allowAttachments allowPin allowDiscussion placeholder={t('chat.composerPlaceholderFor', { assistant: assistant.name })} onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
-    </div>
+      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer ref={composer} disabled={busy} streaming={false} allowAttachments allowPin allowDiscussion placeholder={t('chat.composerPlaceholderFor', { assistant: assistant.name })} onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
+    </FileDropZone>
   </>
 }
