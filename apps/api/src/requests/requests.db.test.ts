@@ -51,6 +51,121 @@ describe('RequestService DB', () => {
   })
   afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); await rm(root, { recursive: true, force: true }) })
 
+  it('reasoning keeps first-token and idle waits alive, streams phases, persists separately and never enters the next request', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let began!: () => void
+    const thinking = new Promise<void>(resolve => { began = resolve })
+    const capturing: ChatProvider = { ...provider, async *stream() {
+      yield { type: 'reasoning', text: 'PRIVATE_REASONING' }
+      began()
+      await gate
+      yield { type: 'reasoning', text: ' more' }
+      yield { type: 'delta', text: '답변' }
+      yield { type: 'done' }
+    } }
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
+      REQUEST_FIRST_TOKEN_MS: '300', REQUEST_IDLE_MS: '1000', REQUEST_FLUSH_MS: '20' })
+    const runner = new RequestsService(db, config, capturing)
+    const { task: owner, thread } = await tasks.create('member', { assistantId })
+    try {
+      const started = await runner.start('member', thread.id, { content: '사고' }, 'reasoning-first')
+      const events: Array<{ event: string; data: Record<string, unknown> }> = []
+      const unsubscribe = runner.subscribe(started.id, event => events.push(event))
+      await thinking
+      await new Promise(resolve => setTimeout(resolve, 400)) // first-token deadline has passed; reasoning armed idle wait
+      expect(await runner.get(started.id)).toMatchObject({ status: 'streaming', phase: '생각 중' })
+      expect((await tasks.messages(thread.id)).find(row => row.id === started.replyMessageId)).toMatchObject({ content: '', reasoning: 'PRIVATE_REASONING' })
+      release()
+      await started.done
+      unsubscribe()
+      expect(await runner.get(started.id)).toMatchObject({ status: 'succeeded' })
+      expect(events).toContainEqual({ event: 'reasoning', data: { text: 'PRIVATE_REASONING' } })
+      expect(events).toContainEqual({ event: 'phase', data: { text: '생각 중' } })
+      expect(events).toContainEqual({ event: 'phase', data: { text: '답변 중' } })
+      const saved = (await tasks.messages(thread.id)).find(row => row.id === started.replyMessageId)!
+      expect(saved).toMatchObject({ content: '답변', reasoning: 'PRIVATE_REASONING more', status: 'done' })
+      const estimate = await runner.estimate('member', thread.id, { draft: '다음' })
+      const next = await runner.start('member', thread.id, { content: '다음' }, 'reasoning-next')
+      await next.done
+      expect((await runner.get(next.id)).bytes).toBe(estimate.bytes)
+      expect(JSON.stringify(await runner.snapshot(next.id))).not.toContain('PRIVATE_REASONING')
+      expect((await runner.draftConversationSummary('member', owner.id, [{ ...saved, role: 'assistant', status: 'done', kind: undefined,
+        authorId: undefined, error: undefined }])).text).not.toContain('PRIVATE_REASONING')
+    } finally { release(); runner.onModuleDestroy() }
+  })
+
+  it('repeated reasoning deltas reset idle waits until an answer arrives', async () => {
+    const thinking: ChatProvider = { ...provider, async *stream() {
+      for (let i = 0; i < 4; i++) {
+        yield { type: 'reasoning', text: '검토 ' }
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+      yield { type: 'delta', text: '완료' }
+    } }
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
+      REQUEST_FIRST_TOKEN_MS: '2000', REQUEST_IDLE_MS: '500' }), thinking)
+    try {
+      const { thread } = await tasks.create('member', { assistantId })
+      const started = await runner.start('member', thread.id, { content: '주기적 사고' }, 'reasoning-idle')
+      await started.done
+      expect(await runner.get(started.id)).toMatchObject({ status: 'succeeded' })
+      expect((await tasks.messages(thread.id)).find(row => row.id === started.replyMessageId)).toMatchObject({ content: '완료', reasoning: '검토 '.repeat(4) })
+    } finally { runner.onModuleDestroy() }
+  })
+
+  it('resumes bounded reasoning replay once, restores it from DB after completion and preserves it on cancellation', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let ready!: () => void
+    const emitted = new Promise<void>(resolve => { ready = resolve })
+    const many: ChatProvider = { ...provider, async *stream() {
+      for (let i = 0; i < 2100; i++) yield { type: 'reasoning', text: 'x' }
+      ready()
+      await gate
+      yield { type: 'reasoning', text: '끝' }
+      yield { type: 'delta', text: '답변' }
+    } }
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root })
+    const runner = new RequestsService(db, config, many)
+    try {
+      const { thread } = await tasks.create('member', { assistantId })
+      const started = await runner.start('member', thread.id, { content: '긴 사고' }, 'reasoning-replay')
+      await emitted
+      const duplicate = await runner.start('member', thread.id, { content: '긴 사고' }, 'reasoning-replay')
+      expect(duplicate.id).toBe(started.id)
+      const events: Array<{ event: string; data: Record<string, unknown> }> = []
+      const unsubscribe = runner.subscribe(started.id, event => events.push(event))
+      expect(events[0]).toMatchObject({ event: 'started', data: { resumedText: '', resumedReasoning: 'x'.repeat(2100), createdAt: expect.any(String) } })
+      expect(events.filter(event => event.event === 'reasoning')).toHaveLength(0)
+      release()
+      await started.done
+      expect(events.filter(event => event.event === 'reasoning').map(event => event.data.text)).toEqual(['끝'])
+      unsubscribe()
+      const restarted = new RequestsService(db, config, provider)
+      await restarted.start('member', thread.id, { content: '긴 사고' }, 'reasoning-replay')
+      const restored: Array<{ event: string; data: Record<string, unknown> }> = []
+      restarted.subscribe(started.id, event => restored.push(event))()
+      expect(restored[0]).toMatchObject({ event: 'started', data: { resumedText: '답변', resumedReasoning: 'x'.repeat(2100) + '끝' } })
+      restarted.onModuleDestroy()
+      const cancelThread = (await tasks.create('member', { assistantId })).thread
+      let thinking!: () => void
+      const began = new Promise<void>(resolve => { thinking = resolve })
+      const hold: ChatProvider = { ...provider, async *stream(request) {
+        yield { type: 'reasoning', text: '중지 직전 사고' }
+        thinking()
+        await new Promise<void>(resolve => { request.signal?.addEventListener('abort', () => resolve(), { once: true }) })
+      } }
+      const cancellable = new RequestsService(db, config, hold)
+      const cancelled = await cancellable.start('member', cancelThread.id, { content: '중지' }, 'reasoning-cancel')
+      await began
+      await cancellable.cancel(cancelled.id)
+      await cancelled.done
+      expect((await tasks.messages(cancelThread.id)).find(row => row.id === cancelled.replyMessageId)).toMatchObject({ status: 'error', reasoning: '중지 직전 사고' })
+      cancellable.onModuleDestroy()
+    } finally { release(); runner.onModuleDestroy() }
+  })
+
   it('stores one user, reply and structured request without keys', async () => {
     const { thread } = await tasks.create('member', { assistantId })
     const started = await service.start('member', thread.id, { content: '안녕' }, 'key-one')
