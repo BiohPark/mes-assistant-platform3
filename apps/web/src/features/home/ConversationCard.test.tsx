@@ -1,0 +1,32 @@
+import { screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, expect, it, vi } from 'vitest'
+import type { Task } from '@mes/domain'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { MeContext } from '@/app/auth'
+import { renderWithProviders } from '@/test/render'
+import { ConversationCard } from './ConversationCard'
+
+const oldTask = { id: 't', code: 'WK-2026-0001', title: 'Old conversation', status: 'in_progress', tags: [], inputs: [], ownerId: 'u', assigneeIds: [], lastActivityAt: '2020-01-01T00:00:00Z' } as unknown as Task
+function renderCard(task = oldTask) {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  renderWithProviders(<MeContext value={{ id: 'u', name: 'User', role: '', roles: ['member'], locale: 'ko', theme: 'system', email: null, emailIsDefault: false }}><TooltipProvider><ConversationCard task={task} onTagClick={() => undefined} onStatusChange={vi.fn()} /></TooltipProvider></MeContext>)
+}
+afterEach(() => { vi.unstubAllGlobals(); localStorage.removeItem('mes-locale') })
+
+it.each([['ko', '정체'], ['en', 'Stalled']])('labels stalled kanban cards in %s with a contrasting badge', (locale, label) => {
+  localStorage.setItem('mes-locale', locale)
+  renderCard()
+  const badge = screen.getByText(label)
+  expect(badge).toHaveAttribute('data-task-stalled')
+  expect(badge).toHaveClass('text-tone-warning-fg', 'bg-tone-warning-bg')
+})
+
+it('shows legacy todo status but excludes todo and done from status choices', async () => {
+  renderCard({ ...oldTask, status: 'todo' })
+  expect(screen.getByText('대기')).toBeInTheDocument()
+  expect(screen.queryByText('정체')).not.toBeInTheDocument()
+  await userEvent.setup().click(screen.getByRole('button', { name: '상태 변경' }))
+  const menu = screen.getByRole('menu')
+  expect(within(menu).getAllByRole('menuitemradio').map(item => item.textContent)).toEqual(['진행 중', '보류'])
+})

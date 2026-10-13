@@ -9,7 +9,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { ChatView } from './ChatView'
 import { queueFirstRequest } from './useChat'
 import { queryClient } from '@/api/queryClient'
-import { clearDrafts } from './drafts'
+import { clearDrafts, getDraft } from './drafts'
 
 const toastError = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
@@ -296,12 +296,12 @@ it('turns a file dropped on the conversation area into a pending attachment chip
   expect(toastSuccess).toHaveBeenCalledWith('1개 파일을 첨부 대기에 추가했습니다.')
 })
 
-it('does not accept drops on a completed conversation', () => {
+it('stages drops on a completed conversation before asking to reopen', () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
   const task = { id: 't', threadId: 'h', status: 'done', inputs: [], tags: [] } as unknown as Task
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], theme: 'system' as const, locale: 'ko' as const, email: null, emailIsDefault: false }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.dragEnter(screen.getByTestId('chat-dropzone'), { dataTransfer: { types: ['Files'], files: [], items: [] } })
-  expect(screen.queryByText('놓으면 첨부 대기에 추가')).not.toBeInTheDocument()
+  expect(screen.getByText('놓으면 첨부 대기에 추가')).toBeInTheDocument()
 })
 
 const originalQuestion = { id: 'original', threadId: 'h', role: 'user', content: '**기존 질문**', status: 'done', createdAt: '2026-01-01T00:00:00Z', attachmentIds: ['old-file'], requestId: 'old-request' }
@@ -454,4 +454,93 @@ it('keeps the staged attachment and draft across a task refetch and a chat remou
   await waitFor(() => expect(input).toHaveValue(originalQuestion.content))
   expect(screen.getByText('current.txt')).toBeVisible()
   expect(screen.getByRole('button', { name: '첨부 제거' })).toBeInTheDocument()
+})
+
+function progressView(status: Task['status']) {
+  const task = { id: 't', threadId: 'h', status, inputs: [], tags: [] } as unknown as Task
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ChatView task={task} /></TooltipProvider></MeContext></QueryClientProvider>)
+}
+
+it.each([false, true])('asks before reopening and sends the preserved draft after the reason (discussion=%s)', async discussion => {
+  const calls: Array<{ url: string; body: unknown }> = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if ((init?.method === 'POST' || init?.method === 'PUT') && !url.endsWith('/typing')) calls.push({ url, body: init.body instanceof FormData ? 'upload' : JSON.parse(String(init.body)) })
+    if (url === '/api/files') return Response.json({ id: 'f', name: 'resume.txt' })
+    if (url === '/api/tasks/t/status') return Response.json({ id: 't', status: 'in_progress' })
+    if (url === '/api/threads/h/requests') return new Response('event: started\ndata: {"requestId":"r","replyMessageId":"a","userMessageId":"u"}\n\nevent: completed\ndata: {}\n\n', { status: 201 })
+    if (url === '/api/threads/h/messages' && init?.method === 'POST') return Response.json({ id: 'm' })
+    if (url.endsWith('/estimate')) return Response.json({ inputs: [], srs: [], srCodes: [], bytes: 0, limitBytes: 100000, overLimit: false, attachmentLimit: 10 })
+    return Response.json([])
+  }))
+  const { container } = progressView('done')
+  if (discussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  const input = screen.getByRole('textbox', { name: discussion ? '팀 의견 입력' : 'AI 요청 입력' })
+  fireEvent.change(input, { target: { value: '재개 후 보낼 내용' } })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'resume.txt', { type: 'text/plain' })] } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  expect(await screen.findByRole('dialog', { name: '재개할까요?' })).toBeVisible()
+  expect(calls.filter(call => !call.url.endsWith('/estimate'))).toHaveLength(0)
+  expect(screen.getByRole('button', { name: '재개 확인' })).toBeDisabled()
+  fireEvent.change(screen.getByPlaceholderText('사유를 입력하세요'), { target: { value: '추가 검토' } })
+  fireEvent.click(screen.getByRole('button', { name: '재개 확인' }))
+  const path = discussion ? '/api/threads/h/messages' : '/api/threads/h/requests'
+  await waitFor(() => expect(calls.some(call => call.url === path)).toBe(true))
+  expect(calls.find(call => call.url === '/api/tasks/t/status')?.body).toEqual({ status: 'in_progress', reason: '추가 검토' })
+  expect(calls.find(call => call.url === path)?.body).toMatchObject({ content: '재개 후 보낼 내용', attachmentIds: ['f'] })
+  expect(calls.findIndex(call => call.url === '/api/tasks/t/status')).toBeLessThan(calls.findIndex(call => call.url === path))
+  expect(calls.findIndex(call => call.url === '/api/tasks/t/status')).toBeLessThan(calls.findIndex(call => call.url === '/api/files'))
+  await waitFor(() => expect(input).toHaveValue(''))
+})
+
+it('keeps text and attachments when reopening is cancelled, and sends nothing', async () => {
+  const writes: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method && init.method !== 'GET' && !url.endsWith('/estimate') && !url.endsWith('/typing')) writes.push(url)
+    if (url.endsWith('/estimate')) return Response.json({ inputs: [], srs: [], srCodes: [], bytes: 0, limitBytes: 100000, overLimit: false, attachmentLimit: 10 })
+    return Response.json([])
+  }))
+  const { container } = progressView('done')
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  fireEvent.change(input, { target: { value: '보존할 내용' } })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'preserved.txt', { type: 'text/plain' })] } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await screen.findByRole('dialog', { name: '재개할까요?' })
+  fireEvent.click(screen.getByRole('button', { name: '취소' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(input).toHaveValue('보존할 내용')
+  expect(screen.getByText('preserved.txt')).toBeInTheDocument()
+  expect(writes).toHaveLength(0)
+  expect(toastError).not.toHaveBeenCalled()
+})
+
+it.each([false, true])('announces an automatic hold release with a one-click hold action (discussion=%s)', async discussion => {
+  const writes: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method && init.method !== 'GET') writes.push(url)
+    if (url === '/api/threads/h/requests') return new Response('event: started\ndata: {"requestId":"r","replyMessageId":"a","autoStarted":true}\n\nevent: completed\ndata: {}\n\n', { status: 201 })
+    if (url === '/api/threads/h/messages' && init?.method === 'POST') return Response.json({ id: 'm', autoStarted: true })
+    if (url.endsWith('/estimate')) return Response.json({ inputs: [], srs: [], srCodes: [], bytes: 0, limitBytes: 100000, overLimit: false, attachmentLimit: 10 })
+    return Response.json([])
+  }))
+  progressView('on_hold')
+  if (discussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  fireEvent.change(screen.getByRole('textbox', { name: discussion ? '팀 의견 입력' : 'AI 요청 입력' }), { target: { value: '보류 해제' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('보류를 해제했습니다', expect.objectContaining({ action: expect.objectContaining({ label: '보류' }) })))
+  const options = toastSuccess.mock.calls.find(call => call[0] === '보류를 해제했습니다')![1] as { action: { onClick: () => void } }
+  options.action.onClick()
+  await waitFor(() => expect(writes).toContain('/api/tasks/t/status'))
+})
+
+it('keeps the draft when navigating away during the reopen confirmation', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/estimate')
+    ? Response.json({ inputs: [], srs: [], srCodes: [], bytes: 0, limitBytes: 100000, overLimit: false, attachmentLimit: 10 }) : Response.json([])))
+  const { container, unmount } = progressView('done')
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '다시 방문할 초안' } })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'saved.txt', { type: 'text/plain' })] } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await screen.findByRole('dialog', { name: '재개할까요?' })
+  expect(getDraft('t')).toMatchObject({ text: '다시 방문할 초안', pending: [{ file: expect.any(File) }] })
+  unmount()
+  expect(getDraft('t')?.text).toBe('다시 방문할 초안')
 })

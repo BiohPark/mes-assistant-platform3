@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Message, Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
-import { appendMessage, getMessages } from '@/api/tasks'
+import { appendMessage, getMessages, setTaskStatus } from '@/api/tasks'
 import { setInput, uploadFile } from '@/api/files'
 import { estimateRequest, getRequest, type RequestRecord } from '@/api/requests'
 import { subscribeEvent } from '@/app/useEvents'
 import { useActor, useCurrentUserId } from '@/app/hooks'
+import { ReasonDialog } from '@/components/ReasonDialog'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Button } from '@/components/ui/button'
 import { Composer, type ComposerHandle, type PendingAttachment } from './Composer'
@@ -35,13 +36,16 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   const askOpener = useRef<HTMLElement | null>(null)
   const confirmedAsk = useRef(false)
   const sendLock = useRef(false)
+  const [reopenForSend, setReopenForSend] = useState(false)
+  const reopenDecision = useRef<((accepted: boolean) => void) | null>(null)
+  useEffect(() => () => { reopenDecision.current?.(false) }, [])
   const [typing, setTyping] = useState<Record<string, { name: string; until: number }>>({})
   const lastTyping = useRef(0)
   const composer = useRef<ComposerHandle>(null)
   const [saveTarget, setSaveTarget] = useState<Message | null>(null)
   const [infoId, setInfoId] = useState<string | null>(null)
   const [retryChoice, setRetryChoice] = useState<{ record: RequestRecord; mode: 'exclude' | 'inline' } | null>(null)
-  const chat = useChat(task.threadId)
+  const chat = useChat(task.threadId, holdReleased)
   const messages = useQuery({ queryKey: ['messages', task.threadId], queryFn: ({ signal }) => getMessages(task.threadId!, signal), enabled: !!task.threadId,
   })
   const remoteRequestId = messages.data?.find((item) => item.status === 'streaming' && item.requestId !== chat.run?.requestId)?.requestId
@@ -84,8 +88,44 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
     lastTyping.current = Date.now()
     void fetch(`/api/threads/${encodeURIComponent(task.threadId)}/typing`, { method: 'POST', credentials: 'same-origin' }).catch(() => undefined)
   }
+  function refreshProgress() {
+    void query.invalidateQueries({ queryKey: ['task', task.id] })
+    void query.invalidateQueries({ queryKey: ['tasks'] })
+    void query.invalidateQueries({ queryKey: ['activity', task.id] })
+  }
+  /** 서버가 확정한 상태를 즉시 반영한다 — 느린 재조회를 기다리지 않고 헤더(보류/재개)가 바로 바뀐다 */
+  function markStatus(status: Task['status']) {
+    query.setQueryData<Task>(['task', task.id], (current) => current && { ...current, status })
+  }
+  function holdReleased() {
+    markStatus('in_progress')
+    refreshProgress()
+    // 되돌리기 동작이 있는 알림 — 기본 4초는 읽고 누르기에 짧다
+    toast.success(t('task.progress.holdReleased'), { duration: 10_000, action: { label: t('task.header.hold'), onClick: () => {
+      void setTaskStatus(actor, task.id, 'on_hold').then(() => { markStatus('on_hold'); refreshProgress() }).catch(error => toast.error(error instanceof Error ? error.message : t('chat.sendFailed')))
+    } } })
+  }
+  async function confirmReopen(reason: string) {
+    try {
+      await setTaskStatus(actor, task.id, 'in_progress', { reason })
+      refreshProgress()
+      reopenDecision.current?.(true)
+      reopenDecision.current = null
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('chat.sendFailed'))
+      return false
+    }
+  }
+  async function beforeSend() {
+    if (sendLock.current) return false
+    if (task.status !== 'done') return true
+    setSending(true)
+    try {
+      return await new Promise<boolean>(resolve => { reopenDecision.current = resolve; setReopenForSend(true) })
+    } finally { setSending(false) }
+  }
   async function send(text: string, attachments: PendingAttachment[], discussion: boolean) {
-    if ((!text.trim() && !attachments.length) || !task.threadId || sendLock.current || task.status === 'done') return
+    if ((!text.trim() && !attachments.length) || !task.threadId || sendLock.current) return false
     sendLock.current = true
     const content = text.trim()
     setSending(true)
@@ -109,22 +149,29 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
           oneShotFileIds: uploaded.filter((_id, index) => attachments[index]?.once) })
         if (preview.overLimit) throw new Error(t('chat.overLimitError', { bytes: String(preview.bytes), limit: String(preview.limitBytes) }))
       }
-      if (discussion) await appendMessage(actor, task.threadId, 'user', content, uploaded, 'done', 'discussion')
-      else await chat.send(content, uploaded, uploaded.filter((_id, index) => attachments[index]?.once))
+      if (discussion) {
+        const accepted = await appendMessage(actor, task.threadId, 'user', content, uploaded, 'done', 'discussion') as Message & { autoStarted?: boolean }
+        if (accepted.autoStarted) holdReleased()
+        refreshProgress()
+      } else await chat.send(content, uploaded, uploaded.filter((_id, index) => attachments[index]?.once))
       await query.invalidateQueries({ queryKey: ['messages', task.threadId] })
       setPrefilled(false)
     } finally { sendLock.current = false; setSending(false) }
   }
   async function retry(requestId: string, options: { excludeFileIds?: string[]; forceInlineFileIds?: string[] } = {}) {
     setSending(true)
-    try { await chat.retry(requestId, options) } catch (error) { toast.error(error instanceof Error ? error.message : t('chat.retryFailed')) }
+    try {
+      if (!await beforeSend()) return
+      setSending(true)
+      await chat.retry(requestId, options)
+    } catch (error) { toast.error(error instanceof Error ? error.message : t('chat.retryFailed')) }
     finally { setSending(false); setRetryChoice(null) }
   }
   async function chooseRetry(requestId: string, mode: 'exclude' | 'inline') {
     try { setRetryChoice({ record: await getRequest(requestId), mode }) }
     catch { toast.error(t('chat.requestLoadFailed')) }
   }
-  return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={task.status === 'done'} onFiles={(files) => composer.current?.dropFiles(files)}>
+  return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={sending} onFiles={(files) => composer.current?.dropFiles(files)}>
     <div ref={setQuestionIndexContainer} data-testid="chat-question-toolbar" className="shrink-0 border-b px-4 py-2 empty:hidden" />
     <div data-testid="chat-message-scroll" className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
     <ChatMessages messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince} questionIndexContainer={questionIndexContainer} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
@@ -141,11 +188,15 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   <ContextTray task={task} estimate={estimate} />
   {prefilled && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.askAgainHint')}</p>}
   {pendingAttempt && !sending && !chat.sending && task.status !== 'done' && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.pendingAttemptHint')}</p>}
-  {task.status !== 'done' && <Composer ref={composer} disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowPin allowDiscussion
-    blockedReason={estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping} draftKey={task.id}
+  <Composer ref={composer} disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowPin allowDiscussion
+    blockedReason={task.status !== 'done' && estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping} draftKey={task.id}
     placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}
-    onSend={send} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />}
+    beforeSend={beforeSend} onSend={send} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />
   {saveTarget && assistant && <SaveAsOutputDialog key={saveTarget.id} message={saveTarget} task={task} assistant={assistant} onOpenMaterials={onOpenMaterials} onClose={() => setSaveTarget(null)} />}</FileDropZone>
+  <ReasonDialog key={String(reopenForSend)} open={reopenForSend} onOpenChange={open => {
+    setReopenForSend(open)
+    if (!open) { reopenDecision.current?.(false); reopenDecision.current = null }
+  }} title={t('chat.reopenTitle')} description={t('chat.reopenDescription')} confirmLabel={t('task.header.reopenConfirm')} onConfirm={confirmReopen} />
   <ConfirmDialog open={!!askTarget} onOpenChange={(open) => { if (!open) setAskTarget(null) }} title={t('chat.replaceDraftTitle')}
     description={t('chat.replaceDraftDescription')} confirmLabel={t('chat.replaceDraftConfirm')} destructive={false}
     onConfirm={() => { if (askTarget && !askAgainDisabled) { confirmedAsk.current = true; prefill(askTarget) } }}

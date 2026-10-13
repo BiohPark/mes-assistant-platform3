@@ -23,9 +23,11 @@ export function queueFirstRequest(threadId: string, body: { content: string; att
   save(attempt)
 }
 
-export function useChat(threadId?: string) {
+export function useChat(threadId?: string, onAutoStarted?: () => void) {
   const t = useT()
   const query = useQueryClient()
+  const autoStarted = useRef(onAutoStarted)
+  autoStarted.current = onAutoStarted
   const [run, setRun] = useState<ChatRun | null>(null)
   /** 전송 시도가 진행 중(started 이전 대기 포함)인지. run은 started 이후에만 채워진다. */
   const [waitingSince, setWaitingSince] = useState<number | undefined>()
@@ -46,6 +48,7 @@ export function useChat(threadId?: string) {
           try {
             await streamRequest(attempt.path, attempt.body, (event, data) => {
               if (event === 'started') {
+                if (data.autoStarted === true && !attempt.requestId) autoStarted.current?.()
                 attempt.requestId = String(data.requestId)
                 save(attempt)
                 setRun({ requestId: attempt.requestId, replyId: String(data.replyMessageId), text: String(data.resumedText ?? ''), reasoning: String(data.resumedReasoning ?? ''),

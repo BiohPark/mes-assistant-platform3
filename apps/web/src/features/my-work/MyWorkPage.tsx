@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch'
 import { useT } from '@/i18n'
 import { listAssistants } from '@/lib/catalog'
 import { useDates } from '@/lib/dates'
+import { StalledBadge } from '@/features/task/StalledBadge'
 import { sameParams } from '@/features/home/filters'
 
 function completedParams(params: URLSearchParams, includeCompleted = params.get('done') === '1') {
@@ -72,6 +73,7 @@ export function MyWorkPage() {
                   <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground">{task.code}</span>
                     <TaskStatusBadge status={task.status} />
+                    <StalledBadge task={task} />
                     <span className="min-w-0 basis-full truncate text-sm font-medium sm:basis-auto sm:flex-1" title={task.title}>{task.title}</span>
                   </div>
                   <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
