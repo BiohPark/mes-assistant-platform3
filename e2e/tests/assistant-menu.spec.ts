@@ -97,3 +97,16 @@ test('menu contains no AI call: example prefill, search focus and SR navigation'
   await expect(page).toHaveURL(/\/sr$/)
   expect(requests).toEqual([])
 })
+
+test('search from kanban switches to cards and focuses the rendered search input', async ({ page }) => {
+  await signUp(page)
+  await page.goto('/?view=kanban&tag=keep')
+  await expect(page.getByRole('tab', { name: '전체 대화 칸반' })).toHaveAttribute('aria-selected', 'true')
+  const dialog = await open(page)
+  await dialog.getByRole('button', { name: '에이전트 검색', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '시스템 assistant' })).toHaveCount(0)
+  await expect(page.getByRole('tab', { name: '에이전트 카드' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('textbox', { name: '이름 · 요약 · 업무 분류 검색', exact: true })).toBeFocused()
+  expect(new URL(page.url()).searchParams.get('tag')).toBe('keep')
+  expect(new URL(page.url()).searchParams.has('view')).toBe(false)
+})
