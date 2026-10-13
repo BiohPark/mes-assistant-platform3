@@ -88,6 +88,12 @@ export class MockProvider implements ChatProvider {
 
     try {
       await sleep(FIRST_TOKEN_DELAY_MS, req.signal)
+      if (!meta.systemAssistant && /\[reasoning\]/i.test(userText)) {
+        for (const thought of ['PRIVATE_REASONING: 요청을 검토합니다. ', '자료를 비교합니다. ', '답변을 준비합니다.']) {
+          yield { type: 'reasoning', text: thought }
+          await sleep(1000, req.signal)
+        }
+      }
       for (const tok of tokenize(text)) {
         yield { type: 'delta', text: tok }
         await sleep(CHUNK_DELAY_MS, req.signal)

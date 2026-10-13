@@ -293,6 +293,8 @@ export interface Message {
   threadId: ID
   role: MessageRole
   content: string
+  /** 표시·보존 전용. 다음 요청·문맥 크기·요약에는 포함하지 않는다. */
+  reasoning?: string | null
   authorId?: ID
   createdAt: ISODate
   attachmentIds: ID[]

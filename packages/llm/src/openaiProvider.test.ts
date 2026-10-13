@@ -104,3 +104,11 @@ describe('OpenAICompatibleProvider limits', () => {
     expect(chunks).toEqual([{ type: 'delta', text: '안녕' }, { type: 'tool_call', call: { id: 'c1', name: 'f', arguments: '{}' } }, { type: 'done' }])
   })
 })
+
+it('streams explicit reasoning and split think tags while skipping sources and malformed frames', async () => {
+  const frames = [{ sources: [] }, { choices: [null] }, { choices: [{ delta: { reasoning_content: '첫 ' } }] }, { choices: [{ delta: { reasoning: '생각' } }] },
+    ...['<thi', 'nk>검토</th', 'ink>최종 답'].map(content => ({ choices: [{ delta: { content } }] }))]
+  vi.stubGlobal('fetch', vi.fn(async () => sseResponse(frames.map(frame => `data: ${JSON.stringify(frame)}\n\n`))))
+  const chunks = await collect(provider.stream({ model: 'm', messages: [] }))
+  expect(chunks).toEqual([{ type: 'reasoning', text: '첫 ' }, { type: 'reasoning', text: '생각' }, { type: 'reasoning', text: '검토' }, { type: 'delta', text: '최종 답' }, { type: 'done' }])
+})

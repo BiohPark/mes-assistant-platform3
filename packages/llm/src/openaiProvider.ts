@@ -1,6 +1,6 @@
 import type { ChatChunk, ChatProvider, ChatRequest } from './provider.js'
 import { LimitedFetchError, limitedFetch, toLimitedFetchError } from './limitedFetch.js'
-import { extractDelta, parseSseLines, type ToolCallFragment } from './sse.js'
+import { extractDelta, parseSseLines, ThinkSplitter, type ToolCallFragment } from './sse.js'
 import type { LlmSettings } from '@mes/domain'
 
 /** 모델 목록·ping 상한 — 목록은 모델당 메타데이터가 붙어 수 MB가 될 수 있다 */
@@ -94,6 +94,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
     const decoder = new TextDecoder()
     const encoder = new TextEncoder()
     let buffer = ''
+    const think = new ThinkSplitter()
     const toolAcc = new Map<number, ToolCallFragment>()
     try {
       while (true) {
@@ -115,8 +116,9 @@ export class OpenAICompatibleProvider implements ChatProvider {
           } catch {
             continue
           }
-          const { text, toolCalls } = extractDelta(parsed)
-          if (text) yield { type: 'delta', text }
+          const { text, reasoning, toolCalls } = extractDelta(parsed)
+          if (reasoning) yield { type: 'reasoning', text: reasoning }
+          for (const chunk of think.push(text)) yield chunk
           for (const tc of toolCalls) {
             const prev = toolAcc.get(tc.index)
             toolAcc.set(tc.index, {
@@ -133,6 +135,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
           return
         }
       }
+      for (const chunk of think.finish()) yield chunk
       for (const tc of toolAcc.values()) {
         if (tc.name) yield { type: 'tool_call', call: { id: tc.id ?? `call_${tc.index}`, name: tc.name, arguments: tc.arguments } }
       }
