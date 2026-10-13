@@ -209,3 +209,33 @@ test('두 SO 세션: 이전 설정 화면에서 첨부 개수만 저장해도 �
     } finally { await otherContext.close() }
   }
 })
+
+
+test('SO 도구 전달은 별도 저장하고 다른 설정 PATCH에는 포함하지 않는다', async ({ page, request }) => {
+  await owner(page)
+  const original = await (await page.request.get('/api/settings')).json()
+  try {
+    expect((await page.request.patch('/api/settings', { data: { owuiTools: 'auto' } })).status()).toBe(200)
+    await page.goto('/settings')
+    await expect(page.getByRole('form', { name: 'OpenWebUI 도구 전달' }).getByRole('heading', { name: 'OpenWebUI 도구 전달', level: 2 })).toBeVisible()
+    await expect(page.getByRole('button', { name: '설정 저장' })).toHaveCount(1)
+    await expect(page.getByRole('radio', { name: '자동 (기본)' })).toBeChecked()
+    await expect(page.getByRole('button', { name: '도구 전달 저장' })).toBeDisabled()
+    await page.getByRole('radio', { name: '끔' }).check()
+    const saving = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH')
+    await page.getByRole('button', { name: '도구 전달 저장' }).click()
+    const saved = await saving
+    expect(saved.status()).toBe(200)
+    expect(saved.request().postDataJSON()).toEqual({ owuiTools: 'off' })
+    await expect(page.getByRole('button', { name: '도구 전달 저장' })).toBeDisabled()
+    const other = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH')
+    await page.getByRole('button', { name: '설정 저장' }).click()
+    expect((await other).request().postDataJSON()).not.toHaveProperty('owuiTools')
+    const loginId = `e2e-tools-setting-${Date.now().toString(36)}`
+    expect((await request.post('/api/auth/signup', { data: { loginId, password } })).ok()).toBe(true)
+    expect((await request.patch('/api/settings', { data: { owuiTools: 'auto' } })).status()).toBe(403)
+    expect((await page.request.patch('/api/settings', { data: { owuiTools: 'on' } })).status()).toBe(400)
+  } finally {
+    expect((await page.request.patch('/api/settings', { data: { owuiTools: original.owuiTools ?? 'auto' } })).status()).toBe(200)
+  }
+})
