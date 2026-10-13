@@ -546,7 +546,12 @@ export const ko = {
     home: '홈으로',
   },
   pill: {
+    menu: { title: '할 수 있는 것', search: '에이전트 검색', exampleStart: '대화 시작 예시', exampleTag: '태그 예시', related: '같은 태그 대화 패널', materials: '자료 탭 열기', mySr: '내 SR 요청', manageAgents: '에이전트 관리', settings: '시스템 설정', users: '사용자 관리', diagnostics: '진단', exampleCreate: '에이전트 등록 예시', unavailable: '현재 페이지에는 이 항목이 없습니다.' },
     open: 'AI 도우미 열기', close: 'AI 도우미 닫기', characterAlt: 'AI 도우미 캐릭터', moveHint: '끌거나 화살표 키로 옮기고, Home 키로 원위치',
+  },
+  tutorial: {
+    title: '페이지 둘러보기', ask: '둘러볼까요?', accept: '둘러보기', skip: '건너뛰기', finish: '마치기', replay: '튜토리얼 다시 보기', step: '현재 페이지 · 1/1',
+    pages: { hub: '허브에서 에이전트를 검색할 수 있습니다. 도우미 메뉴의 예시 질문은 입력창에만 채워집니다.', conversation: '같은 태그 대화 패널과 자료 탭에서 연결된 대화와 파일을 볼 수 있습니다. 메뉴에서 튜토리얼을 다시 볼 수 있습니다.', sr: '내 SR 요청에서 본인의 요청 목록과 접수 대화를 볼 수 있습니다.', admin: '시스템 운영자는 메뉴에서 기존 관리 도구로 이동하거나 에이전트 등록 예시를 입력창에 채울 수 있습니다.', other: 'AI 도우미는 알약으로 열고 닫을 수 있습니다. 내 정보에서 튜토리얼을 다시 볼 수 있습니다.' },
   },
   nav: {
     requests: '요청', work: '업무', admin: '관리',

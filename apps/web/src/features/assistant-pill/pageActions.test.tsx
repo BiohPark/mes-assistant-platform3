@@ -1,0 +1,27 @@
+import { render, screen } from '@testing-library/react'
+import { expect, it } from 'vitest'
+import { createT } from '@/i18n'
+import { focusPageTarget, pageTarget } from './pageActions'
+
+it.each(['ko', 'en'] as const)('focuses existing %s search and opens the same-tag panel without toggling it closed', locale => {
+  const t = createT(locale)
+  render(<><input aria-label={t('hub.searchAssistants')} /><details><summary>{t('task.related.linked', { count: 2 })}</summary><p>linked conversations</p></details></>)
+  focusPageTarget('search', t)
+  expect(screen.getByRole('textbox')).toHaveFocus()
+  focusPageTarget('related', t)
+  const summary = pageTarget('related', t)!
+  expect(summary.parentElement).toHaveAttribute('open')
+  expect(summary).toHaveFocus()
+  focusPageTarget('related', t)
+  expect(summary.parentElement).toHaveAttribute('open')
+})
+
+it('opens and focuses the visible materials tab at either layout breakpoint', () => {
+  const t = createT('ko')
+  render(<><div role="tablist" style={{ display: 'none' }}><button role="tab">{t('task.body.materials')}</button></div><div role="tablist"><button role="tab" onClick={event => event.currentTarget.setAttribute('aria-selected', 'true')}>{t('task.body.materials')}</button></div></>)
+  focusPageTarget('materials', t)
+  const tabs = screen.getAllByRole('tab', { hidden: true })
+  expect(tabs[0]).not.toHaveAttribute('aria-selected', 'true')
+  expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
+  expect(tabs[1]).toHaveFocus()
+})

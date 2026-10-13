@@ -548,7 +548,12 @@ export const en = {
     home: 'Go home',
   },
   pill: {
+    menu: { title: 'What you can do', search: 'Search agents', exampleStart: 'Conversation example', exampleTag: 'Tag example', related: 'Conversations with the same tags', materials: 'Open materials tab', mySr: 'My SR requests', manageAgents: 'Manage agents', settings: 'System settings', users: 'Manage users', diagnostics: 'Diagnostics', exampleCreate: 'Agent registration example', unavailable: 'This item is not available on the current page.' },
     open: 'Open AI assistant', close: 'Close AI assistant', characterAlt: 'AI assistant character', moveHint: 'Drag or use the arrow keys to move; Home resets the position',
+  },
+  tutorial: {
+    title: 'Page tour', ask: 'Would you like a tour?', accept: 'Take a tour', skip: 'Skip', finish: 'Finish', replay: 'Replay tutorial', step: 'Current page · 1/1',
+    pages: { hub: 'Search for agents in the hub. Example questions in the assistant menu only fill the input.', conversation: 'View linked conversations and files in the same-tag conversation panel and materials tab. Replay the tutorial from the menu.', sr: 'View your request list and intake conversations in My SR requests.', admin: 'System owners can open existing management tools or fill the input with an agent registration example from the menu.', other: 'Open and close the AI assistant with the pill. Replay the tutorial from My info.' },
   },
   nav: {
     requests: 'Requests', work: 'Work', admin: 'Admin',
