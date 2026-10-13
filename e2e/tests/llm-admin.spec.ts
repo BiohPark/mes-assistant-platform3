@@ -2,10 +2,10 @@ import { expect, test, type Page } from '@playwright/test'
 import { createPool } from '../../apps/api/src/db/connection.js'
 
 const password = 'e2e-password-1234'
+// 로그인 먼저 — 회원가입 409도 로그인 시도 제한(IP당 10회/10분)에 실패로 집계되어, 전체 E2E에서 뒤쪽 spec의 가입이 막힌다
 async function owner(page: Page) {
-  const signup = await page.request.post('/api/auth/signup', { data: { loginId: 'dev-owner', password } })
-  if (signup.status() === 409) await page.request.post('/api/auth/login', { data: { loginId: 'dev-owner', password } }).then((response) => expect(response.ok()).toBe(true))
-  else expect(signup.ok()).toBe(true)
+  const login = await page.request.post('/api/auth/login', { data: { loginId: 'dev-owner', password } })
+  if (!login.ok()) expect((await page.request.post('/api/auth/signup', { data: { loginId: 'dev-owner', password } })).ok()).toBe(true)
   expect((await (await page.request.get('/api/me')).json()).roles).toContain('system_owner')
 }
 
