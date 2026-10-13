@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common'
 import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
-import { draftFromConversation, isSrClosed, srReasonRequired, srStage, type SrManualStatus, type SrStatus } from '@mes/domain'
+import { draftFromConversation, isSrClosed, srElapsedDays, srReasonRequired, srStage, type SrManualStatus, type SrStatus } from '@mes/domain'
 import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileObject, message, messageAttachment, serviceRequest, sharedResult, sharedResultFile, tag, task, thread } from '../db/schema.js'
+import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileObject, message, messageAttachment, serviceRequest, sharedResult, sharedResultFile, tag, task, taskAssignee, thread } from '../db/schema.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
 import { EventsService } from '../events/events.service.js'
 import { NotificationsService } from '../notifications/notifications.service.js'
@@ -24,7 +24,7 @@ const editable = (status: string) => status === 'draft' || srStage(status as SrS
 export class SrService {
   private readonly notifications: NotificationsService
   constructor(@Inject(DB) private readonly db: Db, @Inject(DbTasksService) private readonly tasks: DbTasksService,
-    @Inject(EventsService) events: EventsService, @Optional() @Inject(NotificationsService) notifications?: NotificationsService,
+    @Inject(EventsService) private readonly events: EventsService, @Optional() @Inject(NotificationsService) notifications?: NotificationsService,
     @Optional() @Inject(RequestsService) private readonly requests?: RequestsService,
     @Optional() @Inject(CONFIG) private readonly config?: AppConfig) {
     this.notifications = notifications ?? new NotificationsService(db, events)
@@ -95,13 +95,15 @@ export class SrService {
       this.db.select({ id: task.id, code: task.code, title: task.title, status: task.status, threadId: thread.id }).from(task)
         .leftJoin(thread, eq(thread.taskId, task.id)).where(and(eq(task.srId, row.id), isNull(task.deletedAt))),
     ])
+    const assignees = includeInternal && linked.length ? await this.db.select().from(taskAssignee).where(inArray(taskAssignee.taskId, linked.map(item => item.id))) : []
     const names = await this.db.select({ id: appUser.id, name: appUser.name }).from(appUser).where(inArray(appUser.id, [row.requesterId, ...results.map(result => result.byUser)]))
     const files = results.length ? await this.db.select().from(sharedResultFile).where(inArray(sharedResultFile.resultId, results.map((item) => item.id))) : []
     const [firstMessage] = srThread ? await this.db.select({ content: message.content }).from(message)
       .where(and(eq(message.threadId, srThread.id), eq(message.role, 'user'))).orderBy(message.seq).limit(1) : []
     return { ...row, requesterName: names.find(user => user.id === row.requesterId)?.name, firstMessage: firstMessage?.content.slice(0, 40) ?? '', code: row.code ?? '', threadId: srThread?.id ?? '', attachmentIds: [...new Set(attachments.map((item) => item.id))], candidateAttachmentIds: candidates.map((item) => item.id),
       results: results.map((item) => ({ id: item.id, ...(includeInternal && item.taskId && { taskId: item.taskId }), text: item.text, fileIds: files.filter((file) => file.resultId === item.id).map((file) => file.fileId), by: item.byUser, byName: names.find(user => user.id === item.byUser)?.name, at: item.at.toISOString() })),
-      conversations: includeInternal ? linked : [], submittedAt: row.submittedAt?.toISOString(), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }
+      taskCount: new Set(linked.map(item => item.id)).size, elapsedDays: srElapsedDays(row.submittedAt),
+      conversations: includeInternal ? linked.map(item => ({ ...item, assigneeIds: assignees.filter(assigned => assigned.taskId === item.id).map(assigned => assigned.userId) })) : [], submittedAt: row.submittedAt?.toISOString(), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }
   }
   async create(actor: string, key?: string) {
     await this.user(actor)
@@ -175,7 +177,7 @@ export class SrService {
     const title = await this.requests?.suggestSrTitle(actor, owner.id).catch(() => undefined)
     return { ...draft, ...(title && { title }) }
   }
-  async submit(actor: string, srId: string, input: { title: string; titleSource?: 'ai' | 'manual'; body: string; attachmentIds?: string[] }) {
+  async submit(actor: string, srId: string, input: { title: string; titleSource?: 'ai' | 'manual'; body: string; attachmentIds?: string[]; updatedAt?: string }) {
     if (!input.title.trim()) throw new BadRequestException('제목을 입력하세요')
     const sr = await this.view(actor, srId)
     const user = await this.user(actor)
@@ -192,6 +194,7 @@ export class SrService {
       await tx.select().from(dbLock).where(eq(dbLock.lockKey, lockKey)).for('update')
       const [locked] = await tx.select().from(serviceRequest).where(eq(serviceRequest.id, srId)).for('update')
       if (locked?.status !== 'draft') throw new ConflictException('이미 접수되었습니다')
+      if (input.updatedAt && locked.updatedAt.toISOString() !== input.updatedAt) throw new ConflictException('다른 변경이 있습니다. 최신 내용을 확인한 뒤 다시 저장하세요')
       const [max] = await tx.select({ value: sql<number>`coalesce(max(cast(substring(${serviceRequest.code}, 9) as unsigned)), 0)` }).from(serviceRequest).where(sql`${serviceRequest.code} like ${`SR-${year}-%`}`)
       const code = `SR-${year}-${String(Number(max?.value ?? 0) + 1).padStart(4, '0')}`
       await tx.update(serviceRequest).set({ code, title: input.title.trim(), titleSource: input.titleSource ?? 'manual', body: input.body, status: 'submitted', submittedAt: new Date(), updatedAt: new Date() }).where(eq(serviceRequest.id, srId))
@@ -199,6 +202,7 @@ export class SrService {
       await this.saveContentAttachments(tx, srId, input.body, attachmentIds)
       await tx.insert(tag).values({ key: code.toLowerCase(), label: code, kind: 'sr' }).onDuplicateKeyUpdate({ set: { key: code.toLowerCase() } })
     })
+    this.events.publish('sr.updated', { srId })
     const [setting] = await this.db.select().from(appSetting).where(eq(appSetting.key, 'srIntakeAssistantId'))
     if (typeof setting?.value === 'string') {
       const [intake] = await this.db.select().from(assistant).where(eq(assistant.id, setting.value))
@@ -211,9 +215,10 @@ export class SrService {
     const row = await this.view(actor, srId), user = await this.user(actor)
     if (row.requesterId !== actor && !user.isSystemOwner) throw new ForbiddenException('요청자 또는 SO만 수정할 수 있습니다')
     await this.db.update(serviceRequest).set({ title: title.trim(), titleSource: 'manual', updatedAt: new Date() }).where(eq(serviceRequest.id, srId))
+    this.events.publish('sr.updated', { srId })
     return this.get(actor, srId)
   }
-  async content(actor: string, srId: string, input: { title: string; body: string; attachmentIds: string[]; titleSource?: 'ai' | 'manual' }) {
+  async content(actor: string, srId: string, input: { title: string; body: string; attachmentIds: string[]; titleSource?: 'ai' | 'manual'; updatedAt?: string }) {
     if (!input.title.trim()) throw new BadRequestException('제목을 입력하세요')
     const row = await this.view(actor, srId), user = await this.user(actor)
     if (row.requesterId !== actor && !user.isSystemOwner) throw new ForbiddenException('요청자 또는 SO만 수정할 수 있습니다')
@@ -226,11 +231,13 @@ export class SrService {
     await this.db.transaction(async (tx) => {
       const [locked] = await tx.select().from(serviceRequest).where(eq(serviceRequest.id, srId)).for('update')
       if (!locked || !editable(locked.status)) throw new ConflictException('처리 시작 전 내용만 수정할 수 있습니다')
+      if (input.updatedAt && locked.updatedAt.toISOString() !== input.updatedAt) throw new ConflictException('다른 변경이 있습니다. 최신 내용을 확인한 뒤 다시 저장하세요')
       await tx.update(serviceRequest).set({ title: input.title.trim(), body: input.body,
         titleSource: locked.titleSource === 'manual' || input.title.trim() !== locked.title ? 'manual' : input.titleSource ?? locked.titleSource,
         updatedAt: new Date() }).where(eq(serviceRequest.id, srId))
       await this.saveContentAttachments(tx, srId, input.body, attachmentIds)
     })
+    this.events.publish('sr.updated', { srId })
     return this.get(actor, srId)
   }
   /** 담당자의 수동 변경: 완료·반려(사유 필수), 다시 열기(in_progress — 완료·반려에서만). 접수됨·결과 공유는 자동 전환 전용. */
@@ -258,7 +265,10 @@ export class SrService {
       await tx.insert(activityLog).values({ id: id(), type: 'sr.status_changed', userId: actor, srId, payload: { from: row.status, to: status, ...(reason && { reason }) } })
       return row
     })
-    if (changed) await this.notifications.send([changed.requesterId], actor, `SR 상태가 변경되었습니다: ${SR_STATUS_LABEL[status]}`, `${changed.code} ${changed.title}${reason ? ` — 사유: ${reason}` : ''}`, '/sr')
+    if (changed) {
+      this.events.publish('sr.updated', { srId })
+      await this.notifications.send([changed.requesterId], actor, `SR 상태가 변경되었습니다: ${SR_STATUS_LABEL[status]}`, `${changed.code} ${changed.title}${reason ? ` — 사유: ${reason}` : ''}`, '/sr')
+    }
     return changed
   }
   /** 현재 제목·본문을 다듬은 제안만 돌려준다. 저장하지 않으며 적용·제출은 사람이 한다. */
@@ -306,7 +316,8 @@ export class SrService {
     if (candidates.length && !input.forceNew) return { candidates }
     const created = await this.tasks.create(actor, { assistantId: input.assistantId, tags: [row.code], title: row.title }, undefined, srId)
     // 자동 전환: 접수됨(submitted·옛 reviewing) → 처리 중. 잠근 행 기준 — 생성 중 완료·반려됐으면 다시 열지 않는다.
-    await this.transition(actor, srId, 'in_progress', '', (from) => srStage(from) === 'submitted')
+    const changed = await this.transition(actor, srId, 'in_progress', '', (from) => srStage(from) === 'submitted')
+    if (!changed) this.events.publish('sr.updated', { srId })
     return created.task
   }
   async share(actor: string, srId: string, input: { taskId?: string; text?: string; fileIds?: string[] }) {
@@ -333,6 +344,7 @@ export class SrService {
       await tx.update(serviceRequest).set({ status: nextStatus, updatedAt: new Date() }).where(eq(serviceRequest.id, srId))
       if (locked.status !== nextStatus) await tx.insert(activityLog).values({ id: id(), type: 'sr.status_changed', userId: actor, srId, payload: { from: locked.status, to: nextStatus } })
     })
+    this.events.publish('sr.updated', { srId })
     await this.notifications.send([row.requesterId], actor, '요청 결과가 공유되었습니다', `${row.code} ${row.title}`, '/sr')
     return (await this.results(actor, srId)).find((item) => item.id === resultId)!
   }

@@ -1,7 +1,9 @@
+import type { SrUpdatedData } from '@mes/contracts'
 import { randomUUID } from 'node:crypto'
 import { Injectable } from '@nestjs/common'
 
 export type AppEvent =
+  | { event: 'sr.updated'; data: SrUpdatedData }
   | { event: 'task.created'; data: { taskId: string; assistantId: string } }
   | { event: 'task.updated'; data: { taskId: string } }
   | { event: 'message.appended'; data: { threadId: string; taskId: string; messageId: string } }

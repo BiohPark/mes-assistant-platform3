@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createPool } from '../db/connection.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
-import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileObject, notification, serviceRequest, sharedResult, task } from '../db/schema.js'
+import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileObject, notification, serviceRequest, sharedResult, task, taskAssignee } from '../db/schema.js'
 import { loadConfig } from '../config/config.js'
 import { RequestsService } from '../requests/requests.service.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -58,6 +58,68 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     await expect(sr.get('other', mine.id)).rejects.toMatchObject({ status: 403 })
     await expect(assertThreadAccess(db, 'requester', another.threadId)).rejects.toMatchObject({ status: 403 })
     expect(await sr.list('staff')).toHaveLength(2)
+  })
+
+
+  it('list adds taskCount and elapsedDays from submittedAt after updates and reopening', async () => {
+    const draft = await sr.create('requester')
+    await sr.submit('requester', draft.id, { title: '경과일', body: '' })
+    const submittedAt = new Date(Date.now() - 3 * 86_400_000 - 1_000)
+    await db.update(serviceRequest).set({ submittedAt, updatedAt: new Date() }).where(eq(serviceRequest.id, draft.id))
+    expect((await sr.list('owner', 'inbox')).find(row => row.id === draft.id)).toMatchObject({ taskCount: 0, elapsedDays: 3 })
+    const linked = await sr.startTask('owner', draft.id, { assistantId })
+    if (!('id' in linked)) throw new Error('Expected a newly linked task')
+    expect((await sr.list('owner', 'inbox')).find(row => row.id === draft.id)).toMatchObject({ taskCount: 1, elapsedDays: 3, conversations: [expect.objectContaining({ id: linked.id, assigneeIds: ['owner'] })] })
+    await sr.status('owner', draft.id, 'done', '완료')
+    await sr.status('owner', draft.id, 'in_progress')
+    expect((await sr.list('requester')).find(row => row.id === draft.id)).toMatchObject({ elapsedDays: 3, conversations: [] })
+  })
+
+  it.each(['live', 'replay'] as const)('BO receives only own sr.updated on %s; linked assignees and SO also receive it', async (delivery) => {
+    const draft = await sr.create('requester'), other = await sr.create('other')
+    const events = new EventsService(), controller = new EventsController(events, db)
+    const linked = await new DbTasksService(db).create('staff', { assistantId }, undefined, draft.id)
+    await db.insert(taskAssignee).values({ taskId: linked.task.id, userId: 'other' })
+    const cursor = events.cursor()
+    const streams: Array<ReturnType<typeof makeStream>> = []
+    function makeStream() {
+      const stream = new EventEmitter() as EventEmitter & { status: ReturnType<typeof vi.fn>; set: ReturnType<typeof vi.fn>; flushHeaders: ReturnType<typeof vi.fn>; write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> }
+      stream.status = vi.fn(() => stream); stream.set = vi.fn(() => stream); stream.flushHeaders = vi.fn(); stream.write = vi.fn(() => true); stream.end = vi.fn()
+      return stream
+    }
+    const actors = ['requester', 'other', 'staff', 'owner']
+    async function openAll() {
+      for (const actor of actors) {
+        const stream = makeStream(); streams.push(stream)
+        await controller.stream({ user: { id: actor } } as never, stream as unknown as Response, cursor)
+      }
+    }
+    try {
+      if (delivery === 'live') await openAll()
+      events.publish('sr.updated', { srId: draft.id })
+      events.publish('sr.updated', { srId: other.id })
+      // 후속 이벤트까지 기다려 비공개 이벤트의 권한 판정 완료도 확인한다.
+      events.publish('task.updated', { taskId: 'barrier' })
+      if (delivery === 'replay') await openAll()
+      await vi.waitFor(() => streams.forEach(stream => expect(stream.write.mock.calls.flat().join('')).toContain('barrier')))
+      const ids = streams.map(stream => stream.write.mock.calls.flat().join('').split('\n').filter(line => line.startsWith('data: {"srId"')).map(line => JSON.parse(line.slice(6)).srId))
+      expect(ids).toEqual([[draft.id], [other.id], [draft.id], [draft.id, other.id]])
+    } finally { streams.forEach(stream => stream.emit('close')) }
+  })
+
+  it('rejects stale content under the row lock and publishes only srId after successful writes', async () => {
+    const events = new EventsService()
+    const service = new SrService(db, new DbTasksService(db), events)
+    const publish = vi.spyOn(events, 'publish')
+    const draft = await service.create('requester')
+    const submitted = await service.submit('requester', draft.id, { title: '동시 수정', body: '' })
+    expect(publish).toHaveBeenCalledWith('sr.updated', { srId: draft.id })
+    publish.mockClear()
+    await expect(service.content('requester', draft.id, { title: '오래된 수정', body: '', attachmentIds: [], updatedAt: draft.updatedAt })).rejects.toMatchObject({ status: 409 })
+    expect((await service.get('requester', draft.id)).title).toBe('동시 수정')
+    expect(publish).not.toHaveBeenCalled()
+    await service.content('requester', draft.id, { title: '최신 수정', body: '', attachmentIds: [], updatedAt: submitted.updatedAt })
+    expect(publish).toHaveBeenCalledExactlyOnceWith('sr.updated', { srId: draft.id })
   })
 
   const draftService = () => {
