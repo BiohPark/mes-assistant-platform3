@@ -163,6 +163,14 @@ export const ko = {
       resultOk: '성공 · {detail} · {ms} ms', resultFail: '실패 · {error}', testFailed: '연결 시험을 실행하지 못했습니다 ({status})',
       envGuide: '주소·모드·키는 서버 .env(LLM_MODE · LLM_PRESET · LLM_BASE_URL · LLM_API_KEY · LLM_DEFAULT_MODEL)에서 바꾸고 서비스를 재시작합니다. 이 화면에서는 표시와 연결 시험만 합니다.',
       open: '연결 진단 열기', badge: '{mode} · 연결 진단 열기', testChat: '시험 대화',
+      probe: {
+        title: 'OpenWebUI 진단', hint: '짧은 시험 질문을 두 번 보냅니다 — ① 지금 방식 ② tool_ids · features · function_calling legacy. 결과에는 질문·답변·파일·키·주소가 담기지 않고 저장되지 않습니다.',
+        modelLabel: '진단 모델', run: 'OpenWebUI 진단', running: '진단 중… (최대 3분)', liveOnly: 'Live 모드에서만 실행할 수 있습니다.',
+        failed: '진단을 실행하지 못했습니다: {error}', copy: '진단 결과 복사', version: 'OpenWebUI 버전', unknown: '확인 불가', model: '모델',
+        meta: '모델 메타', metaFound: '있음', metaMissing: '없음', none: '없음', on: '켬', off: '끔', knowledge: '지식', notSet: '미지정',
+        current: '① 지금 방식', legacy: '② legacy (tool_ids · features · function_calling legacy)', framesCurrent: '① 프레임 순서', framesLegacy: '② 프레임 순서',
+        noResponse: '응답 없음', firstByte: '첫 바이트 {ms} ms', firstContent: '첫 내용 {ms} ms', total: '총 {ms} ms', elapsed: '총 소요',
+      },
     },
     test: {
       model: '모델', defaultModel: '기본 모델', notice: '업무 맥락 없이 모델에 직접 보냅니다. 상위 서비스가 자체 기록할 수 있습니다.',

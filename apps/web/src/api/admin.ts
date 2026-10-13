@@ -1,4 +1,4 @@
-import { AssistantSchema, CodeSchema, ProfileSchema, type Assistant, type ClassificationInput, type ProfilePatch } from '@mes/contracts'
+import { AssistantSchema, CodeSchema, OwuiProbeResultSchema, ProfileSchema, type Assistant, type ClassificationInput, type ProfilePatch } from '@mes/contracts'
 
 export async function adminRequest(path: string, method: string, body?: unknown) {
   const response = await fetch(`/api/${path}`, { method, credentials: 'same-origin',
@@ -44,3 +44,5 @@ export const setMyAccountProfile = async (input: ProfilePatch) => ProfileSchema.
 export const setMyName = (name: string) => setMyProfile({ name })
 export const setUserFlag = (id: string, field: 'system-owner' | 'business-owner' | 'active', enabled: boolean) => adminRequest(`users/${encodeURIComponent(id)}/${field}`, 'PUT', { enabled })
 export const temporaryPassword = async (id: string) => await adminRequest(`users/${encodeURIComponent(id)}/temporary-password`, 'POST') as { temporaryPassword: string }
+/** SO 전용 OpenWebUI 진단(S10-5) — 스키마에 없는 필드는 버린다 */
+export const probeOpenWebUi = async (model: string) => OwuiProbeResultSchema.parse(await adminRequest('admin/diagnostics/openwebui', 'POST', { model }))
