@@ -1,5 +1,5 @@
 import { useT } from '@/i18n'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
 import { ArrowRight, Bot, Check, Sparkles, Trash2, Wrench, X } from 'lucide-react'
@@ -9,24 +9,30 @@ import { Markdown } from '@/components/Markdown'
 import { Composer, type ComposerHandle } from '@/features/chat/Composer'
 import { useActor } from '@/app/hooks'
 import { AssistantMenu } from '@/features/assistant-pill/AssistantMenu'
+import { useSearchAgents } from '@/features/assistant-pill/useSearchAgents'
 import { getSystemModel } from '@/api/systemAssistant'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/app/uiStore'
 import { useSystemAssistantChat, type SystemAssistantChat } from './useSystemAssistantChat'
 
-interface BodyProps { chat: SystemAssistantChat; onClose: () => void; performPageAction?: (action: () => void) => void }
+interface BodyProps { chat: SystemAssistantChat; onClose: () => void; searchAgents: () => void; performPageAction?: (action: () => void) => void }
 
 /** 도우미 창 본문 — 데스크톱 팝오버와 좁은 화면 시트가 같이 쓴다. 도구 호출은 제안으로만 표시하고 적용 버튼을 누른 경우에만 기존 API를 호출한다 */
-export function SystemAssistantBody({ chat, onClose, performPageAction }: BodyProps) {
+export function SystemAssistantBody({ chat, onClose, searchAgents, performPageAction }: BodyProps) {
   const t = useT()
   const { userId } = useActor()
   const composer = useRef<ComposerHandle>(null)
   const navigate = useNavigate()
   const model = useQuery({ queryKey: ['system-assistant', 'model'], queryFn: getSystemModel })
   const scrollRef = useRef<HTMLDivElement>(null)
+  const tutorialActive = useRef(false)
+  const onTutorialChange = useCallback((active: boolean) => {
+    tutorialActive.current = active
+    if (active && scrollRef.current) scrollRef.current.scrollTop = 0
+  }, [])
   const { messages, waiting, applying } = chat
 
-  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight }, [messages])
+  useEffect(() => { if (!tutorialActive.current && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight }, [messages])
 
   return <>
     <div className="border-b px-4 py-3">
@@ -37,7 +43,7 @@ export function SystemAssistantBody({ chat, onClose, performPageAction }: BodyPr
       <p className="mt-1 text-xs text-muted-foreground">{t('systemAssistant.intro')}</p>
     </div>
     <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
-      <AssistantMenu userId={userId} prefill={(text) => composer.current?.setText(text)} perform={performPageAction ?? ((action) => { onClose(); requestAnimationFrame(action) })} />
+      <AssistantMenu userId={userId} searchAgents={searchAgents} onTutorialChange={onTutorialChange} prefill={(text) => composer.current?.setText(text)} perform={performPageAction ?? ((action) => { onClose(); requestAnimationFrame(action) })} />
       {messages.map((message) => <div key={message.id} className={cn('flex gap-2', message.role === 'user' && 'flex-row-reverse')}>
         {message.role === 'assistant' && <span className="mt-1 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><Bot className="size-3.5" /></span>}
         <div className={cn('max-w-[88%] space-y-2', message.role === 'user' && 'text-right')}>
@@ -62,13 +68,14 @@ export function SystemAssistantBody({ chat, onClose, performPageAction }: BodyPr
 }
 
 /** 좁은 화면(<1024)용 우측 시트. 모달이라 열린 동안 바깥 포커스가 막히므로 닫힘 뒤 포커스 복귀는 returnFocus로 받는다 */
-export function SystemAssistantSheet({ open, chat, onClose, returnFocus }: BodyProps & { open: boolean; returnFocus: () => void }) {
+export function SystemAssistantSheet({ open, chat, onClose, returnFocus }: Omit<BodyProps, 'searchAgents'> & { open: boolean; returnFocus: () => void }) {
   const t = useT()
   const pageAction = useRef<(() => void) | null>(null)
+  const searchAgents = useSearchAgents()
   return <Sheet open={open} onOpenChange={(next) => { if (!next) onClose() }}>
     <SheetContent aria-label={t('systemAssistant.title')} aria-describedby={undefined} showCloseButton={false} className="w-full gap-0 overflow-hidden p-0 sm:max-w-md"
       onCloseAutoFocus={(event) => { event.preventDefault(); const action = pageAction.current; pageAction.current = null; if (action) action(); else returnFocus() }}>
-      <SystemAssistantBody chat={chat} onClose={onClose} performPageAction={(action) => { pageAction.current = action; onClose() }} />
+      <SystemAssistantBody chat={chat} onClose={onClose} searchAgents={searchAgents} performPageAction={(action) => { pageAction.current = action; onClose() }} />
     </SheetContent>
   </Sheet>
 }

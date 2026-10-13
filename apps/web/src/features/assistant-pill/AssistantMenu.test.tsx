@@ -7,12 +7,17 @@ import { AssistantMenu } from './AssistantMenu'
 import { PAGE_ACTIONS, pageRoute } from './pageActions'
 import { requestTutorial, tutorialKey } from './tutorial'
 import { newId } from '@/lib/ids'
+import { useSearchAgents } from './useSearchAgents'
 
 let userId = ''
 const prefill = vi.fn()
 const perform = vi.fn((action: () => void) => action())
+function Menu() {
+  const searchAgents = useSearchAgents()
+  return <AssistantMenu userId={userId} prefill={prefill} perform={perform} searchAgents={searchAgents} />
+}
 function mount(route = '/', owner = false, strict = false) {
-  const menu = <MeContext value={{ id: userId, name: '사용자', email: null, emailIsDefault: false, role: '', roles: owner ? ['system_owner'] : ['member'], theme: 'system', locale: 'ko' }}><AssistantMenu userId={userId} prefill={prefill} perform={perform} /></MeContext>
+  const menu = <MeContext value={{ id: userId, name: '사용자', email: null, emailIsDefault: false, role: '', roles: owner ? ['system_owner'] : ['member'], theme: 'system', locale: 'ko' }}><Menu /></MeContext>
   return renderWithProviders(strict ? <StrictMode>{menu}</StrictMode> : menu, { route })
 }
 beforeEach(() => { userId = newId(); localStorage.clear(); vi.clearAllMocks() })

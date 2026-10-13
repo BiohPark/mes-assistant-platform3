@@ -8,6 +8,7 @@ import { useIsDesktop, useMediaQuery } from '@/app/useMediaQuery'
 import { useUiStore, type PillPos } from '@/app/uiStore'
 import { SystemAssistantBody, SystemAssistantSheet } from '@/features/system-assistant/SystemAssistantDrawer'
 import { useSystemAssistantChat, type SystemAssistantChat } from '@/features/system-assistant/useSystemAssistantChat'
+import { useSearchAgents } from './useSearchAgents'
 
 const PILL = 48
 const MARGIN = 8
@@ -29,6 +30,7 @@ export function clampPos(pos: PillPos, width = PILL, height = width): PillPos {
 function AssistantWindow({ open, chat, pillRef, pos, onClose }: { open: boolean; chat: SystemAssistantChat; pillRef: RefObject<HTMLButtonElement | null>; pos: PillPos | null; onClose: () => void }) {
   const t = useT()
   const ref = useRef<HTMLDivElement>(null)
+  const searchAgents = useSearchAgents()
   const [place, setPlace] = useState<PillPos>({ x: MARGIN, y: MARGIN })
   useLayoutEffect(() => {
     if (!open) return
@@ -47,7 +49,7 @@ function AssistantWindow({ open, chat, pillRef, pos, onClose }: { open: boolean;
   return <div ref={ref} role="dialog" aria-label={t('systemAssistant.title')} data-testid="assistant-window" style={{ left: place.x, top: place.y, width: WINDOW.width, height: WINDOW.height }}
     className="fixed z-40 flex max-h-[calc(100dvh-16px)] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-2xl border bg-background text-sm shadow-xl"
     onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onClose() } }}>
-    <SystemAssistantBody chat={chat} onClose={onClose} />
+    <SystemAssistantBody chat={chat} onClose={onClose} searchAgents={searchAgents} />
   </div>
 }
 

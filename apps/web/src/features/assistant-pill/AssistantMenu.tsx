@@ -1,4 +1,4 @@
-import { use, useEffect, useState } from 'react'
+import { use, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { MeContext } from '@/app/auth'
 import { Button } from '@/components/ui/button'
@@ -6,15 +6,20 @@ import { useT } from '@/i18n'
 import { focusPageTarget, PAGE_ACTIONS, pageRoute, pageTarget, type PageAction } from './pageActions'
 import { askTutorialOnce, saveTutorialState, takeTutorialReplay, TUTORIAL_REPLAY } from './tutorial'
 
-export function AssistantMenu({ userId, prefill, perform }: { userId: string; prefill: (text: string) => void; perform: (action: () => void) => void }) {
+export function AssistantMenu({ userId, prefill, perform, searchAgents, onTutorialChange }: { userId: string; prefill: (text: string) => void; perform: (action: () => void) => void; searchAgents: () => void; onTutorialChange?: (active: boolean) => void }) {
   const t = useT()
   const me = use(MeContext)
-  const { pathname, search } = useLocation()
+  const { pathname } = useLocation()
   const navigate = useNavigate()
   const route = pageRoute(pathname)
   const [tutorial, setTutorial] = useState<{ userId: string; stage: 'ask' | 'step' } | null>(null)
   const [unavailable, setUnavailable] = useState(false)
+  const tutorialRef = useRef<HTMLElement>(null)
   const stage = tutorial?.userId === userId ? tutorial.stage : null
+  useLayoutEffect(() => {
+    onTutorialChange?.(stage === 'step')
+    if (stage === 'step') tutorialRef.current?.focus({ preventScroll: true })
+  }, [tutorial, stage, onTutorialChange])
   useEffect(() => {
     const replay = () => { if (takeTutorialReplay(userId)) setTutorial({ userId, stage: 'step' }) }
     if (takeTutorialReplay(userId)) setTutorial({ userId, stage: 'step' })
@@ -31,18 +36,12 @@ export function AssistantMenu({ userId, prefill, perform }: { userId: string; pr
     if (action.kind === 'prefill') prefill(t(action.example))
     else if (action.kind === 'tutorial') start()
     else if (action.kind === 'navigate') perform(() => { void navigate(action.to) })
-    else if (action.target !== 'search' && !pageTarget(action.target, t)) setUnavailable(true)
-    else perform(() => {
-      if (action.target === 'search' && !pageTarget('search', t)) {
-        // The hub may be showing the kanban view. Switch through its existing URL contract.
-        const params = new URLSearchParams(search)
-        params.delete('view')
-        void Promise.resolve(navigate({ pathname, search: params.toString() })).then(() => focusPageTarget('search', t))
-      } else focusPageTarget(action.target, t)
-    })
+    else if (action.target === 'search') perform(searchAgents)
+    else if (!pageTarget(action.target, t)) setUnavailable(true)
+    else perform(() => focusPageTarget(action.target, t))
   }
   return <>
-    {stage && <section aria-label={t('tutorial.title')} className="space-y-2 rounded-lg border bg-primary/5 p-3 text-xs">
+    {stage && <section ref={tutorialRef} tabIndex={-1} aria-label={t('tutorial.title')} className="space-y-2 rounded-lg border bg-primary/5 p-3 text-xs">
       <p className="font-semibold">{t(stage === 'ask' ? 'tutorial.ask' : 'tutorial.step')}</p>
       {stage === 'step' && <p>{t(`tutorial.pages.${route}`)}</p>}
       <div className="flex gap-2">{stage === 'ask' ? <Button size="xs" onClick={start}>{t('tutorial.accept')}</Button> : <Button size="xs" onClick={() => setTutorial(null)}>{t('tutorial.finish')}</Button>}<Button size="xs" variant="ghost" onClick={skip}>{t('tutorial.skip')}</Button></div>
