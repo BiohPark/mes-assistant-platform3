@@ -54,6 +54,7 @@ describe('SR HTTP API', () => {
     await request(app.getHttpServer()).patch('/api/service-requests/sr/content').set(auth()).send({ title: '사람 제목', body: '본문', attachmentIds: [] }).expect(200)
     expect(sr.content).toHaveBeenCalledWith('u', 'sr', { title: '사람 제목', body: '본문', attachmentIds: [] })
     await request(app.getHttpServer()).patch('/api/service-requests/sr/status').set(auth()).send({ status: 'invalid' }).expect(400)
+    for (const status of ['submitted', 'reviewing', 'responded']) await request(app.getHttpServer()).patch('/api/service-requests/sr/status').set(auth()).send({ status }).expect(400)
     await request(app.getHttpServer()).patch('/api/service-requests/sr/status').set(auth()).send({ status: 'in_progress' }).expect(200)
     expect(sr.status).toHaveBeenCalledWith('u', 'sr', 'in_progress', undefined)
     await request(app.getHttpServer()).patch('/api/service-requests/sr/status').set(auth()).send({ status: 'rejected', reason: 'x'.repeat(501) }).expect(400)

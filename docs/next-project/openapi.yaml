@@ -678,10 +678,10 @@ paths:
   /service-requests/{srId}/status:
     patch:
       tags: [service-requests]
-      summary: 상태 변경 (담당자·SO) — 요청자에게 한글 라벨 알림. done·rejected는 reason 필수(400), 사유는 activity_log.payload.reason(sr.status_changed)에만 저장 (U9)
+      summary: 상태 변경 (담당자·SO) — 요청자에게 한글 라벨 알림. done·rejected는 reason 필수(400), 사유는 activity_log.payload.reason(sr.status_changed)에만 저장 (U9). 409 = draft(접수 전) 또는 in_progress 다시 열기인데 done·rejected가 아님 (S9-7)
       parameters: [{ $ref: '#/components/parameters/srId' }]
-      requestBody: { content: { application/json: { schema: { type: object, required: [status], properties: { status: { enum: [submitted, reviewing, in_progress, responded, done, rejected] }, reason: { type: string, minLength: 1, maxLength: 500, description: 'done·rejected 필수, 그 외 선택' } } } } } }
-      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }, '400': { $ref: '#/components/responses/Problem' } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [status], properties: { status: { enum: [in_progress, done, rejected], description: '수동 변경은 완료·반려와 다시 열기(in_progress — done·rejected에서만, 아니면 409)뿐. submitted·responded는 접수·결과 공유의 자동 전환, reviewing은 더 이상 설정 불가(기존 행은 접수됨으로 표시)' }, reason: { type: string, minLength: 1, maxLength: 500, description: 'done·rejected 필수, 그 외 선택' } } } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }, '400': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' } }
   /service-requests/{srId}/refine:
     post:
       tags: [service-requests]

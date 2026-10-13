@@ -1,4 +1,5 @@
 import { useT } from '@/i18n'
+import { srStage } from '@mes/domain'
 import { useEffect, useRef, useState } from 'react'
 import { Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
@@ -19,7 +20,8 @@ import { useSrFiles } from './SrAttachments'
  */
 export function SrConvertSheet({ sr, open, onOpenChange, onSaved }: { sr: SrDetail; open: boolean; onOpenChange: (open: boolean) => void; onSaved: () => void }) {
   const t = useT()
-  const mode = sr.status === 'draft' ? 'convert' : sr.status === 'submitted' ? 'edit' : 'view'
+  // 접수됨(옛 reviewing 포함)까지 수정, 처리 중부터 읽기 전용 — 서버 content() 규칙과 같다
+  const mode = sr.status === 'draft' ? 'convert' : srStage(sr.status) === 'submitted' ? 'edit' : 'view'
   const readOnly = mode === 'view'
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')

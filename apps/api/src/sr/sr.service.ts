@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common'
 import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
-import { draftFromConversation } from '@mes/domain'
+import { draftFromConversation, isSrClosed, srReasonRequired, srStage, type SrManualStatus, type SrStatus } from '@mes/domain'
 import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileObject, message, messageAttachment, serviceRequest, sharedResult, sharedResultFile, tag, task, thread } from '../db/schema.js'
@@ -14,10 +14,11 @@ import { FileStorageService } from '../files/fileStorage.service.js'
 import { assertSrAccess } from './access.js'
 
 const id = () => randomUUID()
-type SrStatus = 'submitted' | 'reviewing' | 'in_progress' | 'responded' | 'done' | 'rejected'
 /** 알림 본문용 한글 상태 라벨(화면 사전 status.sr과 같은 뜻). */
-const SR_STATUS_LABEL: Record<SrStatus, string> = { submitted: '접수됨', reviewing: '검토 중', in_progress: '진행 중', responded: '답변 공유', done: '완료', rejected: '반려' }
+const SR_STATUS_LABEL: Record<SrManualStatus, string> = { in_progress: '처리 중', done: '완료', rejected: '반려' }
 const REASON_MAX = 500
+/** 접수 내용 수정 가능: 대화 중·접수됨(옛 reviewing 포함). 처리 중부터 읽기 전용 — 화면 단계와 같은 기준. */
+const editable = (status: string) => status === 'draft' || srStage(status as SrStatus) === 'submitted'
 
 @Injectable()
 export class SrService {
@@ -212,7 +213,7 @@ export class SrService {
     if (!input.title.trim()) throw new BadRequestException('제목을 입력하세요')
     const row = await this.view(actor, srId), user = await this.user(actor)
     if (row.requesterId !== actor && !user.isSystemOwner) throw new ForbiddenException('요청자 또는 SO만 수정할 수 있습니다')
-    if (row.status !== 'draft' && row.status !== 'submitted') throw new ConflictException('검토 전 내용만 수정할 수 있습니다')
+    if (!editable(row.status)) throw new ConflictException('처리 시작 전 내용만 수정할 수 있습니다')
     const attachmentIds = [...new Set(input.attachmentIds)]
     if (attachmentIds.length) {
       const valid = await this.db.select({ id: fileObject.id }).from(fileObject).where(and(inArray(fileObject.id, attachmentIds), eq(fileObject.originSrId, srId), isNull(fileObject.deletedAt)))
@@ -220,7 +221,7 @@ export class SrService {
     }
     await this.db.transaction(async (tx) => {
       const [locked] = await tx.select().from(serviceRequest).where(eq(serviceRequest.id, srId)).for('update')
-      if (locked?.status !== 'draft' && locked?.status !== 'submitted') throw new ConflictException('검토 전 내용만 수정할 수 있습니다')
+      if (!locked || !editable(locked.status)) throw new ConflictException('처리 시작 전 내용만 수정할 수 있습니다')
       await tx.update(serviceRequest).set({ title: input.title.trim(), body: input.body,
         titleSource: locked.titleSource === 'manual' || input.title.trim() !== locked.title ? 'manual' : input.titleSource ?? locked.titleSource,
         updatedAt: new Date() }).where(eq(serviceRequest.id, srId))
@@ -228,23 +229,33 @@ export class SrService {
     })
     return this.get(actor, srId)
   }
-  async status(actor: string, srId: string, status: SrStatus, reason?: string) {
+  /** 담당자의 수동 변경: 완료·반려(사유 필수), 다시 열기(in_progress — 완료·반려에서만). 접수됨·결과 공유는 자동 전환 전용. */
+  async status(actor: string, srId: string, status: SrManualStatus, reason?: string) {
     await this.manager(actor, srId)
-    // 반려·완료는 사유 필수(1–500자). 사유는 activity_log.payload.reason에만 남긴다(DDL 없음).
+    // 사유는 activity_log.payload.reason에만 남긴다(DDL 없음). 필수 여부는 도메인 srReasonRequired 한 곳에서 판정.
     const clean = reason?.trim() ?? ''
-    if ((status === 'done' || status === 'rejected') && !clean) throw new BadRequestException('반려·완료 사유를 입력하세요')
+    if (srReasonRequired(status) && !clean) throw new BadRequestException('반려·완료 사유를 입력하세요')
     if (clean.length > REASON_MAX) throw new BadRequestException(`사유는 ${REASON_MAX}자 이내여야 합니다`)
+    await this.transition(actor, srId, status, clean, (from) => {
+      if (status === 'in_progress' && !isSrClosed(from)) throw new ConflictException('완료·반려된 SR만 다시 열 수 있습니다')
+      return true
+    })
+    return this.get(actor, srId)
+  }
+  /** 상태 전이 공통부(잠금·이력·요청자 알림). 같은 상태면 null. guard는 잠근 행의 현재 상태를 보고 거부(throw)하거나 건너뛸(false → null) 수 있다. */
+  private async transition(actor: string, srId: string, status: SrManualStatus, reason = '', guard?: (from: SrStatus) => boolean) {
     const changed = await this.db.transaction(async (tx) => {
       const [row] = await tx.select().from(serviceRequest).where(eq(serviceRequest.id, srId)).for('update')
       if (!row) throw new NotFoundException('SR을 찾을 수 없습니다')
       if (row.status === 'draft') throw new ConflictException('접수된 SR만 변경할 수 있습니다')
       if (row.status === status) return null
+      if (guard && !guard(row.status as SrStatus)) return null
       await tx.update(serviceRequest).set({ status, updatedAt: new Date() }).where(eq(serviceRequest.id, srId))
-      await tx.insert(activityLog).values({ id: id(), type: 'sr.status_changed', userId: actor, srId, payload: { from: row.status, to: status, ...(clean && { reason: clean }) } })
+      await tx.insert(activityLog).values({ id: id(), type: 'sr.status_changed', userId: actor, srId, payload: { from: row.status, to: status, ...(reason && { reason }) } })
       return row
     })
-    if (changed) await this.notifications.send([changed.requesterId], actor, `SR 상태가 변경되었습니다: ${SR_STATUS_LABEL[status]}`, `${changed.code} ${changed.title}${clean ? ` — 사유: ${clean}` : ''}`, '/sr')
-    return this.get(actor, srId)
+    if (changed) await this.notifications.send([changed.requesterId], actor, `SR 상태가 변경되었습니다: ${SR_STATUS_LABEL[status]}`, `${changed.code} ${changed.title}${reason ? ` — 사유: ${reason}` : ''}`, '/sr')
+    return changed
   }
   /** 현재 제목·본문을 다듬은 제안만 돌려준다. 저장하지 않으며 적용·제출은 사람이 한다. */
   async refine(actor: string, srId: string, input: { title: string; body: string }) {
@@ -290,7 +301,8 @@ export class SrService {
     const candidates = (await this.get(actor, srId)).conversations.filter((item) => item.status === 'in_progress')
     if (candidates.length && !input.forceNew) return { candidates }
     const created = await this.tasks.create(actor, { assistantId: input.assistantId, tags: [row.code], title: row.title }, undefined, srId)
-    if (row.status === 'submitted' || row.status === 'reviewing') await this.status(actor, srId, 'in_progress')
+    // 자동 전환: 접수됨(submitted·옛 reviewing) → 처리 중. 잠근 행 기준 — 생성 중 완료·반려됐으면 다시 열지 않는다.
+    await this.transition(actor, srId, 'in_progress', '', (from) => srStage(from) === 'submitted')
     return created.task
   }
   async share(actor: string, srId: string, input: { taskId?: string; text?: string; fileIds?: string[] }) {
