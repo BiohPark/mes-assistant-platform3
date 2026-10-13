@@ -53,6 +53,12 @@ export function ContextTray({ task, estimate }: { task: Task; estimate: RequestE
     <div role="meter" aria-label={t('chat.requestSize')} aria-valuemin={0} aria-valuemax={info.limitBytes} aria-valuenow={info.bytes}
       className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted"><div className={cn('h-full', level === 'over' ? 'bg-destructive' : level === 'warn' ? 'bg-tone-warning-fg' : 'bg-primary')}
         style={{ width: `${Math.min(100, Math.round(info.bytes / info.limitBytes * 100))}%` }} /></div>
+    {/* 접힘 — 목록 대신 종류별 개수만(이 컴포넌트 로컬 상태) */}
+    {!expanded && <ul aria-label={t('chat.trayChips')} className="mt-1.5 flex flex-wrap gap-1 text-xs">{([
+      ['files', t('chat.trayChipFiles', { count: inputs.filter((input) => input.kind === 'file').length })],
+      ['conversations', t('chat.trayChipConversations', { count: inputs.filter((input) => input.kind === 'conversation').length })],
+      ['srs', t('chat.trayChipSr', { count: info.srs.length })],
+    ] as const).map(([key, text]) => <li key={key} className="rounded-full border bg-background px-1.5 py-0.5">{text}</li>)}</ul>}
     {expanded && <p className="mt-1 text-xs text-muted-foreground">{t('chat.trayPersistHint')}</p>}
     {expanded && <ul className={cn('mt-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto', revisionChanged && 'opacity-60')} aria-busy={revisionChanged}>{inputs.map((input) => <li key={input.kind === 'file' ? input.fileId : input.sourceTaskId}
       className="inline-flex max-w-full items-center gap-1 rounded-full border bg-background px-1.5 py-0.5 text-xs">
