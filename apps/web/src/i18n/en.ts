@@ -347,7 +347,7 @@ export const en = {
     continueTask: "Continue {code}",
     newTask: "Start new conversation",
     convertDescription: "Review and submit the draft from your conversation.",
-    editDescription: "You can edit the submission until review begins.",
+    editDescription: "You can edit the submission until processing begins.",
     submit: "Submit SR",
     submitted: "Submitted as {code}.",
     contentSaved: "Submission updated.",

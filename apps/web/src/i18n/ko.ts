@@ -345,7 +345,7 @@ export const ko = {
     continueTask: "{code} 이어가기",
     newTask: "새 대화 시작",
     convertDescription: "대화에서 만든 초안을 확인하고 제출하세요.",
-    editDescription: "검토 시작 전까지 내용을 수정할 수 있습니다.",
+    editDescription: "처리 시작 전까지 내용을 수정할 수 있습니다.",
     submit: "접수 제출",
     submitted: "{code}로 접수되었습니다.",
     contentSaved: "접수 내용을 수정했습니다.",

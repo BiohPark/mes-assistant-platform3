@@ -271,6 +271,33 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     expect((await sr.get('staff', draft.id)).status).toBe('in_progress')
   })
 
+  it('S9-7 P2: 연결 대화 생성 중 반려되면 자동 전환이 닫힌 SR을 다시 열지 않는다', async () => {
+    const draft = await sr.create('requester')
+    await sr.submit('requester', draft.id, { title: '경합', body: '' })
+    const tasks = (sr as unknown as { tasks: DbTasksService }).tasks
+    const original = tasks.create.bind(tasks)
+    const spy = vi.spyOn(tasks, 'create').mockImplementationOnce(async (...args: Parameters<DbTasksService['create']>) => {
+      const created = await original(...args)
+      await sr.status('owner', draft.id, 'rejected', '생성 중 반려')
+      return created
+    })
+    try { await sr.startTask('staff', draft.id, { assistantId }) } finally { spy.mockRestore() }
+    expect((await sr.get('staff', draft.id)).status).toBe('rejected')
+    expect((await sr.get('requester', draft.id)).statusHistory.map((item) => [item.from, item.to])).toEqual([['draft', 'submitted'], ['submitted', 'rejected']])
+    // 닫힌 뒤 새 연결 대화를 강제로 시작해도 상태는 그대로다.
+    await sr.startTask('staff', draft.id, { assistantId, forceNew: true })
+    expect((await sr.get('staff', draft.id)).status).toBe('rejected')
+  })
+
+  it('S9-7 P3: 옛 reviewing 행도 접수됨처럼 내용을 수정할 수 있고, 처리 중부터는 409', async () => {
+    const draft = await sr.create('requester')
+    await sr.submit('requester', draft.id, { title: '옛 검토', body: '' })
+    await db.update(serviceRequest).set({ status: 'reviewing' }).where(eq(serviceRequest.id, draft.id))
+    expect((await sr.content('requester', draft.id, { title: '옛 검토 수정', body: '수정 본문', attachmentIds: [] })).body).toBe('수정 본문')
+    await sr.startTask('staff', draft.id, { assistantId })
+    await expect(sr.content('requester', draft.id, { title: '늦은 수정', body: '', attachmentIds: [] })).rejects.toMatchObject({ status: 409 })
+  })
+
   it.each(['done', 'rejected'] as const)('preserves %s when sharing another result', async (closed) => {
     const draft = await sr.create('requester')
     await sr.submit('requester', draft.id, { title: '종료', body: '', attachmentIds: [] })

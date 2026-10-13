@@ -61,8 +61,7 @@ test('리포트 8개 섹션과 기간·단위 토글', async ({ page }) => {
   for (const title of ['완료 추이', '에이전트별 평균 리드타임', '사용자별 활동', 'SR 상태 분포', '자료 흐름', '태그별 대화', '에이전트별 현황', 'assistant 피드백 다이제스트']) {
     await expect(page.getByRole('heading', { name: new RegExp(title) })).toBeVisible({ timeout: 15_000 })
   }
-  // S9-7: SR 상태 분포는 4단계+반려(접수됨·처리 중·결과 공유·완료·반려)로만 집계된다 — 옛 '검토 중'은 접수됨에 합산
-  await expect(page.getByText('검토 중')).toHaveCount(0)
+  // S9-7: SR 상태 분포는 4단계+반려로 집계된다('결과 공유' 단계 노출 — 단계 접힘 자체는 reporting.test가 보장)
   await expect(page.getByText('결과 공유', { exact: true })).toBeVisible()
   // 태그 목록은 상위 12개만 보이므로 담당자 필터로 내 대화만 집계해 확인한다
   const me = (await (await page.request.get('/api/me')).json()) as { id: string; name: string }
