@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common'
-import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type Task, type TaskStatus, type Thread } from '@mes/domain'
+import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type Task, type TaskAiRequestStatus, type TaskStatus, type Thread } from '@mes/domain'
 import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
 import { unionAll } from 'drizzle-orm/mysql-core'
 import { DB, type Db } from '../db/db.module.js'
@@ -35,6 +35,7 @@ const id = () => randomUUID()
 const iso = (value: Date | null | undefined) => value?.toISOString()
 const uniqueTags = (values: string[]) => [...new Map(values.map((value) => normalizeTag(value)).filter(Boolean).map((value) => [tagKey(value), value])).values()]
 const checkTagLength = (label: string) => { if ([...tagKey(label)].length > 191) throw new BadRequestException('태그가 너무 깁니다') }
+const SHOWN_AI_STATUSES: TaskAiRequestStatus[] = ['pending', 'streaming', 'failed', 'interrupted']
 
 @Injectable()
 export class DbTasksService {
@@ -63,7 +64,11 @@ export class DbTasksService {
   private async assemble(rows: (typeof task.$inferSelect)[]): Promise<(Task & { thread?: Thread })[]> {
     if (!rows.length) return []
     const ids = rows.map((row) => row.id)
-    const [details, materials, extras] = await Promise.all([
+    // 대화별 대표 요청 1건: 활성(pending·streaming) 우선 → created_at 내림차순 → id 내림차순. 그 1건이 표시 대상 상태일 때만 남긴다(S9-8 U3).
+    const rankedRequest = this.db.select({ taskId: thread.taskId, status: chatRequest.status, phase: chatRequest.phase, createdAt: chatRequest.createdAt, finishedAt: chatRequest.finishedAt,
+      rank: sql<number>`row_number() over (partition by ${chatRequest.threadId} order by case when ${chatRequest.status} in ('pending', 'streaming') then 0 else 1 end, ${chatRequest.createdAt} desc, ${chatRequest.id} desc)`.as('request_rank') })
+      .from(chatRequest).innerJoin(thread, eq(thread.id, chatRequest.threadId)).where(inArray(thread.taskId, ids)).as('ranked_request')
+    const [details, materials, extras, aiRequests] = await Promise.all([
       this.db.select({ taskId: task.id, label: tag.label, userId: taskAssignee.userId, taskThread: thread }).from(task)
         .leftJoin(taskTag, eq(taskTag.taskId, task.id)).leftJoin(tag, eq(taskTag.tagKey, tag.key))
         .leftJoin(taskAssignee, eq(taskAssignee.taskId, task.id)).leftJoin(thread, eq(thread.taskId, task.id))
@@ -77,6 +82,7 @@ export class DbTasksService {
         .leftJoin(checklistReview, eq(checklistReview.taskId, task.id))
         .leftJoin(checklistReviewItem, eq(checklistReviewItem.reviewId, checklistReview.id))
         .leftJoin(taskFeedback, eq(taskFeedback.taskId, task.id)).where(inArray(task.id, ids)),
+      this.db.select().from(rankedRequest).where(and(eq(rankedRequest.rank, 1), inArray(rankedRequest.status, SHOWN_AI_STATUSES))),
     ])
     return rows.map((row) => {
       const taskId = row.id
@@ -87,6 +93,7 @@ export class DbTasksService {
       const review = reviews[0]
       const reviewItems = review ? [...new Map(extra.filter((item) => item.review?.id === review.id && item.reviewItem).map((item) => [item.reviewItem!.itemId, item.reviewItem!])).values()] : []
       const feedback = extra.find((item) => item.feedback)?.feedback
+      const aiRequest = aiRequests.find((item) => item.taskId === taskId)
       return {
         id: row.id, code: row.code, assistantId: row.assistantId, title: row.title,
         titleSource: row.titleSource as Task['titleSource'], summary: row.summary,
@@ -106,6 +113,8 @@ export class DbTasksService {
         ...(iso(row.startedAt) && { startedAt: iso(row.startedAt)! }),
         ...(iso(row.completedAt) && { completedAt: iso(row.completedAt)! }),
         ...(row.completedBy && { completedBy: row.completedBy }),
+        aiRequest: aiRequest ? { status: aiRequest.status as TaskAiRequestStatus, ...(aiRequest.phase && { phase: aiRequest.phase }),
+          updatedAt: (aiRequest.finishedAt ?? aiRequest.createdAt).toISOString() } : null,
       }
     })
   }
