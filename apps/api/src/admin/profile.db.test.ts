@@ -32,7 +32,7 @@ describe('사용자 프로필 저장·세션 조회', () => {
     cookie = `mes_session=${(await new DbSessionStore(db, config).create('self')).token}`
     const module = await Test.createTestingModule({ imports: [AppModule] }).overrideProvider(CONFIG).useValue(config).overrideProvider(DB).useValue(db).compile()
     app = configureApp(module.createNestApplication(), config)
-    await app.init()
+    await app.listen(0, '127.0.0.1')
   })
   afterAll(async () => { await app?.close(); await pool?.end(); await temp?.drop() })
 
