@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type Task, type TaskAiRequestStatus, type TaskStatus, type Thread } from '@mes/domain'
 import { and, desc, eq, exists, inArray, isNull, or, sql } from 'drizzle-orm'
-import { unionAll } from 'drizzle-orm/mysql-core'
+import { alias, unionAll } from 'drizzle-orm/mysql-core'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appUser, assistant, assistantChecklistTemplate, chatRequest, chatRequestInput, checklistItem, checklistReview, checklistReviewItem, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, tag, task, taskAssignee, taskFeedback, taskInput, taskTag, thread } from '../db/schema.js'
 import { EventsService } from '../events/events.service.js'
@@ -64,10 +64,14 @@ export class DbTasksService {
   private async assemble(rows: (typeof task.$inferSelect)[]): Promise<(Task & { thread?: Thread })[]> {
     if (!rows.length) return []
     const ids = rows.map((row) => row.id)
-    // 대화별 대표 요청 1건: 활성(pending·streaming) 우선 → created_at 내림차순 → id 내림차순. 그 1건이 표시 대상 상태일 때만 남긴다(S9-8 U3).
-    const rankedRequest = this.db.select({ taskId: thread.taskId, status: chatRequest.status, phase: chatRequest.phase, createdAt: chatRequest.createdAt, finishedAt: chatRequest.finishedAt,
-      rank: sql<number>`row_number() over (partition by ${chatRequest.threadId} order by case when ${chatRequest.status} in ('pending', 'streaming') then 0 else 1 end, ${chatRequest.createdAt} desc, ${chatRequest.id} desc)`.as('request_rank') })
-      .from(chatRequest).innerJoin(thread, eq(thread.id, chatRequest.threadId)).where(inArray(thread.taskId, ids)).as('ranked_request')
+    // 대화별 대표 요청 1건(S9-8 U3): 활성 요청(활성 유니크 인덱스) → 없으면 최신 1건((thread_id, created_at) 인덱스, created_at·id 내림차순 LIMIT 1).
+    // 이력 전체를 훑지 않고 스레드마다 두 번의 인덱스 조회만 한다. 그 1건이 표시 대상 상태일 때만 남긴다.
+    const activeRequest = alias(chatRequest, 'active_request')
+    const latestRequest = alias(chatRequest, 'latest_request')
+    const activeId = this.db.select({ id: activeRequest.id }).from(activeRequest).where(eq(activeRequest.activeThreadId, thread.id))
+    const latestId = this.db.select({ id: latestRequest.id }).from(latestRequest).where(eq(latestRequest.threadId, thread.id))
+      .orderBy(desc(latestRequest.createdAt), desc(latestRequest.id)).limit(1)
+    const pickedRequestId = sql`coalesce((${activeId}), (${latestId}))`
     const [details, materials, extras, aiRequests] = await Promise.all([
       this.db.select({ taskId: task.id, label: tag.label, userId: taskAssignee.userId, taskThread: thread }).from(task)
         .leftJoin(taskTag, eq(taskTag.taskId, task.id)).leftJoin(tag, eq(taskTag.tagKey, tag.key))
@@ -82,7 +86,9 @@ export class DbTasksService {
         .leftJoin(checklistReview, eq(checklistReview.taskId, task.id))
         .leftJoin(checklistReviewItem, eq(checklistReviewItem.reviewId, checklistReview.id))
         .leftJoin(taskFeedback, eq(taskFeedback.taskId, task.id)).where(inArray(task.id, ids)),
-      this.db.select().from(rankedRequest).where(and(eq(rankedRequest.rank, 1), inArray(rankedRequest.status, SHOWN_AI_STATUSES))),
+      this.db.select({ taskId: thread.taskId, status: chatRequest.status, phase: chatRequest.phase, createdAt: chatRequest.createdAt, finishedAt: chatRequest.finishedAt })
+        .from(thread).innerJoin(chatRequest, eq(chatRequest.id, pickedRequestId))
+        .where(and(inArray(thread.taskId, ids), inArray(chatRequest.status, SHOWN_AI_STATUSES))),
     ])
     return rows.map((row) => {
       const taskId = row.id

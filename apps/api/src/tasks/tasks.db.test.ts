@@ -445,4 +445,51 @@ describe('tasks DB', () => {
     expect(counts).toEqual({ pending: 84, streaming: 84, failed: 83, succeeded: 0, cancelled: 0, interrupted: 83 })
     expect(listed.filter((item) => item.aiRequest === null)).toHaveLength(166)
   })
+
+  it('대화 200건 × 요청 50건 이력에서도 판정이 규칙과 같고 쿼리 1회다 (S9-8 U3 리뷰 P2)', async () => {
+    const finished = ['succeeded', 'failed', 'cancelled', 'interrupted'] as const
+    const base = Date.parse('2026-10-04T00:00:00.000Z')
+    const ids = Array.from({ length: 200 }, (_, index) => `ai-hist-${String(index).padStart(3, '0')}`)
+    type Row = { id: string; taskId: string; status: string; phase: string | null; createdAt: Date; finishedAt: Date | null }
+    const rows: Row[] = ids.flatMap((taskId, i) => Array.from({ length: 50 }, (_, j) => {
+      // 활성: 3의 배수 대화의 10번째 요청(오래된 활성도 최신 실패보다 우선). 동률: 5의 배수 대화는 마지막 둘의 created_at이 같다(id 내림차순).
+      // 시각 역전: 4로 나눠 1이 남는 대화는 20번째 요청이 가장 늦다(id가 아니라 created_at이 먼저).
+      const active = i % 3 === 0 && j === 10
+      const status = active ? (i % 6 === 0 ? 'pending' : 'streaming') : finished[(i * 7 + j) % finished.length]!
+      const at = i % 4 === 1 && j === 20 ? base + 100_000 : i % 5 === 0 && j === 49 ? base + 48_000 : base + j * 1000
+      return { id: `${taskId}-${String(j).padStart(2, '0')}`, taskId, status, phase: active ? `단계 ${i}` : null, createdAt: new Date(at), finishedAt: active ? null : new Date(at + 500) }
+    }))
+    await db.insert(task).values(ids.map((taskId, index) => ({ id: taskId, code: `HIST-${index}`, assistantId, title: taskId, titleSource: 'default', status: 'in_progress',
+      ownerId: 'member', priority: 'normal', createdBy: 'member' })))
+    await db.insert(thread).values(ids.map((taskId) => ({ id: `${taskId}-th`, taskId, title: '대화', createdBy: 'member' })))
+    for (let start = 0; start < rows.length; start += 1000) {
+      const chunk = rows.slice(start, start + 1000)
+      await db.insert(message).values(chunk.flatMap((row) => {
+        const j = Number(row.id.slice(-2))
+        return [{ id: `${row.id}-u`, threadId: `${row.taskId}-th`, seq: j * 2 + 1, role: 'user', content: '질문', authorId: 'member', status: 'done' },
+          { id: `${row.id}-r`, threadId: `${row.taskId}-th`, seq: j * 2 + 2, role: 'assistant', content: '', status: 'done' }]
+      }))
+      await db.insert(chatRequest).values(chunk.map((row) => ({ id: row.id, threadId: `${row.taskId}-th`, userMessageId: `${row.id}-u`, replyMessageId: `${row.id}-r`,
+        requestedBy: 'member', status: row.status, phase: row.phase, provider: 'mock', transport: 'inline', model: 'm', bytes: 0, limitBytes: 1,
+        createdAt: row.createdAt, finishedAt: row.finishedAt })))
+    }
+    const expected = new Map(ids.map((taskId) => {
+      const own = rows.filter((row) => row.taskId === taskId)
+      const picked = own.find((row) => row.status === 'pending' || row.status === 'streaming')
+        ?? own.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1))[0]!
+      return [taskId, ['pending', 'streaming', 'failed', 'interrupted'].includes(picked.status)
+        ? { status: picked.status, ...(picked.phase && { phase: picked.phase }), updatedAt: (picked.finishedAt ?? picked.createdAt).toISOString() } : null]
+    }))
+    const queries: string[] = []
+    const counted = new DbTasksService(drizzle(client, { logger: { logQuery: (query) => { queries.push(query) } } }))
+    const started = performance.now()
+    const listed = (await counted.list()).filter((item) => item.id.startsWith('ai-hist-'))
+    const elapsed = performance.now() - started
+    console.info(`[S9-8 U3] list() 200 대화 × 50 요청: ${elapsed.toFixed(0)} ms (전체 목록 ${queries.length}쿼리)`)
+    expect(listed).toHaveLength(200)
+    expect(Object.fromEntries(listed.map((item) => [item.id, item.aiRequest]))).toStrictEqual(Object.fromEntries(expected))
+    expect(queries.filter((query) => query.includes('chat_request'))).toHaveLength(1)
+    // 규칙의 모든 분기가 데이터에 있는지(활성·실패·중단·null) 확인
+    expect(new Set([...expected.values()].map((value) => value?.status ?? null))).toEqual(new Set(['pending', 'streaming', 'failed', 'interrupted', null]))
+  })
 })

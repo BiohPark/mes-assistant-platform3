@@ -1000,6 +1000,7 @@ components:
         checklistTemplate: { type: array, maxItems: 100, items: { type: object, required: [id, label, required], properties: { id: { type: string, minLength: 1, maxLength: 191 }, label: { type: string, minLength: 1, maxLength: 1000 }, required: { type: boolean } } } }
     Task:
       type: object
+      required: [aiRequest]
       properties:
         id: { type: string }
         code: { type: string }
@@ -1019,7 +1020,7 @@ components:
         lastActivityAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }
         aiRequest:
-          description: 'AI 요청 상태(S9-8 U3). 목록·단건 응답에 항상 포함. 활성(pending·streaming) 요청 우선, 없으면 대화의 최신 요청 1건(created_at → id 내림차순)이 failed·interrupted일 때만. cancelled·succeeded·요청 없음은 null.'
+          description: 'AI 요청 상태(S9-8 U3). 목록·단건 응답에 항상 포함(값 또는 null). 활성(pending·streaming) 요청 우선, 없으면 대화의 최신 요청 1건(created_at → id 내림차순)이 failed·interrupted일 때만. cancelled·succeeded·요청 없음은 null.'
           oneOf:
             - { $ref: '#/components/schemas/TaskAiRequest' }
             - { type: 'null' }
