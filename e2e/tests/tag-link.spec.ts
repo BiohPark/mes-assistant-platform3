@@ -73,12 +73,19 @@ test('접수되지 않은 SR 번호 태그는 SR 미접수로 구분되고 트�
 test('초안에서 입력한 태그를 쓰는 대화 수를 미리 보여 주되 아무것도 저장하지 않는다', async ({ page }) => {
   await signup(page, 'draft')
   const stamp = Date.now().toString(36)
-  const existing = await createTask(page, [`draft-${stamp}`])
-  const before = (await (await page.request.get('/api/tasks')).json() as unknown[]).length
+  const tag = `draft-${stamp}`
+  const existing = await createTask(page, [tag])
+  // 공유 DB의 다른 worker가 만든 대화는 제외하고 이 사용자·태그 범위만 비교한다.
+  const countTasks = async () => {
+    const response = await page.request.get('/api/tasks', { params: { mine: 'true', tag } })
+    expect(response.ok()).toBe(true)
+    return (await response.json() as unknown[]).length
+  }
+  const before = await countTasks()
   await page.goto(`/new/${await activeAssistantId(page)}`)
-  await tagInput(page).fill(`draft-${stamp}`)
+  await tagInput(page).fill(tag)
   await tagInput(page).press('Enter')
   await page.getByText('같은 태그 대화 1').click()
   await expect(page.getByRole('link', { name: new RegExp(existing.code) })).toBeVisible()
-  expect((await (await page.request.get('/api/tasks')).json() as unknown[]).length).toBe(before)
+  expect(await countTasks()).toBe(before)
 })
