@@ -15,6 +15,7 @@ import { AssistantCard } from './AssistantCard'
 import { CardMapFilterBar } from './CardMapFilterBar'
 import { ConversationKanban } from './ConversationKanban'
 import { useAssistantRows } from './useAssistantStats'
+import { selectMyActive } from './myActive'
 import { useQuery } from '@tanstack/react-query'
 import { getSettings } from '@/api/admin'
 import { useT } from '@/i18n'
@@ -26,7 +27,7 @@ export function HomePage() {
   const t = useT()
   const me = useMe()
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => listTasks() })
-  const myActive = (tasks.data ?? []).filter(task => task.status === 'in_progress' && (task.ownerId === me.id || task.assigneeIds.includes(me.id))).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)).slice(0, 6)
+  const myActive = selectMyActive(tasks.data ?? [], me.id, 6)
   const link1Rule = useQuery({ queryKey: ['settings'], queryFn: getSettings }).data?.link1Rule
   const [params, setParams] = useSearchParams()
   const { key: navigationKey } = useLocation()

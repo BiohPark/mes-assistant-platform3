@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createRef } from 'react'
+import { createRef, useState } from 'react'
 import { Composer, type ComposerHandle } from './Composer'
+import { clearDrafts, getDraft } from './drafts'
 
 const toastSuccess = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: toastSuccess } }))
@@ -142,4 +143,113 @@ it('locks submission synchronously until the current send settles', async () => 
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   expect(send).toHaveBeenCalledTimes(1)
   await act(async () => finish())
+})
+
+it('restores text, attachments and the discussion mode saved under the same draft key, and starts empty for another key', async () => {
+  const noop = async () => undefined
+  const first = renderComposer({ streaming: false, onSend: noop, onStop: () => undefined, allowAttachments: true, allowDiscussion: true, draftKey: 'draft-a' })
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '남길 초안' } })
+  fireEvent.change(first.container.querySelector('input[type="file"]')!, { target: { files: [new File(['x'], 'keep.txt', { type: 'text/plain' })] } })
+  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  expect(screen.getByRole('textbox', { name: '팀 의견 입력' })).toHaveValue('남길 초안')
+  first.unmount()
+  const other = renderComposer({ streaming: false, onSend: noop, onStop: () => undefined, allowAttachments: true, allowDiscussion: true, draftKey: 'draft-b' })
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('')
+  expect(screen.queryByText('keep.txt')).not.toBeInTheDocument()
+  other.unmount()
+  renderComposer({ streaming: false, onSend: noop, onStop: () => undefined, allowAttachments: true, allowDiscussion: true, draftKey: 'draft-a' })
+  expect(screen.getByRole('textbox', { name: '팀 의견 입력' })).toHaveValue('남길 초안')
+  expect(screen.getByText('keep.txt')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' })).toHaveAttribute('aria-pressed', 'true')
+  clearDrafts()
+})
+
+function RaceHarness({ composer }: { composer: React.RefObject<ComposerHandle | null> }) {
+  const [epoch, setEpoch] = useState(0)
+  const noop = async () => undefined
+  // 첨부 추가와 재마운트(key 변경)가 같은 이벤트 핸들러 = 같은 렌더 배치에 들어오는 경우
+  return <>
+    <button type="button" onClick={() => { composer.current?.dropFiles([new File(['x'], 'race.txt', { type: 'text/plain' })]); setEpoch((value) => value + 1) }}>첨부와 재마운트</button>
+    <span data-testid="epoch">{epoch}</span>
+    <Composer key={epoch} ref={composer} draftKey="draft-race" streaming={false} onSend={noop} onStop={() => undefined} allowAttachments allowDiscussion />
+  </>
+}
+
+it('keeps a staged attachment when the composer remounts in the same batch as the attach, and the prefill afterwards', async () => {
+  const composer = createRef<ComposerHandle>()
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RaceHarness composer={composer} /></QueryClientProvider>)
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '보호할 초안' } })
+  fireEvent.click(screen.getByRole('button', { name: '첨부와 재마운트' }))
+  expect(screen.getByTestId('epoch')).toHaveTextContent('1')
+  expect(screen.getByText('race.txt')).toBeInTheDocument() // 재마운트된 인스턴스가 방금 붙인 첨부를 복원한다
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('보호할 초안')
+  act(() => composer.current!.setText('**기존 질문**')) // 프리필
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('**기존 질문**')
+  expect(screen.getByRole('button', { name: '첨부 제거' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '첨부와 재마운트' }))
+  expect(screen.getAllByRole('button', { name: '첨부 제거' })).toHaveLength(2) // 두 번째 첨부도 유지
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('**기존 질문**')
+  clearDrafts()
+})
+
+it('clears only what was sent: text and attachments staged while the send was still resolving survive', async () => {
+  let finish!: () => void
+  const send = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+  const { container } = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, allowDiscussion: true, allowPin: true })
+  const input = () => screen.getByRole('textbox', { name: /입력/ })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'sent.txt', { type: 'text/plain' })] } })
+  fireEvent.change(input(), { target: { value: '보낼 질문' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(send).toHaveBeenCalledWith('보낼 질문', [expect.objectContaining({ file: expect.objectContaining({ name: 'sent.txt' }) })], false))
+  // 응답이 화면에서 끝난 뒤에도 onSend 약속은 조금 늦게 풀린다 — 그 사이 사용자가 다음 메시지를 준비한다
+  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['b'], 'next.txt', { type: 'text/plain' })] } })
+  expect(screen.getAllByRole('button', { name: '첨부 제거' })).toHaveLength(2)
+  await act(async () => { finish() })
+  expect(screen.queryByText('sent.txt')).not.toBeInTheDocument()
+  expect(screen.getByText('next.txt')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '이번 메시지만' })).toBeVisible()
+  expect(input()).toHaveValue('') // 보낸 텍스트는 그대로였으니 비운다
+  fireEvent.change(input(), { target: { value: '다음 질문' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+  fireEvent.change(input(), { target: { value: '다음 질문을 고친다' } })
+  await act(async () => { finish() })
+  expect(input()).toHaveValue('다음 질문을 고친다') // 보내는 동안 고친 텍스트는 남긴다
+})
+
+it('drops the sent text and attachments from the draft at submit time, so a conversation revisited during streaming starts empty and the late completion does not erase the new draft', async () => {
+  let finish!: () => void
+  const send = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+  const noop = async () => undefined
+  const first = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, draftKey: 'draft-sent' })
+  fireEvent.change(first.container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'q1.txt', { type: 'text/plain' })] } })
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: 'Q1' } })
+  expect(getDraft('draft-sent')).toMatchObject({ text: 'Q1' })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('Q1') // 보내는 동안 화면은 그대로
+  expect(getDraft('draft-sent')).toBeUndefined() // 하지만 초안에서는 보낸 부분이 빠진다
+  first.unmount() // 응답 중 다른 대화로 전환
+  const second = renderComposer({ streaming: true, onSend: noop, onStop: () => undefined, allowAttachments: true, draftKey: 'draft-sent' })
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('') // 돌아와도 Q1이 되살아나지 않는다
+  expect(screen.queryByText('q1.txt')).not.toBeInTheDocument()
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '다음 질문' } })
+  await act(async () => { finish() }) // 옛 인스턴스의 전송이 끝나도
+  expect(getDraft('draft-sent')).toMatchObject({ text: '다음 질문' }) // 새 초안을 지우지 않는다
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('다음 질문')
+  second.unmount()
+  clearDrafts()
+})
+
+it('puts the sent draft back when the send fails, so switching away keeps it', async () => {
+  const send = vi.fn().mockRejectedValueOnce(new Error('실패'))
+  const view = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, draftKey: 'draft-failed' })
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: 'Q1' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+  await waitFor(() => expect(getDraft('draft-failed')).toMatchObject({ text: 'Q1' }))
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('Q1')
+  view.unmount()
+  clearDrafts()
 })

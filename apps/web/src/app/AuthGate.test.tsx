@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { AuthGate } from './AuthGate'
 import { useMe } from './auth'
+import { getDraft, setDraft } from '@/features/chat/drafts'
 
 function Who() {
   const me = useMe()
@@ -32,6 +33,16 @@ describe('AuthGate', () => {
     expect(localStorage.getItem('mes-theme')).toBe('light')
     expect(localStorage.getItem('mes-locale')).toBe('ko')
     localStorage.clear()
+  })
+
+  it('로그인 사용자가 바뀌면 이전 사용자의 전환 초안을 폐기한다', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { id: 'u1', name: '이담당', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' })))
+    renderWithProviders(<AuthGate redirectToLogin={vi.fn()}><Who /></AuthGate>)
+    expect(await screen.findByText('안녕하세요 이담당')).toBeInTheDocument()
+    setDraft('t', { text: '첫 사용자 초안', pending: [], discussion: false })
+    await userEvent.click(screen.getByRole('button', { name: '사용자 전환' }))
+    expect(await screen.findByText('안녕하세요 다른 사용자')).toBeInTheDocument()
+    expect(getDraft('t')).toBeUndefined()
   })
 
   it('세션이 없으면(401) SSO 로그인으로 보낸다', async () => {
