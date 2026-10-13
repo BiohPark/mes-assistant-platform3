@@ -27,7 +27,7 @@ describe('SR HTTP API', () => {
       .overrideProvider(SESSION_STORE).useValue({ resolve: async () => ({ id: 'u', name: 'User', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false }) })
       .overrideProvider(SrService).useValue(sr).compile()
     app = configureApp(moduleRef.createNestApplication(), config)
-    await app.init()
+    await app.listen(0, '127.0.0.1')
   })
   afterAll(async () => { await app?.close() })
   const auth = () => ({ Cookie: 'mes_session=x' })

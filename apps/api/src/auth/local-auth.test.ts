@@ -48,7 +48,7 @@ describe('local 인증 API', () => {
       .overrideProvider(OIDC).useValue({ start: vi.fn(), finish: vi.fn() })
       .compile()
     const testApp = configureApp(moduleRef.createNestApplication(), appConfig)
-    await testApp.init()
+    await testApp.listen(0, '127.0.0.1')
     return testApp
   }
 
@@ -154,7 +154,6 @@ describe('local 인증 API', () => {
 
   it.each(['login', 'signup'])('같은 IP의 동시 %s 성공 20건은 429가 아니다', async (route) => {
     if (route === 'login') await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'member-1', password: 'password-1234' }).expect(201)
-    await app.listen(0)
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
     let entered = 0
@@ -176,7 +175,6 @@ describe('local 인증 API', () => {
 
   it.each(['login', 'signup'])('같은 ID의 동시 %s 실패 20건은 최대 10건만 검증한다', async (route) => {
     if (route === 'signup') await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'member-1', password: 'password-1234' }).expect(201)
-    await app.listen(0)
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
     let entered = 0
@@ -197,7 +195,6 @@ describe('local 인증 API', () => {
   })
 
   it('서로 다른 ID의 동시 실패 20건은 기본 IP 진행 중 상한 아래에서 통과한다', async () => {
-    await app.listen(0)
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
     let entered = 0
@@ -220,7 +217,6 @@ describe('local 인증 API', () => {
   it('설정한 IP 진행 중 상한은 서로 다른 ID에도 적용한다', async () => {
     await app.close()
     app = await createTestApp(loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_IP_PENDING_MAX: '3' }))
-    await app.listen(0)
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
     let entered = 0

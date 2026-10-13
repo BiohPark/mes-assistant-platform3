@@ -34,7 +34,7 @@ describe('catalog read API', () => {
       .overrideProvider(USER_DIRECTORY).useValue({})
       .compile()
     app = configureApp(moduleRef.createNestApplication(), config)
-    await app.init()
+    await app.listen(0, '127.0.0.1')
   })
   afterEach(async () => { await app.close(); vi.clearAllMocks() })
 

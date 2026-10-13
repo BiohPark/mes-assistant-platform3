@@ -27,7 +27,7 @@ describe('관리 API 서버 권한', () => {
       .overrideProvider(AccountsService).useValue(accounts)
       .compile()
     app = configureApp(module.createNestApplication(), config)
-    await app.init()
+    await app.listen(0, '127.0.0.1')
   })
   afterEach(async () => { await app.close(); vi.clearAllMocks() })
 
