@@ -143,6 +143,21 @@ export interface ContextSnapshot {
 
 export type TitleSource = 'default' | 'ai' | 'manual'
 
+/** 대화 목록에 보이는 AI 요청 상태 (S9-8 U3). 업무 진행 상태(TaskStatus)와 별개다. */
+export type TaskAiRequestStatus = 'pending' | 'streaming' | 'failed' | 'interrupted'
+
+/**
+ * 활성 요청(pending·streaming)이 있으면 그것, 없으면 최신 1건(created_at → id 내림차순)이 failed·interrupted일 때만.
+ * cancelled·succeeded·요청 없음은 null.
+ */
+export interface TaskAiRequest {
+  status: TaskAiRequestStatus
+  /** 활성 요청의 진행 단계 문구 (예: 파일 올리는 중 1/2 · a.txt). 없으면 생략 */
+  phase?: string
+  /** finished_at, 없으면 created_at (활성 요청은 시작 시각) */
+  updatedAt: ISODate
+}
+
 /** 업무 = 대화 1개. 항상 하나의 어시스턴트에 속하고, 다른 대화와는 태그로만 느슨하게 연결된다. */
 export interface Task {
   id: ID
@@ -178,6 +193,8 @@ export interface Task {
   startedAt?: ISODate
   completedAt?: ISODate
   completedBy?: ID
+  /** AI 요청 상태. 서버 목록·단건 응답은 항상 채운다(없으면 null) */
+  aiRequest?: TaskAiRequest | null
 }
 
 /** 체크리스트 항목별 AI 판단 */

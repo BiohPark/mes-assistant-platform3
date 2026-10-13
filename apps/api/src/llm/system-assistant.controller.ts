@@ -7,7 +7,7 @@ import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
 import { appSetting } from '../db/schema.js'
 import { LLM_PROVIDER } from './provider.token.js'
-import { effectiveDefaultModel } from './effectiveDefaultModel.js'
+import { readEffectiveDefaultModel } from './effectiveDefaultModel.js'
 
 const bodySchema = z.object({ messages: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().min(1).max(32_768) }).strict()).min(1).max(40) }).strict()
 
@@ -16,8 +16,8 @@ export class SystemAssistantController {
   constructor(@Inject(LLM_PROVIDER) private readonly provider: ChatProvider, @Inject(CONFIG) private readonly config: AppConfig, @Inject(DB) private readonly db: Db) {}
 
   @Get('model')
-  model() {
-    return { mode: this.config.llm.mode, model: effectiveDefaultModel(this.config) }
+  async model() {
+    return { mode: this.config.llm.mode, model: await readEffectiveDefaultModel(this.db, this.config) }
   }
 
   @Post('messages')
@@ -25,7 +25,7 @@ export class SystemAssistantController {
     const parsed = bodySchema.safeParse(body)
     if (!parsed.success || parsed.data.messages.at(-1)?.role !== 'user') throw new BadRequestException('요청 형식이 올바르지 않습니다')
     const [budgetSetting] = await this.db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
-    const model = effectiveDefaultModel(this.config)
+    const model = await readEffectiveDefaultModel(this.db, this.config)
     const messages: ChatMessageInput[] = [{ role: 'system', content: SYSTEM_ASSISTANT_PROMPT }, ...parsed.data.messages]
     const limit = typeof budgetSetting?.value === 'number' ? budgetSetting.value : this.config.request.budgetBytes
     if (parsed.data.messages.reduce((bytes, message) => bytes + Buffer.byteLength(message.content), 0) > limit) throw new HttpException('요청 크기 한도 초과', HttpStatus.PAYLOAD_TOO_LARGE)

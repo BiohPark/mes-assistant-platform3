@@ -4,9 +4,9 @@ import { constants } from 'node:fs'
 import { arch, platform, release } from 'node:os'
 import type { Pool } from 'mysql2/promise'
 import { CONFIG, type AppConfig } from '../config/config.js'
-import { DB_CLIENT } from '../db/db.module.js'
+import { DB, DB_CLIENT, type Db } from '../db/db.module.js'
 import { buildInfo } from '../health/build-info.js'
-import { effectiveDefaultModel } from '../llm/effectiveDefaultModel.js'
+import { effectiveDefaultModel, readEffectiveDefaultModel } from '../llm/effectiveDefaultModel.js'
 import { RequestsService } from '../requests/requests.service.js'
 
 type ServerError = { at: string; path: string; status: number; message: string }
@@ -31,6 +31,7 @@ export class DiagnosticsService {
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(DB_CLIENT) private readonly dbClient: Pool,
     @Inject(RequestsService) private readonly requests: RequestsService,
+    @Inject(DB) private readonly settingsDb: Db,
   ) {}
 
   async get() {
@@ -46,6 +47,13 @@ export class DiagnosticsService {
       } catch { /* migration table may not exist before first migration */ }
       db = { ...row, migrations }
     } catch { db = { version: '', charset: '', collation: '', migrations: null, error: 'DB 조회 실패' } }
+
+    let defaultModel: string
+    try { defaultModel = await readEffectiveDefaultModel(this.settingsDb, this.config) }
+    catch {
+      defaultModel = effectiveDefaultModel(this.config)
+      db.error ??= 'DB 설정 조회 실패'
+    }
 
     const started = performance.now()
     let ok = false
@@ -72,7 +80,7 @@ export class DiagnosticsService {
       db,
       llm: { mode: this.config.llm.mode, preset: this.config.llm.preset,
         baseUrlHost: URL.canParse(this.config.llm.baseUrl) ? new URL(this.config.llm.baseUrl).hostname : '',
-        defaultModel: effectiveDefaultModel(this.config), ok, detail, ms: Math.round(performance.now() - started) },
+        defaultModel, ok, detail, ms: Math.round(performance.now() - started) },
       storage: { path: this.config.fileStorageRoot, writable, freeBytes },
       trustProxy: this.config.trustProxy,
       settings: { authMode: this.config.authMode, apiPort: this.config.port, fileMaxBytes: this.config.fileMaxBytes,

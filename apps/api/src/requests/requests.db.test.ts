@@ -912,26 +912,33 @@ describe('RequestService DB', () => {
     } finally { release(); runner.onModuleDestroy() }
   })
 
-  it('기본 모델은 .env 유효값 한 함수 — DB app_setting.defaultModel이 달라도 start·srModel·summary 전부 .env 값을 쓴다 (S7 C2)', async () => {
-    await db.insert(appSetting).values({ key: 'defaultModel', value: 'db-model' }).onDuplicateKeyUpdate({ set: { value: 'db-model' } })
+  it('같은 서비스의 다음 start·SR 보조·요약은 전역 모델 교체·해제를 즉시 반영한다', async () => {
+    await db.insert(appSetting).values({ key: 'defaultModel', value: 'legacy-model' }).onDuplicateKeyUpdate({ set: { value: 'legacy-model' } })
     const models: string[] = []
     const capturing: ChatProvider = { kind: 'live', ping: async () => ({ ok: true, detail: '' }), listModels: async () => [],
       async *stream(req) { models.push(req.model); yield { type: 'delta', text: '제목: 다듬은 제목\n다듬은 본문' }; yield { type: 'done' } } }
     const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root, LLM_DEFAULT_MODEL: 'env-model' }), capturing)
     try {
       const { task: owner, thread } = await tasks.create('member', { assistantId })
-      const started = await runner.start('member', thread.id, { content: '기본 모델 확인' }, 'default-model-env')
-      await started.done
-      expect((await db.select({ model: chatRequest.model }).from(chatRequest).where(eq(chatRequest.id, started.id)))[0]?.model).toBe('env-model')
-      const summary = await runner.draftConversationSummary('member', owner.id, [
-        { id: 'dm-0', threadId: thread.id, seq: 0, role: 'user', content: '질문', status: 'done', createdAt: new Date().toISOString(), attachmentIds: [] },
-        { id: 'dm-1', threadId: thread.id, seq: 1, role: 'assistant', content: '답변', status: 'done', createdAt: new Date().toISOString(), attachmentIds: [] },
-      ])
-      expect(summary).toMatchObject({ source: 'ai', model: 'env-model' })
       const sr = await new SrService(db, tasks, new EventsService()).create('member')
-      expect(await runner.refineSrDraft('member', sr.threadId, { title: '제목', body: '본문' })).toEqual({ title: '다듬은 제목', body: '다듬은 본문' })
-      expect(models.length).toBeGreaterThanOrEqual(3) // start · summary · refine (+ start 뒤 자동 제목 제안도 같은 모델)
-      expect(new Set(models)).toEqual(new Set(['env-model']))
-    } finally { runner.onModuleDestroy(); await db.delete(appSetting).where(eq(appSetting.key, 'defaultModel')) }
+      for (const [index, override] of ['setting-a', 'setting-b', null].entries()) {
+        if (override === null) await db.delete(appSetting).where(eq(appSetting.key, 'defaultModelOverride'))
+        else await db.insert(appSetting).values({ key: 'defaultModelOverride', value: override }).onDuplicateKeyUpdate({ set: { value: override } })
+        const expected = override ?? 'env-model'
+        models.length = 0
+        const started = await runner.start('member', thread.id, { content: '기본 모델 확인' }, `default-model-${index}`)
+        await started.done
+        expect((await db.select({ model: chatRequest.model }).from(chatRequest).where(eq(chatRequest.id, started.id)))[0]?.model).toBe(expected)
+        const summary = await runner.draftConversationSummary('member', owner.id, [
+          { id: 'dm-0', threadId: thread.id, seq: 0, role: 'user', content: '질문', status: 'done', createdAt: new Date().toISOString(), attachmentIds: [] },
+          { id: 'dm-1', threadId: thread.id, seq: 1, role: 'assistant', content: '답변', status: 'done', createdAt: new Date().toISOString(), attachmentIds: [] },
+        ])
+        expect(summary).toMatchObject({ source: 'ai', model: expected })
+        expect(await runner.refineSrDraft('member', sr.threadId, { title: '제목', body: '본문' })).toEqual({ title: '다듬은 제목', body: '다듬은 본문' })
+        expect(models.length).toBeGreaterThanOrEqual(3)
+        expect(new Set(models)).toEqual(new Set([expected]))
+      }
+      expect(await db.select().from(appSetting).where(eq(appSetting.key, 'defaultModel'))).toHaveLength(1)
+    } finally { runner.onModuleDestroy(); await db.delete(appSetting).where(eq(appSetting.key, 'defaultModelOverride')) }
   })
 })

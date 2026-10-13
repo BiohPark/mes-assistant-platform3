@@ -10,13 +10,15 @@ export interface ModelSelectProps {
   onChange: (value: string) => void
   id?: string
   disabled?: boolean
+  /** 전역 설정처럼 목록에서만 고르게 할 때 직접 입력을 막는다. */
+  selectionOnly?: boolean
   className?: string
   placeholder?: string
   'aria-label'?: string
 }
 
 /** 모델 ID 콤보박스 — 서버 목록에서 고르거나 직접 입력한다. 목록 로딩·실패·빈 상태를 알리고 실패 시에도 입력은 그대로 쓴다. */
-export function ModelSelect({ value, onChange, id, disabled, className, placeholder, ...props }: ModelSelectProps) {
+export function ModelSelect({ value, onChange, id, disabled, selectionOnly = false, className, placeholder, ...props }: ModelSelectProps) {
   const t = useT()
   const { models, loading, error, reload } = useModelList()
   const [open, setOpen] = useState(false)
@@ -72,6 +74,7 @@ export function ModelSelect({ value, onChange, id, disabled, className, placehol
               id={id}
               value={value}
               disabled={disabled}
+              readOnly={selectionOnly}
               role="combobox"
               aria-autocomplete="list"
               aria-label={label}
@@ -79,7 +82,7 @@ export function ModelSelect({ value, onChange, id, disabled, className, placehol
               aria-controls={expanded ? listId : undefined}
               aria-activedescendant={expanded && options.length ? `${listId}-${activeIndex}` : undefined}
               placeholder={placeholder ?? t('admin.test.modelPlaceholder')}
-              onChange={(event) => { onChange(event.target.value); setFiltering(true); setOpen(true); setActive(0) }}
+              onChange={(event) => { if (selectionOnly) return; onChange(event.target.value); setFiltering(true); setOpen(true); setActive(0) }}
               onFocus={() => { if (!silentFocus.current) { setFiltering(false); setOpen(true) } }}
               onBlur={() => setOpen(false)}
               onKeyDown={onKeyDown}
