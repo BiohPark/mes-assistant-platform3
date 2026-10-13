@@ -211,6 +211,7 @@ async function buildTaskRequest(scope: Extract<ChatScope, { kind: 'task' }>, set
     task,
     systemPrompt,
     srCodes,
+    srs: linkedSrs.map((s) => ({ code: s.code, title: s.title })),
     files,
     inputs: [...files.info, ...conversations.info],
     lines: [...files.lines, ...conversations.info.map(conversationLine)],
@@ -260,7 +261,8 @@ export async function buildChatRequest(scope: ChatScope, thread: Thread, history
       model,
       messages,
       meta: { assistantId: scope.intake.id, assistantLevel2: scope.intake.level2, assistantName: scope.intake.name, srIntake: true, inputFileNames: sr.files.map((f) => f.name), usedInputs: sr.lines },
-      info: { at: new Date().toISOString(), provider: settings.llm.mode, transport, model, bytes: requestBytes({ model, messages, stream: true }), limitBytes, inputs: sr.info, srCodes: scope.sr.code ? [scope.sr.code] : [] },
+      info: { at: new Date().toISOString(), provider: settings.llm.mode, transport, model, bytes: requestBytes({ model, messages, stream: true }), limitBytes, inputs: sr.info,
+        srCodes: scope.sr.code ? [scope.sr.code] : [], srs: scope.sr.code ? [{ code: scope.sr.code, title: scope.sr.title }] : [] },
       failed: [],
     }
   }
@@ -292,6 +294,7 @@ export async function buildChatRequest(scope: ChatScope, thread: Thread, history
       limitBytes,
       inputs: built.inputs,
       srCodes: built.srCodes,
+      srs: built.srs,
     },
     failed: built.files.info.filter((i) => i.delivery === 'failed'),
   }
