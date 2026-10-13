@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +8,7 @@ import type { Pool } from 'mysql2/promise'
 import { createPool } from './connection.js'
 import { runMigrations } from './migrate.js'
 import { createTempDb } from '../test/tempDb.js'
+import { clearTables } from '../test/clearTables.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { verifyPassword } from '../auth/password.js'
 import { importBundle } from './import.js'
@@ -62,12 +63,12 @@ describe('demo bundle DB import', () => {
   let root: string
   beforeAll(async () => { temp = await createTempDb('import'); await runMigrations(temp.url); client = createPool(temp.url); root = await mkdtemp(join(tmpdir(), 'mes-import-')) })
   afterAll(async () => { await client?.end(); await temp?.drop(); if (root) await rm(root, { recursive: true, force: true }) })
+  // 마이그레이션은 한 번만 하고 테스트마다 행만 비운다 — 테스트별 임시 DB+마이그레이션은 Windows CI에서 1건 ≈ 20초라 30초 한도를 넘겼다.
+  beforeEach(() => clearTables(client))
 
   it.each([false, true])('imports the actual demo v3 seed into a %s catalog server', async (seeded) => {
-    const isolated = await createTempDb(seeded ? 'demo_seeded' : 'demo_empty')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       if (seeded) await seedCatalog(db)
       const seededCode = seeded ? (await db.select().from(s.code).where(eq(s.code.id, 'assistant_level2:Deviation')))[0] : undefined
@@ -81,14 +82,12 @@ describe('demo bundle DB import', () => {
         expect((await db.select().from(s.code).where(eq(s.code.id, 'assistant_level2:Deviation')))[0]).toEqual(seededCode)
         expect(result.report['assistants.levels → code']?.reason).toBe('서버 카탈로그 값 유지 (차이 있음)')
       }
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('dry-runs and imports the demo seed around server-issued WK and SR codes, then reruns without duplicates', async () => {
-    const isolated = await createTempDb('demo_codes')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       await seedCatalog(db)
       await db.insert(s.serviceRequest).values({ id: 'server-sr', code: 'SR-2026-0001', requesterId: 'seed-system', title: 'Server SR', titleSource: 'manual', status: 'submitted' })
@@ -124,27 +123,23 @@ describe('demo bundle DB import', () => {
       await tasks.removeTag('u_so', 'task_seed_0002', 'SR-2026-0007')
       expect((await tasks.get('task_seed_0002')).tags).not.toContain('SR-2026-0007')
       expect((await tasks.list({ tags: ['SR-2026-0007'] })).map((task) => task.id)).not.toContain('task_seed_0002')
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('requires a valid default owner login for the actual demo seed', async () => {
-    const isolated = await createTempDb('demo_owner')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       const fixture = await demoBundle()
       await expect(importBundle(fixture, db, undefined, true)).rejects.toThrow(/assistant:fds-writer: 소유자 미지정/)
       await expect(importBundle(fixture, db, undefined, true, { defaultOwner: 'missing-login' })).rejects.toThrow(/assistant:fds-writer: 소유자 미지정/)
       expect(await db.select().from(s.appUser)).toHaveLength(0)
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('maps empty nullable user references to NULL', async () => {
-    const isolated = await createTempDb('import_null_ref')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       const fixture = structuredClone(base) as any
       fixture.tables.messages[0].authorId = ''
@@ -152,14 +147,12 @@ describe('demo bundle DB import', () => {
       await importBundle(fixture, db, new FileStorageService(root))
       expect((await db.select().from(s.message).where(eq(s.message.id, 'fixture-message-b')))[0]?.authorId).toBeNull()
       expect((await db.select().from(s.task).where(eq(s.task.id, 'fixture-task')))[0]?.completedBy).toBeNull()
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('rejects changed content and relationships beneath existing parents', async () => {
-    const isolated = await createTempDb('import_child_diff')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       const storage = new FileStorageService(root)
       await importBundle(base, db, storage)
@@ -174,7 +167,7 @@ describe('demo bundle DB import', () => {
         await expect(importBundle(changed, db, storage)).rejects.toThrow(label)
       }
       expect((await db.select().from(s.message).where(eq(s.message.id, 'fixture-message-b')))[0]?.content).toBe('Answer')
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('imports v3 relations, sequence, file, credentials and excludes secrets; rerun is idempotent', async () => {
@@ -205,10 +198,8 @@ describe('demo bundle DB import', () => {
   })
 
   it('dry-run writes nothing and failed import removes files', async () => {
-    const isolated = await createTempDb('import_dry')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       const storage = new FileStorageService(root)
       const beforeFiles = (await readdir(root, { recursive: true, withFileTypes: true })).filter((entry) => entry.isFile()).length
@@ -222,14 +213,12 @@ describe('demo bundle DB import', () => {
       await expect(importBundle(bad, db, storage)).rejects.toThrow()
       expect((await db.select().from(s.fileObject))).toHaveLength(0)
       expect((await readdir(root, { recursive: true, withFileTypes: true })).filter((entry) => entry.isFile())).toHaveLength(beforeFiles)
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('upgrades and imports a v1 task with SR tag and reference input', async () => {
-    const legacyDb = await createTempDb('import_v1')
-    const legacyClient = createPool(legacyDb.url)
+    const legacyClient = createPool(temp.url)
     try {
-      await runMigrations(legacyDb.url)
       const v1 = structuredClone(base) as any
       v1.version = 1
       const task = v1.tables.tasks[0]
@@ -257,14 +246,12 @@ describe('demo bundle DB import', () => {
       expect((await db.select().from(s.checklistReviewItem).orderBy(s.checklistReviewItem.reviewId)).map((row) => [row.reviewId, row.itemId])).toEqual([
         ['fixture-task:import-review', 'fixture-check'], ['fixture-task_split1:import-review', 'fixture-task_split1:fixture-check'],
       ])
-    } finally { await legacyClient.end(); await legacyDb.drop() }
+    } finally { await legacyClient.end() }
   })
 
   it('normalizes imported tag labels (lower-case · # prefix · spaces) without changing keys, links the SR, and reruns idempotently', async () => {
-    const isolated = await createTempDb('import_tags')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       const fixture = structuredClone(base) as any
       fixture.tables.tasks[0].tags = ['#sr-2099-0001', ' Change Control ']
@@ -279,14 +266,12 @@ describe('demo bundle DB import', () => {
       const second = await importBundle(fixture, db, new FileStorageService(root)) // 같은 번들 재수입 — 충돌이면 여기서 던진다
       expect(second.report['tasks.tags → tag/task_tag']).toMatchObject({ imported: 0, skipped: 4 })
       expect((await db.select({ n: count() }).from(s.tag))[0]!.n).toBe(2)
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('restores missing default assistants when importing a v1 bundle into an empty DB', async () => {
-    const isolated = await createTempDb('import_v1_defaults')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       const fixture = await demoBundle()
       fixture.version = 1
@@ -296,14 +281,12 @@ describe('demo bundle DB import', () => {
       expect((await db.select().from(s.assistant)).map((row) => row.id).sort()).toEqual(SEED_ASSISTANTS.map((a) => a.id).sort())
       expect((await db.select().from(s.assistant).where(eq(s.assistant.id, 'deviation-drafter')))[0]?.ownerId).toBe('u_dev2')
       expect((await db.select().from(s.task).where(eq(s.task.id, 'task_seed_0001')))[0]?.assistantId).toBe('urs-analyst')
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('imports selected SR attachments onto the canonical intake body message; draft attachments stay candidates only; rerun is idempotent', async () => {
-    const isolated = await createTempDb('import_sr')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       const fixture = structuredClone(base) as any
       fixture.tables.serviceRequests[0].body = 'Request body'
@@ -334,14 +317,12 @@ describe('demo bundle DB import', () => {
       expect(await db.select().from(s.messageAttachment).where(eq(s.messageAttachment.fileId, 'fixture-sr-file'))).toHaveLength(1)
       expect(await db.select().from(s.message).where(eq(s.message.threadId, 'fixture-sr-thread'))).toHaveLength(2)
       expect(await srs.get('fixture-user', 'fixture-sr')).toMatchObject({ attachmentIds: ['fixture-sr-file', 'fixture-sr-file-2'] })
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('never attaches SR files to the demo chat message: adds one canonical body message beside it and reruns add nothing', async () => {
-    const isolated = await createTempDb('import_sr_message')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       const fixture = structuredClone(base) as any
       fixture.tables.serviceRequests[0].body = 'Request body'
@@ -359,14 +340,12 @@ describe('demo bundle DB import', () => {
       await importBundle(fixture, db, new FileStorageService(root))
       expect((await threadMessages()).map((m) => m.id)).toEqual(['intake-message', 'fixture-sr:import-attachments'])
       expect(await db.select().from(s.messageAttachment).where(eq(s.messageAttachment.fileId, 'fixture-sr-file'))).toHaveLength(1)
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it.each([false, true])('imports a task and message referencing a seeded assistant (bundle row: %s)', async (withAssistant) => {
-    const isolated = await createTempDb('import_seed_ref')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       await seedCatalog(db)
       const fixture = { format: 'mes-assistant-hub', version: 3, tables: {
@@ -390,14 +369,12 @@ describe('demo bundle DB import', () => {
       expect((await db.select().from(s.task).where(eq(s.task.id, 'seed-ref-task')))[0]).toMatchObject({ assistantId: SEED_ASSISTANTS[0]!.id, ownerId: 'seed-system' })
       expect((await db.select().from(s.message).where(eq(s.message.id, 'seed-ref-message')))[0]).toMatchObject({ threadId: 'seed-ref-thread', authorId: 'seed-system' })
       expect((await db.select().from(s.activityLog).where(eq(s.activityLog.id, 'seed-ref-activity')))[0]?.assistantId).toBe(SEED_ASSISTANTS[0]!.id)
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('aborts the whole import when a referenced assistant does not exist', async () => {
-    const isolated = await createTempDb('import_missing_ref')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const fixture = { format: 'mes-assistant-hub', version: 3, tables: {
         users: [{ id: 'missing-ref-user', name: 'Missing Ref', role: 'member', initials: 'MR', color: '#123456' }],
         tasks: [{ id: 'missing-ref-task', code: 'WK-2099-MISSING-REF', assistantId: 'missing-assistant', title: 'Missing',
@@ -407,14 +384,12 @@ describe('demo bundle DB import', () => {
       await expect(importBundle(fixture, db, undefined)).rejects.toThrow()
       expect(await db.select().from(s.appUser)).toHaveLength(0)
       expect(await db.select().from(s.task)).toHaveLength(0)
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('rejects different IDs and incomplete existing parents, and skips complete reruns', async () => {
-    const isolated = await createTempDb('import_collision')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       const storage = new FileStorageService(root)
       await importBundle(base, db, storage)
@@ -454,14 +429,12 @@ describe('demo bundle DB import', () => {
       } }
       await expect(importBundle(messageCollision, db, storage)).rejects.toThrow(/ID 충돌: message:fixture-message-a/)
       expect(await db.select().from(s.thread).where(eq(s.thread.id, 'second-thread'))).toHaveLength(0)
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('imports files and snapshots whose source task already exists when a new task references them', async () => {
-    const isolated = await createTempDb('import_cross_ref')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       const storage = new FileStorageService(root)
       await importBundle(base, db, storage)
@@ -483,14 +456,12 @@ describe('demo bundle DB import', () => {
       expect(await db.select().from(s.contextSnapshot).where(eq(s.contextSnapshot.id, 'cross-snapshot'))).toHaveLength(1)
       expect(await db.select().from(s.taskInput).where(eq(s.taskInput.taskId, 'cross-task'))).toHaveLength(1)
       expect(await db.select().from(s.conversationInput).where(eq(s.conversationInput.id, 'cross-input'))).toHaveLength(1)
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('rejects multiple SR links by default and uses the earliest only with explicit opt-in', async () => {
-    const isolated = await createTempDb('import_multi_sr')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       const fixture = structuredClone(base) as any
       fixture.tables.serviceRequests.push({ id: 'older-sr', code: 'SR-2099-0000', requesterId: 'fixture-user', title: 'Older', status: 'submitted',
@@ -501,14 +472,12 @@ describe('demo bundle DB import', () => {
       const result = await importBundle(fixture, db, new FileStorageService(root), false, { allowMultiSr: true })
       expect((await db.select().from(s.task).where(eq(s.task.id, 'fixture-task')))[0]?.srId).toBe('older-sr')
       expect(result.report['tasks.tags → task.sr_id']).toMatchObject({ skipped: 1, reason: '다중 SR 연결 손실' })
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
   it('checks dry-run constraints, invalid names, and reports requestedBy', async () => {
-    const isolated = await createTempDb('import_validation')
-    const pool = createPool(isolated.url)
+    const pool = createPool(temp.url)
     try {
-      await runMigrations(isolated.url)
       const db = drizzle(pool)
       const storage = new FileStorageService(root)
       const missing = structuredClone(base) as any
@@ -526,13 +495,13 @@ describe('demo bundle DB import', () => {
       const result = await importBundle(fixture, db, undefined, true)
       expect(result.report['messages.requestedBy → —']).toMatchObject({ skipped: 1 })
       expect(await db.select().from(s.appUser)).toHaveLength(0)
-    } finally { await pool.end(); await isolated.drop() }
+    } finally { await pool.end() }
   })
 
 it('imports ordered paths only for new assistants, dry-runs without writes and preserves server paths on rerun', async () => {
-  const isolated = await createTempDb('import_paths'); const pool = createPool(isolated.url)
+  const pool = createPool(temp.url)
   try {
-    await runMigrations(isolated.url); const db = drizzle(pool)
+    const db = drizzle(pool)
     const fixture = structuredClone(base) as any
     fixture.tables.assistants[0].link1 = 'https://example.invalid/legacy'
     fixture.tables.assistants[0].classifications = [{ level1: 'Virtual', level2: 'One' }, { level1: 'Secondary', level2: 'Two' }]
@@ -550,14 +519,14 @@ it('imports ordered paths only for new assistants, dry-runs without writes and p
     expect(again).toEqual(rows)
     const [parent] = await db.select().from(s.assistant).where(eq(s.assistant.id, 'fixture-assistant'))
     expect(parent).toMatchObject({ level1CodeId: 'assistant_level1:Virtual', level2CodeId: 'assistant_level2:One' })
-  } finally { await pool.end(); await isolated.drop() }
+  } finally { await pool.end() }
 })
 
 
 it.each([false, true])('normalizes legacy import names without creating ambiguous codes; existing=%s', async existing => {
-  const isolated = await createTempDb('import_normalized_paths'); const pool = createPool(isolated.url)
+  const pool = createPool(temp.url)
   try {
-    await runMigrations(isolated.url); const db = drizzle(pool)
+    const db = drizzle(pool)
     if (existing) {
       await db.insert(s.codeGroup).values({ key: 'assistant_level1', name: 'Level 1' })
       await db.insert(s.code).values({ id: 'manual-virtual', groupKey: 'assistant_level1', code: 'Virtual', name: 'Café Virtual', isAuto: false })
@@ -571,7 +540,7 @@ it.each([false, true])('normalizes legacy import names without creating ambiguou
     expect(group[0]).toMatchObject({ name: 'Café Virtual' })
     const [parent] = await db.select().from(s.assistant).where(eq(s.assistant.id, 'fixture-assistant'))
     expect(parent?.level1CodeId).toBe(existing ? 'manual-virtual' : 'assistant_level1:Café Virtual')
-  } finally { await pool.end(); await isolated.drop() }
+  } finally { await pool.end() }
 })
 
 })
