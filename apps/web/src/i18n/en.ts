@@ -417,6 +417,7 @@ export const en = {
     checklist: {
       title: 'Checklist {done}/{total}', missingRequired: '{count} required unchecked', required: 'Required', deleteItem: 'Delete {label}',
       newItem: 'New checklist item', addPlaceholder: 'Add item', add: 'Add', aiReview: 'AI completion check', achieved: '{met}/{total} met', ruleBased: ' · Rule-based',
+      ruleFallback: 'An AI response was unavailable, so rules were used to assess completion.',
       deletedItem: 'Deleted item', applyReview: 'Check as assessed', noReview: 'No check results yet.', runReview: 'Run AI completion check',
     },
     inputs: {

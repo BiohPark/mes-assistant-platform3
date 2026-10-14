@@ -1,6 +1,7 @@
-import type { ActivityLog, ChecklistItem, ChecklistReview, Message, Note, Task, TaskStatus, Thread } from '@mes/domain'
+import type { ActivityLog, ChecklistItem, ChecklistReview, ChecklistReviewItem, Message, Note, Task, TaskStatus, Thread } from '@mes/domain'
 import type { TagSuggestion } from '@mes/domain'
 import { HttpError } from '@/app/auth'
+import { readSse } from './requests'
 import { queryClient } from './queryClient'
 
 export interface Actor { userId: string }
@@ -58,10 +59,31 @@ export async function removeChecklistItem(taskId: string, itemId: string): Promi
   await request(`/tasks/${encodeURIComponent(taskId)}/checklist/${encodeURIComponent(itemId)}`, 'DELETE')
   refresh(taskId)
 }
-export async function reviewChecklist(taskId: string): Promise<ChecklistReview> {
-  const result = await request<ChecklistReview>(`/tasks/${encodeURIComponent(taskId)}/checklist/review`, 'POST')
-  refresh(taskId)
-  return result
+export async function reviewChecklist(taskId: string, onItem?: (item: ChecklistReviewItem) => void, signal?: AbortSignal): Promise<ChecklistReview> {
+  const path = `/tasks/${encodeURIComponent(taskId)}/checklist/review`
+  if (!onItem) {
+    const result = await request<ChecklistReview>(path, 'POST', undefined, undefined, signal)
+    refresh(taskId)
+    return result
+  }
+  const response = await fetch(`/api${path}`, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'text/event-stream' }, signal })
+  if (!response.ok) throw new HttpError(response.status, (await response.json().catch(() => null))?.message ?? `HTTP ${response.status}`)
+  if (!response.body) throw new Error('스트림 응답이 없습니다')
+  let result: ChecklistReview | undefined
+  const reader = response.body.getReader()
+  try {
+    await readSse(reader, (event, data) => {
+      if (event === 'item') onItem(data as unknown as ChecklistReviewItem)
+      else if (event === 'completed') result = data as unknown as ChecklistReview
+      else if (event === 'failed') throw new Error(String(data.error))
+    })
+    if (!result) throw new Error('달성도 점검 연결이 끊어졌습니다. 다시 점검하세요')
+    refresh(taskId)
+    return result
+  } finally {
+    await reader.cancel().catch(() => undefined)
+    reader.releaseLock()
+  }
 }
 export async function applyChecklistReview(taskId: string): Promise<{ applied: number }> {
   const result = await request<{ applied: number }>(`/tasks/${encodeURIComponent(taskId)}/checklist/review/apply`, 'POST')

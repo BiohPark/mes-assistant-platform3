@@ -87,7 +87,7 @@ it.each([
   const view = (run: import('./useChat').ChatRun | null, waitingSince?: number) => <QueryClientProvider client={client}><TooltipProvider><ChatMessages messages={messages} run={run} waitingSince={waitingSince} /></TooltipProvider></QueryClientProvider>
   const { rerender } = render(view(null, startedAt))
   const header = screen.getByRole('status').parentElement!
-  expect(screen.getByRole('status')).toHaveTextContent('대기 중')
+  expect(screen.getByRole('status')).toHaveTextContent('생각 중')
   expect(header).toHaveTextContent('에이전트')
   expect(within(header).getByRole('timer')).toHaveTextContent('0초 경과')
   expect(screen.getAllByRole('timer')).toHaveLength(1)
@@ -121,7 +121,7 @@ it('translates progress and thinking statuses in English and counts a resumed re
   expect(container.querySelector('details')).toHaveClass('bg-muted', 'text-foreground')
   expect(container.querySelector('details')?.className).not.toMatch(/animate|transition/)
   rerender(view({ requestId: 'r', replyId: 'a', text: '', phase: '파일 처리 대기 1/2 · sample.txt', startedAt: Date.parse(pending.createdAt) }))
-  expect(screen.getByRole('status')).toHaveTextContent('Waiting')
+  expect(screen.getByRole('status')).toHaveTextContent('Thinking')
   expect(screen.getByText('Processing file 1/2 · sample.txt')).toBeInTheDocument()
   expect(container).not.toHaveTextContent('파일 처리 대기')
 })
@@ -182,4 +182,15 @@ it('searches only message bodies and cycles matching messages in both directions
   fireEvent.change(input, { target: { value: '비공개 생각' } })
   expect(screen.getByRole('status')).toHaveTextContent('0/0')
   expect(screen.getByRole('button', { name: '다음' })).toBeDisabled()
+})
+
+
+it('keeps the submission clock when the server starts later', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-01-01T00:00:07Z'))
+  render(<QueryClientProvider client={new QueryClient()}><ChatMessages messages={[]} waitingSince={Date.now() - 7000}
+    run={{ requestId: 'r', replyId: 'a', text: '', phase: '준비 중', startedAt: Date.now() - 1000 }} /></QueryClientProvider>)
+  expect(screen.getByRole('timer')).toHaveTextContent('7초 경과')
+  expect(screen.getByRole('status')).toHaveTextContent('생각 중')
 })

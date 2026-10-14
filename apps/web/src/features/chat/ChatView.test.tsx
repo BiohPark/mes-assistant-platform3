@@ -677,3 +677,29 @@ it('resets the search input and result position when switching tasks', async () 
   expect(screen.getByRole('searchbox')).toHaveValue('')
   expect(screen.queryByRole('button', { name: '다음' })).not.toBeInTheDocument()
 })
+
+
+it.each([409, 500])('clears Enter immediately, waits through upload and restores text and attachment on HTTP %s', async status => {
+  let finishUpload!: (response: Response) => void
+  const upload = new Promise<Response>(resolve => { finishUpload = resolve })
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/files') return upload
+    if (url.endsWith('/estimate')) return Response.json({ bytes: 0, limitBytes: 1000, overLimit: false, inputs: [], srs: [], srCodes: [] })
+    if (url === '/api/threads/h/requests') return Response.json({ message: '전송 실패' }, { status })
+    return Response.json([])
+  }))
+  const { container } = actionView()
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  fireEvent.change(input, { target: { value: '복원할 질문' } })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'restore.txt')] } })
+  fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+  await waitFor(() => expect(input).toHaveValue(''))
+  expect(screen.queryByText('restore.txt')).not.toBeInTheDocument()
+  expect(screen.getByRole('status')).toHaveTextContent('생각 중')
+  expect(screen.getByRole('timer')).toBeVisible()
+  finishUpload(Response.json({ id: 'f', name: 'restore.txt' }))
+  await waitFor(() => expect(input).toHaveValue('복원할 질문'))
+  expect(screen.getByText('restore.txt')).toBeVisible()
+  expect(getDraft('t')).toMatchObject({ text: '복원할 질문', pending: [{ uploadedId: 'f', uploadedTaskId: 't' }] })
+  expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+})

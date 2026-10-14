@@ -415,6 +415,7 @@ export const ko = {
     checklist: {
       title: '체크리스트 {done}/{total}', missingRequired: '중요 {count}개 미체크', required: '중요', deleteItem: '{label} 삭제',
       newItem: '체크리스트 새 항목', addPlaceholder: '항목 추가', add: '추가', aiReview: 'AI 달성도', achieved: '{met}/{total} 달성', ruleBased: ' · 규칙 판단',
+      ruleFallback: 'AI 응답을 사용할 수 없어 규칙으로 판단했습니다.',
       deletedItem: '삭제된 항목', applyReview: '판단대로 체크', noReview: '점검 결과가 없습니다.', runReview: 'AI 달성도 점검',
     },
     inputs: {

@@ -61,7 +61,7 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
   return <><div data-message-id={message.id} data-search-match={searchMatch || undefined} tabIndex={-1} className={`group/message flex gap-2.5 rounded-md data-[search-match=true]:ring-2 data-[search-match=true]:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${assistant ? '' : 'flex-row-reverse'}`}>{!assistant && <UserAvatar user={user} size="sm" className="mt-1" />}<div className={`flex max-w-[85%] min-w-0 flex-col gap-1 ${assistant ? 'items-start' : 'items-end'}`}>
     <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">{assistant ? assistantName ?? t('chat.agent') : user?.name ?? t(intake ? 'sr.requester' : 'chat.user')}</span><span>{formatDateTime(message.createdAt)}</span>{assistant && (progress || message.status === 'streaming') && <>
       <span role="status">{progress?.phase ?? t(hasContent ? 'chat.answering' : message.reasoning ? 'chat.thinking' : 'chat.waiting')}</span>
-      {progress && <span role="timer" aria-live="off">{t('chat.elapsed', { seconds: progress.elapsed })}</span>}
+      {progress && <><span aria-hidden>·</span><span role="timer" aria-live="off">{t('chat.elapsed', { seconds: progress.elapsed })}</span></>}
       {progress?.detail && <span>{progress.detail}</span>}
     </>}{!assistant && !intake && message.kind === 'discussion' && <Badge tone="warning" className="gap-0.5 px-1.5"><MessagesSquare className="size-2.5" />{t('chat.discussionBadge')}</Badge>}</div>
     {assistant && reasoning && <details open={reasoningOpen} className="w-full rounded-lg border bg-muted text-foreground">

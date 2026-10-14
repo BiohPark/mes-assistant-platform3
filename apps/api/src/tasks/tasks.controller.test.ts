@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import { type INestApplication } from '@nestjs/common'
+import { ConflictException, ForbiddenException, type INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,6 +10,7 @@ import { SESSION_STORE } from '../auth/session.service.js'
 import { USER_DIRECTORY } from '../auth/users.service.js'
 import { CONFIG, loadConfig } from '../config/config.js'
 import { HEALTH_PROBE } from '../health/health.controller.js'
+import { TaskExtrasService } from './task-extras.service.js'
 import { DbTasksService } from './tasks.service.js'
 
 const config = loadConfig({ DATABASE_URL: 'mysql://u:p@localhost:1/none', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
@@ -23,10 +24,12 @@ describe('tasks HTTP API', () => {
     delete: vi.fn(async () => undefined), suggestions: vi.fn(async () => []), activity: vi.fn(async () => []),
     messages: vi.fn(async () => []), appendMessage: vi.fn(async () => ({ id: 'm', kind: 'discussion' })),
   }
+  const extras = { review: vi.fn() }
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CONFIG).useValue(config)
       .overrideProvider(DbTasksService).useValue(service)
+      .overrideProvider(TaskExtrasService).useValue(extras)
       .overrideProvider(HEALTH_PROBE).useValue(async () => true)
       .overrideProvider(SESSION_STORE).useValue({ resolve: async (token: string) => token === 'member' ? { id: 'u', name: '사용자', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false } : null })
       .overrideProvider(OIDC).useValue({}).overrideProvider(USER_DIRECTORY).useValue({}).compile()
@@ -35,6 +38,43 @@ describe('tasks HTTP API', () => {
   })
   afterEach(async () => { await app.close(); vi.clearAllMocks() })
   const auth = () => ({ Cookie: 'mes_session=member' })
+
+  it('streams review items and sends completed only after the saved result returns', async () => {
+    const item = { itemId: 'c1', met: true, note: '확인됨' }
+    const result = { by: 'u', at: '2026-01-01T00:00:00Z', met: 1, total: 1, source: 'ai', items: [item] }
+    extras.review.mockImplementationOnce(async (_actor, _id, options) => {
+      options.onStart()
+      options.onItem(item)
+      return result
+    })
+    const response = await request(app.getHttpServer()).post('/api/tasks/t/checklist/review').set(auth()).set('Accept', 'text/event-stream').expect(201)
+    expect(response.headers['content-type']).toContain('text/event-stream')
+    expect(response.text).toContain('event: item')
+    expect(response.text).toContain(JSON.stringify(item))
+    expect(response.text).toContain(`event: completed\ndata: ${JSON.stringify(result)}`)
+    expect(extras.review.mock.calls[0]?.slice(0, 2)).toEqual(['u', 't'])
+  })
+
+  it('keeps JSON review compatibility and access failures before stream headers', async () => {
+    await request(app.getHttpServer()).post('/api/tasks/t/checklist/review').set('Accept', 'text/event-stream').expect(401)
+    extras.review.mockRejectedValueOnce(new ForbiddenException('접근 불가'))
+    await request(app.getHttpServer()).post('/api/tasks/t/checklist/review').set(auth()).set('Accept', 'text/event-stream').expect(403)
+    extras.review.mockResolvedValueOnce({ source: 'rule' })
+    const response = await request(app.getHttpServer()).post('/api/tasks/t/checklist/review').set(auth()).expect(201)
+    expect(response.body).toEqual({ source: 'rule' })
+  })
+
+  it('reports save conflicts after streamed items without a completed event', async () => {
+    extras.review.mockImplementationOnce(async (_actor, _id, options) => {
+      options.onStart()
+      options.onItem({ itemId: 'c1', met: true, note: '임시 판단' })
+      throw new ConflictException('체크리스트가 변경되었습니다. 다시 점검하세요')
+    })
+    const response = await request(app.getHttpServer()).post('/api/tasks/t/checklist/review').set(auth()).set('Accept', 'text/event-stream').expect(201)
+    expect(response.text).toContain('event: failed')
+    expect(response.text).toContain('체크리스트가 변경되었습니다')
+    expect(response.text).not.toContain('event: completed')
+  })
 
   it('requires login, maps actor and filters, and rejects AI message kinds', async () => {
     await request(app.getHttpServer()).post('/api/tasks').send({ assistantId: 'a' }).expect(401)

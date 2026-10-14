@@ -7,7 +7,7 @@ import { useDates } from '@/lib/dates'
 import { useT } from '@/i18n'
 import { MessageBubble } from './MessageBubble'
 import type { ChatRun } from './useChat'
-import { requestPhaseDetail, responsePhase } from './requestLabels'
+import { requestPhaseDetail } from './requestLabels'
 
 type BubbleActions = Omit<ComponentProps<typeof MessageBubble>, 'message' | 'progress'>
 const nearBottomDistance = 24
@@ -32,7 +32,7 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
   const { formatDateTime } = useDates()
   const remoteReply = !run ? messages.find(item => item.role === 'assistant' && item.status === 'streaming') : undefined
   const active = !!run || !!remoteReply || waitingSince !== undefined
-  const startedAt = run?.startedAt ?? waitingSince ?? (remoteReply ? Date.parse(remoteReply.createdAt) : undefined)
+  const startedAt = waitingSince ?? run?.startedAt ?? (remoteReply ? Date.parse(remoteReply.createdAt) : undefined)
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
     if (!active) return
@@ -44,8 +44,7 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
   const replyId = run?.replyId ?? remoteReply?.id ?? 'waiting-assistant'
   const currentReply = messages.find(item => item.id === replyId)
   const currentText = run?.text || currentReply?.content
-  const currentReasoning = run?.reasoning || currentReply?.reasoning
-  const phase = currentText?.trim() ? t('chat.answering') : run?.phase === responsePhase.thinking || (!run?.phase && currentReasoning) ? t('chat.thinking') : run?.phase === responsePhase.answering ? t('chat.answering') : t('chat.waiting')
+  const phase = currentText?.trim() ? t('chat.answering') : t('chat.thinking')
   const phaseDetail = requestPhaseDetail(run?.phase, t)
   // Show an assistant header before the reply is fetched, then reuse its key.
   const visibleMessages: Message[] = active && !currentReply ? [...messages, {
@@ -88,7 +87,7 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
     if (nearBottom.current) bottom.current?.scrollIntoView?.({ block: 'end', behavior: 'instant' })
     const element = scrollerRef.current
     if (element) setFarFromBottom(element.scrollHeight - element.scrollTop - element.clientHeight > jumpDistance)
-  }, [messages, run?.text, run?.reasoning, run?.phase])
+  }, [messages, run?.text, run?.reasoning, run?.phase, waitingSince])
 
   function messageElement(id: string) {
     return Array.from(root.current?.querySelectorAll<HTMLElement>('[data-message-id]') ?? []).find(element => element.dataset.messageId === id)

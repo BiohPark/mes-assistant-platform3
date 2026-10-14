@@ -7,14 +7,17 @@ import { ProfileProvider } from '@/app/profile'
 import { MeContext } from '@/app/auth'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { DraftConversationPage } from './DraftConversationPage'
+import { clearDrafts } from '@/features/chat/drafts'
+import { TaskPage } from '@/features/task/TaskPage'
 import { useChat } from '@/features/chat/useChat'
 
 const toastError = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: toastError, success: toastSuccess, warning: vi.fn() } }))
-afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear(); toastSuccess.mockClear() })
+afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); clearDrafts(); toastError.mockClear(); toastSuccess.mockClear() })
 
 const assistant = { id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-28T00:00:00.000Z', updatedAt: '2026-09-28T00:00:00.000Z', revision: 0 }
+const createdTask = { id: 't', code: 'WK-2026-0001', assistantId: 'a', threadId: 'h', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: [], checklist: [], inputs: [], outputFileIds: [], createdAt: assistant.createdAt, createdBy: 'u', lastActivityAt: assistant.createdAt }
 function mountDraft(path = '/new/a', conversation = <div>대화로 이동</div>) {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ThemeProvider attribute="class" defaultTheme="system" storageKey="mes-theme" disableTransitionOnChange><ProfileProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><MemoryRouter initialEntries={[path]}><Routes><Route path="/new/:assistantId" element={<DraftConversationPage />} /><Route path="/c/:taskId" element={conversation} /></Routes></MemoryRouter></TooltipProvider></MeContext></ProfileProvider></ThemeProvider></QueryClientProvider>)
 }
@@ -295,4 +298,85 @@ it('attaches a file dropped on the draft screen like the attach button and uploa
   await screen.findByText('대화로 이동')
   expect((calls.find((call) => call.url === '/api/files')!.body as FormData).get('originTaskId')).toBe('t')
   expect(calls.some((call) => call.url === '/api/tasks/t/inputs/f' && call.method === 'PUT')).toBe(true)
+})
+
+
+it('clears Enter and shows thinking during creation and upload, carrying the start time into the first request', async () => {
+  let finishCreation!: (response: Response) => void
+  let finishUpload!: (response: Response) => void
+  const creation = new Promise<Response>(resolve => { finishCreation = resolve })
+  const upload = new Promise<Response>(resolve => { finishUpload = resolve })
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants') return Response.json([assistant])
+    if (url === '/api/tasks' && init?.method === 'POST') return creation
+    if (url === '/api/files') return upload
+    return Response.json([])
+  }))
+  const { container } = mountDraft()
+  await screen.findByText('도우미')
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  fireEvent.change(input, { target: { value: '첫 질문' } })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'first.txt')] } })
+  const before = Date.now()
+  fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+  expect(input).toHaveValue('')
+  expect(screen.getByRole('status')).toHaveTextContent('생각 중')
+  expect(screen.getByRole('timer')).toBeVisible()
+  finishCreation(Response.json({ id: 't', threadId: 'h' }, { status: 201 }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/files', expect.anything()))
+  expect(screen.getByRole('timer')).toBeVisible()
+  finishUpload(Response.json({ id: 'f' }))
+  await screen.findByText('대화로 이동')
+  const attempt = JSON.parse(sessionStorage.getItem('mes-chat-attempt:h')!) as { startedAt: number }
+  expect(attempt.startedAt).toBeGreaterThanOrEqual(before)
+  expect(attempt.startedAt).toBeLessThanOrEqual(Date.now())
+})
+
+
+it('keeps thinking visible while the destination task fetch is slow', async () => {
+
+  let stream!: ReadableStreamDefaultController<Uint8Array>
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants') return Response.json([assistant])
+    if (url.endsWith('/estimate')) return Response.json({ bytes: 0, limitBytes: 1000, overLimit: false, inputs: [], srs: [], srCodes: [] })
+    if (url === '/api/tasks' && init?.method === 'POST') return Response.json(createdTask)
+    if (url === '/api/tasks/t') return new Promise<Response>(() => undefined)
+    if (url === '/api/threads/h/requests') return new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller } }))
+    return Response.json([])
+  }))
+  mountDraft('/new/a', <TaskPage />)
+  await screen.findByText('도우미')
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '이동 중 질문' } })
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { key: 'Enter', code: 'Enter' })
+  await screen.findByTestId('chat-message-scroll')
+  expect(screen.getByRole('status')).toHaveTextContent('생각 중')
+  expect(screen.getByRole('timer')).toBeVisible()
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('')
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toBeDisabled()
+  await waitFor(() => expect(stream).toBeDefined())
+  stream.enqueue(new TextEncoder().encode('event: completed\ndata: {}\n\n'))
+  stream.close()
+  await waitFor(() => expect(screen.queryByRole('timer')).not.toBeInTheDocument())
+})
+
+
+it.each([409, 500])('restores the first question and uploaded attachment on the destination after HTTP %s', async status => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants') return Response.json([assistant])
+    if (url.endsWith('/estimate')) return Response.json({ bytes: 0, limitBytes: 1000, overLimit: false, inputs: [], srs: [], srCodes: [] })
+    if (url === '/api/tasks' && init?.method === 'POST' || url === '/api/tasks/t') return Response.json(createdTask)
+    if (url === '/api/files') return Response.json({ id: 'f' })
+    if (url === '/api/tasks/t/inputs/f') return new Response(null, { status: 204 })
+    if (url === '/api/threads/h/requests') return Response.json({ message: '시작 실패' }, { status })
+    return Response.json([])
+  }))
+  const { container } = mountDraft('/new/a', <TaskPage />)
+  await screen.findByText('도우미')
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '첫 실패 질문' } })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'first-restore.txt')] } })
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { key: 'Enter', code: 'Enter' })
+  await screen.findByTestId('chat-message-scroll')
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('첫 실패 질문'))
+  expect(screen.getByText('first-restore.txt')).toBeVisible()
+  expect(screen.queryByRole('timer')).not.toBeInTheDocument()
 })

@@ -89,8 +89,10 @@ test('팀 의견 모드·현재 첨부는 프리필 뒤에도 유지되며 AI �
   await expect(page.getByRole('button', { name: /입력으로 고정|이번 메시지만/ })).toHaveCount(0)
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByRole('textbox', { name: '팀 의견 입력' })).toBeEmpty()
-  const history = await (await page.request.get(`/api/threads/${task.threadId}/messages`)).json() as Array<StoredMessage & { kind?: string }>
-  expect(history.at(-1)).toMatchObject({ kind: 'discussion', content: question, attachmentIds: [expect.any(String)] })
+  // 입력창은 즉시 비워지므로 서버에 팀 의견이 저장될 때까지 별도로 기다린다.
+  const messages = async () => (await (await page.request.get(`/api/threads/${task.threadId}/messages`)).json()) as Array<StoredMessage & { kind?: string }>
+  await expect.poll(async () => (await messages()).at(-1)).toMatchObject({ kind: 'discussion', content: question, attachmentIds: [expect.any(String)] })
+  const history = await messages()
   expect(history.at(-1)!.attachmentIds).not.toEqual(original.attachmentIds)
   expect(aiPosts).toBe(0)
   const storedTask = await (await page.request.get(`/api/tasks/${task.id}`)).json() as { inputs: Array<{ fileId: string }> }

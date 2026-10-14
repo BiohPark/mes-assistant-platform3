@@ -115,11 +115,13 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
   fireEvent.keyDown(input, { key: 'Enter' })
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/threads/h-pending/requests', expect.objectContaining({ method: 'POST' })))
 
+  let expectedDraft = ''
   function expectComposerPreserved() {
     const currentInput = chat().getByRole('textbox', { hidden: true })
     expect(currentInput.parentElement!.parentElement!).toBe(composer)
     expect(currentInput).toBe(input)
-    expect(currentInput).toHaveValue(draft)
+    expect(currentInput).toHaveValue(expectedDraft)
+    expect(chat().getByRole('timer', { hidden: true })).toBeInTheDocument()
     if (waitingFor === 'fetch') {
       expect(currentInput).toBeDisabled()
       expect(chat().getByRole('button', { name: '전송', hidden: true })).toBeDisabled()
@@ -131,6 +133,10 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
     }
   }
   await waitFor(expectComposerPreserved)
+  if (waitingFor === 'stream') {
+    expectedDraft = '응답 중 작성한 다음 질문'
+    fireEvent.change(input, { target: { value: expectedDraft } })
+  }
 
   // jsdom에서는 반응형 CSS 대신 두 tablist의 실제 키보드 핸들러를 실행한다.
   const panelTabs = within(screen.getByRole('tablist', { name: '보조 패널' }))

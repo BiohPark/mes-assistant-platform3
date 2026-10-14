@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common'
-import { buildTaskReport, type Message, type Note } from '@mes/domain'
+import { buildTaskReport, type ChecklistReviewItem, type Message, type Note } from '@mes/domain'
 import { reviewChecklist, type ChatProvider } from '@mes/llm'
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
@@ -18,6 +18,9 @@ import { DbTasksService } from './tasks.service.js'
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 const id = () => randomUUID()
+// 실제 대기 제한은 reviewChecklist의 첫 청크·유휴 타이머가 관리한다.
+// 보조 슬롯의 기본 30초는 JS 타이머 최대값으로 대체해 진행 중인 스트림을 끊지 않는다.
+const CHECKLIST_AUXILIARY_TIMEOUT_MS = 2_147_483_647
 
 @Injectable()
 export class TaskExtrasService {
@@ -80,7 +83,7 @@ export class TaskExtrasService {
     return this.checklist(actor, taskId)
   }
 
-  async review(actor: string, taskId: string) {
+  async review(actor: string, taskId: string, options: { signal?: AbortSignal; onStart?: () => void; onItem?: (item: ChecklistReviewItem) => void } = {}) {
     const current = await new DbTasksService(this.db).get(taskId, actor)
     if (current.status === 'done') throw new ConflictException('완료된 대화는 재개한 뒤 수정하세요')
     const [agent] = await this.db.select().from(assistant).where(eq(assistant.id, current.assistantId))
@@ -88,8 +91,13 @@ export class TaskExtrasService {
     const history: Message[] = rows.map((row) => ({ id: row.id, threadId: row.threadId, seq: row.seq,
       role: row.role as Message['role'], kind: row.kind as Message['kind'], content: row.content, status: row.status as Message['status'],
       createdAt: row.createdAt.toISOString(), attachmentIds: [], ...(row.authorId && { authorId: row.authorId }) }))
-    const result = await this.requests.runAuxiliary(actor, 'checklist', async (signal) => reviewChecklist(this.provider,
-      current.modelId ?? agent?.modelId ?? await readEffectiveDefaultModel(this.db, this.config ?? { llm: { defaultModel: undefined } }), current.checklist, history, actor, signal))
+    const result = await this.requests.runAuxiliary(actor, 'checklist', async (signal) => {
+      const model = current.modelId ?? agent?.modelId ?? await readEffectiveDefaultModel(this.db, this.config ?? { llm: { defaultModel: undefined } })
+      if (signal.aborted) throw new Error('보조 요청 중지')
+      options.onStart?.()
+      return reviewChecklist(this.provider, model, current.checklist, history, actor, signal, options.onItem, this.config?.request)
+    }, { signal: options.signal, timeoutMs: CHECKLIST_AUXILIARY_TIMEOUT_MS })
+    if (options.signal?.aborted) throw new Error('보조 요청 중지')
     await this.db.transaction(async (tx) => {
       await this.editable(tx, taskId)
       const latest = await tx.select({ id: checklistItem.id }).from(checklistItem).where(eq(checklistItem.taskId, taskId))
