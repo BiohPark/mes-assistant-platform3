@@ -27,10 +27,14 @@ export class DbLlmPorts implements LlmPorts {
     const values = new Map(rows.map((row) => [row.key, row.value]))
     const sr = values.get('srIntakeAssistantId')
     const budget = values.get('requestBudgetBytes')
+    const owuiMode = values.get('owuiMode'), owuiCleanup = values.get('owuiCleanup')
     return {
       id: 'app', currentUserId: this.currentUserId,
       // 이미 읽은 전역 설정을 단일 정본으로 해석한다. 구형 defaultModel은 읽지 않는다.
       llm: { ...toLlmSettings(this.config.llm), owuiTools: values.get('owuiTools') === 'off' ? 'off' : 'auto', model: effectiveDefaultModel(this.config, values.get(DEFAULT_MODEL_OVERRIDE_KEY)),
+        // 세션 모드(S12): 관리 설정 → env 기본값
+        owuiMode: owuiMode === 'auto' || owuiMode === 'session' || owuiMode === 'direct' ? owuiMode : this.config.llm.owuiMode,
+        owuiCleanup: typeof owuiCleanup === 'boolean' ? owuiCleanup : this.config.llm.owuiCleanup,
         ...(values.get('fileDelivery') === 'inline' || values.get('fileDelivery') === 'openwebui' ? { fileDelivery: values.get('fileDelivery') as 'inline' | 'openwebui' } : {}) },
       ...(typeof sr === 'string' ? { srIntakeAssistantId: sr } : {}),
       requestBudgetBytes: typeof budget === 'number' ? budget : this.config.request.budgetBytes,

@@ -49,6 +49,19 @@ describe('DbLlmPorts', () => {
     } finally { await db.delete(appSetting).where(eq(appSetting.key, 'defaultModel')) }
   })
 
+  it('OpenWebUI 세션 모드·정리는 관리 설정 → env 기본값 순으로 해석하고 잘못된 값은 무시한다 (S12)', async () => {
+    const envConfig = loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', LLM_OWUI_MODE: 'direct', LLM_OWUI_CLEANUP: 'false' })
+    try {
+      expect((await new DbLlmPorts(db, config, 'u1').getSettings()).llm).toMatchObject({ owuiMode: 'auto', owuiCleanup: true })
+      expect((await new DbLlmPorts(db, envConfig, 'u1').getSettings()).llm).toMatchObject({ owuiMode: 'direct', owuiCleanup: false })
+      await db.insert(appSetting).values([{ key: 'owuiMode', value: 'session' }, { key: 'owuiCleanup', value: true }])
+      expect((await new DbLlmPorts(db, envConfig, 'u1').getSettings()).llm).toMatchObject({ owuiMode: 'session', owuiCleanup: true })
+      await db.update(appSetting).set({ value: 'socket' }).where(eq(appSetting.key, 'owuiMode'))
+      await db.update(appSetting).set({ value: 'yes' }).where(eq(appSetting.key, 'owuiCleanup'))
+      expect((await new DbLlmPorts(db, envConfig, 'u1').getSettings()).llm).toMatchObject({ owuiMode: 'direct', owuiCleanup: false })
+    } finally { await db.delete(appSetting).where(eq(appSetting.key, 'owuiMode')); await db.delete(appSetting).where(eq(appSetting.key, 'owuiCleanup')) }
+  })
+
   it('업무와 파일을 입력 순서대로 조회하고 없는 ID는 undefined로 둔다', async () => {
     await db.insert(task).values({ id: 't1', code: 'WK-2026-0001', assistantId: 'a1', title: '작업', titleSource: 'manual', status: 'todo', ownerId: 'u1', priority: 'normal', createdBy: 'u1' })
     await db.insert(fileObject).values({ id: 'f1', kind: 'task_file', originTaskId: 't1', originalName: 'result.txt', mime: 'text/plain', sizeBytes: 5, sha256: 'a'.repeat(64), storageKey: '2026/09/f1.txt', source: 'assistant', isOutput: true, version: 1, uploadedBy: 'u1' })

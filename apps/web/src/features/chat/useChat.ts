@@ -72,6 +72,10 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
                 setRun((current) => current ? { ...current, reasoning: (current.reasoning ?? '') + String(data.text), phase: '생각 중' } : current)
               } else if (event === 'delta') {
                 setRun((current) => current ? { ...current, text: current.text + String(data.text), phase: '답변 중' } : current)
+              } else if (event === 'replace') {
+                // OpenWebUI 세션 모드 — 누적 본문·생각이 이어지지 않으면 서버가 전체를 다시 보낸다
+                setRun((current) => current ? data.field === 'reasoning' ? { ...current, reasoning: String(data.text), phase: '생각 중' }
+                  : { ...current, text: String(data.text), phase: '답변 중' } : current)
               } else if (event === 'failed') {
                 failed = String(data.error)
                 terminal = true

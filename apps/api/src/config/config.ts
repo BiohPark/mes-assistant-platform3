@@ -57,6 +57,10 @@ const EnvSchema = z.object({
   LLM_BASE_URL: z.string().default(''),
   LLM_API_KEY: z.string().default(''),
   LLM_DEFAULT_MODEL: z.string().optional(),
+  /** OpenWebUI 대화 요청 방식 기본값(S12) — 관리 설정(owuiMode)이 있으면 그쪽이 우선 */
+  LLM_OWUI_MODE: z.enum(['auto', 'session', 'direct']).default('auto'),
+  /** 세션 모드 완료 뒤 OpenWebUI 채팅 삭제 기본값 — 관리 설정(owuiCleanup)이 있으면 그쪽이 우선 */
+  LLM_OWUI_CLEANUP: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
   REQUEST_FIRST_TOKEN_MS: z.coerce.number().int().positive().default(300_000),
   REQUEST_FILES_FIRST_TOKEN_MS: z.coerce.number().int().positive().default(600_000),
   REQUEST_IDLE_MS: z.coerce.number().int().positive().default(300_000),
@@ -129,7 +133,8 @@ export function loadConfig(env: Record<string, string | undefined>) {
     webDistDir: resolve(e.WEB_DIST_DIR || resolve(import.meta.dirname, '../../../web/dist')),
     fileMaxBytes: e.FILE_MAX_BYTES,
     fileMaxPerRequest: e.FILE_MAX_PER_REQUEST,
-    llm: { mode: e.LLM_MODE, preset: e.LLM_PRESET, baseUrl: e.LLM_BASE_URL, apiKey: e.LLM_API_KEY, defaultModel: e.LLM_DEFAULT_MODEL },
+    llm: { mode: e.LLM_MODE, preset: e.LLM_PRESET, baseUrl: e.LLM_BASE_URL, apiKey: e.LLM_API_KEY, defaultModel: e.LLM_DEFAULT_MODEL,
+      owuiMode: e.LLM_OWUI_MODE, owuiCleanup: e.LLM_OWUI_CLEANUP },
     request: { firstTokenMs: e.REQUEST_FIRST_TOKEN_MS, filesFirstTokenMs: e.REQUEST_FILES_FIRST_TOKEN_MS,
       idleMs: e.REQUEST_IDLE_MS, leaseMs: e.REQUEST_LEASE_MS, keepaliveMs: e.REQUEST_KEEPALIVE_MS,
       sweepMs: e.REQUEST_SWEEP_MS, flushMs: e.REQUEST_FLUSH_MS, budgetBytes: e.REQUEST_BUDGET_BYTES, maxActive: e.REQUEST_MAX_ACTIVE },

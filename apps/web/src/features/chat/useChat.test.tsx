@@ -63,3 +63,22 @@ it('restores and appends reasoning separately without resetting the wait start o
   expect(result.current.waitingSince).toBeUndefined()
   expect(result.current.run).toBeNull()
 })
+
+it('replaces the streamed answer or reasoning when the server sends replace (OpenWebUI session mode)', async () => {
+  let stream!: ReadableStreamDefaultController<Uint8Array>
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller } }))))
+  const client = new QueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useChat('replace-thread'), { wrapper })
+  let sending!: Promise<void>
+  await act(async () => { sending = result.current.send('replace') })
+  const encoder = new TextEncoder()
+  await act(async () => { stream.enqueue(encoder.encode('event: started\ndata: {"requestId":"r","replyMessageId":"m"}\n\nevent: reasoning\ndata: {"text":"처음 생각"}\n\nevent: delta\ndata: {"text":"임시 답변"}\n\n')) })
+  expect(result.current.run).toMatchObject({ text: '임시 답변', reasoning: '처음 생각' })
+  await act(async () => { stream.enqueue(encoder.encode('event: replace\ndata: {"field":"content","text":"최종"}\n\nevent: delta\ndata: {"text":" 답변"}\n\n')) })
+  expect(result.current.run).toMatchObject({ text: '최종 답변', reasoning: '처음 생각', phase: '답변 중' })
+  await act(async () => { stream.enqueue(encoder.encode('event: replace\ndata: {"field":"reasoning","text":"다시 생각"}\n\n')) })
+  expect(result.current.run).toMatchObject({ text: '최종 답변', reasoning: '다시 생각' })
+  await act(async () => { stream.enqueue(encoder.encode('event: completed\ndata: {}\n\n')); stream.close(); await sending })
+  expect(result.current.run).toBeNull()
+})

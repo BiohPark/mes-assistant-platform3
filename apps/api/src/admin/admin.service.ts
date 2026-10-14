@@ -25,7 +25,7 @@ type AssistantInput = {
 }
 type AssistantPatch = Partial<Omit<AssistantInput, 'id'>>
 /** 새 전역 모델 키만 쓴다. 구형 defaultModel은 읽기·쓰기 모두 무시한다. */
-type SettingsPatch = Partial<{ owuiTools: 'auto' | 'off'; defaultModelOverride: string | null; fileDelivery: 'inline' | 'openwebui'; requestBudgetBytes: number; srIntakeAssistantId: string | null; link1Rule: string; fileMaxPerRequest: number }>
+type SettingsPatch = Partial<{ owuiTools: 'auto' | 'off'; owuiMode: 'auto' | 'session' | 'direct'; owuiCleanup: boolean; defaultModelOverride: string | null; fileDelivery: 'inline' | 'openwebui'; requestBudgetBytes: number; srIntakeAssistantId: string | null; link1Rule: string; fileMaxPerRequest: number }>
 const normalizeCodeName = (value: string) => value.trim().replace(/\s+/gu, ' ').normalize('NFC')
 const defaultChecklist = () => [
   { id: randomUUID(), label: '입력 자료 선택', required: true },

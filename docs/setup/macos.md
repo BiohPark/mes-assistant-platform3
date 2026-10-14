@@ -106,7 +106,9 @@ WHERE p.assistant_id IS NULL
 
 ### OpenWebUI 도구 전달 (S10)
 
-SO는 전역 설정의 **OpenWebUI 도구 전달**에서 자동(기본) / 끔을 선택하고 **도구 전달 설정 저장**으로 따로 저장한다. DB 키는 `app_setting.owuiTools`이며 없으면 자동이다. 다른 설정 저장에는 이 키를 보내지 않는다. 재시작 없이 다음 요청부터 적용된다.
+SO는 전역 설정의 **OpenWebUI 도구 전달**에서 자동(기본) / 끔을 고르면 바로 저장된다. DB 키는 `app_setting.owuiTools`이며 없으면 자동이다. 재시작 없이 다음 요청부터 적용된다.
+
+**OpenWebUI 요청 방식(S12)**: `LLM_OWUI_MODE`=`auto`(기본)·`session`·`direct`. 세션 방식은 OpenWebUI 화면처럼 채팅을 만들어 보내므로 URL 읽기 같은 기본 도구가 켜지고, 서버가 그 채팅을 폴링해 답·생각 과정·진행 상태를 받는다. 서비스 키가 `/api/v1/chats`·`/api/tasks`를 쓸 수 있어야 한다. `auto`는 시작 단계에서 거부(4xx)되거나 응답 형식이 다르면 기존 방식으로 보낸다. `LLM_OWUI_CLEANUP=true`(기본)이면 완료 뒤 OpenWebUI 쪽 채팅을 지운다(서비스 계정에 채팅 삭제 권한 필요). 관리 설정(`owuiMode`·`owuiCleanup`)이 있으면 그 값이 우선한다.
 
 `LLM_MODE=live`, `LLM_PRESET=openwebui`인 자동 모드는 `/api/models`의 선택 모델 `info.meta.toolIds`·`defaultFeatureIds`를 읽어 5분 동안 캐시한다. 진단과 같은 식별자 허용 목록만 사용하며, 도구·기능이 하나라도 있으면 `tool_ids`, `features: {기능ID: true}`, `params.function_calling: legacy`를 추가한다. 메타가 없거나 조회하지 못하면 기본 방식으로 보낸다. 앱 자체 함수 도구가 있는 호출은 기존 방식으로 보낸다.
 
