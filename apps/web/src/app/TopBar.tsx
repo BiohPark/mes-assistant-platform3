@@ -1,5 +1,6 @@
 import { useT } from '@/i18n'
-import { ChevronDown, LogOut, KeyRound, UserRound } from 'lucide-react'
+import { ChevronDown, Languages, LogOut, KeyRound, Moon, Sun, UserRound } from 'lucide-react'
+import { useTheme } from 'next-themes'
 import { Link, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { useQuery } from '@tanstack/react-query'
@@ -35,6 +36,8 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
   const me = useMe()
   const profile = useProfile()
   const navigate = useNavigate()
+  // 상단 토글은 지금 보이는 테마의 반대로 바꾼다('시스템 설정'이면 실제 적용된 쪽 기준). 저장은 메뉴와 같은 profile.save
+  const dark = (useTheme().resolvedTheme ?? profile.theme) === 'dark'
   const isOwner = me.roles.includes('system_owner')
   const requesterOnly = me.roles.includes('requester') && !isOwner
   const llmStatus = useQuery({
@@ -51,6 +54,12 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
     <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-background px-4">
       <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{title}</h1>
       {actions}
+      <Button variant="ghost" size="icon-sm" aria-label={t(dark ? 'common.switchToLight' : 'common.switchToDark')} title={t(dark ? 'common.switchToLight' : 'common.switchToDark')} disabled={profile.pending} onClick={() => profile.save({ theme: dark ? 'light' : 'dark' })}>
+        {dark ? <Sun /> : <Moon />}
+      </Button>
+      <Button variant="ghost" size="icon-sm" aria-label={t('common.switchLanguage')} title={t('common.switchLanguage')} disabled={profile.pending} onClick={() => profile.save({ locale: profile.locale === 'ko' ? 'en' : 'ko' })}>
+        <Languages />
+      </Button>
       {!requesterOnly && <NotificationBell />}
       {isOwner && llmStatus.data && <Link to="/admin/diagnostics" aria-label={t('admin.diagnostics.badge', { mode: llmStatus.data.mode === 'mock' ? 'Mock' : 'Live' })} className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">{llmStatus.data.mode === 'mock' ? 'Mock' : 'Live'}</Link>}
       <DropdownMenu>

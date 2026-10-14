@@ -20,6 +20,7 @@ import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
 import { EventsService } from '../events/events.service.js'
 import { SrService } from './sr.service.js'
+import { firstQuestionsKey } from '../catalog/first-questions-key.js'
 import { assertFileAccess, assertSrAccess, assertTaskAccess, assertThreadAccess } from './access.js'
 import { EventsController } from '../events/events.controller.js'
 import { EventEmitter } from 'node:events'
@@ -528,6 +529,16 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     const [intake] = await db.select().from(assistant).where(eq(assistant.id, assistantId))
     expect(await sr.intakeAssistant()).toEqual({ srIntakeAssistantId: assistantId, name: intake!.name, summary: intake!.summary, usageExample: intake!.usageExample, fileMaxPerRequest: 3 })
     await db.delete(appSetting).where(eq(appSetting.key, 'fileMaxPerRequest'))
+  })
+
+  it('carries the intake agent AI-suggested first questions only while they match its current model, name and description', async () => {
+    const [intake] = await db.select().from(assistant).where(eq(assistant.id, assistantId))
+    expect(await sr.intakeAssistant()).not.toHaveProperty('suggestedQuestions')
+    await db.update(assistant).set({ suggestedQuestions: ['접수 질문'], suggestedFor: firstQuestionsKey(intake!) }).where(eq(assistant.id, assistantId))
+    expect((await sr.intakeAssistant()).suggestedQuestions).toEqual(['접수 질문'])
+    await db.update(assistant).set({ suggestedFor: 'stale' }).where(eq(assistant.id, assistantId))
+    expect(await sr.intakeAssistant()).not.toHaveProperty('suggestedQuestions')
+    await db.update(assistant).set({ suggestedQuestions: null, suggestedFor: null }).where(eq(assistant.id, assistantId))
   })
 
   it('serves file metadata to the requester over HTTP with the same scope as download, without widening other file routes', async () => {

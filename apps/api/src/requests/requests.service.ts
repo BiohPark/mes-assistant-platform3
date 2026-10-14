@@ -121,7 +121,7 @@ export class RequestsService implements OnModuleDestroy {
     catch (error) { if (error instanceof SummaryBudgetError) throw new HttpException(error.message, 413); throw error }
   }
   /** 사용자별 단일 진행 — 도우미(assistant)는 제목·요약 등 다른 보조 호출과 별도 슬롯(U4). 전역 상한은 admit이 따로 센다 */
-  async runAuxiliary<T>(actor: string, kind: 'title' | 'summary' | 'checklist' | 'refine' | 'test' | 'assistant', operation: (signal: AbortSignal) => Promise<T>,
+  async runAuxiliary<T>(actor: string, kind: 'title' | 'summary' | 'checklist' | 'refine' | 'test' | 'assistant' | 'suggest', operation: (signal: AbortSignal) => Promise<T>,
     options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<T> {
     const slot = kind === 'assistant' ? `${actor}:assistant` : `${actor}:aux`
     if (this.auxiliaryUsers.has(slot)) throw new HttpException(kind === 'assistant' ? '다른 보조 요청이 진행 중입니다' : '보조 요청이 이미 진행 중입니다', 429)

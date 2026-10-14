@@ -28,7 +28,8 @@ it('upgrades the pre-D schema preserving inactive original pairs, reruns safely 
     await pool.query("insert into app_user (id, name, initials, color) values ('upgrade-owner', 'Owner', 'O', '#123456')")
     await db.insert(codeGroup).values([{ key: 'assistant_level1', name: 'Level 1' }, { key: 'assistant_level2', name: 'Level 2' }])
     await db.insert(code).values([{ id: 'old-one', groupKey: 'assistant_level1', code: 'one', name: 'One', active: false }, { id: 'old-two', groupKey: 'assistant_level2', code: 'two', name: 'Two', active: false }])
-    await db.insert(assistant).values({ id: 'old-agent', name: 'Old', link1: 'https://example.invalid/legacy', level1CodeId: 'old-one', level2CodeId: 'old-two', ownerId: 'upgrade-owner', createdBy: 'upgrade-owner', sortOrder: 1, status: 'open', color: '#123456' })
+    // 추천 첫 질문 컬럼(0012)도 없는 시점이라 현재 assistant 정의를 쓰지 않는다.
+    await pool.query("insert into assistant (id, name, link1, level1_code_id, level2_code_id, owner_id, created_by, sort_order, status, color) values ('old-agent', 'Old', 'https://example.invalid/legacy', 'old-one', 'old-two', 'upgrade-owner', 'upgrade-owner', 1, 'open', '#123456')")
     expect(await runMigrations(temp.url)).toEqual({ assistants: 1, classifications: 1, link1Overrides: 1 })
     expect(await db.select().from(assistantClassification)).toEqual([{ assistantId: 'old-agent', level1CodeId: 'old-one', level2CodeId: 'old-two', sortOrder: 0 }])
     expect((await db.select().from(code)).every(row => !row.active)).toBe(true)

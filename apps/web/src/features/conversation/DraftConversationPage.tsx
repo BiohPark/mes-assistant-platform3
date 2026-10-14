@@ -129,7 +129,7 @@ export function DraftConversationPage() {
           {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">{t('hub.retiredAssistant')} <Link to="/" className="underline">{t('hub.pickAnotherAssistant')}</Link></div>}
         </div>
       </div>
-      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer ref={composer} disabled={busy} streaming={false} allowAttachments allowDiscussion placeholder={t('chat.composerPlaceholderFor', { assistant: assistant.name })} onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
+      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer ref={composer} disabled={busy} streaming={false} allowAttachments allowDiscussion placeholder={t('chat.composerPlaceholderFor', { assistant: assistant.name })} onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample, assistant.suggestedQuestions)} /></div>}
     </FileDropZone>
   </>
 }
