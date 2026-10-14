@@ -189,6 +189,8 @@ test('session URL scenario records fetch status entries and mentions the fetched
   const { message, seen } = await pollUntilDone(base, chat_id)
   assert.deepEqual(message.statusHistory.map(item => item.description), ['URL 읽는 중: https://example.com/page', 'URL 읽음'])
   assert.ok(seen.some(item => !item.done && item.statusHistory.length === 1), 'fetch status should be visible while running')
+  // 1초 폴링이 적어도 한 번은 'URL 읽는 중'을 보도록 읽기 단계가 폴링 간격보다 길다
+  assert.ok(seen.filter(item => item.statusHistory.length === 1).length * 50 >= 1500, 'fetch status should outlast the 1s poll interval')
   assert.match(outputText(message, 'message'), /\[fetched: https:\/\/example\.com\/page\]$/)
   assert.equal(outputText(message, 'reasoning'), 'PRIVATE_REASONING: 요청을 검토합니다. 자료를 비교합니다. 답변을 준비합니다.')
   assert.doesNotMatch(outputText(message, 'message'), /PRIVATE_REASONING/)

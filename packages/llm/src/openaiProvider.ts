@@ -40,9 +40,10 @@ function readSessionMessage(message: Record<string, unknown>) {
   const content = output.filter((item) => item.type === 'message').map((item) => partsText(item.content)).filter((text) => text.trim()).join('\n')
   const reasoning = output.filter((item) => item.type === 'reasoning').map((item) => partsText(item.content) || partsText(item.summary)).filter(Boolean).join('\n')
   const history = Array.isArray(message.statusHistory) ? message.statusHistory : []
-  const visible = history.filter((item): item is Record<string, unknown> => isObject(item) && item.hidden !== true && typeof item.description === 'string' && item.description.trim() !== '')
-  return { content: content || (typeof message.content === 'string' ? message.content : ''), reasoning,
-    statusCount: history.length, status: (visible.at(-1)?.description as string | undefined)?.trim().slice(0, SESSION_STATUS_MAX),
+  // 상태 항목마다 보이는 문구(숨김·빈 문구는 undefined) — 폴링 사이에 지나간 단계도 놓치지 않는다
+  const statuses = history.map((item) => isObject(item) && item.hidden !== true && typeof item.description === 'string' && item.description.trim()
+    ? item.description.trim().slice(0, SESSION_STATUS_MAX) : undefined)
+  return { content: content || (typeof message.content === 'string' ? message.content : ''), reasoning, statuses,
     done: message.done === true, error: message.error !== undefined && message.error !== null && message.error !== false }
 }
 
@@ -305,9 +306,12 @@ export class OpenAICompatibleProvider implements ChatProvider {
         }
         if (message) {
           const next = readSessionMessage(message)
-          if (next.statusCount > statusCount) {
-            statusCount = next.statusCount
-            if (next.status) yield { type: 'status', text: next.status }
+          if (next.statuses.length > statusCount) {
+            // 새 상태를 모두 낸다. 새 항목이 숨김뿐이면 마지막 보이는 상태로 생존 신호만 준다
+            const fresh = next.statuses.slice(statusCount).filter((text): text is string => !!text)
+            const latest = next.statuses.findLast((text): text is string => !!text)
+            statusCount = next.statuses.length
+            for (const text of fresh.length ? fresh : latest ? [latest] : []) yield { type: 'status', text }
           }
           if (next.reasoning !== reasoning) {
             yield next.reasoning.startsWith(reasoning) ? { type: 'reasoning', text: next.reasoning.slice(reasoning.length) } : { type: 'replace', field: 'reasoning', text: next.reasoning }

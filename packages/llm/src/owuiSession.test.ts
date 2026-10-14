@@ -73,6 +73,15 @@ describe('OpenWebUI session mode', () => {
     upstream([{ statuses: ['검색 중'] }, { statuses: ['검색 중'] }, { statuses: ['검색 중', '검색 중'] }, { statuses: ['검색 중', '검색 중'], content: 'OK', done: true }])
     expect(await collect()).toEqual([{ type: 'status', text: '검색 중' }, { type: 'status', text: '검색 중' }, { type: 'delta', text: 'OK' }, { type: 'done' }])
   })
+  it('reports every status added between two polls, so a short step is not lost (URL 읽는 중 → URL 읽음)', async () => {
+    upstream([{}, { statuses: ['URL 읽는 중', 'URL 읽음'], content: 'OK', done: true }])
+    expect(await collect()).toEqual([{ type: 'status', text: 'URL 읽는 중' }, { type: 'status', text: 'URL 읽음' }, { type: 'delta', text: 'OK' }, { type: 'done' }])
+  })
+  it('keeps hidden-only status growth as a liveness signal with the last visible status', async () => {
+    upstream([{ statuses: ['검색 중'] }, { raw: undefined, message: { done: false, output: [], statusHistory: [{ description: '검색 중' }, { description: 'internal', hidden: true }] } },
+      { content: 'OK', done: true, statuses: ['검색 중', '검색 중'] }])
+    expect(await collect()).toEqual([{ type: 'status', text: '검색 중' }, { type: 'status', text: '검색 중' }, { type: 'delta', text: 'OK' }, { type: 'done' }])
+  })
   it('falls back to message.content when output carries no message item', async () => {
     upstream([{ raw: { chat: { history: { messages: {} } } } }, { message: { content: '본문만', output: [], done: true } }])
     expect(await collect()).toEqual([{ type: 'delta', text: '본문만' }, { type: 'done' }])

@@ -72,7 +72,7 @@ const isSessionRequest = payload => typeof payload.session_id === 'string' && 'p
 
 /**
  * 세션 모드 진행 — 채팅 메시지를 시간에 따라 채운다. 본문은 output의 message 항목, 생각은 reasoning 항목, 상태는 statusHistory.
- * 시나리오(사용자 메시지): URL 포함 → fetch 상태 2개와 [fetched: URL], [delay] → 상태 3개(1초 간격), [reasoning] → 생각 3개(1초 간격),
+ * 시나리오(사용자 메시지): URL 포함 → fetch 상태 2개(읽기 2.5초)와 [fetched: URL], [delay] → 상태 3개(1초 간격), [reasoning] → 생각 3개(1초 간격),
  * [error] → 오류로 끝남, [replace] → '임시 답변'을 보였다가 최종 답으로 바꿈
  */
 async function runSession(chat, payload) {
@@ -87,7 +87,8 @@ async function runSession(chat, payload) {
   if (url) {
     if (!alive()) return
     status(`URL 읽는 중: ${url}`, { action: 'fetch_url' })
-    await wait(800)
+    // 실제 URL 읽기처럼 폴링 간격(1초)보다 길게 — 짧으면 화면이 이 단계를 보지 못한다
+    await wait(2500)
     if (!alive()) return
     status('URL 읽음', { action: 'fetch_url', done: true })
     text += ` [fetched: ${url}]`
