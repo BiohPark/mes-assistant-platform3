@@ -5,9 +5,9 @@ afterEach(clearDrafts)
 
 it('keeps one draft per conversation in memory, drops empty ones and clears everything on logout', () => {
   const file = new File(['x'], 'a.txt', { type: 'text/plain' })
-  setDraft('a', { text: '초안', pending: [{ file, once: false }], discussion: true })
+  setDraft('a', { text: '초안', pending: [{ file }], discussion: true })
   setDraft('b', { text: '', pending: [], discussion: false })
-  expect(getDraft('a')).toEqual({ text: '초안', pending: [{ file, once: false }], discussion: true })
+  expect(getDraft('a')).toEqual({ text: '초안', pending: [{ file }], discussion: true })
   expect(getDraft('b')).toBeUndefined()
   setDraft('a', { text: '', pending: [], discussion: false })
   expect(getDraft('a')).toBeUndefined()

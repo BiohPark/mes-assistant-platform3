@@ -121,7 +121,7 @@ it('keeps a discussion draft and shows an error when the message API fails', asy
   expect(input).toHaveValue('남길 의견')
 })
 
-it('uploads a pinned attachment and stores it on the discussion message', async () => {
+it.each([false, true])('stores a discussion attachment without pinning it (attached in discussion=%s)', async (attachedInDiscussion) => {
   const calls: Array<{ url: string; method?: string; body?: unknown }> = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push({ url, method: init?.method, body: init?.body })
@@ -132,16 +132,18 @@ it('uploads a pinned attachment and stores it on the discussion message', async 
   }))
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
   const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
-  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  if (attachedInDiscussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
-  fireEvent.click(screen.getByText('이번 메시지만')) // 팀 의견 첨부 기본값은 '이번 메시지만'(B-2) → 고정으로 바꿔 보낸다
+  if (!attachedInDiscussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  expect(screen.queryByRole('button', { name: /입력으로 고정|이번 메시지만/ })).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(calls.some((call) => call.url === '/api/threads/h/messages' && call.method === 'POST')).toBe(true))
-  expect(calls.some((call) => call.url === '/api/tasks/t/inputs/f' && call.method === 'PUT')).toBe(true)
-  expect(JSON.parse(String(calls.find((call) => call.url === '/api/threads/h/messages' && call.method === 'POST')?.body))).toMatchObject({ attachmentIds: ['f'] })
+  expect(calls.some((call) => call.url === '/api/tasks/t/inputs/f' && call.method === 'PUT')).toBe(false)
+  expect(JSON.parse(String(calls.find((call) => call.url === '/api/threads/h/messages' && call.method === 'POST')?.body))).toMatchObject({ attachmentIds: ['f'], kind: 'discussion' })
+  expect(calls.some((call) => call.url === '/api/threads/h/requests' && call.method === 'POST')).toBe(false)
 })
 
-it('sends an AI request through SSE and leaves pinning to the server', async () => {
+it.each([false, true])('sends AI attachments through SSE for server pinning (attached in discussion=%s)', async (attachedInDiscussion) => {
   const calls: Array<{ url: string; init?: RequestInit }> = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push({ url, init })
@@ -151,7 +153,9 @@ it('sends an AI request through SSE and leaves pinning to the server', async () 
   }))
   const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
   const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  if (attachedInDiscussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
+  if (attachedInDiscussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '질문' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(calls.some((call) => call.url === '/api/threads/h/requests')).toBe(true))
@@ -286,7 +290,7 @@ it.each(['star', 'remove'] as const)('shows calculating and dims references duri
   render(<QueryClientProvider client={queryClient}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '질문' } })
   await screen.findByText('예상 400 B / 1000 B')
-  const root = screen.getByLabelText('이번 요청에 사용할 자료')
+  const root = screen.getByLabelText('AI에 함께 보내는 자료')
   const meter = screen.getByRole('meter')
   fireEvent.click(screen.getByRole('button', { name: action === 'star' ? 'C-1 주 입력 전환' : 'C-1 입력 선택 해제' }))
   await screen.findByText('계산 중')
@@ -302,7 +306,7 @@ it.each(['star', 'remove'] as const)('shows calculating and dims references duri
   await act(async () => finishRefetch(Response.json({ ...info, bytes: 100,
     inputs: action === 'star' ? [{ ...info.inputs[0], weight: 'main' }] : [] })))
   await screen.findByText('예상 100 B / 1000 B')
-  expect(screen.getByLabelText('이번 요청에 사용할 자료')).toBe(root)
+  expect(screen.getByLabelText('AI에 함께 보내는 자료')).toBe(root)
   expect(root).toHaveAttribute('aria-busy', 'false')
   expect(screen.getByRole('list')).not.toHaveClass('opacity-60')
 })
@@ -354,7 +358,7 @@ it('turns a file dropped on the conversation area into a pending attachment chip
   fireEvent.drop(zone, drag)
   expect(screen.queryByText('놓으면 첨부 대기에 추가')).not.toBeInTheDocument()
   expect(screen.getByText('dropped.txt')).toBeInTheDocument()
-  expect(screen.getByText('입력으로 고정')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /입력으로 고정|이번 메시지만/ })).not.toBeInTheDocument()
   expect(toastSuccess).toHaveBeenCalledWith('1개 파일을 첨부 대기에 추가했습니다.')
 })
 

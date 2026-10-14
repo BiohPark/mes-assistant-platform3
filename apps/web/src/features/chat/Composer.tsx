@@ -1,5 +1,5 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
-import { MessagesSquare, Paperclip, Pin, PinOff, Send, Square, X } from 'lucide-react'
+import { MessagesSquare, Paperclip, Send, Square, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -10,15 +10,14 @@ import { getSettings } from '@/api/admin'
 import { useT } from '@/i18n'
 import { getDraft, setDraft, type ComposerDraft } from './drafts'
 
-/** 보낼 첨부 1건. once=true면 이번 메시지에만 쓰고 대화 입력으로 고정하지 않는다 */
+/** 보낼 첨부 1건. AI 요청은 대화 입력으로 유지하고 팀 의견은 AI 입력에 추가하지 않는다 */
 export interface PendingAttachment {
   file: File
-  once: boolean
   uploadedId?: string
   uploadedTaskId?: string
 }
 
-/** 드래그앤드랍 등 바깥에서 파일을 넣는 경로 — 첨부 버튼과 같은 한도·once 규칙을 탄다 */
+/** 드래그앤드랍 등 바깥에서 파일을 넣는 경로 — 첨부 버튼과 같은 한도를 적용한다 */
 export interface ComposerHandle {
   /** 추가됐으면 true, 한도 초과로 거부됐으면 false */
   dropFiles: (files: File[]) => boolean
@@ -43,8 +42,6 @@ interface ComposerProps {
   onTyping?: () => void
   /** 팀 의견 토글 노출 여부 (업무 채팅에서만) */
   allowDiscussion?: boolean
-  /** 첨부를 대화 입력으로 고정할지 고르는 토글 노출 (업무 채팅에서만) */
-  allowPin?: boolean
   /** 보낼 수 없는 이유 (요청 크기 한도 초과 등). 팀 의견은 막지 않는다 */
   blockedReason?: string
   /** 작성 중인 글 (요청 크기 미리 계산용) */
@@ -54,7 +51,7 @@ interface ComposerProps {
   draftKey?: string
 }
 
-export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, onSend, beforeSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, allowPin, blockedReason, onDraftChange, clearOnSubmit = false, draftKey }: ComposerProps) {
+export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, onSend, beforeSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey }: ComposerProps) {
   const t = useT()
   const [saved] = useState(() => (draftKey ? getDraft(draftKey) : undefined))
   const [discussion, setDiscussionState] = useState(saved?.discussion ?? false)
@@ -92,7 +89,7 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
   }
 
   function addFiles(files: File[]): boolean {
-    const picked = files.map((file) => ({ file, once: discussion }))
+    const picked = files.map((file) => ({ file }))
     if (pending.length + picked.length > attachmentLimit) { setAttachmentError(t('chat.attachmentLimit', { limit: String(attachmentLimit) })); return false }
     setPending((p) => [...p, ...picked])
     setAttachmentError('')
@@ -158,18 +155,6 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
             <span key={i} className="inline-flex items-center gap-1 rounded-full border bg-muted/50 px-1.5 py-0.5 text-xs">
               <Paperclip className="size-3" />
               {p.file.name}
-              {allowPin && (
-                <button
-                  type="button"
-                  className={cn('inline-flex items-center gap-0.5 rounded-lg px-1', p.once ? 'text-muted-foreground' : 'text-primary')}
-                  aria-pressed={!p.once}
-                  onClick={() => setPending((cur) => cur.map((x, j) => (j === i ? { ...x, once: !x.once } : x)))}
-                  title={p.once ? t('chat.attachOnceTitle') : t('chat.attachPinnedTitle')}
-                >
-                  {p.once ? <PinOff className="size-3" /> : <Pin className="size-3" />}
-                  {p.once ? t('chat.attachOnce') : t('chat.attachPinned')}
-                </button>
-              )}
               <button type="button" aria-label={t('chat.removeAttachment')} onClick={() => setPending((cur) => cur.filter((_, j) => j !== i))}>
                 <X className="size-3" />
               </button>

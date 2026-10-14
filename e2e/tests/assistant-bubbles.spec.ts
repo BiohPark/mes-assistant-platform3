@@ -24,7 +24,7 @@ test('U6 도우미 말풍선 — 한도 경고는 레벨이 오를 때 한 번�
   const composer = page.getByRole('textbox', { name: 'AI 요청 입력' })
   const region = page.getByRole('status', { name: 'AI 도우미 말풍선' })
   const bubble = page.getByTestId('assistant-bubble')
-  const trayToggle = page.getByRole('button', { name: /^이번 요청에 사용 · / })
+  const trayToggle = page.getByRole('button', { name: /^AI에 함께 보내는 자료 · / })
   await expect(trayToggle).toBeVisible()
   await expect(region).toHaveAttribute('aria-live', 'polite')
   await expect(bubble).toHaveCount(0)

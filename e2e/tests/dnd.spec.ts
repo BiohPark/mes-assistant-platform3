@@ -41,7 +41,8 @@ test('초안 화면에 끌어다 놓으면 첨부 대기 칩이 되고 첫 전�
   await expect(page.getByText('2개 파일을 첨부 대기에 추가했습니다.')).toBeVisible()
   await expect(page.getByText('dnd-one.txt')).toBeVisible()
   await expect(page.getByText('dnd-two.txt')).toBeVisible()
-  await expect(page.getByText('입력으로 고정')).toHaveCount(2)
+  await expect(page.getByRole('button', { name: '첨부 제거' })).toHaveCount(2)
+  await expect(page.getByRole('button', { name: /입력으로 고정|이번 메시지만/ })).toHaveCount(0)
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page).toHaveURL(/\/c\/[^/]+$/)
   await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
@@ -49,7 +50,7 @@ test('초안 화면에 끌어다 놓으면 첨부 대기 칩이 되고 첫 전�
   await expect(page.getByTestId('materials-inputs')).toContainText('dnd-two.txt v1')
 })
 
-test('대화 화면: 자료 패널에 놓으면 저장, 팀 의견 모드에 놓으면 이번 메시지만, 빈 파일은 거부', async ({ page }) => {
+test('대화 화면: 자료 패널에 놓으면 저장, 팀 의견 첨부는 AI 입력에서 제외, 빈 파일은 거부', async ({ page }) => {
   await signUp(page)
   const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
   const task = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id } })).json() as { id: string }
@@ -72,7 +73,8 @@ test('대화 화면: 자료 패널에 놓으면 저장, 팀 의견 모드에 놓
   await page.getByRole('button', { name: '팀 의견 (AI 미전송)' }).click()
   await drop(chat, await dataTransfer(page, [{ name: 'dnd-note.txt', content: 'note' }]))
   await expect(page.getByText('dnd-note.txt')).toBeVisible()
-  await expect(page.getByText('이번 메시지만')).toBeVisible()
+  await expect(page.getByRole('button', { name: '첨부 제거' })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /입력으로 고정|이번 메시지만/ })).toHaveCount(0)
   await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('끌어다 놓은 파일 공유')
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByText('끌어다 놓은 파일 공유')).toBeVisible()

@@ -50,32 +50,34 @@ it('clears a drawer submission immediately and preserves text typed during the r
   expect(input).toHaveValue('다음 질문')
 })
 
-it('pins attachments by default and lets a sender mark one as message-only', async () => {
+it('sends AI attachments without a pinning toggle', async () => {
   const send = vi.fn(async () => undefined)
-  const { container } = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, allowPin: true })
+  const { container } = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true })
   const file = new File(['abc'], 'note.txt', { type: 'text/plain' })
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [file] } })
-  expect(screen.getByText('입력으로 고정')).toBeInTheDocument()
-  fireEvent.click(screen.getByText('입력으로 고정'))
-  expect(screen.getByText('이번 메시지만')).toBeInTheDocument()
+  expect(screen.getByText('note.txt')).toBeVisible()
+  expect(screen.queryByRole('button', { name: /입력으로 고정|이번 메시지만/ })).not.toBeInTheDocument()
+  expect(screen.getAllByRole('button', { name: '첨부 제거' })).toHaveLength(1)
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
-  await waitFor(() => expect(send).toHaveBeenCalledWith('', [{ file, once: true }], false))
+  await waitFor(() => expect(send).toHaveBeenCalledWith('', [{ file }], false))
 })
 
-it('defaults team-note attachments to this message only and keeps the choice after switching modes', async () => {
+it.each([false, true])('preserves attachments across mode switches and sends in the final mode (discussion=%s)', async (discussion) => {
   const send = vi.fn(async () => undefined)
-  const { container } = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, allowPin: true, allowDiscussion: true, placeholder: '도우미에게 요청하세요' })
+  const { container } = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, allowDiscussion: true, placeholder: '도우미에게 요청하세요' })
   expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveAttribute('placeholder', '도우미에게 요청하세요')
   fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   expect(screen.getByRole('textbox', { name: '팀 의견 입력' })).toHaveAttribute('placeholder', '팀 의견을 남기세요 (AI에게 전송되지 않음)')
   const file = new File(['abc'], 'note.txt', { type: 'text/plain' })
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [file] } })
-  expect(screen.getByText('이번 메시지만')).toBeInTheDocument()
+  expect(screen.getByText('note.txt')).toBeVisible()
+  expect(screen.queryByRole('button', { name: /입력으로 고정|이번 메시지만/ })).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
-  expect(screen.getByText('이번 메시지만')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  expect(screen.getByText('note.txt')).toBeVisible()
+  expect(screen.queryByRole('button', { name: /입력으로 고정|이번 메시지만/ })).not.toBeInTheDocument()
+  if (discussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
-  await waitFor(() => expect(send).toHaveBeenCalledWith('', [{ file, once: true }], true))
+  await waitFor(() => expect(send).toHaveBeenCalledWith('', [{ file }], discussion))
 })
 
 it('rejects more than 20 attachments before sending', async () => {
@@ -88,16 +90,16 @@ it('rejects more than 20 attachments before sending', async () => {
   expect(send).not.toHaveBeenCalled()
 })
 
-it('accepts dropped files through the same limit and once rules as the attach button', async () => {
+it('accepts dropped files through the same limit as the attach button', async () => {
   const send = vi.fn(async () => undefined)
   const ref = createRef<ComposerHandle>()
-  renderComposer({ ref, streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, allowPin: true, allowDiscussion: true, maxAttachments: 2 })
+  renderComposer({ ref, streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, allowDiscussion: true, maxAttachments: 2 })
   const first = new File(['a'], 'first.txt', { type: 'text/plain' })
   let added = false
   act(() => { added = ref.current!.dropFiles([first]) })
   expect(added).toBe(true)
   expect(screen.getByText('first.txt')).toBeInTheDocument()
-  expect(screen.getByText('입력으로 고정')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /입력으로 고정|이번 메시지만/ })).not.toBeInTheDocument()
   expect(toastSuccess).toHaveBeenCalledWith('1개 파일을 첨부 대기에 추가했습니다.')
   // 한도 초과면 아무것도 추가하지 않고 기존 메시지로 알린다
   act(() => { added = ref.current!.dropFiles([new File(['b'], 'b.txt'), new File(['c'], 'c.txt')]) })
@@ -105,15 +107,16 @@ it('accepts dropped files through the same limit and once rules as the attach bu
   expect(screen.getByRole('alert')).toHaveTextContent('첨부 파일은 최대 2개까지 선택할 수 있습니다.')
   expect(screen.queryByText('b.txt')).not.toBeInTheDocument()
   expect(toastSuccess).toHaveBeenCalledTimes(1)
-  // 팀 의견 모드에서 놓으면 '이번 메시지만'
+  // 팀 의견 모드에서도 전환 버튼 없이 첨부를 추가한다
   fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   const second = new File(['d'], 'second.txt', { type: 'text/plain' })
   act(() => { added = ref.current!.dropFiles([second]) })
   expect(added).toBe(true)
-  expect(screen.getByText('이번 메시지만')).toBeInTheDocument()
+  expect(screen.getByText('second.txt')).toBeVisible()
+  expect(screen.queryByRole('button', { name: /입력으로 고정|이번 메시지만/ })).not.toBeInTheDocument()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
-  await waitFor(() => expect(send).toHaveBeenCalledWith('', [{ file: first, once: false }, { file: second, once: true }], true))
+  await waitFor(() => expect(send).toHaveBeenCalledWith('', [{ file: first }, { file: second }], true))
 })
 
 
@@ -121,7 +124,7 @@ it('prefills only text, focuses the input and preserves discussion mode and atta
   const send = vi.fn(async () => undefined)
   const changed = vi.fn()
   const ref = createRef<ComposerHandle>()
-  renderComposer({ ref, streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, allowPin: true, allowDiscussion: true, onDraftChange: changed })
+  renderComposer({ ref, streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, allowDiscussion: true, onDraftChange: changed })
   fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   const file = new File(['a'], 'current.txt')
   act(() => { ref.current!.dropFiles([file]); ref.current!.setText('**원문 질문**') })
@@ -129,7 +132,7 @@ it('prefills only text, focuses the input and preserves discussion mode and atta
   expect(screen.getByRole('textbox', { name: '팀 의견 입력' })).toHaveFocus()
   expect(changed).toHaveBeenLastCalledWith('**원문 질문**')
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
-  await waitFor(() => expect(send).toHaveBeenCalledWith('**원문 질문**', [{ file, once: true }], true))
+  await waitFor(() => expect(send).toHaveBeenCalledWith('**원문 질문**', [{ file }], true))
 })
 
 it('locks submission synchronously until the current send settles', async () => {
@@ -195,7 +198,7 @@ it('keeps a staged attachment when the composer remounts in the same batch as th
 it('clears only what was sent: text and attachments staged while the send was still resolving survive', async () => {
   let finish!: () => void
   const send = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
-  const { container } = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, allowDiscussion: true, allowPin: true })
+  const { container } = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true, allowDiscussion: true })
   const input = () => screen.getByRole('textbox', { name: /입력/ })
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'sent.txt', { type: 'text/plain' })] } })
   fireEvent.change(input(), { target: { value: '보낼 질문' } })
@@ -208,7 +211,7 @@ it('clears only what was sent: text and attachments staged while the send was st
   await act(async () => { finish() })
   expect(screen.queryByText('sent.txt')).not.toBeInTheDocument()
   expect(screen.getByText('next.txt')).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '이번 메시지만' })).toBeVisible()
+  expect(screen.getByRole('button', { name: '첨부 제거' })).toBeVisible()
   expect(input()).toHaveValue('') // 보낸 텍스트는 그대로였으니 비운다
   fireEvent.change(input(), { target: { value: '다음 질문' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
