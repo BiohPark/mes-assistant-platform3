@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { isSrTag, normalizeTag, tagKey, type SrTagStatus, type TagSuggestion } from '@mes/domain'
 import { cn } from '@/lib/utils'
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { TagChip } from './TagChip'
 
 const MAX_SUGGESTIONS = 8
@@ -21,6 +22,8 @@ interface TagInputProps {
   readOnly?: boolean
   placeholder?: string
   className?: string
+  /** 칩 + [+] 버튼만 두고 입력은 팝오버로 연다 — 가로 스크롤 줄(대화 헤더)에서도 후보 목록이 잘리지 않는다 */
+  compact?: boolean
 }
 
 /**
@@ -30,10 +33,11 @@ interface TagInputProps {
  * 후보가 재정렬돼도 고른 것만 붙고, 후보에서 사라지면 선택이 풀린다. Backspace(빈 입력)로 마지막 칩 삭제.
  * 저장 실패 시 입력을 되살리고 토스트로 알린다. 저장 중에는 중복 제출하지 않는다.
  */
-export function TagInput({ tags, onAdd, onRemove, suggest, srStatus, onChipClick, readOnly, placeholder, className }: TagInputProps) {
+export function TagInput({ tags, onAdd, onRemove, suggest, srStatus, onChipClick, readOnly, placeholder, className, compact }: TagInputProps) {
   const translate = useT()
   const [text, setText] = useState('')
   const [open, setOpen] = useState(false)
+  const [adding, setAdding] = useState(false)
   /** ↑↓·마우스로 고른 후보의 태그 키. null이면 고른 후보 없음 → 입력값 확정 */
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -97,12 +101,7 @@ export function TagInput({ tags, onAdd, onRemove, suggest, srStatus, onChipClick
     return status === 'unfiled' || status === 'unknown' ? translate(SR_LABEL[status]) : undefined
   }
 
-  return (
-    <div className={cn('relative flex min-w-0 flex-wrap items-center gap-1', className)}>
-      {tags.map((t) => (
-        <TagChip key={t} tag={t} onClick={onChipClick} onRemove={readOnly ? undefined : onRemove} note={note(t)} />
-      ))}
-      {!readOnly && (
+  const field = (
         <div className="relative">
           <Plus className="pointer-events-none absolute top-1/2 left-1.5 size-3 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -146,7 +145,23 @@ export function TagInput({ tags, onAdd, onRemove, suggest, srStatus, onChipClick
             </ul>
           )}
         </div>
-      )}
+  )
+
+  return (
+    <div className={cn('relative flex min-w-0 flex-wrap items-center gap-1', className)}>
+      {tags.map((t) => (
+        <TagChip key={t} tag={t} onClick={onChipClick} onRemove={readOnly ? undefined : onRemove} note={note(t)} />
+      ))}
+      {!readOnly && (compact ? (
+        <Popover open={adding} onOpenChange={setAdding}>
+          <PopoverTrigger asChild>
+            <button type="button" aria-label={translate('components.addTag')} title={translate('components.tagInputHint')} className="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed text-muted-foreground hover:border-solid hover:bg-muted">
+              <Plus className="size-3" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" aria-label={translate('components.addTag')} className="w-auto p-2">{field}</PopoverContent>
+        </Popover>
+      ) : field)}
     </div>
   )
 }

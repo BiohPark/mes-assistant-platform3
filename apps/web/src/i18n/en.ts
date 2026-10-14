@@ -91,6 +91,7 @@ export const en = {
     newConversation: 'New conversation', newConversationTitle: 'New conversation · {name}',
     draftLeft: 'Conversation {code} was kept. You can resend the attachments.',
     tags: 'Tags', tagPlaceholder: 'SR number · keyword', retiredAssistant: 'This agent is retired.', pickAnotherAssistant: 'Choose another agent',
+    classification: 'Category', filters: 'Filters', removeClassification: 'Remove {name}', continueConversations: 'Continue', viewAllMine: 'View all',
   },
   myWork: {
     description: 'Conversations you own or participate in, ordered by recent activity.',
@@ -473,7 +474,7 @@ export const en = {
       complete: 'Complete task', deleteConversation: 'Delete conversation', titleLabel: 'Conversation title', reopenTitle: 'Reopen this completed task?',
       reopenDescription: 'The reason is recorded in the history.', reopenConfirm: 'Reopen', deleteTitle: 'Delete this conversation?',
       deleteDescription: 'Messages and materials created in this conversation will be deleted.',
-      quickSwitch: 'Quick switch', quickSwitchResponding: 'Responding {count}',
+      quickSwitch: 'Quick switch', quickSwitchResponding: 'Responding {count}', more: 'More',
     },
   },
   systemAssistant: {

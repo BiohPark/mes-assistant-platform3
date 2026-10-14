@@ -105,16 +105,21 @@ export function HomePage() {
   return <>
     <TopBar title={t('nav.hub')} actions={me.roles.includes('system_owner') && <Button size="sm" variant="outline" asChild><Link to="/assistants/manage">{t('hub.manageAgents')}</Link></Button>} />
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 lg:p-6">
-      <div role="tablist" aria-label={t('hub.viewSwitch')} className="inline-flex self-start rounded-xl border bg-muted p-1 shadow-xs" {...viewKeys.tablistProps}>
-        <button type="button" {...viewKeys.tabProps('cards')} onClick={() => switchView('cards')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><LayoutGrid className="size-4" />{t('hub.assistantCards')}</button>
-        <button type="button" {...viewKeys.tabProps('kanban')} onClick={() => switchView('kanban')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'kanban' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><KanbanSquare className="size-4" />{t('hub.conversationKanban')}</button>
+      <div className="flex flex-wrap items-center gap-2">
+        <div role="tablist" aria-label={t('hub.viewSwitch')} className="inline-flex rounded-xl border bg-muted p-1 shadow-xs" {...viewKeys.tablistProps}>
+          <button type="button" {...viewKeys.tabProps('cards')} onClick={() => switchView('cards')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><LayoutGrid className="size-4" />{t('hub.assistantCards')}</button>
+          <button type="button" {...viewKeys.tabProps('kanban')} onClick={() => switchView('kanban')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'kanban' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><KanbanSquare className="size-4" />{t('hub.conversationKanban')}</button>
+        </div>
+        {view === 'cards' && <CardMapFilterBar level1Options={options.level1} level2Options={options.level2} filters={filters} onChange={update} onReset={reset} />}
       </div>
       {view === 'kanban' ? <ConversationKanban pendingSearch={pendingKanbanSearch} /> : <>
-      <section aria-label={t('hub.myActiveConversations')} className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="font-medium">{t('hub.myActiveConversations')}</span>
-        {tasks.isPending ? <span className="text-muted-foreground">{t('common.loading')}</span> : tasks.isError ? <Button size="xs" variant="ghost" onClick={() => void tasks.refetch()}>{t('common.retry')}</Button> : myActive.length ? myActive.map(task => <Link key={task.id} to={`/c/${encodeURIComponent(task.id)}`} className="max-w-48 truncate rounded-full border px-2 py-1 hover:bg-muted" title={`${task.code} ${task.title}`}>{task.title || task.code}</Link>) : <span className="text-muted-foreground">{t('hub.noMyActiveConversations')}</span>}
+      <section aria-label={t('hub.myActiveConversations')} className="flex min-w-0 items-center gap-2 text-xs">
+        <span className="shrink-0 font-medium">{t('hub.continueConversations')}</span>
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+          {tasks.isPending ? <span className="text-muted-foreground">{t('common.loading')}</span> : tasks.isError ? <Button size="xs" variant="ghost" onClick={() => void tasks.refetch()}>{t('common.retry')}</Button> : myActive.length ? myActive.map(task => <Link key={task.id} to={`/c/${encodeURIComponent(task.id)}`} className="max-w-48 shrink-0 truncate rounded-full border px-2 py-1 hover:bg-muted" title={`${task.code} ${task.title}`}>{task.title || task.code}</Link>) : <span className="text-muted-foreground">{t('hub.noMyActiveConversations')}</span>}
+        </div>
+        <Link to="/my-work" className="shrink-0 text-muted-foreground hover:underline">{t('hub.viewAllMine')}</Link>
       </section>
-      <CardMapFilterBar level1Options={options.level1} level2Options={options.level2} filters={filters} onChange={update} onReset={reset} />
       {isPending && <div className="text-sm text-muted-foreground">{t('common.loading')}</div>}
       {isError && <div role="alert" className="text-sm">
         <h2 className="mb-2 text-lg font-semibold">{t('common.serverUnavailable')}</h2>

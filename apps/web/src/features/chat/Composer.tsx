@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react'
 import { MessagesSquare, Paperclip, Send, Square, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -51,9 +51,11 @@ interface ComposerProps {
   clearOnSubmit?: boolean
   /** 대화별 초안 보존 키(taskId). 있으면 텍스트·첨부·팀 의견 모드를 메모리에 두고 다시 마운트될 때 복원한다 */
   draftKey?: string
+  /** 입력창 왼쪽 아래(첨부 옆)에 놓는 도구 — 업무 채팅의 모델 선택 */
+  tools?: ReactNode
 }
 
-export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, onSend, beforeSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey }: ComposerProps) {
+export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, onSend, beforeSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey, tools }: ComposerProps) {
   const t = useT()
   const [saved] = useState(() => (draftKey ? getDraft(draftKey) : undefined))
   const [discussion, setDiscussionState] = useState(saved?.discussion ?? false)
@@ -170,22 +172,7 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
         </div>
       )}
       {attachmentError && <div role="alert" className="mb-1 text-xs text-destructive">{attachmentError}</div>}
-      <div className={cn('flex items-end gap-2 rounded-xl border bg-background p-1.5 focus-within:ring-2 focus-within:ring-ring/40', discussion && 'border-tone-warning-fg/40 bg-tone-warning-bg')}>
-        {allowAttachments && (
-          <Button type="button" variant="ghost" size="icon-sm" aria-label={t('chat.attachFile')} onClick={() => inputRef.current?.click()} disabled={disabled}>
-            <Paperclip />
-          </Button>
-        )}
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            addFiles(Array.from(e.target.files ?? []))
-            e.target.value = ''
-          }}
-        />
+      <div className={cn('rounded-xl border bg-background p-1.5 focus-within:ring-2 focus-within:ring-ring/40', discussion && 'border-tone-warning-fg/40 bg-tone-warning-bg')}>
         <Textarea
           ref={textareaRef}
           aria-label={inputLabel ?? (discussion ? t('chat.composerLabel') : t('chat.requestLabel'))}
@@ -197,7 +184,7 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
           placeholder={discussion ? t('chat.discussionPlaceholder') : (placeholder ?? t('chat.composerPlaceholder'))}
           rows={1}
           disabled={disabled}
-          className="max-h-40 min-h-8 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-sm shadow-none focus-visible:ring-0"
+          className="max-h-40 min-h-8 w-full resize-none border-0 bg-transparent px-1 py-1.5 text-sm shadow-none focus-visible:ring-0"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
@@ -205,29 +192,49 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
             }
           }}
         />
-        {allowDiscussion && (
-          <Button
-            type="button"
-            variant={discussion ? 'secondary' : 'ghost'}
-            size="icon-sm"
-            aria-label={t('chat.discussionToggle')}
-            aria-pressed={discussion}
-            title={t('chat.discussionToggleTitle')}
-            className={cn(discussion && 'text-tone-warning-fg')}
-            onClick={() => setDiscussion((v) => !v)}
-          >
-            <MessagesSquare />
-          </Button>
-        )}
-        {streaming && !discussion ? (
-          <Button type="button" variant="outline" size="icon-sm" aria-label={t('chat.stop')} onClick={onStop}>
-            <Square className="size-3.5" />
-          </Button>
-        ) : (
-          <Button type="button" size="icon-sm" aria-label={t('chat.send')} onClick={() => void submit()} disabled={!canSend} title={blocked ? blockedReason : undefined}>
-            <Send />
-          </Button>
-        )}
+        {/* 아래 줄: 왼쪽에 첨부·도구(모델), 오른쪽에 팀 의견·전송 */}
+        <div className="flex items-center gap-1">
+          {allowAttachments && (
+            <Button type="button" variant="ghost" size="icon-sm" aria-label={t('chat.attachFile')} onClick={() => inputRef.current?.click()} disabled={disabled}>
+              <Paperclip />
+            </Button>
+          )}
+          <input
+            ref={inputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              addFiles(Array.from(e.target.files ?? []))
+              e.target.value = ''
+            }}
+          />
+          {tools}
+          <span className="flex-1" />
+          {allowDiscussion && (
+            <Button
+              type="button"
+              variant={discussion ? 'secondary' : 'ghost'}
+              size="icon-sm"
+              aria-label={t('chat.discussionToggle')}
+              aria-pressed={discussion}
+              title={t('chat.discussionToggleTitle')}
+              className={cn(discussion && 'text-tone-warning-fg')}
+              onClick={() => setDiscussion((v) => !v)}
+            >
+              <MessagesSquare />
+            </Button>
+          )}
+          {streaming && !discussion ? (
+            <Button type="button" variant="outline" size="icon-sm" aria-label={t('chat.stop')} onClick={onStop}>
+              <Square className="size-3.5" />
+            </Button>
+          ) : (
+            <Button type="button" size="icon-sm" aria-label={t('chat.send')} onClick={() => void submit()} disabled={!canSend} title={blocked ? blockedReason : undefined}>
+              <Send />
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )

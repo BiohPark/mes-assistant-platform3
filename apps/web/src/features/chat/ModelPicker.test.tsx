@@ -45,8 +45,12 @@ it('constrains long model names and opens a viewport-bound mobile popup with the
   expect(trigger).toHaveClass('max-w-[60vw]', 'truncate', 'border-tone-warning-fg')
   expect(screen.getByText(modelId)).toHaveClass('truncate')
   fireEvent.click(trigger)
-  const popup = screen.getByRole('button', { name: '모델 목록 새로고침' }).parentElement!.parentElement!
-  expect(popup).toHaveClass('fixed', 'inset-x-4', 'w-auto', 'sm:absolute', 'sm:inset-x-auto', 'sm:left-0', 'sm:w-[22rem]')
+  // 입력창 아래에서 열리므로 위로 펼치는 Popover(포털·뷰포트 충돌 회피)에 담는다
+  const popup = await screen.findByRole('dialog', { name: 'assistant 모델' })
+  expect(popup).toContainElement(screen.getByRole('button', { name: '모델 목록 새로고침' }))
+  expect(popup).toHaveClass('w-[min(22rem,calc(100vw-2rem))]')
+  expect(popup).toHaveAttribute('data-side', 'top')
+  expect(trigger).toHaveAttribute('aria-expanded', 'true')
   expect(screen.getByText(/^이 대화:/).parentElement).toHaveClass('bg-muted')
   expect(screen.getByText(/이\(가\) 서버 모델 목록에 없습니다/)).toHaveClass('bg-tone-warning-bg', 'text-tone-warning-fg')
 })

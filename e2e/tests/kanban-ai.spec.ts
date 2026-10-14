@@ -88,7 +88,7 @@ test.describe('빠른 전환 (390px)', () => {
     await expect(menu.getByRole('menuitem').filter({ hasText: first.code })).toHaveAttribute('aria-current', 'page')
     await menu.getByRole('menuitem').filter({ hasText: second.code }).click()
     await expect(page).toHaveURL(new RegExp(`/c/${second.id}$`))
-    await expect(page.getByText(second.code, { exact: true })).toBeVisible() // 헤더의 코드 span (TopBar 제목 '코드 · 제목'과 구분)
+    await expect(page.getByText(second.code, { exact: true })).toBeVisible() // 상단 바 제목(TaskTitle)의 코드 span
     await expect(input).toHaveValue('')
     await expect(page.getByText('draft-keep.txt')).toHaveCount(0)
     await input.fill('둘째 대화 초안')

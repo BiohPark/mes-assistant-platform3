@@ -50,6 +50,18 @@ it('clears a drawer submission immediately and preserves text typed during the r
   expect(input).toHaveValue('다음 질문')
 })
 
+it('renders the toolbar under the textarea with tools next to the attach button and send on the right', () => {
+  renderComposer({ streaming: false, onSend: vi.fn(async () => undefined), onStop: () => undefined, allowAttachments: true, allowDiscussion: true, tools: <output>모델 선택</output> })
+  const textarea = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  const toolbar = screen.getByRole('button', { name: '파일 첨부' }).parentElement!
+  expect(textarea.nextElementSibling).toBe(toolbar)
+  expect(textarea).toHaveClass('w-full')
+  expect(toolbar.parentElement).toHaveClass('rounded-xl', 'border')
+  const order = Array.from(toolbar.children).map(child => child.getAttribute('aria-label') ?? child.tagName.toLowerCase())
+  expect(order.filter(item => item !== 'input')).toEqual(['파일 첨부', 'output', 'span', '팀 의견 (AI 미전송)', '전송'])
+  expect(screen.getByText('모델 선택')).toBeInTheDocument()
+})
+
 it('sends AI attachments without a pinning toggle', async () => {
   const send = vi.fn(async () => undefined)
   const { container } = renderComposer({ streaming: false, onSend: send, onStop: () => undefined, allowAttachments: true })

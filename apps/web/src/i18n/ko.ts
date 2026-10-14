@@ -89,6 +89,7 @@ export const ko = {
     newConversation: '새 대화', newConversationTitle: '새 대화 · {name}',
     draftLeft: '대화 {code}가 남았습니다. 첨부를 다시 전송할 수 있습니다.',
     tags: '태그', tagPlaceholder: 'SR 번호·키워드', retiredAssistant: '폐기된 에이전트입니다.', pickAnotherAssistant: '다른 에이전트 고르기',
+    classification: '분류', filters: '필터', removeClassification: '{name} 해제', continueConversations: '이어하기', viewAllMine: '모두 보기',
   },
   myWork: {
     description: '내가 담당하거나 참여하는 대화를 최근 활동 순으로 확인하세요.',
@@ -471,7 +472,7 @@ export const ko = {
       complete: '업무 완료', deleteConversation: '대화 삭제', titleLabel: '대화 제목', reopenTitle: '완료된 업무를 다시 열까요?',
       reopenDescription: '재개 사유를 이력에 기록합니다.', reopenConfirm: '재개 확인', deleteTitle: '대화를 삭제할까요?',
       deleteDescription: '메시지와 이 대화에서 만든 자료가 삭제됩니다.',
-      quickSwitch: '빠른 전환', quickSwitchResponding: '응답 중 {count}',
+      quickSwitch: '빠른 전환', quickSwitchResponding: '응답 중 {count}', more: '더 보기',
     },
   },
   systemAssistant: {

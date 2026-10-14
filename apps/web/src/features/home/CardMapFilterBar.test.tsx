@@ -1,4 +1,4 @@
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { expect, it } from 'vitest'
@@ -6,26 +6,63 @@ import { emptyHomeFilters } from '@/app/uiStore'
 import { renderWithProviders } from '@/test/render'
 import { CardMapFilterBar } from './CardMapFilterBar'
 
-it('supports keyboard multiple selection, checked visual states, and reset', async () => {
+it('opens a classification popover for keyboard multiple selection, shows selected chips with remove, and resets', async () => {
   function Filter() {
     const [filters, setFilters] = useState(emptyHomeFilters())
-    return <CardMapFilterBar level1Options={[{ id: 'l1', label: '분류' }, { id: 'other', label: '다른 분류' }]} level2Options={[{ id: 'sub1', label: '하위 하나' }, { id: 'sub2', label: '하위 둘' }]} filters={filters} onChange={patch => setFilters(current => ({ ...current, ...patch }))} onReset={() => setFilters(emptyHomeFilters())} />
+    return <CardMapFilterBar level1Options={[{ id: 'l1', label: '상위' }, { id: 'other', label: '다른 상위' }]} level2Options={[{ id: 'sub1', label: '하위 하나' }, { id: 'sub2', label: '하위 둘' }]} filters={filters} onChange={patch => setFilters(current => ({ ...current, ...patch }))} onReset={() => setFilters(emptyHomeFilters())} />
   }
   const user = userEvent.setup()
   renderWithProviders(<Filter />)
-  const first = screen.getByRole('button', { name: '분류' })
+  expect(screen.queryByRole('button', { name: '상위' })).not.toBeInTheDocument()
+  expect(screen.queryByText(/^선택됨/)).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '초기화' })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '분류' }))
+  const popover = await screen.findByRole('dialog', { name: '분류' })
+  expect(screen.getByRole('toolbar', { name: '업무 Lv1' })).toBeInTheDocument()
+  expect(screen.getByRole('toolbar', { name: '업무 Lv2' })).toBeInTheDocument()
+  const first = screen.getByRole('button', { name: '상위' })
   expect(first).toHaveAttribute('aria-pressed', 'false')
   first.focus()
   await user.keyboard(' {ArrowRight} ')
   expect(first).toHaveAttribute('aria-pressed', 'true')
-  expect(screen.getByRole('button', { name: '다른 분류' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: '다른 상위' })).toHaveAttribute('aria-pressed', 'true')
   await user.click(screen.getByRole('button', { name: '하위 하나' }))
   await user.click(screen.getByRole('button', { name: '하위 둘' }))
+  expect(popover).toBeInTheDocument()
   expect(screen.getByText('선택됨 4')).toBeInTheDocument()
   expect(first).toHaveClass('data-[state=on]:bg-primary', 'data-[state=on]:text-primary-foreground', 'hover:border-foreground')
   expect(first.querySelector('svg')).not.toBeNull()
+  // 팝오버 밖을 누르면 닫히고, 고른 것만 칩으로 남아 ×로 하나씩 뺀다
+  await user.click(screen.getByRole('button', { name: '하위 둘 해제' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '분류' })).not.toBeInTheDocument())
+  expect(screen.getByText('선택됨 3')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '하위 둘 해제' })).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: '초기화' }))
-  expect(first).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.queryByRole('button', { name: /해제$/ })).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByRole('button', { name: '초기화' })).not.toBeInTheDocument())
+  await user.click(screen.getByRole('button', { name: '분류' }))
+  expect(await screen.findByRole('button', { name: '상위' })).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.getByRole('button', { name: '하위 둘' })).toHaveAttribute('aria-pressed', 'false')
+})
+
+it('keeps the retired switch inside the filter popover and shows reset for a search term alone', async () => {
+  function Filter() {
+    const [filters, setFilters] = useState(emptyHomeFilters())
+    return <CardMapFilterBar level1Options={[]} level2Options={[]} filters={filters} onChange={patch => setFilters(current => ({ ...current, ...patch }))} onReset={() => setFilters(emptyHomeFilters())} />
+  }
+  const user = userEvent.setup()
+  renderWithProviders(<Filter />)
+  expect(screen.getByRole('button', { name: '분류' })).toBeDisabled()
+  expect(screen.queryByRole('switch', { name: '폐기 표시' })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '필터' }))
+  await user.click(await screen.findByRole('switch', { name: '폐기 표시' }))
+  expect(screen.getByRole('switch', { name: '폐기 표시' })).toBeChecked()
+  expect(screen.getByText('선택됨 1')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '초기화' }))
+  expect(screen.queryByText(/^선택됨/)).not.toBeInTheDocument()
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'abc' } })
+  expect(await screen.findByRole('button', { name: '초기화' })).toBeInTheDocument()
+  expect(screen.queryByText(/^선택됨/)).not.toBeInTheDocument()
 })
 
 it('keeps edits and caret local while earlier URL values arrive asynchronously', () => {
@@ -77,20 +114,17 @@ it('does not replace a Korean composition draft when a delayed URL update arrive
   expect(screen.getByTestId('submitted')).toHaveTextContent('old한글')
 })
 
-it('scrolls filter chips in one mobile row and keeps count and reset outside that row', () => {
+it('shows selected chips that wrap without a scroller and keeps count and reset together', () => {
   renderWithProviders(<CardMapFilterBar
     level1Options={[{ id: 'l1', label: '긴 상위 분류' }]} level2Options={[{ id: 'l2', label: '긴 하위 분류' }]}
     filters={{ ...emptyHomeFilters(), level1CodeIds: ['l1'], level2CodeIds: ['l2'] }} onChange={() => {}} onReset={() => {}} />)
-  const first = screen.getByRole('button', { name: '긴 상위 분류' }).parentElement!
-  const second = screen.getByRole('button', { name: '긴 하위 분류' }).parentElement!
-  const scroller = first.parentElement!
-  expect(scroller).toBe(second.parentElement)
-  expect(scroller).toHaveClass('min-w-0', 'max-w-full', 'flex-nowrap', 'overflow-x-auto', 'sm:flex-wrap')
-  expect(first).toHaveClass('shrink-0', 'flex-nowrap', 'sm:flex-wrap')
-  expect(second).toHaveClass('shrink-0', 'flex-nowrap', 'sm:flex-wrap')
+  const first = screen.getByRole('button', { name: '긴 상위 분류 해제' }).parentElement!
+  const second = screen.getByRole('button', { name: '긴 하위 분류 해제' }).parentElement!
+  expect(first).toHaveTextContent('긴 상위 분류')
+  expect(second).toHaveTextContent('긴 하위 분류')
+  expect(first.parentElement).toBe(second.parentElement)
+  expect(first).toHaveClass('shrink-0')
   const controls = screen.getByRole('button', { name: '초기화' }).parentElement!
   expect(controls).toContainElement(screen.getByText('선택됨 2'))
-  expect(scroller).not.toContainElement(controls)
-  expect(controls).toHaveClass('w-full', 'sm:w-auto')
-  expect(scroller.parentElement).toHaveClass('min-w-0')
+  expect(controls).toHaveClass('ml-auto')
 })

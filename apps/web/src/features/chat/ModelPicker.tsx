@@ -11,10 +11,11 @@ import { getSettings } from '@/api/admin'
 import { useActor } from '@/app/hooks'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useModelList } from '@/lib/useModelList'
 import { cn } from '@/lib/utils'
 
-/** 대화 모델 지정은 task.modelId에 저장한다. 스레드별 모델 지정은 S3에서 연결한다. */
+/** 대화 모델 지정은 task.modelId에 저장한다. 스레드별 모델 지정은 S3에서 연결한다. 입력창 아래에 놓이므로 목록은 위로 펼친다. */
 export function ModelPicker({ task, assistant, disabled }: { task: Task; assistant: Assistant; disabled?: boolean }) {
   const t = useT()
   const actor = useActor()
@@ -36,14 +37,14 @@ export function ModelPicker({ task, assistant, disabled }: { task: Task; assista
     } catch (reason) { toast.error(reason instanceof Error ? reason.message : t('chat.modelSaveFailed')) }
     finally { setSaving(false) }
   }
-  return <div className="relative inline-block">
-    <button type="button" disabled={disabled} onClick={() => setOpen(!open)} className={cn('inline-flex h-6 max-w-[60vw] items-center truncate gap-1 rounded-full border bg-background px-1.5 font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground', missingOnServer && 'border-tone-warning-fg text-tone-warning-fg')} title={t('chat.changeModel')} aria-expanded={open}><Cpu className="size-3 shrink-0" /><span className="min-w-0 truncate">{resolved.modelId || t('chat.noModel')}</span><span className="shrink-0 text-xs opacity-70">{t(MODEL_SOURCE_KEY[resolved.source])}</span>{missingOnServer && <AlertTriangle className="size-3 shrink-0" />}<ChevronDown className="size-3 shrink-0 opacity-60" /></button>
-    {open && <div className="fixed inset-x-4 z-20 mt-1 w-auto sm:absolute sm:inset-x-auto sm:left-0 sm:w-[22rem] rounded-xl border bg-popover p-3 shadow-md">
+  return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger asChild><button type="button" disabled={disabled} className={cn('inline-flex h-6 max-w-[60vw] items-center truncate gap-1 rounded-full border bg-background px-1.5 font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground sm:max-w-72', missingOnServer && 'border-tone-warning-fg text-tone-warning-fg')} title={t('chat.changeModel')}><Cpu className="size-3 shrink-0" /><span className="min-w-0 truncate">{resolved.modelId || t('chat.noModel')}</span><span className="shrink-0 text-xs opacity-70">{t(MODEL_SOURCE_KEY[resolved.source])}</span>{missingOnServer && <AlertTriangle className="size-3 shrink-0" />}<ChevronDown className="size-3 shrink-0 opacity-60" /></button></PopoverTrigger>
+    <PopoverContent side="top" align="start" aria-label={t('chat.assistantModel')} className="w-[min(22rem,calc(100vw-2rem))]">
       <div className="mb-2 flex items-center justify-between"><div className="text-xs font-semibold">{t('chat.assistantModel')}</div><Button variant="ghost" size="icon" aria-label={t('chat.reloadModels')} onClick={() => void reload()} disabled={loading}><RefreshCw className={cn(loading && 'animate-spin')} /></Button></div>
       <div className="mb-2 rounded-xl border bg-muted p-2 break-all text-xs leading-relaxed text-muted-foreground"><span className={cn(current && 'font-semibold text-foreground')}>{t('chat.thisConversation')} <span className="font-mono">{current || '–'}</span></span><span className="mx-1 opacity-50">›</span><span className={cn(!current && assistant.modelId && 'font-semibold text-foreground')}>{t('chat.agentMapping')} <span className="font-mono">{assistant.modelId || '–'}</span></span></div>
       {missingOnServer && <p className="mb-2 rounded-xl border border-tone-warning-fg bg-tone-warning-bg p-1.5 text-xs text-tone-warning-fg">{t('chat.modelMissingBefore')} <code className="break-all">{resolved.modelId}</code>{t('chat.modelMissingAfter')}</p>}
       <ul className="max-h-44 space-y-0.5 overflow-y-auto"><li><button type="button" disabled={saving} onClick={() => void choose('')} className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-xs hover:bg-muted">{!current ? <Check className="size-3" /> : <span className="size-3" />}{t('chat.useDefaultModel')} <span className="text-muted-foreground">{t('chat.agentMappingHint')}</span></button></li>{models.map((model) => <li key={model}><button type="button" disabled={saving} onClick={() => void choose(model)} className="flex w-full items-center gap-2 min-w-0 rounded-lg px-2 py-1 text-left font-mono text-xs hover:bg-muted">{current === model ? <Check className="size-3" /> : <span className="size-3" />}<span className="min-w-0 truncate" title={model}>{model}</span></button></li>)}{!loading && (error || models.length === 0) && <li className="px-2 py-1 text-xs text-muted-foreground">{t('chat.noModels')}</li>}</ul>
       <form className="mt-2 flex gap-1" onSubmit={(event) => { event.preventDefault(); if (custom.trim()) void choose(custom.trim()) }}><Input value={custom} onChange={(event) => setCustom(event.target.value)} placeholder={t('chat.customModel')} className="h-7 font-mono text-xs" /><Button type="submit" size="sm" disabled={!custom.trim() || saving}>{t('chat.apply')}</Button></form>
-    </div>}
-  </div>
+    </PopoverContent>
+  </Popover>
 }

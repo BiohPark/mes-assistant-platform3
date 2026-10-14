@@ -59,6 +59,7 @@ it('keeps the inline question index in normal flow for shared message views', ()
   render(view([question, answer]))
   const trigger = screen.getByRole('button', { name: '질문 목차' })
   const toolbar = trigger.parentElement!
+  expect(toolbar).toContainElement(screen.getByRole('button', { name: '대화 내 검색' }))
   expect(toolbar.nextElementSibling).toHaveAttribute('data-message-id', question.id)
   expect(toolbar).not.toHaveClass('sticky')
   expect(toolbar).not.toHaveClass('absolute')
@@ -166,10 +167,16 @@ it('shows scrollToBottom immediately above 200px and hides it at or below the th
   expect(screen.queryByRole('button', { name: '맨 아래로' })).not.toBeInTheDocument()
 })
 
-it('searches only message bodies and cycles matching messages in both directions', () => {
+it('opens search from an icon, searches only message bodies, cycles matches in both directions and closes on Escape', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
   render(view([question, { ...answer, content: '첫 답변', reasoning: '비공개 생각' }]))
+  expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
+  const toggle = screen.getByRole('button', { name: '대화 내 검색' })
+  expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  fireEvent.click(toggle)
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
   const input = screen.getByRole('searchbox', { name: '대화 내 검색' })
+  await waitFor(() => expect(input).toHaveFocus())
   fireEvent.change(input, { target: { value: '첫' } })
   expect(screen.getByRole('status')).toHaveTextContent('1/2')
   expect(document.querySelector('[data-search-match="true"]')).toHaveAttribute('data-message-id', 'q')
@@ -182,6 +189,11 @@ it('searches only message bodies and cycles matching messages in both directions
   fireEvent.change(input, { target: { value: '비공개 생각' } })
   expect(screen.getByRole('status')).toHaveTextContent('0/0')
   expect(screen.getByRole('button', { name: '다음' })).toBeDisabled()
+  fireEvent.keyDown(input, { key: 'Escape' })
+  expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
+  expect(document.querySelector('[data-search-match="true"]')).toBeNull()
+  expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  expect(toggle).toHaveFocus()
 })
 
 

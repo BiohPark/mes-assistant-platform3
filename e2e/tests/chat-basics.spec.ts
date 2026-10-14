@@ -47,6 +47,8 @@ test('ActivityPanel groups one request into one row', async ({ page }) => {
 test('search resets on task switch', async ({ page }) => {
   const [first, second] = await setup(page)
   await page.goto(`/c/${first.id}`)
+  // 검색은 헤더의 🔍 아이콘을 눌러 펼친다
+  await page.getByRole('button', { name: '대화 내 검색' }).click()
   const search = page.getByRole('searchbox', { name: '대화 내 검색' })
   await search.fill('첫째')
   await expect(page.getByRole('search').getByRole('status')).toHaveText('1/24')
@@ -55,6 +57,8 @@ test('search resets on task switch', async ({ page }) => {
   await page.keyboard.press('Control+k')
   await page.getByRole('menuitem').filter({ hasText: '기본기 둘째 대화' }).click()
   await expect(page).toHaveURL(new RegExp(`/c/${second.id}$`))
+  await expect(search).toHaveCount(0) // 대화를 바꾸면 검색 줄이 닫힌다
+  await page.getByRole('button', { name: '대화 내 검색' }).click()
   await expect(search).toHaveValue('')
   await expect(page.getByRole('search').getByRole('status')).toHaveCount(0)
 })
