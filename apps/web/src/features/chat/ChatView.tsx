@@ -30,6 +30,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   const selfId = useCurrentUserId()
   const query = useQueryClient()
   const [sending, setSending] = useState(false)
+  const [submissionSince, setSubmissionSince] = useState<number>()
   const [draft, setDraft] = useState(() => getDraft(task.id)?.text ?? '')
   const [questionIndexContainer, setQuestionIndexContainer] = useState<HTMLDivElement | null>(null)
   const [askTarget, setAskTarget] = useState<Message | null>(null)
@@ -49,7 +50,10 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   const [saveTarget, setSaveTarget] = useState<Message | null>(null)
   const [infoId, setInfoId] = useState<string | null>(null)
   const [retryChoice, setRetryChoice] = useState<{ record: RequestRecord; mode: 'exclude' | 'inline' } | null>(null)
-  const chat = useChat(task.threadId, holdReleased)
+  const chat = useChat(task.threadId, holdReleased, (draft, error) => {
+    composer.current?.restoreDraft(draft)
+    toast.error(t('chat.sendFailed'), { description: error instanceof Error ? error.message : String(error) })
+  })
   const messages = useQuery({ queryKey: ['messages', task.threadId], queryFn: ({ signal }) => getMessages(task.threadId!, signal), enabled: !!task.threadId,
   })
   useConversationViewed(selfId, task.id, task.lastActivityAt, conversationPanel)
@@ -134,6 +138,8 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
     if ((!text.trim() && !attachments.length) || !task.threadId || sendLock.current) return false
     sendLock.current = true
     const content = text.trim()
+    const startedAt = Date.now()
+    if (!discussion) setSubmissionSince(startedAt)
     setSending(true)
     try {
       const stored = discussion ? null : chat.pendingAttempt()
@@ -163,10 +169,10 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
         const accepted = await appendMessage(actor, task.threadId, 'user', content, uploaded, 'done', 'discussion') as Message & { autoStarted?: boolean }
         if (accepted.autoStarted) holdReleased()
         refreshProgress()
-      } else await chat.send(content, uploaded, [])
+      } else await chat.send(content, uploaded, [], startedAt)
       await query.invalidateQueries({ queryKey: ['messages', task.threadId] })
       setPrefilled(false)
-    } finally { sendLock.current = false; setSending(false) }
+    } finally { sendLock.current = false; setSending(false); setSubmissionSince(undefined) }
   }
   async function retry(requestId: string, options: { excludeFileIds?: string[]; forceInlineFileIds?: string[] } = {}) {
     setSending(true)
@@ -181,10 +187,10 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
     try { setRetryChoice({ record: await getRequest(requestId), mode }) }
     catch { toast.error(t('chat.requestLoadFailed')) }
   }
-  return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={sending} onFiles={(files) => composer.current?.dropFiles(files)}>
+  return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={sending || chat.sending} onFiles={(files) => composer.current?.dropFiles(files)}>
     <div ref={setQuestionIndexContainer} data-testid="chat-question-toolbar" className="shrink-0 border-b px-4 py-2 empty:hidden" />
     <div ref={conversationPanel} data-testid="chat-message-scroll" className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-    <ChatMessages key={task.id} assistantName={assistant?.name} messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince} questionIndexContainer={questionIndexContainer} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
+    <ChatMessages key={task.id} assistantName={assistant?.name} messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince ?? submissionSince} questionIndexContainer={questionIndexContainer} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
       actions={(item) => ({
         onAskAgain: item.role === 'user' && item.kind !== 'discussion' ? () => askAgain(item) : undefined,
         askAgainDisabled,
@@ -198,7 +204,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   <ContextTray task={task} estimate={estimate} />
   {prefilled && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.askAgainHint')}</p>}
   {pendingAttempt && !sending && !chat.sending && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.pendingAttemptHint')}</p>}
-  <Composer ref={composer} disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowDiscussion
+  <Composer ref={composer} clearOnSubmit disabled={(sending || chat.sending) && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowDiscussion
     blockedReason={task.status !== 'done' && estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping} draftKey={task.id}
     placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}
     beforeSend={beforeSend} onSend={send} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />

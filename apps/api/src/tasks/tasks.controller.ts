@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Patch, Post, Put, Query, Req } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, HttpException, Inject, Param, Patch, Post, Put, Query, Req, Res } from '@nestjs/common'
+import type { Response } from 'express'
 import type { AuthedRequest } from '../auth/guards.js'
 import { DbTasksService } from './tasks.service.js'
 import { TaskExtrasService } from './task-extras.service.js'
@@ -80,7 +81,35 @@ export class TasksController {
   }
 
   @Post(':id/checklist/review')
-  reviewChecklist(@Req() req: AuthedRequest, @Param('id') id: string) { return this.extras.review(req.user!.id, id) }
+  async reviewChecklist(@Req() req: AuthedRequest, @Param('id') id: string, @Headers('accept') accept: string | undefined, @Res() res: Response) {
+    if (!accept?.includes('text/event-stream')) {
+      res.status(201).json(await this.extras.review(req.user!.id, id))
+      return
+    }
+    const controller = new AbortController()
+    const close = () => { if (!res.writableEnded) controller.abort() }
+    res.on('close', close)
+    const emit = (event: string, data: unknown) => {
+      if (!res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+    }
+    try {
+      const result = await this.extras.review(req.user!.id, id, {
+        signal: controller.signal,
+        onStart: () => {
+          res.status(201).set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
+          res.flushHeaders()
+          emit('started', {})
+        },
+        onItem: (item) => emit('item', item),
+      })
+      emit('completed', result)
+      res.end()
+    } catch (error) {
+      if (!res.headersSent && !res.destroyed) throw error
+      emit('failed', { error: error instanceof HttpException ? error.message : '달성도 점검에 실패했습니다' })
+      res.end()
+    } finally { res.off('close', close) }
+  }
 
   @Post(':id/checklist/review/apply')
   applyChecklistReview(@Req() req: AuthedRequest, @Param('id') id: string) { return this.extras.applyReview(req.user!.id, id) }

@@ -3,7 +3,8 @@ import type { Db } from '../db/db.module.js'
 import type { Pool } from 'mysql2/promise'
 import { createPool } from '../db/connection.js'
 import { and, eq } from 'drizzle-orm'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import type { ChatProvider } from '@mes/llm'
 import { appSetting, appUser, assistant, assistantChecklistTemplate, chatRequest, checklistItem, checklistReview, fileObject, message, messageAttachment, noteAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
@@ -11,6 +12,7 @@ import { createTempDb } from '../test/tempDb.js'
 import { loadConfig } from '../config/config.js'
 import { DbTasksService } from './tasks.service.js'
 import { TaskExtrasService } from './task-extras.service.js'
+import { RequestsService } from '../requests/requests.service.js'
 import { DbFilesService } from '../files/files.service.js'
 import { DbCatalogReader } from '../catalog/catalog.service.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
@@ -125,6 +127,80 @@ describe('tasks DB', () => {
       expect((await service.get(created.id)).checklistReview).toBeUndefined()
       expect(await db.select().from(checklistReview).where(eq(checklistReview.taskId, created.id))).toHaveLength(0)
     } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
+  it.each(['ai', 'error', 'timeout', 'cancelled'] as const)('uses request deadlines and preserves review persistence for %s', async mode => {
+    const controller = new AbortController()
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173',
+      REQUEST_FIRST_TOKEN_MS: '1234', REQUEST_IDLE_MS: mode === 'timeout' ? '20' : '2345' })
+    const provider: ChatProvider = {
+      kind: 'live', ping: async () => ({ ok: true, detail: '' }), listModels: async () => [],
+      async *stream(req) {
+        yield { type: 'reasoning', text: '검토 중' }
+        if (mode === 'cancelled') { controller.abort(); return }
+        yield { type: 'delta', text: '[{"no":1,"met":true,"note":"임시 AI 판단"}]' }
+        if (mode === 'error') yield { type: 'error', message: 'unavailable' }
+        if (mode === 'timeout') await new Promise<void>(resolve => req.signal!.addEventListener('abort', () => resolve(), { once: true }))
+      },
+    }
+    const requests = new RequestsService(db, config, provider)
+    const reviewing = new TaskExtrasService(db, provider, requests, new FileStorageService(reportRoot), { publish: () => undefined } as never, config)
+    const created = (await service.create('member', { assistantId })).task
+    await reviewing.addChecklist('member', created.id, '점검 근거')
+    const before = (await service.get(created.id)).checklist
+    const onItem = vi.fn()
+    const timer = vi.spyOn(globalThis, 'setTimeout')
+    try {
+      if (mode === 'cancelled') {
+        await expect(reviewing.review('member', created.id, { signal: controller.signal, onItem })).rejects.toThrow('보조 요청 중지')
+        expect((await service.get(created.id)).checklistReview).toBeUndefined()
+        expect(await db.select().from(checklistReview).where(eq(checklistReview.taskId, created.id))).toHaveLength(0)
+        expect(onItem).not.toHaveBeenCalled()
+      } else {
+        const result = await reviewing.review('member', created.id, { onItem })
+        expect(result.source).toBe(mode === 'ai' ? 'ai' : 'rule')
+        expect(result.met).toBe(mode === 'ai' ? 1 : 0)
+        const saved = (await service.get(created.id)).checklistReview
+        expect(saved).toEqual({ ...result, items: expect.arrayContaining(result.items) })
+        expect(saved?.items).toHaveLength(result.items.length)
+        expect(onItem).toHaveBeenCalledWith(expect.objectContaining({ met: true, note: '임시 AI 판단' }))
+      }
+      expect(timer.mock.calls.some(([, ms]) => ms === config.request.firstTokenMs)).toBe(true)
+      expect(timer.mock.calls.some(([, ms]) => ms === config.request.idleMs)).toBe(true)
+      expect((await service.get(created.id)).checklist).toEqual(before)
+    } finally { timer.mockRestore(); requests.onModuleDestroy() }
+  })
+
+  it('keeps the real auxiliary request alive beyond 30 seconds and the first-chunk deadline while reasoning arrives', async () => {
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173',
+      REQUEST_FIRST_TOKEN_MS: '60000', REQUEST_IDLE_MS: '5000' })
+    let start!: () => void
+    const started = new Promise<void>(resolve => { start = resolve })
+    const provider: ChatProvider = {
+      kind: 'live', ping: async () => ({ ok: true, detail: '' }), listModels: async () => [],
+      async *stream() {
+        start()
+        await new Promise(resolve => setTimeout(resolve, 40_000))
+        yield { type: 'reasoning', text: '생각 중' }
+        for (let i = 0; i < 6; i++) {
+          await new Promise(resolve => setTimeout(resolve, 4000))
+          yield { type: 'reasoning', text: '검토 중' }
+        }
+        yield { type: 'delta', text: '[{"no":1,"met":true,"note":"검토 완료"}]' }
+      },
+    }
+    const requests = new RequestsService(db, config, provider)
+    const reviewing = new TaskExtrasService(db, provider, requests, new FileStorageService(reportRoot), { publish: () => undefined } as never, config)
+    const created = (await service.create('member', { assistantId })).task
+    await reviewing.addChecklist('member', created.id, '느린 서버 점검')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const result = reviewing.review('member', created.id).then(value => value, error => error as Error)
+      await started
+      await vi.advanceTimersByTimeAsync(64_000)
+      expect(await result).toMatchObject({ source: 'ai', met: 1 })
+      expect((await service.get(created.id)).checklistReview).toMatchObject({ source: 'ai', met: 1 })
+    } finally { vi.useRealTimers(); requests.onModuleDestroy() }
   })
 
   it('체크리스트 점검 모델은 대화·에이전트에 지정이 없으면 .env 유효값(effectiveDefaultModel)이다 (S7 C2)', async () => {

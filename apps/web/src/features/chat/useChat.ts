@@ -3,10 +3,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cancelRequest, streamRequest } from '@/api/requests'
 import { useSlowRequestBubble } from '@/features/assistant-pill/bubbles'
+import { getDraft, setDraft, type ComposerDraft } from './drafts'
 import { useT } from '@/i18n'
 
 export interface ChatRun { requestId: string; replyId: string; text: string; reasoning?: string; phase?: string; startedAt?: number }
 interface Attempt { key: string; threadId: string; requestId?: string; startedAt?: number; text: string; attachmentIds: string[]; path: string; body: unknown; autoStartNotified?: boolean }
+interface FirstDraft { taskId: string; draft: ComposerDraft }
+const firstDrafts = new Map<string, FirstDraft>()
 const storageKey = (threadId: string) => `mes-chat-attempt:${threadId}`
 const load = (threadId: string): Attempt | null => {
   try {
@@ -18,21 +21,25 @@ const load = (threadId: string): Attempt | null => {
 const save = (attempt: Attempt) => sessionStorage.setItem(storageKey(attempt.threadId), JSON.stringify(attempt))
 const clear = (attempt: Attempt) => sessionStorage.removeItem(storageKey(attempt.threadId))
 
-export function queueFirstRequest(threadId: string, body: { content: string; attachmentIds: string[]; oneShotFileIds: string[] }) {
-  const attempt = load(threadId) ?? { key: newId(), threadId, text: body.content, attachmentIds: body.attachmentIds,
+export function queueFirstRequest(threadId: string, body: { content: string; attachmentIds: string[]; oneShotFileIds: string[] }, startedAt = Date.now(), restore?: FirstDraft) {
+  const attempt = load(threadId) ?? { key: newId(), threadId, startedAt, text: body.content, attachmentIds: body.attachmentIds,
     path: `/threads/${encodeURIComponent(threadId)}/requests`, body }
   save(attempt)
+  if (restore) firstDrafts.set(threadId, restore)
+  else firstDrafts.delete(threadId)
 }
 
-export function useChat(threadId?: string, onAutoStarted?: () => void) {
+export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFailure?: (draft: ComposerDraft, error: unknown) => void) {
   const t = useT()
   const query = useQueryClient()
   const autoStarted = useRef(onAutoStarted)
   autoStarted.current = onAutoStarted
+  const firstFailure = useRef(onFirstFailure)
+  firstFailure.current = onFirstFailure
   const [run, setRun] = useState<ChatRun | null>(null)
   useSlowRequestBubble(run) // 도우미 말풍선(U6) — 마지막 본문·생각 delta 뒤 30초 무진행이면 요청당 1회
   /** 전송 시도가 진행 중(started 이전 대기 포함)인지. run은 started 이후에만 채워진다. */
-  const [waitingSince, setWaitingSince] = useState<number | undefined>()
+  const [waitingSince, setWaitingSince] = useState<number | undefined>(() => threadId ? load(threadId)?.startedAt : undefined)
   const [sending, setSending] = useState(false)
   const active = useRef<Promise<void> | null>(null)
 
@@ -94,7 +101,21 @@ export function useChat(threadId?: string, onAutoStarted?: () => void) {
   useEffect(() => {
     if (!threadId) return
     const previous = load(threadId)
-    if (previous) void consume(previous).catch(() => undefined)
+    const restore = firstDrafts.get(threadId)
+    if (previous) void consume(previous).then(() => {
+      if (firstDrafts.get(threadId) === restore) firstDrafts.delete(threadId)
+    }).catch(error => {
+      if (!restore || firstDrafts.get(threadId) !== restore) return
+      firstDrafts.delete(threadId)
+      const current = getDraft(restore.taskId)
+      const draft: ComposerDraft = {
+        text: current?.text || restore.draft.text,
+        pending: [...restore.draft.pending.filter(item => !current?.pending.includes(item)), ...(current?.pending ?? [])],
+        discussion: current?.discussion ?? restore.draft.discussion,
+      }
+      setDraft(restore.taskId, draft)
+      firstFailure.current?.(draft, error)
+    })
   }, [consume, threadId])
 
   return {
@@ -104,9 +125,9 @@ export function useChat(threadId?: string, onAutoStarted?: () => void) {
     hasPendingAttempt: () => !!(threadId && load(threadId)),
     /** 보관된(전송하지 못한) 시도의 내용 — 다음 전송이 이것을 그대로 다시 보낸다 */
     pendingAttempt: (): { text: string; attachmentIds: string[] } | null => { const attempt = threadId ? load(threadId) : null; return attempt && { text: attempt.text, attachmentIds: attempt.attachmentIds } },
-    send: (content: string, attachmentIds: string[] = [], oneShotFileIds: string[] = []) => {
+    send: (content: string, attachmentIds: string[] = [], oneShotFileIds: string[] = [], startedAt = Date.now()) => {
       if (!threadId) throw new Error(t('chat.noThread'))
-      const attempt = load(threadId) ?? { key: newId(), threadId, text: content, attachmentIds,
+      const attempt = load(threadId) ?? { key: newId(), threadId, startedAt, text: content, attachmentIds,
         path: `/threads/${encodeURIComponent(threadId)}/requests`, body: { content, attachmentIds, oneShotFileIds } }
       save(attempt)
       return consume(attempt)

@@ -1,7 +1,7 @@
 import { newId } from '@/lib/ids'
 import { useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, ExternalLink } from 'lucide-react'
 import { normalizeTag, tagKey } from '@mes/domain'
 import { TopBar } from '@/app/TopBar'
@@ -9,6 +9,7 @@ import { useActor, useUserMap } from '@/app/hooks'
 import { useSrStatus, useTagSuggest } from '@/app/useTagSuggest'
 import { startConversation, type StartConversationInput } from '@/api/tasks'
 import { appendMessage } from '@/api/tasks'
+import { ChatMessages } from '@/features/chat/ChatMessages'
 import { queueFirstRequest } from '@/features/chat/useChat'
 import { setInput, uploadFile } from '@/api/files'
 import { listAssistants } from '@/lib/catalog'
@@ -33,6 +34,7 @@ export function DraftConversationPage() {
   const { assistantId } = useParams()
   const [params] = useSearchParams()
   const navigate = useNavigate()
+  const query = useQueryClient()
   const actor = useActor()
   const users = useUserMap()
   const suggest = useTagSuggest()
@@ -41,6 +43,7 @@ export function DraftConversationPage() {
   const assistant = assistants?.find((item) => item.id === assistantId)
   const [tags, setTags] = useState(() => params.getAll('tag').map(normalizeTag).filter(Boolean))
   const [busy, setBusy] = useState(false)
+  const [waitingSince, setWaitingSince] = useState<number>()
   const sending = useRef(false)
   const composer = useRef<ComposerHandle>(null)
   const created = useRef<{ id: string; code: string; threadId: string } | null>(null)
@@ -55,6 +58,8 @@ export function DraftConversationPage() {
   async function send(text: string, attachments: PendingAttachment[], discussion: boolean) {
     if (!assistant || (!text.trim() && !attachments.length) || sending.current) return
     sending.current = true
+    const startedAt = Date.now()
+    if (!discussion) setWaitingSince(startedAt)
     setBusy(true)
     try {
       const creationKey = `mes-draft-create:${assistant.id}:${refId ?? ''}`
@@ -66,6 +71,7 @@ export function DraftConversationPage() {
         sessionStorage.setItem(creationKey, JSON.stringify(attempt))
         const { task, warnings } = await startConversation(actor, attempt.body, attempt.key)
         created.current = { id: task.id, code: task.code, threadId: task.threadId! }
+        query.setQueryData(['task', task.id], task)
         sessionStorage.removeItem(creationKey)
         for (const warning of warnings) toast.warning(warning)
       }
@@ -85,13 +91,14 @@ export function DraftConversationPage() {
       }
       if (!discussion) {
         queueFirstRequest(task.threadId, { content: text.trim(), attachmentIds: uploaded,
-          oneShotFileIds: [] })
+          oneShotFileIds: [] }, startedAt, { taskId: task.id, draft: { text, pending: attachments, discussion } })
       }
       navigate(`/c/${task.id}`, { replace: true })
     } catch (error) {
       if (created.current) toast.error(t('hub.draftLeft', { code: created.current.code }))
       sending.current = false
       setBusy(false)
+      setWaitingSince(undefined)
       throw error
     }
   }
@@ -126,10 +133,11 @@ export function DraftConversationPage() {
             <RelatedStrip tags={tags} />
           </div>
           {refId && <div className="rounded-xl border border-tone-warning-fg/40 bg-tone-warning-bg p-3 text-xs">{t('chat.referenceConversation')}</div>}
+          {waitingSince !== undefined && <ChatMessages messages={[]} waitingSince={waitingSince} assistantName={assistant.name} />}
           {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">{t('hub.retiredAssistant')} <Link to="/" className="underline">{t('hub.pickAnotherAssistant')}</Link></div>}
         </div>
       </div>
-      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer ref={composer} disabled={busy} streaming={false} allowAttachments allowDiscussion placeholder={t('chat.composerPlaceholderFor', { assistant: assistant.name })} onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample, assistant.suggestedQuestions)} /></div>}
+      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer ref={composer} clearOnSubmit disabled={busy} streaming={false} allowAttachments allowDiscussion placeholder={t('chat.composerPlaceholderFor', { assistant: assistant.name })} onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample, assistant.suggestedQuestions)} /></div>}
     </FileDropZone>
   </>
 }
