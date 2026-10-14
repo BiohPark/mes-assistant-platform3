@@ -5,6 +5,7 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { classificationView } from '../db/classifications.js'
 import { DB, type Db } from '../db/db.module.js'
 import { appUser, assistant, assistantChecklistTemplate, assistantClassification, assistantExpectedIo, code, task } from '../db/schema.js'
+import { freshFirstQuestions } from './first-questions-key.js'
 
 export interface CatalogReader {
   assistants(): Promise<Assistant[]>
@@ -39,6 +40,7 @@ export class DbCatalogReader implements CatalogReader {
     return rows.map((row) => {
       const paths = joined.flatMap(item => item.row.id === row.id && item.path ? [item.path] : [])
       const classifications = classificationView(paths, labels)
+      const suggestedQuestions = freshFirstQuestions(row)
       return {
         id: row.id, name: row.name, classifications, ...classifications[0]!,
         summary: row.summary, order: row.sortOrder, ...(row.modelId && { modelId: row.modelId }),
@@ -49,6 +51,7 @@ export class DbCatalogReader implements CatalogReader {
         ...(row.imageFileId && { imageId: row.imageFileId }), color: row.color,
         checklistTemplate: templates.filter((item) => item.assistantId === row.id).map((item) => ({ id: item.id, label: item.label, required: item.required })),
         createdBy: row.createdBy, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), revision: row.revision,
+        ...(suggestedQuestions && { suggestedQuestions }),
       }
     })
   }

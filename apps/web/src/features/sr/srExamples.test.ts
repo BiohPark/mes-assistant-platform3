@@ -11,3 +11,9 @@ it('returns nothing when no quoted item exists (no platform fallback)', () => {
   expect(exampleQuestionsFrom('')).toEqual([])
   expect(exampleQuestionsFrom(undefined)).toEqual([])
 })
+
+it('falls back to the agent AI-suggested first questions only when the SO wrote none', () => {
+  expect(exampleQuestionsFrom('- "SO 예시"', ['AI 질문'])).toEqual(['SO 예시'])
+  expect(exampleQuestionsFrom('### 사용법\n- 시작', ['AI 질문', 'AI 질문', '둘째'])).toEqual(['AI 질문', '둘째'])
+  expect(exampleQuestionsFrom(undefined, undefined)).toEqual([])
+})

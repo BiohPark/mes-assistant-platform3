@@ -285,6 +285,20 @@ it('에이전트 설명·예시가 비어 있으면 이름만 보이고 플랫�
   expect(container).not.toHaveTextContent('사용법')
 })
 
+it('SO 예시가 없으면 접수 에이전트의 AI 추천 첫 질문을 카드 칩·Composer 제안에 쓰고, SO 예시가 있으면 그것이 우선한다', async () => {
+  let settings: Record<string, unknown> = { srIntakeAssistantId: 'a', name: '접수 도우미', summary: '', usageExample: '### 사용법\n- 시작', suggestedQuestions: ['AI 첫 질문', 'AI 둘째 질문'] }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/intake-assistant' ? jsonResponse(200, settings) : jsonResponse(200, [])))
+  const view = renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
+  const examples = await screen.findByRole('list', { name: '첫 질문 예시' })
+  expect(within(examples).getAllByRole('listitem').map(item => item.textContent)).toEqual(['AI 첫 질문', 'AI 둘째 질문'])
+  await userEvent.click(screen.getByRole('button', { name: '새 요청' }))
+  expect(screen.getByRole('button', { name: 'AI 첫 질문' })).toBeInTheDocument()
+  view.unmount()
+  settings = { ...intake, suggestedQuestions: ['AI 첫 질문'] }
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
+  expect(within(await screen.findByRole('list', { name: '첫 질문 예시' })).getAllByRole('listitem').map(item => item.textContent)).toEqual(['설비 알람 확인', '리포트 요청'])
+})
+
 it('필터에 맞는 요청이 없으면 안내와 필터 초기화를 보이고 기본 필터에서는 초기화 버튼을 숨긴다', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/service-requests?scope=mine') return jsonResponse(200, [row('z', 'submitted')])

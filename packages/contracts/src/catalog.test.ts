@@ -33,3 +33,10 @@ it('derives all four representative fields from ordered nonempty classifications
   expect(AssistantSchema.parse({ ...base, classifications })).toMatchObject({ ...classifications[0], classifications })
   expect(AssistantSchema.safeParse({ ...base, classifications: [] }).success).toBe(false)
 })
+
+it('AI 추천 첫 질문은 선택 필드다 — 없으면 생략, 있으면 문자열 배열', () => {
+  const base = { id: 'a', name: 'A', level1: 'L1', level2: 'L2', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '', updatedAt: '', revision: 0 }
+  expect(AssistantSchema.parse(base)).not.toHaveProperty('suggestedQuestions')
+  expect(AssistantSchema.parse({ ...base, suggestedQuestions: ['무엇을 도와주나요?'] }).suggestedQuestions).toEqual(['무엇을 도와주나요?'])
+  expect(AssistantSchema.safeParse({ ...base, suggestedQuestions: [1] }).success).toBe(false)
+})

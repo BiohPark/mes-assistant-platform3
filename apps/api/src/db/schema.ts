@@ -128,6 +128,10 @@ export const assistant = mysqlTable(
     imageFileId: varchar('image_file_id', { length: 191 }).references((): AnyMySqlColumn => fileObject.id),
     color: text('color').notNull(),
     revision: integer('revision').notNull().default(0),
+    /** AI 추천 첫 질문(문자열 배열) — 에이전트 모델에 보조 요청으로 한 번 만들어 둔다. revision·updatedAt과 무관 */
+    suggestedQuestions: jsonObject('suggested_questions').$type<string[]>(),
+    /** 위 질문을 만든 modelId·이름·설명의 sha256 hex — 지금 값과 다르면 다시 만든다 */
+    suggestedFor: varchar('suggested_for', { length: 64 }),
     createdBy: varchar('created_by', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
     createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),
     updatedAt: tz('updated_at').notNull().default(sql`current_timestamp(6)`),

@@ -97,6 +97,31 @@ describe('TopBar', () => {
     server = { ...server, theme: 'light' }
     finish(jsonResponse(200, { name: me.name, theme: 'light', locale: 'en', email: null, emailIsDefault: false }))
   })
+  it('상단 아이콘으로 다크모드·언어를 바로 바꾸고 내 정보와 같은 경로로 저장한다 — 요청자도 쓴다', async () => {
+    let finish!: (response: Response) => void
+    const fetchMock = vi.fn((url: string) => url === '/api/me' ? Promise.resolve(jsonResponse(200, { ...me, roles: ['requester'] })) : new Promise<Response>((resolve) => { finish = resolve }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithProviders(<AuthGate><TooltipProvider><TopBar /><ProfileState /></TooltipProvider></AuthGate>)
+    await userEvent.click(await screen.findByRole('button', { name: '다크 모드로 전환' }))
+    await waitFor(() => expect(document.documentElement).toHaveClass('dark'))
+    expect(localStorage.getItem('mes-theme')).toBe('dark')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/users/me', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ theme: 'dark' }) }))
+    expect(screen.getByRole('button', { name: '라이트 모드로 전환' })).toBeDisabled() // 저장 중에는 잠근다
+    finish(jsonResponse(200, { name: me.name, theme: 'dark', locale: 'ko', email: null, emailIsDefault: false }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'English로 전환' })).toBeEnabled())
+    await userEvent.click(screen.getByRole('button', { name: 'English로 전환' }))
+    await waitFor(() => expect(document.documentElement.lang).toBe('en'))
+    expect(localStorage.getItem('mes-locale')).toBe('en')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/users/me', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ locale: 'en' }) }))
+    finish(jsonResponse(200, { name: me.name, theme: 'dark', locale: 'en', email: null, emailIsDefault: false }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Switch to light mode' })).toBeEnabled())
+    await userEvent.click(screen.getByRole('button', { name: 'Switch to light mode' }))
+    await waitFor(() => expect(document.documentElement).not.toHaveClass('dark'))
+    expect(screen.getByLabelText('프로필 상태')).toHaveTextContent('light·en')
+    finish(jsonResponse(200, { name: me.name, theme: 'light', locale: 'en', email: null, emailIsDefault: false }))
+    expect(await screen.findByRole('button', { name: 'Switch to 한국어' })).toBeInTheDocument()
+  })
+
   it('저장 실패 시 테마·언어와 캐시를 되돌리고 토스트로 알린다', async () => {
     const { toast } = await import('sonner')
     const errorToast = vi.spyOn(toast, 'error')

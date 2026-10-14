@@ -142,3 +142,13 @@ test('tool rejection control exists only in E2E mode and preserves captured atte
     assert.equal((await chat(base, { tool_ids: ['fake_tool'] })).status, 200)
   })
 })
+
+test('first-question suggestion calls get a deterministic three-line answer and stay out of the E2E capture', async () => withServer(true, async base => {
+  const system = { role: 'system', content: '다음 AI 에이전트에게 사용자가 처음 물어볼 만한 질문 3개를 한국어로 만들어라.' }
+  const expected = '이 에이전트는 무엇을 도와주나요?\n시작하려면 어떤 자료가 필요한가요?\n결과는 어떤 형태로 받나요?'
+  for (const stream of [true, false]) {
+    const response = await chat(base, { stream, messages: [system, { role: 'user', content: '이름: 분석 도우미\n설명: ' }] })
+    assert.equal(stream ? answer(await response.text()) : (await response.json()).choices[0].message.content, expected)
+  }
+  assert.deepEqual(await (await fetch(`${base}/__e2e/requests`)).json(), [])
+}))

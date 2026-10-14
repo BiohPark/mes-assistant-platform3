@@ -10,6 +10,7 @@ export function createProvider(settings: LlmSettings, readOwuiTools?: () => Prom
 export type { ChatChunk, ChatLimits, ChatProvider, ChatRequest, ChatMessageInput, ToolCall, ChatMeta } from './provider.js'
 export * from './checklistReview.js'
 export * from './context.js'
+export * from './firstQuestions.js'
 export * from './conversationSummary.js'
 export * from './limitedFetch.js'
 export * from './mockProvider.js'

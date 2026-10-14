@@ -23,6 +23,8 @@ export const AssistantSchema = z.object({
   imageId: z.string().optional(), color: z.string(),
   checklistTemplate: z.array(z.object({ id: z.string(), label: z.string(), required: z.boolean() })),
   createdBy: z.string(), createdAt: z.string(), updatedAt: z.string(), revision: z.number().int(),
+  /** 에이전트 모델이 만든 추천 첫 질문(에이전트별 1회 생성·저장). 현재 모델·이름·설명으로 만든 것만 내려온다 */
+  suggestedQuestions: z.array(z.string()).optional(),
 }).transform(row => {
   // Legacy single-path DTOs are decoded during the consumer rollout; output is always nonempty.
   const classifications = row.classifications ?? [{ level1: row.level1, level2: row.level2, level1CodeId: row.level1CodeId, level2CodeId: row.level2CodeId }]

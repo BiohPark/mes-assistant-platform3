@@ -647,7 +647,7 @@ paths:
       tags: [service-requests]
       summary: 접수 에이전트 표시 정보와 첨부 수 제한 (BO도 읽기 가능)
       responses:
-        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { srIntakeAssistantId: { type: [string, 'null'] }, name: { type: string }, summary: { type: string }, usageExample: { type: string }, fileMaxPerRequest: { type: integer } } } } } }
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { srIntakeAssistantId: { type: [string, 'null'] }, name: { type: string }, summary: { type: string }, usageExample: { type: string }, suggestedQuestions: { type: array, items: { type: string } }, fileMaxPerRequest: { type: integer } } } } } }
   /service-requests/{srId}:
     get:
       tags: [service-requests]
@@ -997,6 +997,7 @@ components:
         ownerId: { type: string }
         status: { enum: [open, developing, testing, retired] }
         usageExample: { type: string }
+        suggestedQuestions: { type: array, items: { type: string }, description: 'AI가 만든 추천 첫 질문(읽기 전용). 모델·이름·설명이 바뀌면 다시 만든다. usageExample 예시가 있으면 화면은 그쪽을 우선' }
         imageFileId: { type: string }
         expectedInputs: { type: array, items: { type: string } }
         expectedOutputs: { type: array, items: { type: string } }

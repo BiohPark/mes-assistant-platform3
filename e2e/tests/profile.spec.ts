@@ -31,3 +31,20 @@ test('사용자 메뉴의 다크·언어 전환은 서버에 저장되고 새 �
     await expect.poll(async () => (await (await context.request.get('/api/me')).json()).theme).toBe('light')
   } finally { await context.close() }
 })
+
+test('상단 토글 아이콘으로 다크·언어를 바로 바꾸고 서버에 저장한다', async ({ page }) => {
+  const signup = await page.request.post('/api/auth/signup', { data: { loginId: `e2e-toggle-${Date.now().toString(36)}`, password: 'e2e-password-1234', name: '토글 사용자' } })
+  expect(signup.ok()).toBe(true)
+  await page.goto('/')
+  await page.getByRole('button', { name: '다크 모드로 전환' }).click()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+  await expect.poll(async () => (await (await page.request.get('/api/me')).json()).theme).toBe('dark')
+  await page.getByRole('button', { name: 'English로 전환' }).click()
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  await expect.poll(async () => (await (await page.request.get('/api/me')).json()).locale).toBe('en')
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Switch to light mode' })).toBeVisible()
+  await page.getByRole('button', { name: 'Switch to 한국어' }).click()
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ko')
+  await expect.poll(async () => (await (await page.request.get('/api/me')).json()).locale).toBe('ko')
+})

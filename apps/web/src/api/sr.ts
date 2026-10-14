@@ -17,7 +17,7 @@ async function request<T>(path: string, method = 'GET', body?: unknown, key?: st
 }
 const path = (id: string) => `/${encodeURIComponent(id)}`
 export const listSr = (scope?: 'mine' | 'inbox') => request<SrDetail[]>(scope ? `?scope=${scope}` : '')
-export const getSrIntakeAssistant = () => request<{ srIntakeAssistantId: string | null; name?: string; summary?: string; usageExample?: string; fileMaxPerRequest?: number }>('/intake-assistant')
+export const getSrIntakeAssistant = () => request<{ srIntakeAssistantId: string | null; name?: string; summary?: string; usageExample?: string; /** 접수 에이전트 모델이 만든 추천 첫 질문(현재 기준으로 만든 것만) */ suggestedQuestions?: string[]; fileMaxPerRequest?: number }>('/intake-assistant')
 export const getSr = (id: string) => request<SrDetail>(path(id))
 export const createSr = (key?: string) => request<SrDetail>('', 'POST', undefined, key)
 export const deleteSr = (id: string) => request<void>(path(id), 'DELETE')

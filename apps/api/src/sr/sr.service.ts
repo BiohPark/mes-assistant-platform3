@@ -12,6 +12,7 @@ import { RequestsService } from '../requests/requests.service.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { assertSrAccess } from './access.js'
+import { freshFirstQuestions } from '../catalog/first-questions-key.js'
 
 const id = () => randomUUID()
 /** 알림 본문용 한글 상태 라벨(화면 사전 status.sr과 같은 뜻). */
@@ -129,9 +130,12 @@ export class SrService {
     const settings = await this.db.select().from(appSetting).where(inArray(appSetting.key, ['srIntakeAssistantId', 'fileMaxPerRequest']))
     const assistantId = settings.find(setting => setting.key === 'srIntakeAssistantId')?.value
     const limit = settings.find(setting => setting.key === 'fileMaxPerRequest')?.value
-    const [intake] = typeof assistantId === 'string' ? await this.db.select({ id: assistant.id, name: assistant.name, summary: assistant.summary, usageExample: assistant.usageExample }).from(assistant).where(eq(assistant.id, assistantId)) : []
+    const [intake] = typeof assistantId === 'string' ? await this.db.select({ id: assistant.id, name: assistant.name, summary: assistant.summary, usageExample: assistant.usageExample,
+      modelId: assistant.modelId, suggestedQuestions: assistant.suggestedQuestions, suggestedFor: assistant.suggestedFor }).from(assistant).where(eq(assistant.id, assistantId)) : []
+    // 요청자(BO)는 /api/assistants를 못 보므로 접수 에이전트의 AI 추천 첫 질문(현재 기준으로 만든 것만)을 여기서 함께 준다
+    const suggestedQuestions = intake && freshFirstQuestions(intake)
     return { srIntakeAssistantId: intake?.id ?? null, name: intake?.name, summary: intake?.summary, usageExample: intake?.usageExample,
-      fileMaxPerRequest: typeof limit === 'number' ? limit : FILE_MAX_PER_REQUEST }
+      ...(suggestedQuestions && { suggestedQuestions }), fileMaxPerRequest: typeof limit === 'number' ? limit : FILE_MAX_PER_REQUEST }
   }
   async list(actor: string, scope?: 'mine' | 'inbox') {
     const user = await this.user(actor)

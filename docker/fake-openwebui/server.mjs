@@ -32,10 +32,14 @@ function lastUserText(messages = []) {
   return typeof m.content === 'string' ? m.content : m.content.map((p) => p.text ?? '').join('')
 }
 
+// 에이전트 추천 첫 질문(보조 호출) — 시스템 프롬프트로 알아보고 결정적인 세 줄을 돌려준다
+const FIRST_QUESTIONS = '이 에이전트는 무엇을 도와주나요?\n시작하려면 어떤 자료가 필요한가요?\n결과는 어떤 형태로 받나요?'
+const isFirstQuestions = (payload) => (payload.messages ?? []).some((m) => m.role === 'system' && typeof m.content === 'string' && m.content.includes('처음 물어볼 만한 질문'))
+
 /** 기본·legacy 모두 같은 생각·본문·첨부 시나리오를 사용한다. legacy는 sources만 앞에 더한다. */
 async function completeChat(payload, res) {
   const userText = lastUserText(payload.messages)
-  const text = `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${userText} [files: ${payload.files?.length ?? 0}]`
+  const text = isFirstQuestions(payload) ? FIRST_QUESTIONS : `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${userText} [files: ${payload.files?.length ?? 0}]`
   const id = `chatcmpl-${randomUUID()}`
   if (!payload.stream) {
     return json(res, 200, { id, object: 'chat.completion', model: payload.model, choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }] })
@@ -93,7 +97,8 @@ const server = createServer(async (req, res) => {
   }
   if (req.method === 'POST' && url.pathname === '/api/chat/completions') {
     const payload = JSON.parse((await readBody(req)).toString('utf8') || '{}')
-    if (captureRequests) {
+    // 추천 첫 질문은 백그라운드 호출이라 순서를 기대하는 E2E 기록에 넣지 않는다
+    if (captureRequests && !isFirstQuestions(payload)) {
       requests.push(payload)
       if (requests.length > 200) requests.shift()
     }
