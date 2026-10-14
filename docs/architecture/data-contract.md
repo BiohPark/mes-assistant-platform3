@@ -41,7 +41,7 @@
 | 데모 테이블 | 주요 필드 | 내장 배열 → 자식 테이블 | 새 저장소 |
 |---|---|---|---|
 | `users` | id, name, role, initials, color, isSystemOwner | — | `app_user` (+ SSO 주체 ID) |
-| `assistants` | id(slug), name, level1/2, summary, order, modelId, link1, docUrl, ownerId, status, usageExample, imageId, color | `expectedInputs/Outputs[]` → `assistant_expected_io`, `checklistTemplate[]` → `assistant_checklist_template` | `assistant` (slug는 고유 키, PK는 별도) |
+| `assistants` | id(slug), name, level1/2, summary, order, modelId, link1, docUrl, ownerId, status, usageExample, imageId, color, suggestedQuestions(읽기 전용 — `suggested_questions` json + `suggested_for` 생성 기준 해시, S12) | `expectedInputs/Outputs[]` → `assistant_expected_io`, `checklistTemplate[]` → `assistant_checklist_template` | `assistant` (slug는 고유 키, PK는 별도) |
 | `tasks` | id, code(WK-YYYY-NNNN), assistantId, title, titleSource, summary, status, ownerId, priority, dueDate, threadId, modelId, 시각들 | `assigneeIds[]` → `task_assignee`, `tags[]` → `tag`+`task_tag`, `inputs[]` → `task_input`, `outputFileIds[]` → `file_object.is_output`, `checklist[]` → `checklist_item`, `checklistReview` → `checklist_review(+_item)`, `feedback` → `task_feedback` | `task` (code 고유) |
 | `threads` | id, taskId \| srId, title, modelId | — | `thread` (task 또는 SR 중 정확히 하나) |
 | `messages` | id, threadId, role, content, authorId, status, kind, createdAt, requestInfo, requestSnapshot, heartbeatAt, requestedBy | `attachmentIds[]` → `message_attachment`, `requestInfo` → `chat_request`(+input) | `message` (+ 스레드 내 순번 `seq`) |
