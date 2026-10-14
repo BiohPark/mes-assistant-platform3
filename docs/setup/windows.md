@@ -88,6 +88,7 @@ pnpm setup:env
 | `WEB_DIST_DIR` | web 정적 파일 위치(선택). 비우면 api 기준 `../web/dist`를 찾고, 폴더가 없으면 제공하지 않는다 | 비움 |
 | `AUTH_MODE` | 로그인 방식: `local`(앱 자체 로그인, 기본) 또는 `oidc`(SSO) | `local` |
 | `APP_ORIGIN` | 브라우저가 여는 앱 주소. OIDC 콜백은 `{APP_ORIGIN}/api/auth/callback`. `https://`면 Secure 쿠키 | `http://localhost:5173` |
+| `APP_EXTRA_ORIGINS` | (선택) 같은 서버를 다른 이름으로도 열 때 로그인·가입을 허용할 추가 주소. 쉼표 구분 `http(s)://이름:포트`, 경로·와일드카드 불가. 콜백·쿠키는 `APP_ORIGIN` 기준 | (비움) |
 | `DATABASE_URL` | api가 붙는 MariaDB | `mysql://mes:…@localhost:3306/mes_hub` |
 | `SESSION_SECRET` | 쿠키 서명 비밀(32자 이상). 운영은 무작위 값 | 가상 값 |
 | `OIDC_ISSUER` · `OIDC_CLIENT_ID` · `OIDC_CLIENT_SECRET` | SSO(OIDC) 발급자·앱 ID·비밀 — `AUTH_MODE=oidc`일 때만 필수 | 개발 Keycloak realm `mes-dev` |

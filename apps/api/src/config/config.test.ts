@@ -12,6 +12,36 @@ const base = {
 }
 
 describe('loadConfig', () => {
+  it('추가 출처는 선택이며 기본 출처만으로도 동작한다', () => {
+    expect(loadConfig(base).allowedOrigins).toEqual([base.APP_ORIGIN])
+    expect(loadConfig({ ...base, APP_EXTRA_ORIGINS: ' , , ' }).allowedOrigins).toEqual([base.APP_ORIGIN])
+  })
+
+  it('출처의 대소문자·기본 포트·마지막 슬래시를 정규화하고 중복을 제거한다', () => {
+    const c = loadConfig({ ...base, APP_ORIGIN: 'HTTPS://Hub.Example.com:443/',
+      APP_EXTRA_ORIGINS: ' https://HUB.example.com, http://Alias.example.com:80/, https://alias.example.com:8443, http://[::1]:8080 ' })
+    expect(c.appOrigin).toBe('https://hub.example.com')
+    expect(c.allowedOrigins).toEqual(['https://hub.example.com', 'http://alias.example.com', 'https://alias.example.com:8443', 'http://[::1]:8080'])
+  })
+
+  it.each([
+    '*', 'https://*.example.com', 'https://%2a.example.com', 'https://example.com/*',
+    'https://example.com/path', 'https://example.com/path/..', 'https://example.com/?q=1',
+    'https://example.com/#fragment', 'https://user:password@example.com', 'null',
+    'example.com', 'ftp://example.com', 'file:///tmp', 'https://example.com:99999',
+    'https://example.com\\path', 'https://exam\tple.com',
+  ])('잘못된 추가 출처 %s는 기동 시 거부한다', (origin) => {
+    expect(() => loadConfig({ ...base, APP_EXTRA_ORIGINS: `https://valid.example.com, ${origin}` })).toThrow(/APP_EXTRA_ORIGINS/)
+  })
+
+  it.each(['http://hub.example.com', 'https://hub.example.com'])('추가 출처의 프로토콜과 무관하게 %s 기준으로 OIDC·Secure 쿠키를 설정한다', (origin) => {
+    const c = loadConfig({ ...base, AUTH_MODE: 'oidc', APP_ORIGIN: origin,
+      APP_EXTRA_ORIGINS: 'http://alias.example.com, https://secure.example.com' })
+    expect(c.appOrigin).toBe(origin)
+    expect(c.cookieSecure).toBe(origin.startsWith('https://'))
+    expect(c.oidc?.redirectUri).toBe(`${origin}/api/auth/callback`)
+  })
+
   it('기본 이메일 도메인은 선택이며 빈 설정은 사용하지 않는다', () => {
     expect(loadConfig(base).defaultEmailDomain).toBeUndefined()
     expect(loadConfig({ ...base, DEFAULT_EMAIL_DOMAIN: '' }).defaultEmailDomain).toBeUndefined()

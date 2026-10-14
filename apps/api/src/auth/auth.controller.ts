@@ -36,7 +36,8 @@ export class AuthController {
   }
 
   private checkOrigin(req: Request) {
-    if ((req.get('Origin') !== undefined && req.get('Origin') !== this.config.appOrigin) || req.get('Sec-Fetch-Site') === 'cross-site') {
+    const origin = req.get('Origin')
+    if ((origin !== undefined && !this.config.allowedOrigins.includes(origin)) || req.get('Sec-Fetch-Site') === 'cross-site') {
       throw new ForbiddenException('허용되지 않은 출처입니다')
     }
   }
