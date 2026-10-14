@@ -24,6 +24,7 @@ import { getDraft } from './drafts'
 import { toast } from 'sonner'
 import { useConversationViewed } from '@/lib/conversationRead'
 import { useT } from '@/i18n'
+import { ChatBrief } from '@/features/task/ChatBrief'
 
 /** headerTools가 있으면 검색·질문 목차 아이콘은 그 자리(대화 헤더)로 가고, 펼친 검색 줄만 메시지 위 툴바에 남는다 */
 export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { task: Task; assistant?: Assistant; onOpenMaterials?: () => void; headerTools?: HTMLElement | null }) {
@@ -190,6 +191,7 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
     catch { toast.error(t('chat.requestLoadFailed')) }
   }
   return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={sending || chat.sending} onFiles={(files) => composer.current?.dropFiles(files)}>
+    <ChatBrief taskId={task.id} />
     <div ref={setToolbar} data-testid="chat-question-toolbar" className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b px-4 py-2 empty:hidden" />
     <div ref={conversationPanel} data-testid="chat-message-scroll" className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
     <ChatMessages key={task.id} assistantName={assistant?.name} messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince ?? submissionSince} questionIndexContainer={headerTools ?? toolbar} searchContainer={toolbar} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}

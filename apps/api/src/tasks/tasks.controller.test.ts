@@ -11,6 +11,7 @@ import { USER_DIRECTORY } from '../auth/users.service.js'
 import { CONFIG, loadConfig } from '../config/config.js'
 import { HEALTH_PROBE } from '../health/health.controller.js'
 import { TaskExtrasService } from './task-extras.service.js'
+import { TaskBriefService } from './task-brief.service.js'
 import { DbTasksService } from './tasks.service.js'
 
 const config = loadConfig({ DATABASE_URL: 'mysql://u:p@localhost:1/none', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
@@ -25,11 +26,13 @@ describe('tasks HTTP API', () => {
     messages: vi.fn(async () => []), appendMessage: vi.fn(async () => ({ id: 'm', kind: 'discussion' })),
   }
   const extras = { review: vi.fn() }
+  const brief = { get: vi.fn(async () => ({ stats: { questions: 0, participants: [], startedAt: '2026-10-15T00:00:00.000Z' }, generating: false, failed: false, stale: false })) }
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CONFIG).useValue(config)
       .overrideProvider(DbTasksService).useValue(service)
       .overrideProvider(TaskExtrasService).useValue(extras)
+      .overrideProvider(TaskBriefService).useValue(brief)
       .overrideProvider(HEALTH_PROBE).useValue(async () => true)
       .overrideProvider(SESSION_STORE).useValue({ resolve: async (token: string) => token === 'member' ? { id: 'u', name: '사용자', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false } : null })
       .overrideProvider(OIDC).useValue({}).overrideProvider(USER_DIRECTORY).useValue({}).compile()
@@ -38,6 +41,13 @@ describe('tasks HTTP API', () => {
   })
   afterEach(async () => { await app.close(); vi.clearAllMocks() })
   const auth = () => ({ Cookie: 'mes_session=member' })
+
+  it('serves the display-only brief for the signed-in reader', async () => {
+    const response = await request(app.getHttpServer()).get('/api/tasks/t/brief').set(auth()).expect(200)
+    expect(response.body).toMatchObject({ stats: { questions: 0 }, generating: false })
+    expect(brief.get).toHaveBeenCalledWith('u', 't')
+    await request(app.getHttpServer()).get('/api/tasks/t/brief').expect(401)
+  })
 
   it('streams review items and sends completed only after the saved result returns', async () => {
     const item = { itemId: 'c1', met: true, note: '확인됨' }

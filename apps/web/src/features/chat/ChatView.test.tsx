@@ -734,3 +734,17 @@ it.each([409, 500])('clears Enter immediately, waits through upload and restores
   expect(getDraft('t')).toMatchObject({ text: '복원할 질문', pending: [{ uploadedId: 'f', uploadedTaskId: 't' }] })
   expect(screen.queryByRole('timer')).not.toBeInTheDocument()
 })
+
+it('shows the AI summary card above the messages without blocking the conversation', async () => {
+  const brief = { stats: { questions: 1, participants: [{ id: 'brief-user', name: 'User' }], startedAt: '2026-10-13T00:00:00Z' }, generating: false, failed: false, stale: false,
+    ai: { about: '요약 카드 주제', next: '요약 카드 다음 제안', source: 'ai', basedOnSeq: 2, generatedAt: '2026-10-13T00:00:00Z' } }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url === '/api/tasks/brief-task/brief' ? brief : url.endsWith('/estimate')
+    ? { inputs: [], srs: [], srCodes: [], bytes: 0, limitBytes: 100000, overLimit: false } : [])))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const task = { id: 'brief-task', threadId: 'brief-thread', status: 'in_progress', inputs: [], tags: [], lastActivityAt: '2026-10-13T00:00:00Z' } as unknown as Task
+  render(<QueryClientProvider client={client}><MeContext value={{ id: 'brief-user', name: 'User', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ChatView task={task} /></TooltipProvider></MeContext></QueryClientProvider>)
+  const card = await screen.findByTestId('chat-brief')
+  expect(card).toHaveTextContent('요약 카드 주제')
+  expect(card.compareDocumentPosition(screen.getByTestId('chat-message-scroll')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(screen.getByRole('textbox')).toBeEnabled()
+})

@@ -11,6 +11,8 @@ export type AppEvent =
   | { event: 'file.updated'; data: { taskId: string } }
   | { event: 'input.updated'; data: { taskId: string } }
   | { event: 'context.updated'; data: { taskId: string } }
+  /** 대화 요약 카드가 새로 저장됐다(표시 전용) */
+  | { event: 'brief.updated'; data: { taskId: string } }
   | { event: 'presence.typing'; data: { threadId: string; userId: string; name: string; until: string } }
   | { event: 'notification.created'; data: Record<string, unknown> }
 

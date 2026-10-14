@@ -330,6 +330,12 @@ paths:
       summary: 항목 삭제 (저장된 AI 판단 결과는 무효화)
       parameters: [{ $ref: '#/components/parameters/taskId' }, { name: itemId, in: path, required: true, schema: { type: string } }]
       responses: { '204': { description: 삭제 } }
+  /tasks/{taskId}/brief:
+    get:
+      tags: [tasks]
+      summary: '대화 요약 카드(표시 전용, S13). 새 메시지가 있고 AI 답이 1개 이상이면 백그라운드 생성(보조 kind brief) 후 SSE brief.updated. 요청 조립·트레이·참조 요약에는 쓰지 않는다'
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses: { '200': { description: 'ai?{ about, next, source(ai|rule), model?, basedOnSeq, generatedAt } · stats{ questions, participants[{id,name}], startedAt } · generating · failed · stale' } }
   /tasks/{taskId}/checklist/review:
     post:
       tags: [tasks]

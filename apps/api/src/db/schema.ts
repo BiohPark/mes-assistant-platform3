@@ -510,6 +510,21 @@ export const taskFeedback = mysqlTable(
   (t) => [check('task_feedback_rating_check', sql`${t.rating} between 1 and 5`)],
 )
 
+/** 대화 요약 카드(표시 전용) — 대화당 최신 1건. based_on_seq는 만들 때 본 마지막 메시지 순번 */
+export const taskBrief = mysqlTable(
+  'task_brief',
+  {
+    taskId: varchar('task_id', { length: 191 }).primaryKey().references((): AnyMySqlColumn => task.id, { onDelete: 'cascade' }),
+    about: text('about').notNull(),
+    nextAction: text('next_action').notNull(),
+    source: text('source').notNull(),
+    model: text('model'),
+    basedOnSeq: bigint('based_on_seq', { mode: 'number' }).notNull(),
+    generatedAt: tz('generated_at').notNull().default(sql`current_timestamp(6)`),
+  },
+  (t) => [check('task_brief_source_check', inList(t.source, ['ai', 'rule']))],
+)
+
 export const note = mysqlTable('note', {
   id: varchar('id', { length: 191 }).primaryKey(),
   taskId: varchar('task_id', { length: 191 }).notNull().references((): AnyMySqlColumn => task.id, { onDelete: 'cascade' }),

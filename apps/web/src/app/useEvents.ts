@@ -38,6 +38,8 @@ export function applyEvent(query: QueryClient, event: string, data: Record<strin
     if (taskId) { invalidate(['conversation-inputs', taskId]); invalidate(['candidates', taskId]); invalidate(['task', taskId]); invalidate(['activity', taskId]) }
     invalidate(['estimate'])
   }
+  // 요약 카드는 진입 때만 새로 만든다 — 저장이 끝났다는 알림에만 다시 읽는다
+  if (event === 'brief.updated' && taskId) invalidate(['chat-brief', taskId])
   if (event === 'sr.updated') invalidate(['sr'])
   if (event === 'notification.created') invalidate(['notifications'])
 }
@@ -48,7 +50,7 @@ export function useEvents(enabled = true) {
     if (!enabled || typeof EventSource === 'undefined') return
     const source = new EventSource('/api/events')
     const names = ['task.created', 'task.updated', 'message.appended', 'request.updated', 'file.updated', 'input.updated',
-      'context.updated', 'sr.updated', 'presence.typing', 'notification.created', 'resync']
+      'context.updated', 'brief.updated', 'sr.updated', 'presence.typing', 'notification.created', 'resync']
     const handlers = names.map((event) => {
       const handler = (message: Event) => {
         const data = JSON.parse((message as MessageEvent<string>).data || '{}') as Record<string, unknown>

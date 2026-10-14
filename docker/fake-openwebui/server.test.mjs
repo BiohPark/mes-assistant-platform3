@@ -153,6 +153,16 @@ test('first-question suggestion calls get a deterministic three-line answer and 
   assert.deepEqual(await (await fetch(`${base}/__e2e/requests`)).json(), [])
 }))
 
+test('chat brief calls get a deterministic two-line card and stay out of the E2E capture', async () => withServer(true, async base => {
+  const system = { role: 'system', content: '다음은 한 업무 대화의 기록이다. 화면 위쪽 요약 카드에 넣을 두 줄을 한국어로 만들어라.' }
+  const expected = '주제: 가짜 OpenWebUI 대화 요약\n다음: 가짜 OpenWebUI가 제안하는 다음 할 일'
+  for (const stream of [true, false]) {
+    const response = await chat(base, { stream, messages: [system, { role: 'user', content: '[사용자] 질문\n\n[assistant] 답' }] })
+    assert.equal(stream ? answer(await response.text()) : (await response.json()).choices[0].message.content, expected)
+  }
+  assert.deepEqual(await (await fetch(`${base}/__e2e/requests`)).json(), [])
+}))
+
 // 세션 모드(S12, OpenWebUI v0.12): session_id·id·parent_id:null → chat_id만 즉시, 결과는 채팅 GET으로
 const session = (base, content, body = {}) => chat(base, { session_id: 'mes-test', id: 'msg-1', parent_id: null, messages: [{ role: 'user', content }], ...body })
 async function pollUntilDone(base, chatId, timeoutMs = 10_000) {
