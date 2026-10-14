@@ -58,6 +58,35 @@ describe('local 인증 API', () => {
     await request(app.getHttpServer()).get('/api/auth/callback').expect(404)
   })
 
+  it.each(['http://localhost:5173', 'http://alias.example.com', 'https://alias.example.com:8443'])('%s 출처에서 가입하고 로그인할 수 있다', async (origin) => {
+    await app.close()
+    app = await createTestApp(loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32),
+      APP_ORIGIN: config.appOrigin, APP_EXTRA_ORIGINS: 'http://Alias.example.com:80/, https://alias.example.com:8443' }))
+    const body = { loginId: 'alias-member', password: 'password-1234' }
+    const signup = await request(app.getHttpServer()).post('/api/auth/signup').set('Origin', origin).set('Sec-Fetch-Site', 'same-origin').send(body).expect(201)
+    const login = await request(app.getHttpServer()).post('/api/auth/login').set('Origin', origin).set('Sec-Fetch-Site', 'same-origin').send(body).expect(200)
+    for (const response of [signup, login]) expect(String(response.headers['set-cookie'])).not.toMatch(/; Secure/)
+  })
+
+  it.each(['login', 'signup'])('%s은 추가 출처 설정 후에도 미등록 출처와 cross-site를 거부한다', async (route) => {
+    await app.close()
+    app = await createTestApp(loadConfig({ DATABASE_URL: 'mysql://unused', SESSION_SECRET: 's'.repeat(32),
+      APP_ORIGIN: config.appOrigin, APP_EXTRA_ORIGINS: 'http://alias.example.com' }))
+    for (const [origin, site] of [
+      ['http://unlisted.example.com', 'same-origin'], ['http://alias.example.com:8080', 'same-origin'],
+      ['https://alias.example.com', 'same-origin'], ['null', 'same-origin'],
+      ['http://alias.example.com', 'cross-site'], [config.appOrigin, 'cross-site'], [undefined, 'cross-site'],
+    ]) {
+      const call = request(app.getHttpServer()).post(`/api/auth/${route}`).set('Sec-Fetch-Site', site!)
+      if (origin !== undefined) call.set('Origin', origin)
+      const response = await call.send({ loginId: 'member-1', password: 'password-1234' }).expect(403)
+      expect(response.body.message).toBe('허용되지 않은 출처입니다')
+    }
+    expect(users.findByLoginId).not.toHaveBeenCalled()
+    expect(users.createLocal).not.toHaveBeenCalled()
+    expect(sessions.create).not.toHaveBeenCalled()
+  })
+
   it('회원가입은 세션 쿠키와 Me를 돌려주고 중복은 409', async () => {
     const res = await request(app.getHttpServer()).post('/api/auth/signup').send({ loginId: 'member-1', password: 'password-1234' }).expect(201)
     expect(res.body).toEqual({ id: 'u-member-1', name: 'member-1', role: '', roles: ['member'], theme: 'system', locale: 'ko', email: null, emailIsDefault: false })

@@ -9,6 +9,15 @@ const list = z
   .default('')
   .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean))
 
+const originUrl = z.string().trim().refine((value) => {
+  // Check the supplied shape before URL parsing can normalize away paths or backslashes.
+  if (!/^https?:\/\/[^\s/?#\\]+\/?$/i.test(value)) return false
+  try {
+    const url = new URL(value)
+    return !url.hostname.includes('*') && !url.username && !url.password
+  } catch { return false }
+}, '경로·와일드카드·인증 정보가 없는 HTTP(S) origin URL이 필요합니다').transform((value) => new URL(value).origin)
+
 function isOriginUrl(value: string): boolean {
   try {
     const url = new URL(value)
@@ -33,7 +42,8 @@ function parseTrustProxy(value: string): false | number | string[] | undefined {
 
 const EnvSchema = z.object({
   API_PORT: z.coerce.number().int().positive().default(3000),
-  APP_ORIGIN: z.url(),
+  APP_ORIGIN: originUrl,
+  APP_EXTRA_ORIGINS: list.pipe(z.array(originUrl)),
   DATABASE_URL: z.string().min(1),
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET은 32자 이상'),
   SESSION_TTL_HOURS: z.coerce.number().positive().default(12),
@@ -99,7 +109,8 @@ export function loadConfig(env: Record<string, string | undefined>) {
     throw new Error(`설정 오류 — ${keys}`)
   }
   const e = parsed.data
-  const appOrigin = e.APP_ORIGIN.replace(/\/+$/, '')
+  const appOrigin = e.APP_ORIGIN
+  const allowedOrigins = [...new Set([appOrigin, ...e.APP_EXTRA_ORIGINS])]
   const envFileAt = process.execArgv.findIndex((arg) => arg === '--env-file' || arg.startsWith('--env-file='))
   const envFileArg = process.execArgv[envFileAt]
   const configFile = envFileArg?.startsWith('--env-file=') ? envFileArg.slice('--env-file='.length) : envFileAt >= 0 ? process.execArgv[envFileAt + 1] : undefined
@@ -113,6 +124,7 @@ export function loadConfig(env: Record<string, string | undefined>) {
     port: e.API_PORT,
     https: parseHttpsConfig(env),
     appOrigin,
+    allowedOrigins,
     databaseUrl: e.DATABASE_URL,
     sessionSecret: e.SESSION_SECRET,
     sessionTtlHours: e.SESSION_TTL_HOURS,

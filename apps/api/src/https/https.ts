@@ -51,9 +51,14 @@ export function loadHttpsOptions(config: HttpsConfig | undefined): SecureContext
   return options
 }
 
-export function httpsOriginWarning(config: { https?: HttpsConfig; appOrigin: string }): string | undefined {
+export function httpsOriginWarning(config: { https?: HttpsConfig; appOrigin: string; allowedOrigins?: readonly string[] }): string | undefined {
+  const warnings: string[] = []
   if (config.https && config.appOrigin.startsWith('http://')) {
-    return '직접 HTTPS가 켜져 있지만 APP_ORIGIN이 http입니다. 사용자 HTTPS 주소로 변경하세요. Secure 쿠키는 APP_ORIGIN 규칙을 따릅니다.'
+    warnings.push('직접 HTTPS가 켜져 있지만 APP_ORIGIN이 http입니다. 사용자 HTTPS 주소로 변경하세요. Secure 쿠키는 APP_ORIGIN 규칙을 따릅니다.')
   }
-  return undefined
+  const origins = config.allowedOrigins ?? [config.appOrigin]
+  if (origins.some((origin) => origin.startsWith('http://')) && origins.some((origin) => origin.startsWith('https://'))) {
+    warnings.push('APP_EXTRA_ORIGINS와 APP_ORIGIN의 허용 출처에 http와 https가 섞여 있습니다. Secure 쿠키·OIDC 콜백·리다이렉트는 APP_ORIGIN 기준이므로 추가 주소의 로그인 동작에 영향을 줄 수 있습니다.')
+  }
+  return warnings.length ? warnings.join(' ') : undefined
 }

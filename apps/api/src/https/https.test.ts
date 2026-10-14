@@ -125,6 +125,25 @@ describe('optional direct HTTPS', () => {
     expect(httpsOriginWarning(loadConfig(base))).toBeUndefined()
   })
 
+  it.each([
+    { APP_ORIGIN: 'http://hub.example.com', APP_EXTRA_ORIGINS: 'https://alias.example.com' },
+    { APP_ORIGIN: 'https://hub.example.com', APP_EXTRA_ORIGINS: 'http://alias.example.com' },
+    { APP_ORIGIN: 'https://hub.example.com', APP_EXTRA_ORIGINS: 'http://alias.example.com,https://other.example.com' },
+  ])('warns at bootstrap when allowed origins mix HTTP and HTTPS: %j', (env) => {
+    expect(httpsOriginWarning(loadConfig({ ...base, ...env }))).toMatch(/APP_EXTRA_ORIGINS.*http.*https.*Secure.*APP_ORIGIN/)
+  })
+
+  it.each(['http', 'https'])('does not warn for origins sharing %s', (scheme) => {
+    expect(httpsOriginWarning(loadConfig({ ...base, APP_ORIGIN: `${scheme}://hub.example.com`,
+      APP_EXTRA_ORIGINS: `${scheme}://alias.example.com,${scheme}://other.example.com` }))).toBeUndefined()
+  })
+
+  it('preserves both direct HTTPS and mixed-origin warnings', () => {
+    const warning = httpsOriginWarning(loadConfig({ ...base, HTTPS_PFX_FILE: pfx, APP_EXTRA_ORIGINS: 'https://alias.example.com' }))
+    expect(warning).toMatch(/직접 HTTPS/)
+    expect(warning).toMatch(/APP_EXTRA_ORIGINS/)
+  })
+
   it.each(['pem', 'pfx'])('serves a trusted TLS response with %s options on an ephemeral port', async (format) => {
     const env = format === 'pem' ? { HTTPS_CERT_FILE: cert, HTTPS_KEY_FILE: key } : { HTTPS_PFX_FILE: pfx, HTTPS_PFX_PASSPHRASE: passphrase }
     const server = createServer(loadHttpsOptions(parseHttpsConfig(env))!, (_req, res) => res.end('ok'))
