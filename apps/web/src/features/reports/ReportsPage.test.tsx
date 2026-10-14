@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MeContext } from '@/app/auth'
@@ -49,7 +49,7 @@ it('Popover 담당자 검색·키보드 선택과 전체 해제는 서버 필터
   await waitFor(() => expect(calls).toContain('/api/reports?days=30&granularity=week&userId=other'))
   await user.keyboard('{Escape}')
   await user.click(screen.getByRole('button', { name: '담당자: 다른 사람' }))
-  await user.click(screen.getByRole('button', { name: '전체' }))
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '전체' }))
   expect(screen.getByRole('button', { name: '담당자: 전체' })).toHaveAttribute('aria-pressed', 'false')
   await waitFor(() => expect(calls.at(-1)).toBe('/api/reports?days=30&granularity=week'))
 })
@@ -72,4 +72,25 @@ it('uses semantic foregrounds for SR progress, warning signals and feedback icon
   expect(bars[1]).toHaveStyle({ width: `${1 / 3 * 100}%` })
   expect(container.querySelector('svg.lucide-triangle-alert')).toHaveClass('text-tone-warning-fg')
   expect(container.querySelector('svg.lucide-star')).toHaveClass('text-tone-warning-fg')
+})
+
+it('에이전트별 현황 표는 열 머리로 정렬하고 값이 없는 리드타임은 맨 아래에 둔다', async () => {
+  const stat = (id: string, name: string, extra: Record<string, unknown>) => ({ assistant: { id, name, color: '#2563eb' }, total: 0, active: 0, done: 0, ...extra })
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url.startsWith('/api/reports?') ? jsonResponse(200, {
+    kpi: { done: 0, reopens: 0 }, buckets: [], userStats: [], flow: [], tags: [], srDist: [], signals: [], digest: [], assistants: [], users: [],
+    assistantStats: [stat('x', '나', { total: 1, done: 1 }), stat('y', '가', { total: 3, active: 1, avgLeadDays: 2.5, avgRating: 4 }), stat('z', '다', { total: 2, avgLeadDays: 1 })],
+  }) : jsonResponse(404)))
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ReportsPage /></TooltipProvider></MeContext>)
+  const table = await screen.findByRole('table')
+  const names = () => within(table).getAllByRole('row').slice(1).map(row => within(row).getByRole('link').lastChild?.textContent)
+  expect(names()).toEqual(['나', '가', '다'])
+  await userEvent.click(within(table).getByRole('button', { name: '에이전트' }))
+  expect(names()).toEqual(['가', '나', '다'])
+  await userEvent.click(within(table).getByRole('button', { name: '전체' }))
+  expect(names()).toEqual(['나', '다', '가'])
+  await userEvent.click(within(table).getByRole('button', { name: '리드타임' }))
+  expect(names()).toEqual(['다', '가', '나'])
+  await userEvent.click(within(table).getByRole('button', { name: '리드타임' }))
+  expect(names()).toEqual(['가', '다', '나'])
+  expect(within(table).getByRole('columnheader', { name: '리드타임' })).toHaveAttribute('aria-sort', 'descending')
 })

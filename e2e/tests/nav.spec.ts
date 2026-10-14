@@ -28,12 +28,12 @@ test('SO 사이드바: 업무·요청·관리 3구획 9개 메뉴, 사용자 관
   await expect(page.getByRole('heading', { name: '사용자 관리' })).toBeVisible()
   await expect(page.getByRole('heading', { name: '사용자·역할' })).toBeVisible()
   await expect(page.getByRole('switch', { name: /SO$/ }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: '설정 저장' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: '전역 설정' })).toHaveCount(0)
 
   await nav(page).getByRole('link', { name: '전역 설정' }).click()
   await expect(page).toHaveURL(/\/settings$/)
   await expect(page.getByRole('heading', { name: '전역 설정' })).toHaveCount(2) // TopBar 제목 + 폼 제목
-  await expect(page.getByRole('button', { name: '설정 저장' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '전역 설정' }).getByRole('combobox', { name: '기본 모델' })).toBeVisible() // 저장 버튼 없이 필드별 자동 저장
   await expect(page.getByRole('heading', { name: '사용자·역할' })).toHaveCount(0)
   const summary = page.getByRole('region', { name: 'AI 연결 요약' })
   await expect(summary.getByText(/^(Mock|Live)$/)).toBeVisible()

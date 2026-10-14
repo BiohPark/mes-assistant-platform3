@@ -157,3 +157,25 @@ it('queue chips distinguish unstarted and assigned SRs, sort elapsedDays descend
   expect(screen.getByText('내가 담당하는 연결 SR이 없습니다.')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: '내 SR 요청' })).toHaveAttribute('href', '/sr')
 })
+
+it('inbox 표는 제목·경과일 열 머리로 정렬하고 기본은 경과일 내림차순이다', async () => {
+  const rows = [
+    { id: 'a', code: 'SR-2026-0001', title: '알람', body: '', status: 'submitted', submittedAt: '2026-10-03' },
+    { id: 'b', code: 'SR-2026-0002', title: '리포트', body: '', status: 'done', submittedAt: '2026-10-01' },
+    { id: 'c', code: 'SR-2026-0003', title: '옛 검토', body: '', status: 'reviewing', submittedAt: '2026-10-02' },
+  ].map(row => ({ ...row, requesterId: 'requester', titleSource: 'manual', attachmentIds: [], threadId: `thread-${row.id}`, results: [], conversations: [], createdAt: row.submittedAt, updatedAt: row.submittedAt }))
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => jsonResponse(200, url === '/api/service-requests?scope=inbox' ? rows : [])))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrManagePage /></MeContext></TooltipProvider>)
+  const table = await screen.findByRole('table')
+  const titles = () => within(table).getAllByRole('row').slice(1).map(row => within(row).getByRole('button').textContent?.replace(/^SR-\d{4}-\d{4}/, ''))
+  expect(titles()).toEqual(['리포트', '옛 검토', '알람'])
+  await userEvent.click(within(table).getByRole('button', { name: 'SR 제목' }))
+  expect(titles()).toEqual(['리포트', '알람', '옛 검토'])
+  expect(within(table).getByRole('columnheader', { name: 'SR 제목' })).toHaveAttribute('aria-sort', 'ascending')
+  await userEvent.click(within(table).getByRole('button', { name: 'SR 제목' }))
+  expect(titles()).toEqual(['옛 검토', '알람', '리포트'])
+  await userEvent.click(within(table).getByRole('button', { name: '경과일' }))
+  expect(titles()).toEqual(['알람', '옛 검토', '리포트'])
+  await userEvent.click(within(table).getByRole('button', { name: 'SR 상태' })) // 접수됨 2건 동률은 기본 비교(경과일 내림차순)로 가른다
+  expect(titles()).toEqual(['옛 검토', '알람', '리포트'])
+})

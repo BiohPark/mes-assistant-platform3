@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useId, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -9,6 +9,8 @@ import { useT } from '@/i18n'
 import { AssistantPicker } from '@/components/AssistantPicker'
 import { Field } from '@/components/Field'
 import { Chip } from '@/components/Chip'
+import { SaveStatus } from '@/components/SaveStatus'
+import { useAutoSave } from '@/lib/useAutoSave'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,88 +19,77 @@ import { useModelList } from '@/lib/useModelList'
 import { Sparkles } from 'lucide-react'
 import { getSettings, saveSettings, uploadAssistantImage, type Settings, type SettingsPatch } from '@/api/admin'
 
+type GeneralKey = keyof SettingsPatch
+/** 값을 바꾸면 그 키만 바로 PATCH한다(숫자·주소는 blur). 다른 세션이 바꾼 값을 덮어쓰지 않는다 */
 function SettingsForm({ initial }: { initial: Settings }) {
   const t = useT()
-  const { defaultModel, defaultModelSource, owuiTools: _owuiTools, assistantImageFileId: _assistantImage, ...patchable } = initial
+  const { owuiTools: _owuiTools, assistantImageFileId: _assistantImage, defaultModel: _model, defaultModelSource: _source, ...patchable } = initial
   const modelList = useModelList()
   const [form, setForm] = useState<SettingsPatch>(patchable)
-  const savedModelOverride = useRef(initial.defaultModelOverride ?? null)
+  const saved = useRef<SettingsPatch>(patchable)
+  const { states, run } = useAutoSave<GeneralKey>()
   const assistants = useAssistants()
   const options = useMemo(() => assistants.map(row => ({ value: row.id, label: row.name, status: row.status })), [assistants])
   const assistantSource = useCallback(() => options, [options])
   const client = useQueryClient()
-  function change<K extends keyof SettingsPatch>(key: K, value: SettingsPatch[K]) { setForm((current) => ({ ...current, [key]: value })) }
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    const { defaultModelOverride, ...otherSettings } = form
-    const patch: SettingsPatch = otherSettings
-    const modelOverride = defaultModelOverride ?? null
-    if (modelOverride !== savedModelOverride.current) patch.defaultModelOverride = modelOverride
-    try {
-      await saveSettings(patch)
-      savedModelOverride.current = modelOverride
+  function change<K extends GeneralKey>(key: K, value: SettingsPatch[K]) { setForm((current) => ({ ...current, [key]: value })) }
+  function commit<K extends GeneralKey>(key: K, value: SettingsPatch[K]) {
+    change(key, value)
+    if ((value ?? null) === (saved.current[key] ?? null)) return
+    void run(key, async () => {
+      await saveSettings({ [key]: value })
+      saved.current = { ...saved.current, [key]: value }
       await client.invalidateQueries({ queryKey: ['settings'] })
-      void client.invalidateQueries({ queryKey: ['system-assistant', 'model'] })
-      void client.invalidateQueries({ queryKey: ['diagnostics'] })
-      toast.success(t('admin.settings.saved'))
-    }
-    catch (error) { toast.error(error instanceof Error ? error.message : t('admin.saveFailed')) }
+      if (key === 'defaultModelOverride') { void client.invalidateQueries({ queryKey: ['system-assistant', 'model'] }); void client.invalidateQueries({ queryKey: ['diagnostics'] }) }
+    })
   }
-  return <form onSubmit={(event) => void submit(event)} className="space-y-3 rounded-xl border bg-card p-4 text-sm"><h2 className="font-semibold">{t('admin.settings.global')}</h2>
+  return <section aria-labelledby="general-settings" className="space-y-3 rounded-xl border bg-card p-4 text-sm"><h2 id="general-settings" className="font-semibold">{t('admin.settings.global')}</h2>
     <div className="space-y-1.5">
-      <Field label={t('admin.defaultModel')}><ModelSelect aria-label={t('admin.defaultModel')} value={form.defaultModelOverride ?? ''}
+      <Field label={t('admin.defaultModel')} status={states.defaultModelOverride}><ModelSelect aria-label={t('admin.defaultModel')} value={form.defaultModelOverride ?? ''}
         selectionOnly disabled={modelList.loading || !!modelList.error} placeholder={t('admin.settings.useEnvModel')}
-        onChange={model => change('defaultModelOverride', model || null)} /></Field>
+        onChange={model => commit('defaultModelOverride', model || null)} /></Field>
       {modelList.loading && <p role="status" className="text-xs text-muted-foreground">{t('admin.test.modelLoading')}</p>}
       {modelList.error && <div role="alert" className="text-xs text-destructive">{t('admin.settings.modelLoadFailed')} <Button type="button" variant="outline" size="sm" onClick={() => void modelList.reload()}>{t('admin.test.modelRetry')}</Button></div>}
-      <Button type="button" variant="outline" size="sm" onClick={() => change('defaultModelOverride', null)}>{t('admin.settings.clearDefaultModel')}</Button>
-      <p>{t('admin.settings.effectiveModel', { model: defaultModel || '—' })}</p>
-      <p className="text-xs text-muted-foreground">{t('admin.settings.modelSource', { source: t(`admin.settings.modelSource${defaultModelSource ?? 'default'}`) })}</p>
+      <Button type="button" variant="outline" size="sm" onClick={() => commit('defaultModelOverride', null)}>{t('admin.settings.clearDefaultModel')}</Button>
+      <p>{t('admin.settings.effectiveModel', { model: initial.defaultModel || '—' })}</p>
+      <p className="text-xs text-muted-foreground">{t('admin.settings.modelSource', { source: t(`admin.settings.modelSource${initial.defaultModelSource ?? 'default'}`) })}</p>
       <p className="text-xs text-muted-foreground">{t('admin.settings.defaultModelEnvHint')}</p>
     </div>
-    <fieldset><legend className="mb-1">{t('admin.fileDelivery')}</legend><RadioGroup value={form.fileDelivery ?? 'inline'} onValueChange={value => change('fileDelivery', value as Settings['fileDelivery'])} aria-label={t('admin.fileDelivery')} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <fieldset><legend className="mb-1">{t('admin.fileDelivery')}</legend><RadioGroup value={form.fileDelivery ?? 'inline'} onValueChange={value => commit('fileDelivery', value as Settings['fileDelivery'])} aria-label={t('admin.fileDelivery')} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {(['inline', 'openwebui'] as const).map(value => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-xl border p-3 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-accent"><RadioGroupItem value={value} />{t(value === 'inline' ? 'admin.deliveryInline' : 'admin.deliveryOpenWebUi')}</label>)}
-    </RadioGroup></fieldset>
-    <Field label={t('admin.settings.requestBudget')}><Input type="number" min={1024} max={100000000} value={form.requestBudgetBytes ?? 1000000} onChange={(event) => change('requestBudgetBytes', Number(event.target.value))} /></Field>
-    <Field label={t('admin.fileMaxPerRequest')}><Input type="number" min={1} max={100} value={form.fileMaxPerRequest ?? 10} onChange={(event) => change('fileMaxPerRequest', Number(event.target.value))} /></Field>
-    <div><Field label={t('admin.intakeAssistant')}><AssistantPicker mode="single" source={assistantSource}
+    </RadioGroup><SaveStatus state={states.fileDelivery} /></fieldset>
+    <Field label={t('admin.settings.requestBudget')} status={states.requestBudgetBytes}><Input type="number" min={1024} max={100000000} value={form.requestBudgetBytes ?? 1000000} onChange={(event) => change('requestBudgetBytes', Number(event.target.value))} onBlur={(event) => commit('requestBudgetBytes', Number(event.target.value))} /></Field>
+    <Field label={t('admin.fileMaxPerRequest')} status={states.fileMaxPerRequest}><Input type="number" min={1} max={100} value={form.fileMaxPerRequest ?? 10} onChange={(event) => change('fileMaxPerRequest', Number(event.target.value))} onBlur={(event) => commit('fileMaxPerRequest', Number(event.target.value))} /></Field>
+    <div><Field label={t('admin.intakeAssistant')} status={states.srIntakeAssistantId}><AssistantPicker mode="single" source={assistantSource}
       value={options.find(option => option.value === form.srIntakeAssistantId) ?? null} aria-label={t('admin.intakeAssistant')}
-      onChange={option => change('srIntakeAssistantId', option?.value ?? null)} /></Field>
-      <Chip label={t('admin.noAssistant')} selected={!form.srIntakeAssistantId} onClick={() => change('srIntakeAssistantId', null)} className="mt-1.5" /></div>
-    <Field label={t('admin.settings.link1Rule', { modelId: '{modelId}' })}><textarea className="w-full rounded-lg border bg-background p-2" value={form.link1Rule ?? ''} onChange={(event) => change('link1Rule', event.target.value)} placeholder="https://openwebui.example/?model={modelId}" /></Field>
-    <Button type="submit">{t('admin.settings.saveSettings')}</Button>
-  </form>
+      onChange={option => commit('srIntakeAssistantId', option?.value ?? null)} /></Field>
+      <Chip label={t('admin.noAssistant')} selected={!form.srIntakeAssistantId} onClick={() => commit('srIntakeAssistantId', null)} className="mt-1.5" /></div>
+    <Field label={t('admin.settings.link1Rule')} help={t('admin.settings.link1RuleHint', { modelId: '{modelId}' })} status={states.link1Rule}><textarea className="w-full rounded-lg border bg-background p-2" value={form.link1Rule ?? ''} onChange={(event) => change('link1Rule', event.target.value)} onBlur={(event) => commit('link1Rule', event.target.value)} placeholder="https://openwebui.example/" /></Field>
+  </section>
 }
-/** 도구 전달은 다른 설정의 stale 저장과 섞이지 않게 별도 PATCH한다. */
+/** 도구 전달은 라디오를 바꾸는 즉시 그 값만 PATCH한다 */
 function OwuiToolsForm({ initial }: { initial: Settings }) {
   const t = useT()
   const headingId = useId()
   const client = useQueryClient()
   const [value, setValue] = useState(initial.owuiTools ?? 'auto')
-  const [saved, setSaved] = useState(initial.owuiTools ?? 'auto')
-  const [saving, setSaving] = useState(false)
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    if (value === saved || saving) return
-    setSaving(true)
-    try {
-      await saveSettings({ owuiTools: value })
-      setSaved(value)
-      await client.invalidateQueries({ queryKey: ['settings'] })
-      toast.success(t('admin.settings.saved'))
-    } catch (error) { toast.error(error instanceof Error ? error.message : t('admin.saveFailed')) }
-    finally { setSaving(false) }
+  const saved = useRef(value)
+  const { states, run } = useAutoSave<'owuiTools'>()
+  function commit(next: 'auto' | 'off') {
+    setValue(next)
+    if (next === saved.current) return
+    void run('owuiTools', async () => { await saveSettings({ owuiTools: next }); saved.current = next; await client.invalidateQueries({ queryKey: ['settings'] }) })
   }
-  return <form aria-labelledby={headingId} onSubmit={event => void submit(event)} className="space-y-3 rounded-xl border bg-card p-4 text-sm">
+  return <section aria-labelledby={headingId} className="space-y-3 rounded-xl border bg-card p-4 text-sm">
     <h2 id={headingId} className="font-semibold">{t('admin.settings.owuiTools')}</h2>
     <fieldset aria-labelledby={headingId}>
-      <RadioGroup aria-label={t('admin.settings.owuiTools')} value={value} onValueChange={value => setValue(value as 'auto' | 'off')} disabled={saving}>
+      <RadioGroup aria-label={t('admin.settings.owuiTools')} value={value} onValueChange={value => commit(value as 'auto' | 'off')} disabled={states.owuiTools?.status === 'saving'}>
         {(['auto', 'off'] as const).map(option => <label key={option} className="flex cursor-pointer items-center gap-2"><RadioGroupItem value={option} />{t(option === 'auto' ? 'admin.settings.owuiAuto' : 'admin.settings.owuiOff')}</label>)}
       </RadioGroup>
     </fieldset>
     <p className="text-xs text-muted-foreground">{t('admin.settings.owuiHint')}</p>
-    <Button type="submit" disabled={saving || value === saved}>{t('admin.settings.saveOwuiTools')}</Button>
-  </form>
+    <SaveStatus state={states.owuiTools} />
+  </section>
 }
 
 /** AI 도우미 캐릭터(알약 이미지) — SO 업로드·교체·제거. 저장소에는 넣지 않고 서버 파일로만 둔다(U4) */
@@ -152,9 +143,8 @@ function AiSummary() {
 export function SettingsPage() {
   const t = useT()
   const query = useQuery({ queryKey: ['settings'], queryFn: getSettings })
-  const { owuiTools: _owuiTools, assistantImageFileId: _assistantImage, ...generalSettings } = query.data ?? {}
   return <><TopBar title={t('nav.settings')} /><div className="flex-1 overflow-auto p-4"><div className="mx-auto grid max-w-5xl items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-    {query.data ? <div className="space-y-4"><SettingsForm key={JSON.stringify(generalSettings)} initial={query.data} /><OwuiToolsForm key={query.data.owuiTools ?? 'auto'} initial={query.data} /><AssistantImageForm fileId={query.data.assistantImageFileId} /></div> : <p>{t('admin.settings.loading')}</p>}
+    {query.data ? <div className="space-y-4"><SettingsForm initial={query.data} /><OwuiToolsForm initial={query.data} /><AssistantImageForm fileId={query.data.assistantImageFileId} /></div> : <p>{t('admin.settings.loading')}</p>}
     <AiSummary />
   </div></div></>
 }

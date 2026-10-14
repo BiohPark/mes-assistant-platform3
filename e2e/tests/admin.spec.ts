@@ -114,8 +114,9 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
   await expect(page.getByRole('option').first()).toBeVisible()
   await ownerPicker.press('ArrowDown')
   await ownerPicker.press('Enter')
+  await expect(editor.getByRole('button', { name: '저장', exact: true })).toHaveCount(0) // 새 에이전트만 만들기 버튼, 편집은 필드별 자동 저장
   const creation = page.waitForResponse((response) => response.url().endsWith('/api/assistants') && response.request().method() === 'POST')
-  await editor.getByRole('button', { name: '저장', exact: true }).click()
+  await editor.getByRole('button', { name: '만들기', exact: true }).click()
   const created = await creation
   expect(created.status()).toBe(201)
   const id = managedAgent.id = ((await created.json()) as { id: string }).id
@@ -143,13 +144,15 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
   await expect(editor).toBeVisible()
   await expect(editor.getByRole('combobox', { name: '연결 모델' })).toHaveValue('mock-model')
   await expect(editor.getByText('기존 링크 재정의 있음', { exact: true })).toBeVisible()
-  await editor.getByRole('button', { name: '지우기', exact: true }).click()
-  await expect(editor.getByText('기존 링크 재정의 있음', { exact: true })).toHaveCount(0)
+  await expect(editor.getByRole('button', { name: '저장', exact: true })).toHaveCount(0)
   const update = page.waitForResponse(response => response.url().endsWith(`/api/assistants/${id}`) && response.request().method() === 'PATCH')
-  await editor.getByRole('button', { name: '저장', exact: true }).click()
+  await editor.getByRole('button', { name: '지우기', exact: true }).click() // 지우기는 그 필드만 즉시 PATCH
+  await expect(editor.getByText('기존 링크 재정의 있음', { exact: true })).toHaveCount(0)
   const updated = await update
   expect(updated.ok()).toBe(true)
-  expect(updated.request().postDataJSON()).toMatchObject({ link1: '', expectedInputs: ['샘플 자료'], expectedOutputs: ['샘플 결과'] })
+  expect(updated.request().postDataJSON()).toEqual({ link1: '' })
+  await expect(editor.getByText('저장됨', { exact: true })).toBeVisible()
+  await editor.getByRole('button', { name: '닫기', exact: true }).click()
   await expect(editor).toBeHidden()
   const table = page.getByRole('table')
   await expect(table.getByRole('textbox')).toHaveCount(0)
@@ -164,12 +167,15 @@ test('SO 에이전트 추가 → 허브 카드 → 순서 저장 → 설정 저�
   await expect(page.getByText('순서를 저장했습니다')).toBeVisible()
   await page.goto('/settings')
   // 전역 기본 모델은 표시만 확인한다. 변경 시나리오는 llm-admin.spec.ts에서 검증한다.
-  await expect(page.locator('form').getByText(/^현재 적용 모델: /)).toBeVisible()
+  await expect(page.getByRole('region', { name: '전역 설정' }).getByText(/^현재 적용 모델: /)).toBeVisible()
   await expect(page.getByRole('combobox', { name: '기본 모델', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /저장$/ })).toHaveCount(0) // 전역 설정은 필드별 자동 저장
   expect((await page.request.patch('/api/settings', { data: { defaultModel: 'e2e-model' } })).status()).toBe(400)
   await page.getByLabel('첨부 개수 한도').fill('7')
   managedAgent.settingsChanged = true
-  await page.getByRole('button', { name: '설정 저장' }).click()
+  const limitSaved = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH')
+  await page.getByLabel('첨부 개수 한도').press('Tab') // 숫자 입력은 blur 때 저장
+  expect((await limitSaved).request().postDataJSON()).toEqual({ fileMaxPerRequest: 7 })
   await expect.poll(async () => (await (await page.request.get('/api/settings')).json()).fileMaxPerRequest).toBe(7)
 })
 

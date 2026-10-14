@@ -158,3 +158,28 @@ it('SO 목록은 저장 이메일·기본 이메일·미설정을 표시한다',
   expect(screen.getByText(/two@example.com/)).toHaveTextContent('기본값')
   expect(screen.getByText('이메일 미설정')).toBeInTheDocument()
 })
+
+it('사용자 표는 이름·ID·SO 열 머리로 정렬하고 기본은 서버 순서다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => jsonResponse(200, url === '/api/users' ? [
+    { id: 'b', loginId: 'bb', name: '나', email: null, emailIsDefault: false, active: false, isSystemOwner: true, isBusinessOwner: false, mustChangePassword: false },
+    { id: 'a', loginId: 'aa', name: '가', email: 'a@example.com', emailIsDefault: false, active: true, isSystemOwner: false, isBusinessOwner: true, mustChangePassword: false },
+    { id: 'c', loginId: null, name: '다', email: null, emailIsDefault: false, active: true, isSystemOwner: false, isBusinessOwner: false, mustChangePassword: false },
+  ] : [])))
+  renderPage()
+  const table = await screen.findByRole('table')
+  await within(table).findAllByRole('textbox')
+  const names = () => within(table).getAllByRole('textbox').map(input => (input as HTMLInputElement).value)
+  expect(names()).toEqual(['나', '가', '다'])
+  expect(within(table).getAllByRole('columnheader').map(header => header.textContent)).toEqual(['이름', 'ID', '이메일', 'SO', 'BO', '활성', '관리'])
+  fireEvent.click(within(table).getByRole('button', { name: '이름' }))
+  expect(names()).toEqual(['가', '나', '다'])
+  fireEvent.click(within(table).getByRole('button', { name: '이름' }))
+  expect(names()).toEqual(['다', '나', '가'])
+  fireEvent.click(within(table).getByRole('button', { name: 'ID' }))
+  expect(names()).toEqual(['가', '나', '다'])
+  expect(within(table).getByRole('columnheader', { name: 'ID' })).toHaveAttribute('aria-sort', 'ascending')
+  fireEvent.click(within(table).getByRole('button', { name: 'SO' }))
+  fireEvent.click(within(table).getByRole('button', { name: 'SO' }))
+  expect(names()).toEqual(['나', '가', '다'])
+  expect(within(table).getByText('SSO')).toBeInTheDocument()
+})

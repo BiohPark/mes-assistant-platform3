@@ -12,9 +12,23 @@ import { TopBar } from '@/app/TopBar'
 import { Button } from '@/components/ui/button'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { SrStatusBadge } from '@/components/StatusBadges'
+import { SortHeader } from '@/components/SortHeader'
+import { useSort } from '@/lib/useSort'
 import { TagChip } from '@/components/TagChip'
 import { useDates } from '@/lib/dates'
 import { BarsChart } from './charts'
+
+type AssistantStat = NonNullable<Awaited<ReturnType<typeof getReport>>>['assistantStats'][number]
+function AssistantStatsTable({ rows }: { rows: AssistantStat[] }) {
+  const t = useT()
+  const sorted = useSort(rows, {
+    assistant: (row: AssistantStat) => row.assistant.name, total: (row: AssistantStat) => row.total, active: (row: AssistantStat) => row.active,
+    done: (row: AssistantStat) => row.done, lead: (row: AssistantStat) => row.avgLeadDays, feedback: (row: AssistantStat) => row.avgRating,
+  })
+  const header = (column: Parameters<typeof sorted.toggle>[0], label: string) => <SortHeader column={column} sort={sorted.sort} onToggle={sorted.toggle}>{label}</SortHeader>
+  return <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="border-b text-left">{header('assistant', t('reports.assistant'))}{header('total', t('reports.total'))}{header('active', t('reports.active'))}{header('done', t('reports.done'))}{header('lead', t('reports.leadTime'))}{header('feedback', t('reports.feedback'))}</tr></thead>
+    <tbody>{sorted.rows.map((row) => <tr key={row.assistant.id} className="border-b"><td className="p-2"><Link to={`/?view=kanban&assistant=${encodeURIComponent(row.assistant.id)}`} className="flex items-center gap-2"><AssistantAvatar assistant={row.assistant} size="xs" />{row.assistant.name}</Link></td><td className="p-2">{row.total}</td><td className="p-2">{row.active}</td><td className="p-2">{row.done}</td><td className="p-2">{row.avgLeadDays ?? '-'}</td><td className="p-2">{row.avgRating === undefined ? '-' : `★ ${row.avgRating}`}</td></tr>)}</tbody></table></div>
+}
 
 function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return <section className="rounded-xl border bg-card p-4"><div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-semibold">{title}</h2>{action}</div>{children}</section>
@@ -67,7 +81,7 @@ export function ReportsPage() {
           <Card title={t('reports.flow')}><ul className="space-y-1.5 text-xs">{data.flow.map((edge) => <li key={`${edge.fromAssistantId}-${edge.toAssistantId}`} className="flex items-center gap-2 rounded-lg border p-2"><span>{assistants.get(edge.fromAssistantId)?.name ?? edge.fromAssistantId}</span><ArrowRight className="size-3" /><span>{assistants.get(edge.toAssistantId)?.name ?? edge.toAssistantId}</span><span className="ml-auto">{edge.count}</span></li>)}{!data.flow.length && <li className="text-muted-foreground">{t('reports.noFlow')}</li>}</ul></Card>
           <Card title={t('reports.tagConversations')}><ul className="space-y-1.5 text-xs">{data.tags.map((row) => <li key={row.tag} className="flex items-center gap-2 rounded-lg border p-2"><Link to={`/?view=kanban&tag=${encodeURIComponent(row.tag)}`}><TagChip tag={row.tag} size="xs" /></Link><span className="ml-auto">{t('reports.tagCounts', { open: row.open, count: row.conversations })}</span></li>)}{!data.tags.length && <li className="text-muted-foreground">{t('reports.noTags')}</li>}</ul></Card>
         </div>
-        <Card title={t('reports.assistantStats')}><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="border-b text-left"><th className="p-2">{t('reports.assistant')}</th><th>{t('reports.total')}</th><th>{t('reports.active')}</th><th>{t('reports.done')}</th><th>{t('reports.leadTime')}</th><th>{t('reports.feedback')}</th></tr></thead><tbody>{data.assistantStats.map((row) => <tr key={row.assistant.id} className="border-b"><td className="p-2"><Link to={`/?view=kanban&assistant=${encodeURIComponent(row.assistant.id)}`} className="flex items-center gap-2"><AssistantAvatar assistant={row.assistant} size="xs" />{row.assistant.name}</Link></td><td>{row.total}</td><td>{row.active}</td><td>{row.done}</td><td>{row.avgLeadDays ?? '-'}</td><td>{row.avgRating === undefined ? '-' : `★ ${row.avgRating}`}</td></tr>)}</tbody></table></div></Card>
+        <Card title={t('reports.assistantStats')}><AssistantStatsTable rows={data.assistantStats} /></Card>
         <Card title={t('reports.signals', { count: data.signals.length })}><ul className="grid gap-1.5 md:grid-cols-2">{data.signals.map((row, index) => <li key={`${row.kind}-${row.taskId}-${index}`} className="flex items-center gap-2 rounded-lg border p-2 text-xs"><AlertTriangle className="size-3.5 text-tone-warning-fg" /><span>{t(`reports.signal.${row.kind}`)}</span><Link to={`/c/${row.taskId}`} className="font-mono">{row.taskCode}</Link><span className="truncate">{row.detail}</span><span className="ml-auto text-muted-foreground">{formatDateTime(row.at)}</span></li>)}{!data.signals.length && <li className="text-xs text-muted-foreground">{t('reports.noSignals')}</li>}</ul></Card>
         <Card title={t('reports.digest')} action={<Button size="xs" variant="outline" onClick={download}><Download />markdown</Button>}><div className="grid gap-3 md:grid-cols-2">{data.digest.map((row) => <div key={row.assistantId} className="rounded-lg border p-3 text-xs"><div className="mb-2 flex items-center gap-2 text-sm font-medium">{row.assistantName}<Star className="size-3 text-tone-warning-fg" />{row.avgRating} <span className="text-muted-foreground">{t('reports.feedbackCount', { count: row.count })}</span></div>{row.comments.map((comment, index) => <p key={index} className="text-muted-foreground">★{comment.rating} {comment.comment || t('reports.noComment')} — {comment.by}, {comment.taskCode}</p>)}</div>)}{!data.digest.length && <p className="text-xs text-muted-foreground">{t('reports.noFeedback')}</p>}</div></Card>
       </>}

@@ -12,6 +12,8 @@ import { EmptyState } from '@/components/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SrStatusBadge } from '@/components/StatusBadges'
+import { SortHeader } from '@/components/SortHeader'
+import { useSort } from '@/lib/useSort'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { SrDetailSheet } from './SrDetailSheet'
 import { SrLoadError, SrSkeleton } from './SrStates'
@@ -36,7 +38,13 @@ export function SrManagePage() {
   const visible = submitted.filter(row => (!status || srStage(row.status) === status) &&
     (!queue || (queue === 'unstarted' ? srStage(row.status) === 'submitted' && taskCount(row) === 0 : row.conversations.some(task => task.ownerId === actor || task.assigneeIds?.includes(actor)))) &&
     (!needle || `${row.code} ${row.title} ${row.body}`.toLocaleLowerCase().includes(needle)))
-    .sort((a, b) => elapsed(b) - elapsed(a) || Date.parse(a.updatedAt) - Date.parse(b.updatedAt) || a.id.localeCompare(b.id))
+  type Row = typeof submitted[number]
+  /** 기본은 경과일 내림차순 — 열 머리로 바꿀 수 있다 */
+  const sorted = useSort(visible, {
+    title: (row: Row) => row.title, status: (row: Row) => SR_STAGES.indexOf(srStage(row.status)), requester: (row: Row) => row.requesterName || users.get(row.requesterId)?.name,
+    submittedAt: (row: Row) => row.submittedAt && Date.parse(row.submittedAt), elapsed, linked: taskCount,
+  }, (a, b) => elapsed(b) - elapsed(a) || Date.parse(a.updatedAt) - Date.parse(b.updatedAt) || a.id.localeCompare(b.id))
+  const header = (column: Parameters<typeof sorted.toggle>[0], label: string) => <SortHeader column={column} sort={sorted.sort} onToggle={sorted.toggle} className="p-3">{label}</SortHeader>
   const emptyKey = needle ? 'sr.noMatching' : queue === 'unstarted' ? 'sr.noUnstarted' : queue === 'mine' ? 'sr.noMyLinked' : status ? 'sr.noMatchingStatus' : 'sr.noRequests'
   const myRequests = <Link to="/sr" className="text-sm text-primary underline">{t('sr.myRequestsLink')}</Link>
   return <><TopBar title={t('nav.srManage')} /><div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
@@ -53,8 +61,8 @@ export function SrManagePage() {
       {myRequests}
     </div>} />}
     {visible.length > 0 && <div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-muted/50"><tr>
-      <th className="p-3">{t('sr.title')}</th><th className="p-3">{t('sr.status')}</th><th className="p-3">{t('sr.requester')}</th><th className="p-3">{t('sr.submittedAt')}</th><th className="p-3">{t('sr.elapsedDays')}</th><th className="p-3">{t('sr.linkedCount')}</th><th className="p-3">{t('sr.linkedConversations')}</th>
-    </tr></thead><tbody>{visible.map(row => <tr key={row.id} className="border-t hover:bg-muted/30" onClick={() => setSelectedId(row.id)}>
+      {header('title', t('sr.title'))}{header('status', t('sr.status'))}{header('requester', t('sr.requester'))}{header('submittedAt', t('sr.submittedAt'))}{header('elapsed', t('sr.elapsedDays'))}{header('linked', t('sr.linkedCount'))}<th className="p-3">{t('sr.linkedConversations')}</th>
+    </tr></thead><tbody>{sorted.rows.map(row => <tr key={row.id} className="border-t hover:bg-muted/30" onClick={() => setSelectedId(row.id)}>
       <td className="p-3"><button type="button" className="text-left hover:underline" onClick={() => setSelectedId(row.id)}><span className="block text-xs text-muted-foreground">{row.code}</span>{row.title}</button></td>
       <td className="p-3"><SrStatusBadge status={row.status} /></td><td className="p-3">{row.requesterName || users.get(row.requesterId)?.name || t('sr.requester')}</td><td className="p-3"><time dateTime={row.submittedAt}>{formatDate(row.submittedAt)}</time></td><td className="p-3">{t('sr.elapsedDaysValue', { days: elapsed(row) })}</td><td className="p-3">{taskCount(row)}</td>
       <td className="p-3"><div className="flex flex-wrap gap-2">{row.conversations.map(task => <Link key={task.id} to={`/c/${task.id}`} className="text-primary underline" onClick={event => event.stopPropagation()}>{task.code}</Link>)}</div></td>
