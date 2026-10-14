@@ -79,13 +79,13 @@ export function DraftConversationPage() {
             attachment.uploadedTaskId = task.id
           }
           uploaded.push(attachment.uploadedId)
-          if (!attachment.once) await setInput(actor, task.id, attachment.uploadedId, 'reference')
+          if (!discussion) await setInput(actor, task.id, attachment.uploadedId, 'reference')
         }
         if (discussion) await appendMessage(actor, task.threadId, 'user', text.trim(), uploaded, 'done', 'discussion')
       }
       if (!discussion) {
         queueFirstRequest(task.threadId, { content: text.trim(), attachmentIds: uploaded,
-          oneShotFileIds: uploaded.filter((_id, index) => attachments[index]?.once) })
+          oneShotFileIds: [] })
       }
       navigate(`/c/${task.id}`, { replace: true })
     } catch (error) {
@@ -129,7 +129,7 @@ export function DraftConversationPage() {
           {retired && <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">{t('hub.retiredAssistant')} <Link to="/" className="underline">{t('hub.pickAnotherAssistant')}</Link></div>}
         </div>
       </div>
-      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer ref={composer} disabled={busy} streaming={false} allowAttachments allowPin allowDiscussion placeholder={t('chat.composerPlaceholderFor', { assistant: assistant.name })} onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
+      {!retired && <div className="mx-auto w-full max-w-2xl"><Composer ref={composer} disabled={busy} streaming={false} allowAttachments allowDiscussion placeholder={t('chat.composerPlaceholderFor', { assistant: assistant.name })} onSend={send} onStop={() => undefined} suggestions={suggestionsFrom(assistant.usageExample)} /></div>}
     </FileDropZone>
   </>
 }

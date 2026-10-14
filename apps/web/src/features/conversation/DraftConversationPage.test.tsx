@@ -116,7 +116,7 @@ it('creates a task only on the first discussion send and shows the conversation 
   expect(posts).toHaveLength(1)
 })
 
-it('starts the first AI request once with the first message', async () => {
+it.each([false, true])('starts the first AI request once and pins its attachment (attached in discussion=%s)', async (attachedInDiscussion) => {
   const calls: Array<{ url: string; body?: unknown; key?: string }> = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/assistants') return new Response(JSON.stringify([{ id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-28T00:00:00.000Z', updatedAt: '2026-09-28T00:00:00.000Z', revision: 0 }]), { status: 200 })
@@ -128,14 +128,41 @@ it('starts the first AI request once with the first message', async () => {
   }))
   const { container } = mountDraft('/new/a', <ReconnectingConversation />)
   await screen.findByText('도우미')
+  if (attachedInDiscussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['one'], 'one.txt')] } })
-  fireEvent.click(screen.getByText('입력으로 고정'))
+  if (attachedInDiscussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  expect(screen.queryByRole('button', { name: /입력으로 고정|이번 메시지만/ })).not.toBeInTheDocument()
   fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '첫 AI 질문' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(calls.some((call) => call.url === '/api/threads/h/requests')).toBe(true))
   expect(calls.filter((call) => call.url === '/api/tasks')).toEqual([{ url: '/api/tasks', body: { assistantId: 'a', tags: [] } }])
-  expect(calls.filter((call) => call.url === '/api/threads/h/requests')).toMatchObject([{ body: { content: '첫 AI 질문', attachmentIds: ['f'], oneShotFileIds: ['f'] }, key: expect.any(String) }])
+  expect(calls.filter((call) => call.url === '/api/threads/h/requests')).toMatchObject([{ body: { content: '첫 AI 질문', attachmentIds: ['f'], oneShotFileIds: [] }, key: expect.any(String) }])
+  expect(calls.some((call) => call.url === '/api/tasks/t/inputs/f')).toBe(true)
+})
+
+it.each([false, true])('stores the first team attachment without AI pinning (attached in discussion=%s)', async (attachedInDiscussion) => {
+  const calls: Array<{ url: string; method?: string; body?: unknown }> = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, method: init?.method, body: init?.body })
+    if (url === '/api/assistants') return Response.json([assistant])
+    if (url === '/api/tasks' && init?.method === 'POST') return Response.json({ id: 't', threadId: 'h' }, { status: 201 })
+    if (url === '/api/files') return Response.json({ id: 'f', name: 'team.txt' }, { status: 201 })
+    if (url === '/api/tasks/t/inputs/f') return new Response(null, { status: 204 })
+    if (url === '/api/threads/h/messages' && init?.method === 'POST') return Response.json({ id: 'm', attachmentIds: ['f'] }, { status: 201 })
+    return Response.json([])
+  }))
+  const { container } = mountDraft('/new/a', <ReconnectingConversation />)
+  await screen.findByText('도우미')
+  if (attachedInDiscussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['team'], 'team.txt')] } })
+  if (!attachedInDiscussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  expect(screen.queryByRole('button', { name: /입력으로 고정|이번 메시지만/ })).not.toBeInTheDocument()
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '첫 팀 의견' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await screen.findByText('대화로 이동')
+  expect(JSON.parse(String(calls.find((call) => call.url === '/api/threads/h/messages' && call.method === 'POST')?.body))).toMatchObject({ content: '첫 팀 의견', attachmentIds: ['f'], kind: 'discussion' })
   expect(calls.some((call) => call.url === '/api/tasks/t/inputs/f')).toBe(false)
+  expect(calls.some((call) => call.url === '/api/threads/h/requests' && call.method === 'POST')).toBe(false)
 })
 
 it('keeps the draft and shows an error if creation fails', async () => {
@@ -262,7 +289,7 @@ it('attaches a file dropped on the draft screen like the attach button and uploa
   expect(screen.getByText('놓으면 첨부 대기에 추가')).toHaveAttribute('aria-hidden', 'true')
   fireEvent.drop(zone, drag)
   expect(screen.getByText('dropped.txt')).toBeInTheDocument()
-  expect(screen.getByText('입력으로 고정')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /입력으로 고정|이번 메시지만/ })).not.toBeInTheDocument()
   expect(toastSuccess).toHaveBeenCalledWith('1개 파일을 첨부 대기에 추가했습니다.')
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await screen.findByText('대화로 이동')

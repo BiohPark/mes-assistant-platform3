@@ -64,7 +64,7 @@ test('접수되지 않은 SR 번호 태그는 SR 미접수로 구분되고 트�
   await tagInput(page).press('Enter')
   const chip = page.locator('[data-slot="chip"]', { hasText: srTag })
   await expect(chip).toContainText('SR 미접수')
-  await expect(page.getByLabel('이번 요청에 사용할 자료')).toBeVisible()
+  await expect(page.getByLabel('AI에 함께 보내는 자료')).toBeVisible()
   await expect(page.getByText(/^SR 본문 포함/)).toHaveCount(0)
   // 이 번호를 쓰는 다른 대화가 없으니 0건 표시
   await expect(page.getByText('같은 태그 대화 없음')).toBeVisible()

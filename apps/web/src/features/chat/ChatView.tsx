@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Message, Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
 import { appendMessage, getMessages, setTaskStatus } from '@/api/tasks'
-import { setInput, uploadFile } from '@/api/files'
+import { uploadFile } from '@/api/files'
 import { estimateRequest, getRequest, type RequestRecord } from '@/api/requests'
 import { subscribeEvent } from '@/app/useEvents'
 import { useActor, useCurrentUserId } from '@/app/hooks'
@@ -153,18 +153,17 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
           attachment.uploadedTaskId = task.id
         }
         uploaded.push(attachment.uploadedId)
-        if (discussion && !attachment.once) await setInput(actor, task.id, attachment.uploadedId, 'reference')
       }
       if (!discussion) {
         const preview = await estimateRequest(task.threadId, { draft: content, attachmentIds: uploaded,
-          oneShotFileIds: uploaded.filter((_id, index) => attachments[index]?.once) })
+          oneShotFileIds: [] })
         if (preview.overLimit) throw new Error(t('chat.overLimitError', { bytes: String(preview.bytes), limit: String(preview.limitBytes) }))
       }
       if (discussion) {
         const accepted = await appendMessage(actor, task.threadId, 'user', content, uploaded, 'done', 'discussion') as Message & { autoStarted?: boolean }
         if (accepted.autoStarted) holdReleased()
         refreshProgress()
-      } else await chat.send(content, uploaded, uploaded.filter((_id, index) => attachments[index]?.once))
+      } else await chat.send(content, uploaded, [])
       await query.invalidateQueries({ queryKey: ['messages', task.threadId] })
       setPrefilled(false)
     } finally { sendLock.current = false; setSending(false) }
@@ -199,7 +198,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   <ContextTray task={task} estimate={estimate} />
   {prefilled && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.askAgainHint')}</p>}
   {pendingAttempt && !sending && !chat.sending && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.pendingAttemptHint')}</p>}
-  <Composer ref={composer} disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowPin allowDiscussion
+  <Composer ref={composer} disabled={sending && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowDiscussion
     blockedReason={task.status !== 'done' && estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping} draftKey={task.id}
     placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}
     beforeSend={beforeSend} onSend={send} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />

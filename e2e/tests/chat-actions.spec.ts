@@ -40,7 +40,7 @@ test('프리필은 일반 입력과 트레이 추정·전송 경로가 같고 �
   const input = page.getByRole('textbox', { name: 'AI 요청 입력' })
   await page.locator('input[type="file"]').setInputFiles({ name: 'current.txt', mimeType: 'text/plain', buffer: Buffer.from('현재 첨부') })
   await input.fill(question)
-  const tray = page.getByLabel('이번 요청에 사용할 자료')
+  const tray = page.getByLabel('AI에 함께 보내는 자료')
   await expect(tray.getByText('계산 중')).toBeHidden()
   const manualEstimate = await tray.getByRole('meter').getAttribute('aria-valuenow')
   const manualInputs = await tray.getByRole('list').innerText()
@@ -84,13 +84,17 @@ test('팀 의견 모드·현재 첨부는 프리필 뒤에도 유지되며 AI �
   await page.locator('input[type="file"]').setInputFiles({ name: 'team-current.txt', mimeType: 'text/plain', buffer: Buffer.from('팀 첨부') })
   await prefill(page, original.id)
   await expect(page.getByRole('textbox', { name: '팀 의견 입력' })).toHaveValue(question)
-  await expect(page.getByRole('button', { name: '이번 메시지만' })).toBeVisible()
+  await expect(page.getByText('team-current.txt', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '첨부 제거' })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /입력으로 고정|이번 메시지만/ })).toHaveCount(0)
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByRole('textbox', { name: '팀 의견 입력' })).toBeEmpty()
   const history = await (await page.request.get(`/api/threads/${task.threadId}/messages`)).json() as Array<StoredMessage & { kind?: string }>
   expect(history.at(-1)).toMatchObject({ kind: 'discussion', content: question, attachmentIds: [expect.any(String)] })
   expect(history.at(-1)!.attachmentIds).not.toEqual(original.attachmentIds)
   expect(aiPosts).toBe(0)
+  const storedTask = await (await page.request.get(`/api/tasks/${task.id}`)).json() as { inputs: Array<{ fileId: string }> }
+  expect(storedTask.inputs.map(input => input.fileId)).not.toContain(history.at(-1)!.attachmentIds[0])
 })
 
 test('409 충돌과 중복 조작은 초안을 보존하고 동일 키로 재전송한다', async ({ page }) => {
