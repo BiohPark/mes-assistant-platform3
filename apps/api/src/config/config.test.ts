@@ -109,12 +109,19 @@ describe('loadConfig', () => {
   })
 
   it('LLM은 기본적으로 mock이며 live에는 URL과 키가 필요하다', () => {
-    expect(loadConfig(base).llm).toEqual({ mode: 'mock', preset: 'openwebui', baseUrl: '', apiKey: '', defaultModel: undefined })
+    expect(loadConfig(base).llm).toEqual({ mode: 'mock', preset: 'openwebui', baseUrl: '', apiKey: '', defaultModel: undefined, owuiMode: 'auto', owuiCleanup: true })
     expect(() => loadConfig({ ...base, LLM_MODE: 'live' })).toThrow(/LLM_BASE_URL.*LLM_API_KEY/)
     expect(() => loadConfig({ ...base, LLM_MODE: 'live', LLM_BASE_URL: 'invalid', LLM_API_KEY: 'secret' })).toThrow(/LLM_BASE_URL/)
     expect(() => loadConfig({ ...base, LLM_MODE: 'live', LLM_BASE_URL: 'http://localhost:3101/api', LLM_API_KEY: 'secret' })).toThrow(/LLM_BASE_URL/)
     expect(loadConfig({ ...base, LLM_MODE: 'live', LLM_PRESET: 'openai-compatible', LLM_BASE_URL: 'https://api.openai.com/v1', LLM_API_KEY: 'secret' }).llm.preset).toBe('openai-compatible')
   })
+})
+
+it('OpenWebUI 세션 모드 기본값은 auto·정리 켬이고 env로 바꾼다 (S12)', () => {
+  expect(loadConfig({ ...base, LLM_OWUI_MODE: 'direct', LLM_OWUI_CLEANUP: 'false' }).llm).toMatchObject({ owuiMode: 'direct', owuiCleanup: false })
+  expect(loadConfig({ ...base, LLM_OWUI_MODE: 'session', LLM_OWUI_CLEANUP: 'true' }).llm).toMatchObject({ owuiMode: 'session', owuiCleanup: true })
+  expect(() => loadConfig({ ...base, LLM_OWUI_MODE: 'socket' })).toThrow(/LLM_OWUI_MODE/)
+  expect(() => loadConfig({ ...base, LLM_OWUI_CLEANUP: 'yes' })).toThrow(/LLM_OWUI_CLEANUP/)
 })
 
 it('defaults chat waits to minutes and preserves explicit environment values', () => {

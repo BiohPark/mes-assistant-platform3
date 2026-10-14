@@ -456,7 +456,14 @@ export interface LlmSettings {
   preset?: 'openai-compatible' | 'openwebui'
   /** OpenWebUI live 호출에서만 적용, 없으면 auto */
   owuiTools?: 'auto' | 'off'
+  /** OpenWebUI 대화 요청 방식(S12). 없으면 auto */
+  owuiMode?: OwuiMode
+  /** 세션 모드 완료 뒤 OpenWebUI 채팅을 지운다. 없으면 true */
+  owuiCleanup?: boolean
 }
+
+/** session = 백그라운드 작업 + 채팅 폴링, direct = 스트리밍 응답(기존), auto = session을 먼저 쓰고 시작 전 거부·형식 불일치면 direct */
+export type OwuiMode = 'auto' | 'session' | 'direct'
 
 export interface Settings {
   id: 'app'

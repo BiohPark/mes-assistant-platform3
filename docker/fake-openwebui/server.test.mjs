@@ -152,3 +152,84 @@ test('first-question suggestion calls get a deterministic three-line answer and 
   }
   assert.deepEqual(await (await fetch(`${base}/__e2e/requests`)).json(), [])
 }))
+
+// 세션 모드(S12, OpenWebUI v0.12): session_id·id·parent_id:null → chat_id만 즉시, 결과는 채팅 GET으로
+const session = (base, content, body = {}) => chat(base, { session_id: 'mes-test', id: 'msg-1', parent_id: null, messages: [{ role: 'user', content }], ...body })
+async function pollUntilDone(base, chatId, timeoutMs = 10_000) {
+  const start = Date.now(), seen = []
+  for (;;) {
+    const response = await fetch(`${base}/api/v1/chats/${chatId}`)
+    assert.equal(response.status, 200)
+    const message = (await response.json()).chat.history.messages['msg-1']
+    seen.push(message)
+    if (message.done) return { message, seen }
+    assert.ok(Date.now() - start < timeoutMs, 'session did not finish')
+    await new Promise(resolve => setTimeout(resolve, 50))
+  }
+}
+const outputText = (message, type) => message.output.filter(item => item.type === type).map(item => item.content.map(part => part.text).join('')).join('\n')
+
+test('session mode returns chat_id at once and the chat shows the same answer as the stream, then DELETE removes it', async () => withServer(true, async base => {
+  const created = await session(base, 'hi')
+  assert.equal(created.status, 200)
+  const body = await created.json()
+  assert.deepEqual(Object.keys(body).sort(), ['chat_id', 'status', 'task_ids'])
+  const { message, seen } = await pollUntilDone(base, body.chat_id)
+  assert.equal(outputText(message, 'message'), '[가짜 OpenWebUI · fake-general] 받은 메시지: hi [files: 0]')
+  assert.equal(message.content, outputText(message, 'message'))
+  assert.ok(seen.some(item => !item.done && outputText(item, 'message').length > 0), 'content should grow before done')
+  assert.equal((await fetch(`${base}/api/v1/chats/${body.chat_id}`, { method: 'DELETE' })).status, 200)
+  assert.equal((await fetch(`${base}/api/v1/chats/${body.chat_id}`)).status, 404)
+  assert.deepEqual(await (await fetch(`${base}/__e2e/sessions`)).json(), { active: [], stopped: [], deleted: [body.chat_id] })
+  assert.equal((await (await fetch(`${base}/__e2e/requests`)).json())[0].session_id, 'mes-test')
+}))
+
+test('session URL scenario records fetch status entries and mentions the fetched URL; reasoning goes to output reasoning items', async () => withServer(false, async base => {
+  const { chat_id } = await (await session(base, '[reasoning] https://example.com/page 요약')).json()
+  const { message, seen } = await pollUntilDone(base, chat_id)
+  assert.deepEqual(message.statusHistory.map(item => item.description), ['URL 읽는 중: https://example.com/page', 'URL 읽음'])
+  assert.ok(seen.some(item => !item.done && item.statusHistory.length === 1), 'fetch status should be visible while running')
+  assert.match(outputText(message, 'message'), /\[fetched: https:\/\/example\.com\/page\]$/)
+  assert.equal(outputText(message, 'reasoning'), 'PRIVATE_REASONING: 요청을 검토합니다. 자료를 비교합니다. 답변을 준비합니다.')
+  assert.doesNotMatch(outputText(message, 'message'), /PRIVATE_REASONING/)
+}))
+
+test('session delay scenario keeps adding status entries before the answer', async () => withServer(false, async base => {
+  const start = Date.now()
+  const { chat_id } = await (await session(base, '[delay] 기다려')).json()
+  const { message } = await pollUntilDone(base, chat_id)
+  assert.ok(Date.now() - start >= 2500)
+  assert.deepEqual(message.statusHistory.map(item => item.description), ['작업 대기 중', '작업 대기 중', '작업 대기 중'])
+}))
+
+test('session error and replace scenarios', async () => withServer(false, async base => {
+  const failed = await pollUntilDone(base, (await (await session(base, '[error] 실패')).json()).chat_id)
+  assert.deepEqual(failed.message.error, { content: '가짜 OpenWebUI 오류' })
+  const replaced = await pollUntilDone(base, (await (await session(base, '[replace] 바꿔')).json()).chat_id)
+  assert.ok(replaced.seen.some(item => outputText(item, 'message') === '임시 답변'))
+  assert.equal(outputText(replaced.message, 'message'), '[가짜 OpenWebUI · fake-general] 받은 메시지: [replace] 바꿔 [files: 0]')
+}))
+
+test('session creation can be rejected (400) or answered in another shape; plain requests still stream', async () => withServer(false, async base => {
+  assert.equal((await session(base, '[session-400] 거부')).status, 400)
+  const other = await session(base, '[session-format] 형식')
+  assert.equal(other.status, 200)
+  assert.equal('chat_id' in await other.json(), false)
+  assert.equal(answer(await (await chat(base, { messages: [{ role: 'user', content: '[session-400] 거부' }] })).text()), '[가짜 OpenWebUI · fake-general] 받은 메시지: [session-400] 거부 [files: 0]')
+  assert.equal((await session(base, 'x', { parent_id: 'p1' })).headers.get('content-type')?.includes('text/event-stream'), true)
+}, { FAKE_OWUI_REJECT_TOOL_IDS: '' }))
+
+test('session stop halts the task, keeps the partial chat and is recorded', async () => withServer(true, async base => {
+  const { chat_id } = await (await session(base, '[delay] 멈춰')).json()
+  assert.equal((await fetch(`${base}/api/tasks/chat/${chat_id}/stop`, { method: 'POST' })).status, 200)
+  await new Promise(resolve => setTimeout(resolve, 1500))
+  const message = (await (await fetch(`${base}/api/v1/chats/${chat_id}`)).json()).chat.history.messages['msg-1']
+  assert.equal(outputText(message, 'message'), '')
+  assert.deepEqual((await (await fetch(`${base}/__e2e/sessions`)).json()).stopped, [chat_id])
+  assert.equal((await fetch(`${base}/api/tasks/chat/missing/stop`, { method: 'POST' })).status, 404)
+}))
+
+test('session tool rejection follows the same reject mode', async () => withServer(false, async base => {
+  assert.equal((await session(base, 'hi', { tool_ids: ['fake_tool'] })).status, 400)
+  assert.equal((await session(base, 'hi')).status, 200)
+}, { FAKE_OWUI_REJECT_TOOL_IDS: '1' }))

@@ -2,7 +2,7 @@ import type { LlmSettings } from '@mes/domain'
 import type { AppConfig } from '../config/config.js'
 import { effectiveDefaultModel } from './effectiveDefaultModel.js'
 
-export function toLlmSettings(config: AppConfig['llm']): LlmSettings {
+export function toLlmSettings(config: Pick<AppConfig['llm'], 'mode' | 'preset' | 'baseUrl' | 'apiKey' | 'defaultModel'>): LlmSettings {
   const baseUrl = config.preset === 'openwebui'
     ? `${config.baseUrl.replace(/\/+$/, '').replace(/\/api$/, '')}/api`
     : config.baseUrl

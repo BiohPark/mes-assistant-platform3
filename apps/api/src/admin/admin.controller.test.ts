@@ -95,6 +95,19 @@ describe('관리 API 서버 권한', () => {
     await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ fileMaxPerRequest: 7 }).expect(200)
     expect(admin.settings).toHaveBeenLastCalledWith({ fileMaxPerRequest: 7 })
   })
+  it('OpenWebUI 세션 모드(auto/session/direct)·채팅 정리(boolean)는 SO만 변경한다 (S12)', async () => {
+    for (const owuiMode of ['auto', 'session', 'direct']) {
+      await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ owuiMode }).expect(200)
+      expect(admin.settings).toHaveBeenLastCalledWith({ owuiMode })
+      await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=member').send({ owuiMode }).expect(403)
+    }
+    for (const owuiCleanup of [true, false]) {
+      await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ owuiCleanup }).expect(200)
+      expect(admin.settings).toHaveBeenLastCalledWith({ owuiCleanup })
+    }
+    for (const owuiMode of ['socket', null, 1]) await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ owuiMode }).expect(400)
+    for (const owuiCleanup of ['true', null, 0]) await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ owuiCleanup }).expect(400)
+  })
   it('설정 조회는 로그인 사용자, 변경과 사용자 목록은 SO만 허용한다', async () => {
     await request(app.getHttpServer()).get('/api/settings').set('Cookie', 'mes_session=member').expect(200)
     await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=member').send({ fileDelivery: 'inline' }).expect(403)

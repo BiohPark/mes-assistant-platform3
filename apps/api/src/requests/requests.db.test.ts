@@ -151,7 +151,7 @@ describe('RequestService DB', () => {
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
     const address = server.address() as { port: number }
     const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
-      LLM_MODE: 'live', LLM_PRESET: 'openwebui', LLM_API_KEY: 'test-key', LLM_BASE_URL: `http://127.0.0.1:${address.port}`, LLM_DEFAULT_MODEL: 'fake-general' })
+      LLM_MODE: 'live', LLM_PRESET: 'openwebui', LLM_API_KEY: 'test-key', LLM_BASE_URL: `http://127.0.0.1:${address.port}`, LLM_DEFAULT_MODEL: 'fake-general', LLM_OWUI_MODE: 'direct' })
     const runner = new RequestsService(db, config, new OpenAICompatibleProvider(toLlmSettings(config.llm)))
     const { thread } = await tasks.create('member', { assistantId, title: 'Tool test' })
     await db.update(threadTable).set({ modelId: 'fake-general' }).where(eq(threadTable.id, thread.id))
@@ -177,6 +177,126 @@ describe('RequestService DB', () => {
       expect(await runner.get(disabled.id)).toMatchObject({ owuiTools: { mode: 'basic' } })
       expect(bodies.at(-1)).not.toHaveProperty('tool_ids')
     } finally { runner.onModuleDestroy(); await db.delete(appSetting).where(eq(appSetting.key, 'owuiTools')); await new Promise<void>(resolve => server.close(() => resolve())) }
+  })
+
+  /** OpenWebUI v0.12 세션 모드 대역 — 생성은 chat_id만 돌려주고, 채팅 GET이 진행 상태를 보여 준다(S12) */
+  async function sessionUpstream(poll: (elapsedMs: number, count: number) => Record<string, unknown>, create?: (body: Record<string, unknown>) => { status: number; body: string; type?: string } | undefined) {
+    const bodies: Record<string, unknown>[] = [], deleted: string[] = [], stopped: string[] = []
+    let messageId = '', createdAt = 0, polls = 0
+    const server = createServer((req, res) => {
+      if (req.url === '/api/models') { res.end(JSON.stringify({ data: [{ id: 'fake-general', info: { meta: { toolIds: ['lookup'], defaultFeatureIds: ['web_search'] } } }] })); return }
+      if (req.method === 'GET' && req.url === '/api/v1/chats/owui-chat-1') {
+        res.end(JSON.stringify({ id: 'owui-chat-1', chat: { history: { messages: { [messageId]: { id: messageId, role: 'assistant', ...poll(Date.now() - createdAt, ++polls) } } } } }))
+        return
+      }
+      if (req.method === 'DELETE' && req.url?.startsWith('/api/v1/chats/')) { deleted.push(req.url.slice('/api/v1/chats/'.length)); res.end('true'); return }
+      if (req.method === 'POST' && req.url?.startsWith('/api/tasks/chat/')) { stopped.push(req.url); res.end('{}'); return }
+      if (req.method !== 'POST' || req.url !== '/api/chat/completions') { res.writeHead(404); res.end(); return }
+      const chunks: Buffer[] = []
+      req.on('data', chunk => chunks.push(chunk))
+      req.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
+        bodies.push(body)
+        const custom = create?.(body)
+        if (custom) { res.writeHead(custom.status, { 'content-type': custom.type ?? 'application/json' }); res.end(custom.body); return }
+        if ('session_id' in body) { messageId = String(body.id); createdAt = Date.now(); res.end(JSON.stringify({ status: true, task_ids: ['task-1'], chat_id: 'owui-chat-1' })); return }
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.end('data: {"choices":[{"delta":{"content":"직접 답변"}}]}\n\ndata: [DONE]\n\n')
+      })
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
+      LLM_MODE: 'live', LLM_PRESET: 'openwebui', LLM_API_KEY: 'test-key', LLM_BASE_URL: `http://127.0.0.1:${(server.address() as { port: number }).port}`, LLM_DEFAULT_MODEL: 'fake-general',
+      REQUEST_FIRST_TOKEN_MS: '400', REQUEST_IDLE_MS: '400' })
+    const events = new EventsService()
+    const runner = new RequestsService(db, config, new OpenAICompatibleProvider(toLlmSettings(config.llm), undefined, { sessionPollMs: 20 }), events)
+    const { thread } = await tasks.create('member', { assistantId, title: 'Session test' })
+    await db.update(threadTable).set({ modelId: 'fake-general' }).where(eq(threadTable.id, thread.id))
+    const close = async () => { runner.onModuleDestroy(); await new Promise<void>(resolve => server.close(() => resolve())) }
+    return { bodies, deleted, stopped, runner, events, thread, close }
+  }
+  const sessionMessage = (statuses: string[], reasoning: string, content: string, done = false) => ({ done, content,
+    statusHistory: statuses.map(description => ({ description, done: false })),
+    output: [...(reasoning ? [{ type: 'reasoning', content: [{ type: 'output_text', text: reasoning }] }] : []), ...(content ? [{ type: 'message', content: [{ type: 'output_text', text: content }] }] : [])] })
+
+  it('OpenWebUI session mode: status is the phase and keeps the request alive; snapshot records mode/chat_id; chat is deleted', async () => {
+    // 1초 동안 상태만 늘어난다 — 첫 토큰·유휴 대기(400ms)를 상태가 살려 두지 않으면 시간 초과로 끝난다
+    let reading = 0
+    const upstream = await sessionUpstream((elapsed, count) => {
+      if (elapsed < 1000) return sessionMessage(Array.from({ length: reading = count }, () => 'URL 읽는 중'), '', '')
+      return sessionMessage([...Array.from({ length: reading }, () => 'URL 읽는 중'), 'URL 읽음'], '검토', '세션 답변', elapsed > 1100)
+    })
+    const published = vi.spyOn(upstream.events, 'publish')
+    try {
+      const estimate = await upstream.runner.estimate('member', upstream.thread.id, { draft: 'https://example.com 읽어 줘' })
+      const started = await upstream.runner.start('member', upstream.thread.id, { content: 'https://example.com 읽어 줘' }, 'owui-session')
+      const seen: Array<{ event: string; data: Record<string, unknown> }> = []
+      const unsubscribe = upstream.runner.subscribe(started.id, event => seen.push(event))
+      await started.done
+      unsubscribe()
+      expect(await upstream.runner.get(started.id)).toMatchObject({ status: 'succeeded', bytes: estimate.bytes, owuiTools: { mode: 'tools', tool_ids: ['lookup'], features: { web_search: true } } })
+      expect(seen.filter(event => event.event === 'phase').map(event => event.data.text)).toEqual(['URL 읽는 중', 'URL 읽음', '생각 중', '답변 중'])
+      expect(published).toHaveBeenCalledWith('request.updated', expect.objectContaining({ requestId: started.id, status: 'streaming', phase: 'URL 읽는 중' }))
+      const [reply] = await db.select().from(message).where(eq(message.id, started.replyMessageId))
+      expect(reply).toMatchObject({ content: '세션 답변', reasoning: '검토', status: 'done' })
+      const snapshot = await upstream.runner.snapshot(started.id) as Record<string, unknown>
+      expect(snapshot).toMatchObject({ mode: 'session', chat_id: 'owui-chat-1', tool_ids: ['lookup'], features: { web_search: true }, params: { tool_approval_mode: 'full' } })
+      expect(snapshot.messages).toEqual(upstream.bodies[0]!.messages)
+      expect(upstream.bodies).toHaveLength(1)
+      expect(upstream.bodies[0]).toMatchObject({ parent_id: null, session_id: expect.any(String) })
+      expect(upstream.bodies[0]).not.toHaveProperty('user_message')
+      expect(upstream.deleted).toEqual(['owui-chat-1'])
+      expect(upstream.stopped).toEqual([])
+    } finally { await upstream.close() }
+  })
+
+  it('OpenWebUI session mode: replace swaps the streamed text; reconnect resumes from the replaced text', async () => {
+    const upstream = await sessionUpstream((elapsed) => elapsed < 300 ? sessionMessage([], '', '임시 답변') : sessionMessage([], '', '최종 답변', elapsed > 400))
+    try {
+      const started = await upstream.runner.start('member', upstream.thread.id, { content: '바꿔 줘' }, 'owui-replace')
+      const seen: Array<{ event: string; data: Record<string, unknown> }> = []
+      const unsubscribe = upstream.runner.subscribe(started.id, event => {
+        seen.push(event)
+        if (event.event === 'replace') void upstream.runner.start('member', upstream.thread.id, { content: '바꿔 줘' }, 'owui-replace').then(replayed => upstream.runner.subscribe(replayed.id, item => {
+          if (item.event === 'started') seen.push({ event: 'resumed', data: item.data })
+        }))
+      })
+      await started.done
+      unsubscribe()
+      expect(seen.find(event => event.event === 'replace')?.data).toEqual({ field: 'content', text: '최종 답변' })
+      expect(seen.find(event => event.event === 'resumed')?.data).toMatchObject({ resumedText: '최종 답변' })
+      const [reply] = await db.select().from(message).where(eq(message.id, started.replyMessageId))
+      expect(reply).toMatchObject({ content: '최종 답변', status: 'done' })
+    } finally { await upstream.close() }
+  })
+
+  it('OpenWebUI auto mode: a rejected session creation falls back to the direct request once; snapshot says direct', async () => {
+    const upstream = await sessionUpstream(() => ({}), body => 'session_id' in body ? { status: 400, body: 'private' } : undefined)
+    try {
+      const started = await upstream.runner.start('member', upstream.thread.id, { content: '폴백 확인' }, 'owui-fallback')
+      await started.done
+      expect(await upstream.runner.get(started.id)).toMatchObject({ status: 'succeeded', owuiTools: { mode: 'tools' } })
+      const snapshot = await upstream.runner.snapshot(started.id) as Record<string, unknown>
+      expect(snapshot).toMatchObject({ mode: 'direct', params: { function_calling: 'legacy' } })
+      expect(snapshot).not.toHaveProperty('chat_id')
+      expect(snapshot.messages).toEqual(upstream.bodies[1]!.messages)
+      expect(upstream.bodies.map(body => 'session_id' in body)).toEqual([true, false])
+      const [reply] = await db.select().from(message).where(eq(message.id, started.replyMessageId))
+      expect(reply?.content).toBe('직접 답변')
+    } finally { await upstream.close() }
+  })
+
+  it('OpenWebUI session mode: cancelling stops the background task and deletes the chat', async () => {
+    const upstream = await sessionUpstream((_, count) => sessionMessage(Array.from({ length: count }, () => '도구 실행 중'), '', ''))
+    try {
+      const started = await upstream.runner.start('member', upstream.thread.id, { content: '오래 걸리는 일' }, 'owui-cancel')
+      await vi.waitFor(async () => expect((await upstream.runner.get(started.id)).phase).toBe('도구 실행 중'))
+      await upstream.runner.cancel(started.id)
+      await started.done
+      await vi.waitFor(() => expect(upstream.stopped).toEqual(['/api/tasks/chat/owui-chat-1/stop']))
+      await vi.waitFor(() => expect(upstream.deleted).toEqual(['owui-chat-1']))
+      expect(await upstream.runner.get(started.id)).toMatchObject({ status: 'cancelled' })
+    } finally { await upstream.close() }
   })
 
   it('reasoning keeps first-token and idle waits alive, streams phases, persists separately and never enters the next request', async () => {

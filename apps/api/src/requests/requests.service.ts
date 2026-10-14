@@ -16,7 +16,7 @@ import { LLM_PROVIDER } from '../llm/provider.token.js'
 import { assertThreadAccess } from '../sr/access.js'
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
-type EventName = 'started' | 'phase' | 'delta' | 'reasoning' | 'completed' | 'failed'
+type EventName = 'started' | 'phase' | 'delta' | 'reasoning' | 'replace' | 'completed' | 'failed'
 export type RequestEvent = { event: EventName; data: Record<string, unknown> }
 type Listener = (event: RequestEvent) => void
 export interface StartBody { content: string; attachmentIds?: string[]; oneShotFileIds?: string[] }
@@ -159,7 +159,7 @@ export class RequestsService implements OnModuleDestroy {
   private emit(id: string, event: RequestEvent) {
     const history = this.events.get(id) ?? []
     history.push(event)
-    if (event.event === 'delta' || event.event === 'reasoning' || event.event === 'phase') {
+    if (event.event === 'delta' || event.event === 'reasoning' || event.event === 'replace' || event.event === 'phase') {
       let bytes = history.reduce((sum, item) => sum + Buffer.byteLength(JSON.stringify(item)), 0)
       while (history.length > 2001 || bytes > 256 * 1024) {
         const first = history.findIndex((item) => item.event !== 'started')
@@ -570,37 +570,63 @@ export class RequestsService implements OnModuleDestroy {
         }
       }
       recordSnapshot()
+      // 실제 마지막 전송의 기록 — 세션 모드(S12)면 채팅 ID를 나중에 더한다
+      let sent: Record<string, unknown> = {}
+      const owuiLive = this.config.llm.mode === 'live' && this.config.llm.preset === 'openwebui'
+      const setPhase = async (next: string) => {
+        if (phase === next) return true
+        phase = next
+        const updated = await this.db.update(chatRequest).set({ phase }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
+        if (!updated[0].affectedRows || controller.signal.aborted) { controller.abort('lost'); return false }
+        this.appEvents?.publish('request.updated', { requestId: id, threadId: row.threadId, taskId: owner.taskId, status: 'streaming', phase })
+        this.emit(id, { event: 'phase', data: { text: phase } })
+        return true
+      }
       if (controller.signal.aborted) return
       const streaming = await this.db.update(chatRequest).set({ status: 'streaming' }).where(and(eq(chatRequest.id, id), eq(chatRequest.status, 'pending')))
       if (!streaming[0].affectedRows) { controller.abort('lost'); return }
       this.appEvents?.publish('request.updated', { requestId: id, threadId: row.threadId, taskId: owner.taskId, status: 'streaming', phase: null })
       const iterator = this.provider.stream({ model: built.model, messages: built.messages, files: built.files, meta: built.meta, signal: controller.signal,
-        owuiTools: built.settings.llm.owuiTools,
+        owuiTools: built.settings.llm.owuiTools, owuiMode: built.settings.llm.owuiMode, owuiCleanup: built.settings.llm.owuiCleanup,
         onDispatch: async (delivery, body) => {
           if (controller.signal.aborted) throw new Error('요청 중지')
-          if (info && this.config.llm.mode === 'live' && this.config.llm.preset === 'openwebui') {
+          if (info && owuiLive) {
             info.owuiTools = delivery
             const updated = await this.db.update(chatRequest).set({ owuiTools: delivery })
               .where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
             if (!updated[0].affectedRows) { controller.abort('lost'); throw new Error('요청 중지') }
           }
-          recordSnapshot(delivery.mode === 'tools' ? { tool_ids: body.tool_ids, features: body.features, params: body.params } : {})
-        } })[Symbol.asyncIterator]()
+          const session = typeof body.session_id === 'string'
+          sent = { ...(delivery.mode === 'tools' ? { tool_ids: body.tool_ids, features: body.features, params: body.params } : session ? { params: body.params } : {}),
+            ...(owuiLive ? { mode: session ? 'session' : 'direct' } : {}) }
+          recordSnapshot(sent)
+        },
+        onSession: (chatId) => { sent = { ...sent, chat_id: chatId }; recordSnapshot(sent) } })[Symbol.asyncIterator]()
       for (;;) {
         const chunk = await Promise.race([iterator.next(), deadline, stopped])
         if (chunk.done) break
         if (controller.signal.aborted) break
         if (chunk.value.type === 'error') { failure = chunk.value.message; break }
+        // 세션 모드 상태(도구 실행 등)는 진행 단계이자 생존 신호다
+        if (chunk.value.type === 'status') {
+          arm(this.config.request.idleMs)
+          if (!(await setPhase(chunk.value.text))) break
+          continue
+        }
+        if (chunk.value.type === 'replace') {
+          arm(this.config.request.idleMs)
+          if (!(await setPhase(chunk.value.field === 'reasoning' ? '생각 중' : '답변 중'))) break
+          if (chunk.value.field === 'reasoning') { reasoning = chunk.value.text; this.streamReasoning.set(id, reasoning) }
+          else { acc = chunk.value.text; this.streamText.set(id, acc) }
+          // 재연결은 이미 보낸 delta를 재생하지 않고 바뀐 누적 본문으로 다시 시작한다(replay)
+          this.truncated.add(id)
+          dirty = true
+          this.emit(id, { event: 'replace', data: { field: chunk.value.field, text: chunk.value.text } })
+          continue
+        }
         if ((chunk.value.type !== 'delta' && chunk.value.type !== 'reasoning') || !chunk.value.text) continue
         arm(this.config.request.idleMs)
-        const nextPhase = chunk.value.type === 'reasoning' ? '생각 중' : '답변 중'
-        if (phase !== nextPhase) {
-          phase = nextPhase
-          const updated = await this.db.update(chatRequest).set({ phase }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
-          if (!updated[0].affectedRows || controller.signal.aborted) { controller.abort('lost'); break }
-          this.appEvents?.publish('request.updated', { requestId: id, threadId: row.threadId, taskId: owner.taskId, status: 'streaming', phase })
-          this.emit(id, { event: 'phase', data: { text: phase } })
-        }
+        if (!(await setPhase(chunk.value.type === 'reasoning' ? '생각 중' : '답변 중'))) break
         if (chunk.value.type === 'reasoning') {
           reasoning += chunk.value.text
           this.streamReasoning.set(id, reasoning)

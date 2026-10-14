@@ -1,4 +1,4 @@
-import type { OwuiToolDelivery } from '@mes/domain'
+import type { OwuiMode, OwuiToolDelivery } from '@mes/domain'
 export interface ChatMessageInput {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
@@ -44,6 +44,12 @@ export interface ChatRequest {
   owuiTools?: 'auto' | 'off'
   /** 실제 전송 직전 기록. 폴백이면 기본 본문으로 다시 호출한다. */
   onDispatch?: (delivery: OwuiToolDelivery, body: Record<string, unknown>) => void | Promise<void>
+  /** OpenWebUI 세션 모드(S12) — 지정한 호출(대화 요청)만 쓴다. 없으면 direct */
+  owuiMode?: OwuiMode
+  /** 세션 모드가 끝나면 OpenWebUI 채팅을 지운다. 없으면 true */
+  owuiCleanup?: boolean
+  /** 세션 모드 채팅이 만들어진 직후 — 이후 폴링·취소·정리가 이 채팅을 쓴다 */
+  onSession?: (chatId: string) => void | Promise<void>
   limits?: ChatLimits
 }
 
@@ -62,6 +68,10 @@ export interface ChatMeta {
 export type ChatChunk =
   | { type: 'delta'; text: string }
   | { type: 'reasoning'; text: string }
+  /** 세션 모드 — 누적 본문·생각이 이전 값의 연장이 아닐 때 전체를 바꾼다 */
+  | { type: 'replace'; field: 'content' | 'reasoning'; text: string }
+  /** 세션 모드 — OpenWebUI 진행 상태(도구 실행 등). 진행 단계이자 생존 신호 */
+  | { type: 'status'; text: string }
   | { type: 'tool_call'; call: ToolCall }
   | { type: 'done' }
   | { type: 'error'; message: string }

@@ -32,6 +32,8 @@ const patchAssistant = assistantFields.partial().refine(input => !input.classifi
 const settings = z.object({
   defaultModelOverride: z.string().trim().max(191).nullable().transform(value => value || null).optional(),
   owuiTools: z.enum(['auto', 'off']).optional(),
+  owuiMode: z.enum(['auto', 'session', 'direct']).optional(),
+  owuiCleanup: z.boolean().optional(),
   fileDelivery: z.enum(['inline', 'openwebui']).optional(),
   requestBudgetBytes: z.number().int().min(1024).max(100_000_000).optional(),
   /** OpenWebUI 주소 — 자리표시자({modelId}·{assistantId})는 선택. 없으면 웹이 ?model=ID를 붙인다(lib/links.ts) */
