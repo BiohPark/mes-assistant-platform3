@@ -23,6 +23,16 @@ function Navigation() {
 function renderHome(route = '/', owner = false) {
   return renderWithProviders(<MeContext value={{ id: 'u', name: 'User', role: '', email: null, emailIsDefault: false, roles: [owner ? 'system_owner' : 'member'], theme: 'system', locale: 'ko' }}><TooltipProvider><Navigation /><HomePage /></TooltipProvider></MeContext>, { route })
 }
+/** 카드 분류 칩은 '분류' 팝오버 안에 있다 — 닫혀 있으면 열고 누른다. 칸반 칩은 항상 보인다 */
+async function pressFilter(user: ReturnType<typeof userEvent.setup>, name: string) {
+  if (!screen.queryByRole('button', { name })) await user.click(screen.getByRole('button', { name: '분류' }))
+  await user.click(await screen.findByRole('button', { name }))
+}
+/** 카탈로그가 로드되면 '분류' 버튼이 활성화된다(칸반은 단계 칩 'Alpha') */
+async function catalogLoaded(route: string) {
+  if (route.includes('kanban')) await screen.findByRole('button', { name: 'Alpha', hidden: true })
+  else await waitFor(() => expect(screen.getByRole('button', { name: '분류' })).toBeEnabled())
+}
 beforeEach(() => {
   catalog = [a, b]; tasks = []
   useUiStore.setState({ homeFilters: emptyHomeFilters() })
@@ -37,10 +47,11 @@ it('URL wins over persisted state, matches secondary paths, and rejects cross-pa
   renderHome('/?l1=two&l2=beta&aq=Multi')
   expect(await screen.findByText('Multi agent')).toBeInTheDocument()
   expect(screen.queryByText('Other agent')).not.toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Two' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: 'Two 해제' })).toBeInTheDocument()
   const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: 'Two' }))
-  await user.click(screen.getByRole('button', { name: 'One' }))
+  await pressFilter(user, 'Two')
+  expect(screen.queryByRole('button', { name: 'Two 해제' })).not.toBeInTheDocument()
+  await pressFilter(user, 'One')
   expect(screen.queryByText('Multi agent')).not.toBeInTheDocument()
   expect(screen.getByText('조건에 맞는 에이전트가 없습니다')).toBeInTheDocument()
 })
@@ -60,7 +71,7 @@ it('back/forward follows URL, reset clears storage, and both view switches keep 
   renderHome('/?tag=keep')
   const user = userEvent.setup()
   await screen.findByText('Multi agent')
-  await user.click(screen.getByRole('button', { name: 'One' }))
+  await pressFilter(user, 'One')
   expect(screen.queryByText('Other agent')).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Back' }))
   expect(await screen.findByText('Other agent')).toBeInTheDocument()
@@ -83,16 +94,23 @@ it('separates search clear from filter reset in an empty result', async () => {
   const user = userEvent.setup()
   await user.click(screen.getByRole('button', { name: '필터 1개 초기화' }))
   expect(screen.getByPlaceholderText('이름 · 요약 · 업무 분류 검색')).toHaveValue('missing')
-  expect(screen.getByRole('button', { name: 'One' })).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.queryByRole('button', { name: 'One 해제' })).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: '검색어 지우기' }))
   expect(screen.getByText('Other agent')).toBeInTheDocument()
 })
-it('shows at most six owned/participating in-progress conversations and owner-only edit links', async () => {
+it('shows at most six owned/participating in-progress conversations in one scrolling row with a view-all link, and owner-only edit links', async () => {
   tasks = Array.from({ length: 9 }, (_, index) => ({ id: `task-${index}`, title: `Task ${index}`, code: `WK-${index}`, status: index === 8 ? 'done' : 'in_progress', ownerId: index === 7 ? 'other' : 'u', assigneeIds: [], lastActivityAt: String(index) }))
   renderHome('/', true)
   const region = screen.getByRole('region', { name: '내 진행 중 대화' })
-  await waitFor(() => expect(within(region).getAllByRole('link')).toHaveLength(6))
-  expect(within(region).getAllByRole('link')[0]).toHaveAttribute('href', '/c/task-6')
+  expect(region).toHaveTextContent('이어하기')
+  await waitFor(() => expect(within(region).getAllByRole('link')).toHaveLength(7))
+  const links = within(region).getAllByRole('link')
+  expect(links[0]).toHaveAttribute('href', '/c/task-6')
+  expect(links[0]).toHaveClass('shrink-0')
+  expect(links[0]!.parentElement).toHaveClass('overflow-x-auto', 'min-w-0')
+  expect(links[0]!.parentElement).not.toHaveClass('flex-wrap')
+  expect(links[6]).toHaveAttribute('href', '/my-work')
+  expect(links[6]).toHaveTextContent('모두 보기')
   expect(screen.getByRole('link', { name: '에이전트 관리' })).toHaveAttribute('href', '/assistants/manage')
   expect(await screen.findByRole('link', { name: 'Multi agent 편집' })).toHaveAttribute('href', '/assistants/manage?edit=a')
   const card = screen.getByText('Multi agent').closest('div.group')!
@@ -154,7 +172,7 @@ it('replaces card search edits while chip toggles and reset push history', async
   renderHome('/?q=conversation')
   await screen.findByText('Multi agent')
   const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: 'One' }))
+  await pressFilter(user, 'One')
   const input = screen.getByPlaceholderText('이름 · 요약 · 업무 분류 검색')
   await user.type(input, 'Multi')
   expect(input).toHaveValue('Multi')
@@ -169,7 +187,7 @@ it('replaces card search edits while chip toggles and reset push history', async
   expect(input).toHaveValue('')
   await user.click(screen.getByRole('button', { name: 'Back' }))
   await waitFor(() => expect(input).toHaveValue('Multi'))
-  expect(screen.getByRole('button', { name: 'One' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: 'One 해제' })).toBeInTheDocument()
 })
 
 it('replaces kanban search edits while status chips and view switches push history', async () => {
@@ -225,16 +243,16 @@ it.each([
   ['/?view=kanban&q=conversation', '코드 · 제목 · 태그 검색', '진행 중', 'q', 'conversation'],
 ])('releases an empty-search reset before history restores another query: %s', async (route, placeholder, chip, key, query) => {
   renderHome(route)
-  await screen.findByRole('button', { name: route.includes('kanban') ? 'Alpha' : 'One', hidden: true })
+  await catalogLoaded(route)
   const user = userEvent.setup()
   const input = screen.getByPlaceholderText(placeholder)
-  await user.click(screen.getByRole('button', { name: chip }))
+  await pressFilter(user, chip)
   await user.clear(input)
   await user.click(screen.getByRole('button', { name: '초기화' }))
   await user.click(screen.getByRole('button', { name: 'Back' }))
   await user.click(screen.getByRole('button', { name: 'Back' }))
   expect(input).toHaveValue(query)
-  await user.click(screen.getByRole('button', { name: chip }))
+  await pressFilter(user, chip)
   expect(new URLSearchParams(screen.getByTestId('url').textContent!).get(key)).toBe(query)
   expect(input).toHaveValue(query)
 })
@@ -260,9 +278,11 @@ it.each([
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={client}><ProfileProvider><RouterProvider router={router} /></ProfileProvider></QueryClientProvider>)
   try {
-    await screen.findByRole(role, { name: action })
     // Wait for catalog loading before the edit, so normalization is not part of this race.
-    await screen.findByRole('button', { name: route.includes('kanban') ? 'Alpha' : 'One', hidden: true })
+    await catalogLoaded(route)
+    // 카드 분류 칩은 팝오버 안에 있다 — 열어 둔 채 검색어를 비운다(change 이벤트는 팝오버를 닫지 않는다)
+    if (role === 'button' && !route.includes('kanban')) fireEvent.click(screen.getByRole('button', { name: '분류' }))
+    await screen.findByRole(role, { name: action })
     const input = screen.getByPlaceholderText(placeholder)
     fireEvent.change(input, { target: { value: '' } })
     expect(input).toHaveValue('')
@@ -313,7 +333,7 @@ it('navigates once per view switch and never from data updates', async () => {
     for (let i = 0; i < 3; i++) await act(() => stats())
     expect(committed).toEqual(['?l1=one', '?l1=one&view=kanban'])
     fireEvent.click(screen.getByRole('tab', { name: '에이전트 카드' }))
-    await screen.findByRole('button', { name: 'One' })
+    await screen.findByRole('button', { name: '분류' })
     for (let i = 0; i < 3; i++) await act(() => stats())
     expect(committed).toEqual(['?l1=one', '?l1=one&view=kanban', '?l1=one'])
   } finally { router.dispose() }
@@ -337,7 +357,7 @@ it('keeps a view switch that is still committing while data updates re-render th
     await act(async () => { release!() })
     await waitFor(() => expect(router.state.navigation.state).toBe('idle'))
     expect(router.state.location.search).toBe('?l1=one')
-    expect(await screen.findByRole('button', { name: 'One' })).toHaveAttribute('aria-pressed', 'true')
+    expect(await screen.findByRole('button', { name: 'One 해제' })).toBeInTheDocument()
     expect(committed).toEqual(['?l1=one', '?l1=one&view=kanban', '?l1=one'])
   } finally { release?.(); router.dispose() }
 })

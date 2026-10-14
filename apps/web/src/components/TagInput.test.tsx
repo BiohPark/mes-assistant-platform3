@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { rankTagSuggestions, type TagSuggestion } from '@mes/domain'
 import { MeContext } from '@/app/auth'
@@ -74,6 +75,27 @@ it('keeps the chosen candidate by tag when suggestions reorder, and drops the ch
   expect(screen.queryByRole('option', { selected: true })).not.toBeInTheDocument()
   fireEvent.keyDown(input, { key: 'Enter' })
   expect(onAdd).toHaveBeenLastCalledWith('CC-2099-00')
+})
+
+it('compact mode shows chips with a plus button that opens the input in a popover and keeps it open for more tags', async () => {
+  const onAdd = vi.fn(async () => undefined)
+  render(<MeContext value={me}><TagInput compact tags={['keep']} onAdd={onAdd} onRemove={() => undefined} suggest={suggest} /></MeContext>)
+  expect(screen.getByText('keep')).toBeInTheDocument()
+  expect(screen.queryByRole('combobox', { name: '태그 입력' })).not.toBeInTheDocument()
+  const user = userEvent.setup()
+  const add = screen.getByRole('button', { name: '태그 추가' })
+  await user.click(add)
+  const input = await screen.findByRole('combobox', { name: '태그 입력' })
+  expect(screen.getByRole('dialog', { name: '태그 추가' })).toContainElement(input)
+  await waitFor(() => expect(input).toHaveFocus())
+  fireEvent.change(input, { target: { value: 'new-tag' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(onAdd).toHaveBeenCalledWith('new-tag')
+  await saved(input)
+  expect(screen.getByRole('combobox', { name: '태그 입력' })).toBeInTheDocument()
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('combobox', { name: '태그 입력' })).not.toBeInTheDocument())
+  expect(add).toHaveFocus()
 })
 
 it('comma and Tab commit the typed value as-is', async () => {

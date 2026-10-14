@@ -55,7 +55,8 @@ test('T-01/T-03 공유 자료함은 출처를 대화 코드·제목으로 보여
   await openMaterials(page)
   await page.getByRole('tab', { name: '공유 자료함' }).click()
   await expect(page.getByTestId('materials-shared')).toContainText('같은 태그 대화의 파일이 없습니다.')
-  // 공유 뒤 태그 추가 → 그때부터 후보
+  // 공유 뒤 태그 추가(헤더의 태그 [+] → 입력 팝오버) → 그때부터 후보
+  await page.getByRole('button', { name: '태그 추가' }).click()
   await page.getByRole('combobox', { name: '태그 입력' }).fill(tag)
   await page.getByRole('combobox', { name: '태그 입력' }).press('Enter')
   await expect(page.getByTestId('materials-shared')).toContainText('알람_이력_0901.csv v1')

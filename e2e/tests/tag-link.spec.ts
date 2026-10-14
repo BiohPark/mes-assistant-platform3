@@ -26,6 +26,8 @@ async function createTask(page: Page, tags: string[] = []) {
   return (await response.json()) as { id: string; code: string; threadId: string }
 }
 const tagInput = (page: Page) => page.getByRole('combobox', { name: '태그 입력' })
+/** 대화 헤더(/c/)의 태그 입력은 [+]를 눌러 팝오버로 연다 — 초안(/new/)은 인라인 입력 그대로 */
+const openTagInput = (page: Page) => page.getByRole('button', { name: '태그 추가' }).click()
 const removeButton = (page: Page, tag: string) => page.getByRole('button', { name: `${tag} 태그 제거` })
 
 test('Enter는 후보를 고르지 않으면 입력값 그대로 붙이고, ↑↓로 고른 후보만 붙인다', async ({ page }) => {
@@ -35,6 +37,7 @@ test('Enter는 후보를 고르지 않으면 입력값 그대로 붙이고, ↑�
   const other = await createTask(page, [popular])
   const task = await createTask(page)
   await page.goto(`/c/${task.id}`)
+  await openTagInput(page)
   await tagInput(page).fill(`CC-${stamp}-001`)
   await expect(page.getByRole('option', { name: new RegExp(popular) })).toBeVisible()
   await tagInput(page).press('Enter')
@@ -45,6 +48,7 @@ test('Enter는 후보를 고르지 않으면 입력값 그대로 붙이고, ↑�
   await tagInput(page).press('ArrowDown')
   await tagInput(page).press('Enter')
   await expect(removeButton(page, popular)).toBeVisible()
+  await page.keyboard.press('Escape') // 태그 입력 팝오버 닫기
 
   // 같은 태그 대화 — 태그별 묶음 안에 상대 대화 링크
   await page.getByText('같은 태그 대화 1').click()
@@ -60,6 +64,7 @@ test('접수되지 않은 SR 번호 태그는 SR 미접수로 구분되고 트�
   const now = Date.now()
   const srTag = `SR-${3000 + now % 7000}-${String(now % 10_000).padStart(4, '0')}`
   await page.goto(`/c/${task.id}`)
+  await openTagInput(page)
   await tagInput(page).fill(srTag)
   await tagInput(page).press('Enter')
   const chip = page.locator('[data-slot="chip"]', { hasText: srTag })

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Composer, type ComposerHandle, type PendingAttachment } from './Composer'
 import { FileDropZone } from '@/components/FileDropZone'
 import { ChatMessages } from './ChatMessages'
+import { ModelPicker } from './ModelPicker'
 import { SaveAsOutputDialog } from './SaveAsOutputDialog'
 import { RequestInfoDialog } from './RequestInfoDialog'
 import { RetryFilesDialog } from './RetryFilesDialog'
@@ -24,7 +25,8 @@ import { toast } from 'sonner'
 import { useConversationViewed } from '@/lib/conversationRead'
 import { useT } from '@/i18n'
 
-export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; assistant?: Assistant; onOpenMaterials?: () => void }) {
+/** headerTools가 있으면 검색·질문 목차 아이콘은 그 자리(대화 헤더)로 가고, 펼친 검색 줄만 메시지 위 툴바에 남는다 */
+export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { task: Task; assistant?: Assistant; onOpenMaterials?: () => void; headerTools?: HTMLElement | null }) {
   const t = useT()
   const actor = useActor()
   const selfId = useCurrentUserId()
@@ -32,7 +34,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   const [sending, setSending] = useState(false)
   const [submissionSince, setSubmissionSince] = useState<number>()
   const [draft, setDraft] = useState(() => getDraft(task.id)?.text ?? '')
-  const [questionIndexContainer, setQuestionIndexContainer] = useState<HTMLDivElement | null>(null)
+  const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null)
   const [askTarget, setAskTarget] = useState<Message | null>(null)
   const [prefilled, setPrefilled] = useState(false)
   const askOpener = useRef<HTMLElement | null>(null)
@@ -188,9 +190,9 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
     catch { toast.error(t('chat.requestLoadFailed')) }
   }
   return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={sending || chat.sending} onFiles={(files) => composer.current?.dropFiles(files)}>
-    <div ref={setQuestionIndexContainer} data-testid="chat-question-toolbar" className="shrink-0 border-b px-4 py-2 empty:hidden" />
+    <div ref={setToolbar} data-testid="chat-question-toolbar" className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b px-4 py-2 empty:hidden" />
     <div ref={conversationPanel} data-testid="chat-message-scroll" className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-    <ChatMessages key={task.id} assistantName={assistant?.name} messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince ?? submissionSince} questionIndexContainer={questionIndexContainer} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
+    <ChatMessages key={task.id} assistantName={assistant?.name} messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince ?? submissionSince} questionIndexContainer={headerTools ?? toolbar} searchContainer={toolbar} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
       actions={(item) => ({
         onAskAgain: item.role === 'user' && item.kind !== 'discussion' ? () => askAgain(item) : undefined,
         askAgainDisabled,
@@ -207,6 +209,7 @@ export function ChatView({ task, assistant, onOpenMaterials }: { task: Task; ass
   <Composer ref={composer} clearOnSubmit disabled={(sending || chat.sending) && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowDiscussion
     blockedReason={task.status !== 'done' && estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping} draftKey={task.id}
     placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}
+    tools={assistant && <ModelPicker task={task} assistant={assistant} disabled={task.status === 'done'} />}
     beforeSend={beforeSend} onSend={send} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />
   {saveTarget && assistant && <SaveAsOutputDialog key={saveTarget.id} message={saveTarget} task={task} assistant={assistant} onOpenMaterials={onOpenMaterials} onClose={() => setSaveTarget(null)} />}</FileDropZone>
   <ReasonDialog key={String(reopenForSend)} open={reopenForSend} onOpenChange={open => {

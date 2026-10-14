@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { Message } from '@mes/domain'
-import { AlertCircle, ArrowDown, List } from 'lucide-react'
+import { AlertCircle, ArrowDown, List, Search } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useDates } from '@/lib/dates'
+import { cn } from '@/lib/utils'
 import { useT } from '@/i18n'
 import { MessageBubble } from './MessageBubble'
 import type { ChatRun } from './useChat'
@@ -12,6 +13,7 @@ import { requestPhaseDetail } from './requestLabels'
 type BubbleActions = Omit<ComponentProps<typeof MessageBubble>, 'message' | 'progress'>
 const nearBottomDistance = 24
 const jumpDistance = 200
+const toolButton = 'relative inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground after:absolute after:-inset-1.5 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 /** 각 질문 뒤·다음 질문 앞 구간에 그 요청의 오류 답변이 있으면 실패로 본다(한 번 순회). */
 export function failedQuestionIds(messages: Message[]) {
@@ -24,9 +26,13 @@ export function failedQuestionIds(messages: Message[]) {
   return failed
 }
 
-/** 업무와 SR 접수에서 공용 메시지 표시·스트리밍·자동 스크롤을 사용한다. */
-export function ChatMessages({ messages, run, waitingSince, empty, actions, questionIndexContainer, assistantName }: {
-  assistantName?: string; messages: Message[]; run?: ChatRun | null; waitingSince?: number; empty?: ReactNode; actions?: (message: Message) => BubbleActions; questionIndexContainer?: HTMLElement | null
+/**
+ * 업무와 SR 접수에서 공용 메시지 표시·스트리밍·자동 스크롤을 사용한다.
+ * 검색 토글·질문 목차 아이콘은 questionIndexContainer로, 펼친 검색 줄은 searchContainer로 포털한다(없으면 메시지 위에 그대로).
+ */
+export function ChatMessages({ messages, run, waitingSince, empty, actions, questionIndexContainer, searchContainer, assistantName }: {
+  assistantName?: string; messages: Message[]; run?: ChatRun | null; waitingSince?: number; empty?: ReactNode; actions?: (message: Message) => BubbleActions
+  questionIndexContainer?: HTMLElement | null; searchContainer?: HTMLElement | null
 }) {
   const t = useT()
   const { formatDateTime } = useDates()
@@ -57,6 +63,8 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
   const nearBottom = useRef(true)
   const [farFromBottom, setFarFromBottom] = useState(false)
   const [search, setSearch] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchToggle = useRef<HTMLButtonElement>(null)
   const [matchIndex, setMatchIndex] = useState(0)
   const matches = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
@@ -109,21 +117,27 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
   function nextMatch(direction: number) {
     setMatchIndex(current => matches.length ? (current + direction + matches.length) % matches.length : 0)
   }
-  const questionIndex = <div className="flex flex-wrap items-center justify-end gap-2">
-      <div role="search" aria-label={t('chat.searchConversation')} className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-        <input type="search" aria-label={t('chat.searchConversation')} placeholder={t('chat.searchConversation')}
+  function closeSearch() {
+    setSearch(''); setMatchIndex(0); setSearchOpen(false)
+    searchToggle.current?.focus()
+  }
+  const searchBar = searchOpen && <div role="search" aria-label={t('chat.searchConversation')} className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+        <input autoFocus type="search" aria-label={t('chat.searchConversation')} placeholder={t('chat.searchConversation')}
           value={search} onChange={event => { setSearch(event.target.value); setMatchIndex(0) }}
           onKeyDown={event => {
             if (event.nativeEvent.isComposing) return
             if (event.key === 'Enter') { event.preventDefault(); nextMatch(event.shiftKey ? -1 : 1) }
-            if (event.key === 'Escape') { setSearch(''); setMatchIndex(0) }
+            if (event.key === 'Escape') closeSearch()
           }} className="min-h-11 min-w-0 flex-1 rounded-lg border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
         {search.trim() && <><span role="status" className="text-xs text-muted-foreground">{t('chat.searchCount', { current: selectedMatch ? Math.min(matchIndex + 1, matches.length) : 0, total: matches.length })}</span>
           <button type="button" disabled={!matches.length} onClick={() => nextMatch(-1)} className="min-h-11 px-2 text-xs disabled:opacity-50">{t('chat.searchPrevious')}</button>
           <button type="button" disabled={!matches.length} onClick={() => nextMatch(1)} className="min-h-11 px-2 text-xs disabled:opacity-50">{t('chat.searchNext')}</button></>}
       </div>
+  const tools = <>
+      <button ref={searchToggle} type="button" aria-label={t('chat.searchConversation')} title={t('chat.searchConversation')} aria-expanded={searchOpen}
+        onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))} className={cn(toolButton, searchOpen && 'bg-muted text-foreground')}><Search aria-hidden="true" className="size-4" /></button>
       {questions.length > 0 && <Popover open={indexOpen} onOpenChange={setIndexOpen}><PopoverTrigger asChild>
-        <button type="button" className="inline-flex min-h-11 items-center gap-1 rounded-lg border bg-card px-3 text-xs text-card-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><List aria-hidden="true" className="size-4" />{t('chat.questionIndex')}</button>
+        <button type="button" aria-label={t('chat.questionIndex')} title={t('chat.questionIndex')} className={toolButton}><List aria-hidden="true" className="size-4" /></button>
       </PopoverTrigger><PopoverContent align="end" aria-label={t('chat.questionIndex')} className="max-h-80 overflow-y-auto"
         onCloseAutoFocus={(event) => { if (jumpTarget.current) { event.preventDefault(); focusMessage(jumpTarget.current); jumpTarget.current = null } }}>
         <nav aria-label={t('chat.questionIndex')} className="space-y-1">{questions.map((item, index) => <button key={item.id} type="button"
@@ -134,9 +148,12 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
             {failed.has(item.id) && <span className="inline-flex items-center gap-1 text-tone-danger-fg"><AlertCircle aria-hidden="true" className="size-3" />{t('chat.questionFailed')}</span>}</span>
         </button>)}</nav>
       </PopoverContent></Popover>}
-    </div>
+    </>
+  const inline = <>{searchBar}{tools}</>
   return <div ref={root} className="space-y-4">
-    {questionIndexContainer ? createPortal(questionIndex, questionIndexContainer) : questionIndex}
+    {!questionIndexContainer ? <div className="flex flex-wrap items-center justify-end gap-2">{inline}</div>
+      : !searchContainer || searchContainer === questionIndexContainer ? createPortal(inline, questionIndexContainer)
+      : <>{createPortal(tools, questionIndexContainer)}{searchBar && createPortal(searchBar, searchContainer)}</>}
     {visibleMessages.length ? visibleMessages.map(item => <MessageBubble key={item.id} assistantName={assistantName} searchMatch={item.id === selectedMatch}
       message={run?.replyId === item.id ? { ...item, status: 'streaming', content: run.text || item.content, reasoning: run.reasoning || item.reasoning } : item}
       {...(item === currentReply || item.id !== replyId ? actions?.(item) : undefined)}

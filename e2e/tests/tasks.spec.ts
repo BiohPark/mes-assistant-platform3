@@ -23,6 +23,7 @@ test('대화 생성, 태그와 칸반, 완료와 재개, 다른 사용자 조회
   await expect(page.getByText(/WK-\d{4}-\d{4}/).first()).toBeVisible()
   const taskUrl = page.url()
   const tag = `공유태그-${Date.now()}` // 실행마다 고유 — 개발 DB에 남은 이전 실행 대화와 칸반에서 섞이지 않게
+  await page.getByRole('button', { name: '태그 추가' }).click() // 헤더의 태그 [+] → 입력 팝오버
   await page.getByRole('combobox', { name: '태그 입력' }).fill(tag)
   await page.getByRole('combobox', { name: '태그 입력' }).press('Enter')
   await expect(page.getByText(tag).first()).toBeVisible()

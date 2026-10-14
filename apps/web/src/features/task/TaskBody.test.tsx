@@ -31,6 +31,26 @@ it.each(['narrow', 'wide'] as const)('moves keyboard focus to the visible materi
   if (layout === 'narrow') expect(opener).not.toBeVisible()
 })
 
+it('constrains the chat column on narrow screens and flags the header tools hidden outside the chat tab', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
+    return jsonResponse(200, [])
+  }))
+  const headerTools = document.body.appendChild(document.createElement('div')) // 헤더의 도구 자리(포털 대상)
+  try {
+    renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} headerTools={headerTools} /></TooltipProvider></MeContext>)
+    // 모바일도 minmax(0,1fr) — auto 열이면 입력창 아래 줄 최소 폭만큼 가로로 넘친다
+    expect(screen.getByRole('region', { name: '대화' }).parentElement).toHaveClass('grid-cols-[minmax(0,1fr)]', 'lg:grid-cols-[minmax(0,1fr)_360px]')
+    expect(within(headerTools).getByRole('button', { name: '대화 내 검색' })).toBeInTheDocument()
+    expect(headerTools.dataset.chatHidden).toBe('false')
+    const mobileTabs = within(screen.getByRole('tablist', { name: '대화 화면 탭' }))
+    fireEvent.click(mobileTabs.getByRole('tab', { name: '자료' }))
+    expect(headerTools.dataset.chatHidden).toBe('true')
+    fireEvent.click(mobileTabs.getByRole('tab', { name: '대화' }))
+    expect(headerTools.dataset.chatHidden).toBe('false')
+  } finally { headerTools.remove() }
+})
+
 it('offers narrow-screen tabs, placeholders, and the activity panel', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/tasks/t/activity') return jsonResponse(200, [{ id: 'event', taskId: 't', userId: 'u', type: 'task.reopened', payload: { reason: '추가 확인' }, at: '2026-09-28T00:00:00.000Z' }])

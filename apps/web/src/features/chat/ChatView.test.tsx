@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import type { Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -406,6 +407,32 @@ it('keeps the question index above the message scroller when messages arrive and
   expect(scroller.querySelector('[data-message-id="original"]')).toHaveFocus()
 })
 
+it('portals the search toggle and question index into the header tools and opens the search bar below the header', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.endsWith('/messages') ? [originalQuestion] : [])))
+  const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
+  function View() {
+    const [tools, setTools] = useState<HTMLDivElement | null>(null)
+    return <><div data-testid="header-tools" ref={setTools} /><ChatView task={task} headerTools={tools} /></>
+  }
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><View /></TooltipProvider></MeContext></QueryClientProvider>)
+  const trigger = await screen.findByRole('button', { name: '질문 목차' })
+  const header = screen.getByTestId('header-tools')
+  const toggle = screen.getByRole('button', { name: '대화 내 검색' })
+  expect(header).toContainElement(toggle)
+  expect(header).toContainElement(trigger)
+  expect(toggle.nextElementSibling).toBe(trigger)
+  const toolbar = screen.getByTestId('chat-question-toolbar')
+  expect(toolbar).toBeEmptyDOMElement()
+  fireEvent.click(toggle)
+  const input = await screen.findByRole('searchbox', { name: '대화 내 검색' })
+  expect(toolbar).toContainElement(input)
+  expect(header).not.toContainElement(input)
+  fireEvent.keyDown(input, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByRole('searchbox')).not.toBeInTheDocument())
+  expect(toolbar).toBeEmptyDOMElement()
+  expect(toggle).toHaveFocus()
+})
+
 it('confirms draft replacement, preserves current attachments and sends prefill through estimate and SSE', async () => {
   const requests: Array<{ url: string; body: Record<string, unknown> }> = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -671,9 +698,13 @@ it('resets the search input and result position when switching tasks', async () 
   const view = (id: string) => <QueryClientProvider client={client}><MeContext value={{ id: 'search-user', name: 'User', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ChatView task={{ id, threadId: `h${id}`, status: 'in_progress' } as Task} /></TooltipProvider></MeContext></QueryClientProvider>
   const { rerender } = render(view('1'))
   await screen.findByText('검색 본문')
+  fireEvent.click(screen.getByRole('button', { name: '대화 내 검색' }))
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '검색' } })
   expect(screen.getByRole('status')).toHaveTextContent('1/1')
   rerender(view('2'))
+  // 대화를 바꾸면 검색 줄이 닫히고(ChatMessages는 taskId로 격리) 다시 열어도 비어 있다
+  expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '대화 내 검색' }))
   expect(screen.getByRole('searchbox')).toHaveValue('')
   expect(screen.queryByRole('button', { name: '다음' })).not.toBeInTheDocument()
 })
