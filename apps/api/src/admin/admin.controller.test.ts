@@ -129,6 +129,16 @@ describe('관리 API 서버 권한', () => {
     }
     await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ defaultModelOverride: 'x'.repeat(191) }).expect(200)
   })
+  it('OpenWebUI 주소(link1Rule)는 자리표시자 없이도 http(s) 주소면 trim하여 받고 빈 값은 해제한다', async () => {
+    for (const [sent, stored] of [['https://owui.example/', 'https://owui.example/'], [' https://owui.example/?lang=ko ', 'https://owui.example/?lang=ko'],
+      ['https://owui.example/?model={modelId}&agent={assistantId}', 'https://owui.example/?model={modelId}&agent={assistantId}'], ['', '']] as const) {
+      await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ link1Rule: sent }).expect(200)
+      expect(admin.settings).toHaveBeenLastCalledWith({ link1Rule: stored })
+    }
+    for (const link1Rule of ['owui.example', 'ftp://owui.example/', 'https://user:pw@owui.example/', 'javascript:alert(1)', 'https://']) {
+      await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ link1Rule }).expect(400)
+    }
+  })
   it('override의 길이·타입과 읽기 전용·알 수 없는 키는 원자적으로 거부한다', async () => {
     for (const input of [{ defaultModelOverride: 'x'.repeat(192) }, { defaultModelOverride: 123 }, { defaultModelOverride: {} },
       { defaultModelOverride: 'ok', defaultModel: 'legacy' }, { defaultModelOverride: 'ok', defaultModelSource: 'setting' }, { defaultModelOverride: 'ok', unknown: true }]) {

@@ -34,7 +34,8 @@ const settings = z.object({
   owuiTools: z.enum(['auto', 'off']).optional(),
   fileDelivery: z.enum(['inline', 'openwebui']).optional(),
   requestBudgetBytes: z.number().int().min(1024).max(100_000_000).optional(),
-  srIntakeAssistantId: key.nullable().optional(), link1Rule: z.string().max(4000).refine((value) => {
+  /** OpenWebUI 주소 — 자리표시자({modelId}·{assistantId})는 선택. 없으면 웹이 ?model=ID를 붙인다(lib/links.ts) */
+  srIntakeAssistantId: key.nullable().optional(), link1Rule: z.string().trim().max(4000).refine((value) => {
     if (!value) return true
     try { const url = new URL(value.replaceAll('{modelId}', 'model').replaceAll('{assistantId}', 'assistant')); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password }
     catch { return false }

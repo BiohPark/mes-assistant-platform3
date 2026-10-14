@@ -105,13 +105,12 @@ test('SO 전역 기본 모델: 저장·해제 즉시 반영, 목록 실패 시 �
     const model = (await (await page.request.get('/api/llm/models')).json()).models[0] as string | undefined
     expect(model).toBeTruthy()
     await picker.click()
-    await page.getByRole('option', { name: model!, exact: true }).click()
     const saved = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH')
-    await page.getByRole('button', { name: '설정 저장' }).click()
+    await page.getByRole('option', { name: model!, exact: true }).click() // 선택 즉시 override만 PATCH
     const written = await saved
     expect(written.status()).toBe(200)
-    expect(written.request().postDataJSON()).toMatchObject({ defaultModelOverride: model })
-    expect(written.request().postDataJSON()).not.toHaveProperty('defaultModel')
+    expect(written.request().postDataJSON()).toEqual({ defaultModelOverride: model })
+    await expect(page.getByRole('region', { name: '전역 설정' }).getByText('저장됨', { exact: true })).toBeVisible()
     await expect(page.getByText(`현재 적용 모델: ${model}`, { exact: true })).toBeVisible()
     await expect(page.getByText('출처: 전역 설정', { exact: true })).toBeVisible()
 
@@ -136,9 +135,8 @@ test('SO 전역 기본 모델: 저장·해제 즉시 반영, 목록 실패 시 �
     await page.getByRole('button', { name: '다시 시도' }).click()
     await expect(picker).toBeEnabled()
 
-    await page.getByRole('button', { name: '설정 해제(.env 값 사용)' }).click()
     const cleared = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH')
-    await page.getByRole('button', { name: '설정 저장' }).click()
+    await page.getByRole('button', { name: '설정 해제(.env 값 사용)' }).click()
     const fallbackResponse = await cleared
     expect(fallbackResponse.status()).toBe(200)
     expect(fallbackResponse.request().postDataJSON().defaultModelOverride).toBeNull()
@@ -176,23 +174,21 @@ test('두 SO 세션: 이전 설정 화면에서 첨부 개수만 저장해도 �
     const picker = other.getByRole('combobox', { name: '기본 모델' })
     await expect(picker).toBeEnabled()
     await picker.click()
+    const changed = other.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH')
     await other.getByRole('option').first().click()
+    expect((await changed).status()).toBe(200)
     const model = await picker.inputValue()
     expect(model).not.toBe('')
-    const changed = other.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH')
-    await other.getByRole('button', { name: '설정 저장' }).click()
-    expect((await changed).status()).toBe(200)
     await expect(other.getByText(`현재 적용 모델: ${model}`, { exact: true })).toBeVisible()
 
     await expect(stalePicker).toHaveValue('')
     const fileMaxPerRequest = original.fileMaxPerRequest === 7 ? 8 : 7
     await page.getByLabel('첨부 개수 한도').fill(String(fileMaxPerRequest))
     const saved = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH')
-    await page.getByRole('button', { name: '설정 저장' }).click()
+    await page.getByLabel('첨부 개수 한도').press('Tab') // blur 때 그 필드만 PATCH
     const written = await saved
     expect(written.status()).toBe(200)
-    expect(written.request().postDataJSON()).toMatchObject({ fileMaxPerRequest })
-    expect(written.request().postDataJSON()).not.toHaveProperty('defaultModelOverride')
+    expect(written.request().postDataJSON()).toEqual({ fileMaxPerRequest })
     expect(await written.json()).toMatchObject({ defaultModelOverride: model, defaultModel: model, fileMaxPerRequest })
     expect(await (await page.request.get('/api/settings')).json()).toMatchObject({ defaultModelOverride: model, fileMaxPerRequest })
   } finally {
@@ -211,26 +207,23 @@ test('두 SO 세션: 이전 설정 화면에서 첨부 개수만 저장해도 �
 })
 
 
-test('SO 도구 전달은 별도 저장하고 다른 설정 PATCH에는 포함하지 않는다', async ({ page, request }) => {
+test('SO 도구 전달은 라디오를 바꾸는 즉시 그 값만 PATCH한다', async ({ page, request }) => {
   await owner(page)
   const original = await (await page.request.get('/api/settings')).json()
   try {
     expect((await page.request.patch('/api/settings', { data: { owuiTools: 'auto' } })).status()).toBe(200)
     await page.goto('/settings')
-    await expect(page.getByRole('form', { name: 'OpenWebUI 도구 전달' }).getByRole('heading', { name: 'OpenWebUI 도구 전달', level: 2 })).toBeVisible()
-    await expect(page.getByRole('button', { name: '설정 저장' })).toHaveCount(1)
+    const tools = page.getByRole('region', { name: 'OpenWebUI 도구 전달' })
+    await expect(tools.getByRole('heading', { name: 'OpenWebUI 도구 전달', level: 2 })).toBeVisible()
+    await expect(page.getByRole('button', { name: /저장$/ })).toHaveCount(0)
     await expect(page.getByRole('radio', { name: '자동 (기본)' })).toBeChecked()
-    await expect(page.getByRole('button', { name: '도구 전달 저장' })).toBeDisabled()
-    await page.getByRole('radio', { name: '끔' }).check()
     const saving = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH')
-    await page.getByRole('button', { name: '도구 전달 저장' }).click()
+    await page.getByRole('radio', { name: '끔' }).check()
     const saved = await saving
     expect(saved.status()).toBe(200)
     expect(saved.request().postDataJSON()).toEqual({ owuiTools: 'off' })
-    await expect(page.getByRole('button', { name: '도구 전달 저장' })).toBeDisabled()
-    const other = page.waitForResponse(response => response.url().endsWith('/api/settings') && response.request().method() === 'PATCH')
-    await page.getByRole('button', { name: '설정 저장' }).click()
-    expect((await other).request().postDataJSON()).not.toHaveProperty('owuiTools')
+    await expect(tools.getByText('저장됨', { exact: true })).toBeVisible()
+    await expect(page.getByRole('radio', { name: '끔' })).toBeChecked()
     const loginId = `e2e-tools-setting-${Date.now().toString(36)}`
     expect((await request.post('/api/auth/signup', { data: { loginId, password } })).ok()).toBe(true)
     expect((await request.patch('/api/settings', { data: { owuiTools: 'auto' } })).status()).toBe(403)

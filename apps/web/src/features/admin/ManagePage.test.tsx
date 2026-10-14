@@ -35,21 +35,33 @@ it('enables order editing after assistants load and shows every card', () => {
   expect(container.querySelectorAll('[draggable="true"]')).toHaveLength(assistantRows.length)
 })
 
-it('removes an image without submitting unsaved assistant edits', async () => {
+it('이미지 제거는 DELETE만 보내고 이름은 blur 때 그 필드만 PATCH하며 편집기는 열린 채 저장됨을 보인다', async () => {
   const calls: Array<[string, RequestInit | undefined]> = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push([url, init])
     if (url === '/api/codes?includeInactive=true') return jsonResponse(200, [])
-    return jsonResponse(200, {})
+    return jsonResponse(200, url === '/api/assistants/a' ? assistant : {})
   }))
   renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: '편집' }))
-  fireEvent.change(screen.getByLabelText('이름'), { target: { value: '저장하지 않은 이름' } })
+  expect(screen.queryByRole('button', { name: /^저장$/ })).not.toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('이름'), { target: { value: '아직 입력 중인 이름' } })
   expect(screen.getByRole('button', { name: '이미지 제거' })).toHaveAttribute('type', 'button')
   fireEvent.click(screen.getByRole('button', { name: '이미지 제거' }))
   await waitFor(() => expect(calls.some(([url, init]) => url === '/api/assistants/a/image' && init?.method === 'DELETE')).toBe(true))
   await new Promise((resolve) => setTimeout(resolve, 20))
   expect(calls.some(([url, init]) => url === '/api/assistants/a' && init?.method === 'PATCH')).toBe(false)
+  fireEvent.blur(screen.getByLabelText('이름'))
+  await waitFor(() => expect(calls.filter(([url, init]) => url === '/api/assistants/a' && init?.method === 'PATCH').map(([, init]) => JSON.parse(String(init?.body)))).toEqual([{ name: '아직 입력 중인 이름' }]))
+  expect(await screen.findByText('저장됨')).toHaveAttribute('role', 'status')
+  expect(screen.getByLabelText('이름')).toHaveAccessibleDescription('저장됨')
+  fireEvent.blur(screen.getByLabelText('이름'))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(calls.filter(([url, init]) => url === '/api/assistants/a' && init?.method === 'PATCH')).toHaveLength(1)
+  fireEvent.change(screen.getByLabelText('이름'), { target: { value: '  ' } })
+  fireEvent.blur(screen.getByLabelText('이름'))
+  expect(await screen.findByRole('alert')).toHaveTextContent('이름을 입력하세요')
+  expect(calls.filter(([url, init]) => url === '/api/assistants/a' && init?.method === 'PATCH')).toHaveLength(1)
   expect(screen.getByRole('dialog', { name: '에이전트 편집' })).toBeInTheDocument()
 })
 
@@ -99,20 +111,20 @@ it('새 에이전트는 ID 없이 생성하고 연결 모델을 직접 입력할
   fireEvent.change(screen.getByLabelText('연결 모델'), { target: { value: 'custom-model' } })
   fireEvent.click(screen.getByRole('button', { name: '운영자 제거' }))
   expect(screen.queryByRole('button', { name: '운영자 제거' })).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+  fireEvent.click(screen.getByRole('button', { name: '만들기' }))
   expect(body).toBeUndefined()
   expect(screen.getByRole('combobox', { name: '담당자' })).toHaveAttribute('aria-invalid', 'true')
   expect(screen.getByRole('combobox', { name: '담당자' })).toHaveAccessibleDescription('담당자를 선택하세요')
   fireEvent.change(screen.getByRole('combobox', { name: '담당자' }), { target: { value: '운영자' } })
   await screen.findByRole('option', { name: '운영자' })
   fireEvent.keyDown(screen.getByRole('combobox', { name: '담당자' }), { key: 'Enter' })
-  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+  fireEvent.click(screen.getByRole('button', { name: '만들기' }))
   await waitFor(() => expect(body).toMatchObject({ name: '새 도우미', modelId: 'custom-model', ownerId: 'owner', classifications: [{ level1: '새 분류', level2: '새 하위' }] }))
   expect(body).not.toHaveProperty('id')
 })
 
-it.each([false, true])('편집 저장은 바꾸지 않은 분류 ID를 보존하고 변경한 분류만 이름으로 보낸다: %s', async changeLevel1 => {
-  let body: Record<string, unknown> | undefined
+it.each([false, true])('편집은 바꾼 필드만 PATCH하고 분류는 경로가 완성된 순간 이름으로 보낸다: %s', async changeLevel1 => {
+  const bodies: Record<string, unknown>[] = []
   const codes = [
     { id: 'assistant_level1:MANUAL', groupKey: 'assistant_level1', code: 'MANUAL', name: 'SDLC', sortOrder: 0, active: true, isAuto: false },
     { id: assistant.level1CodeId, groupKey: 'assistant_level1', code: 'SDLC', name: 'SDLC', sortOrder: 1, active: true, isAuto: true },
@@ -120,24 +132,23 @@ it.each([false, true])('편집 저장은 바꾸지 않은 분류 ID를 보존하
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/codes?includeInactive=true') return jsonResponse(200, codes)
     if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
-    if (url === '/api/assistants/a' && init?.method === 'PATCH') { body = JSON.parse(String(init.body)); return jsonResponse(200, assistant) }
+    if (url === '/api/assistants/a' && init?.method === 'PATCH') { bodies.push(JSON.parse(String(init.body))); return jsonResponse(200, assistant) }
     return jsonResponse(200, {})
   }))
   renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: '편집' }))
   fireEvent.change(screen.getByLabelText('설명'), { target: { value: '설명만 수정' } })
+  fireEvent.blur(screen.getByLabelText('설명'))
+  await waitFor(() => expect(bodies).toEqual([{ summary: '설명만 수정' }]))
   if (changeLevel1) {
     fireEvent.change(screen.getByRole('combobox', { name: '분류 1' }), { target: { value: '새 분류' } })
     await screen.findByRole('option', { name: '새로 추가: 새 분류' })
     fireEvent.keyDown(screen.getByRole('combobox', { name: '분류 1' }), { key: 'Enter' })
+    await waitFor(() => expect(bodies[1]).toEqual({ classifications: [{ level1: '새 분류', level2: assistant.level2 }] }))
   }
-  fireEvent.click(screen.getByRole('button', { name: '저장' }))
-  await waitFor(() => expect(body).toMatchObject({ summary: '설명만 수정', classifications: changeLevel1
-    ? [{ level1: '새 분류', level2: assistant.level2 }]
-    : [{ level1CodeId: assistant.level1CodeId, level2CodeId: assistant.level2CodeId }] }))
-  expect(body).not.toHaveProperty('level1')
-  expect(body).not.toHaveProperty('level2')
-
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(bodies).toHaveLength(changeLevel1 ? 2 : 1)
+  for (const body of bodies) { expect(body).not.toHaveProperty('level1'); expect(body).not.toHaveProperty('name') }
 })
 
 it.each([
@@ -197,7 +208,7 @@ it('코드 이름·순서·활성을 계속 수정하고 비활성 코드도 관
   expect(patches).toEqual([{ name: '새 이름' }, { sortOrder: 4 }, { active: false }])
 })
 
-it('담당자·상태·필수 항목을 키보드로 변경해 저장하고 담당자 미선택은 거부한다', async () => {
+it('담당자·상태·필수 항목은 키보드로 바꾸는 즉시 그 필드만 저장하고 담당자 미선택은 거부한다', async () => {
   users.push({ ...users[0]!, id: 'other', name: '다른 담당자' })
   assistantRows = [{ ...assistant, checklistTemplate: [{ id: 'check', label: '검토', required: false }] }]
   const bodies: Record<string, unknown>[] = []
@@ -214,7 +225,7 @@ it('담당자·상태·필수 항목을 키보드로 변경해 저장하고 담�
   await user.click(screen.getByRole('button', { name: '편집' }))
   expect(screen.getByRole('combobox', { name: '담당자' })).toHaveAttribute('aria-required', 'true')
   await user.click(screen.getByRole('button', { name: '운영자 제거' }))
-  await user.click(screen.getByRole('button', { name: /^저장$/ }))
+  await new Promise((resolve) => setTimeout(resolve, 20))
   expect(bodies).toEqual([])
   expect(screen.getByRole('combobox', { name: '담당자' })).toHaveAttribute('aria-invalid', 'true')
   expect(screen.getByRole('combobox', { name: '담당자' })).toHaveAccessibleDescription('담당자를 선택하세요')
@@ -222,17 +233,19 @@ it('담당자·상태·필수 항목을 키보드로 변경해 저장하고 담�
   await user.type(screen.getByRole('combobox', { name: '담당자' }), '다른')
   await screen.findByRole('option', { name: '다른 담당자' })
   await user.keyboard('{ArrowDown}{Enter}')
+  await waitFor(() => expect(bodies).toEqual([{ ownerId: 'other' }]))
   const status = screen.getByRole('radio', { name: '개발 중' })
   status.focus()
   await user.keyboard('{ArrowRight} ')
   expect(screen.getByRole('radio', { name: '테스트' })).toBeChecked()
+  await waitFor(() => expect(bodies[1]).toEqual({ status: 'testing' }))
   const required = screen.getByRole('checkbox', { name: '검토 필수' })
   required.focus()
   await user.keyboard(' ')
   expect(required).toBeChecked()
-  await user.click(screen.getByRole('button', { name: /^저장$/ }))
-  await waitFor(() => expect(bodies).toHaveLength(1))
-  expect(bodies[0]).toMatchObject({ ownerId: 'other', status: 'testing', checklistTemplate: [{ id: 'check', label: '검토', required: true }] })
+  await waitFor(() => expect(bodies[2]).toEqual({ checklistTemplate: [{ id: 'check', label: '검토', required: true }] }))
+  expect(bodies).toHaveLength(3)
+  expect(screen.getAllByText('저장됨').length).toBeGreaterThanOrEqual(3)
 })
 
 
@@ -321,7 +334,7 @@ it('관리 표는 읽기 전용이며 비대표 경로 검색·I/O 2+N 배지를
   expect(fetcher.mock.calls.some(call => (call as unknown as [string, RequestInit])[1]?.method === 'PATCH')).toBe(false)
 })
 
-it('link1 재정의는 값이 있을 때만 표시하며 지우기·저장 실패·시험 탭은 폼을 보존한다', async () => {
+it('link1 재정의는 값이 있을 때만 표시하며 저장 실패는 필드 근처에 보이고 시험 탭 전환은 폼을 보존한다', async () => {
   assistantRows = [{ ...assistant, link1: 'https://existing.test', modelId: 'old' }]
   const bodies: Record<string, unknown>[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -333,19 +346,20 @@ it('link1 재정의는 값이 있을 때만 표시하며 지우기·저장 실�
   await user.click(screen.getByRole('button', { name: '편집' }))
   expect(screen.getByText('기존 링크 재정의 있음')).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('연결 모델'), { target: { value: 'draft-model' } })
+  expect(bodies).toEqual([])
+  fireEvent.blur(screen.getByRole('combobox', { name: '연결 모델' }))
+  await waitFor(() => expect(bodies).toEqual([{ modelId: 'draft-model' }]))
+  expect(await screen.findByRole('alert')).toHaveTextContent('save failed')
+  expect(screen.getByRole('combobox', { name: '연결 모델' })).toHaveAttribute('aria-invalid', 'true')
+  expect(screen.getByRole('combobox', { name: '연결 모델' })).toHaveAccessibleDescription('save failed')
   await user.click(screen.getByRole('tab', { name: '시험 대화' }))
   expect(screen.getByText('draft-model')).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('시험 메시지'), { target: { value: 'kept draft' } })
   await user.click(screen.getByRole('tab', { name: '설정' }))
   expect(screen.getByLabelText('연결 모델')).toHaveValue('draft-model')
-  await user.click(screen.getByRole('button', { name: '저장' }))
-  await waitFor(() => expect(bodies).toHaveLength(1))
-  expect(bodies[0]).toHaveProperty('link1', 'https://existing.test')
   await user.click(screen.getByRole('button', { name: '지우기' }))
   expect(screen.queryByText('기존 링크 재정의 있음')).not.toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: '저장' }))
-  await waitFor(() => expect(bodies).toHaveLength(2))
-  expect(bodies[1]).toHaveProperty('link1', '')
+  await waitFor(() => expect(bodies[1]).toEqual({ link1: '' }))
   expect(screen.getByLabelText('연결 모델')).toHaveValue('draft-model')
   await user.click(screen.getByRole('tab', { name: '시험 대화' }))
   expect(screen.getByLabelText('시험 메시지')).toHaveValue('kept draft')
@@ -363,7 +377,6 @@ it('다중 경로 순서를 바꿔도 기존 비활성 코드 ID를 전송한다
   renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: '편집' }))
   fireEvent.click(screen.getByRole('button', { name: '경로 2 위로' }))
-  fireEvent.click(screen.getByRole('button', { name: '저장' }))
   await waitFor(() => expect(body?.classifications).toEqual([
     { level1CodeId: second.level1CodeId, level2CodeId: second.level2CodeId },
     { level1CodeId: first.level1CodeId, level2CodeId: first.level2CodeId },
@@ -371,7 +384,7 @@ it('다중 경로 순서를 바꿔도 기존 비활성 코드 ID를 전송한다
 })
 
 
-it('허브 edit URL로 열고 취소하면 URL을 지우며 다시 열 때 저장된 값으로 복원한다', async () => {
+it('허브 edit URL로 열고 닫으면 PATCH 없이 URL을 지우며 다시 열 때 저장된 값을 보인다', async () => {
   const patches: unknown[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'PATCH') patches.push(init.body)
@@ -379,7 +392,6 @@ it('허브 edit URL로 열고 취소하면 URL을 지우며 다시 열 때 저�
   }))
   renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>, { route: '/assistants/manage?edit=a' })
   const editor = await screen.findByRole('dialog', { name: '에이전트 편집' })
-  fireEvent.change(within(editor).getByLabelText('이름'), { target: { value: '취소할 값' } })
   fireEvent.click(within(editor).getByRole('button', { name: '닫기' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(patches).toEqual([])
@@ -413,10 +425,66 @@ it('경로 추가·제거는 최소 한 경로를 유지하고 기존 ID와 신�
     fireEvent.change(input, { target: { value: name } })
     await screen.findByRole('option', { name: `새로 추가: ${name}` })
     fireEvent.keyDown(input, { key: 'Enter' })
+    if (label === '분류 1') { await new Promise((resolve) => setTimeout(resolve, 20)); expect(body).toBeUndefined() }
   }
-  fireEvent.click(screen.getByRole('button', { name: '저장' }))
   await waitFor(() => expect(body?.classifications).toEqual([
     { level1CodeId: assistant.level1CodeId, level2CodeId: assistant.level2CodeId },
     { level1: 'New level', level2: 'New sub' },
   ]))
+})
+
+it('표는 기본으로 폐기를 맨 아래 두고 열 머리로 정렬하며 상태를 공용 칩으로 보인다', async () => {
+  users.push({ ...users[0]!, id: 'other', name: '다른 담당자' })
+  assistantRows = [
+    { ...assistant, id: 'r', name: '가 폐기', status: 'retired', order: 1, updatedAt: '2026-09-03T00:00:00.000Z' },
+    { ...assistant, id: 'a', name: '나 도우미', status: 'open', order: 2, updatedAt: '2026-09-01T00:00:00.000Z' },
+    { ...assistant, id: 'b', name: '다 개발', status: 'developing', order: 3, ownerId: 'other', updatedAt: '2026-09-02T00:00:00.000Z' },
+  ]
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  const table = screen.getByRole('table')
+  const names = () => within(table).getAllByRole('row').slice(1).map(row => within(row).getAllByRole('cell')[0]!.textContent)
+  expect(names()).toEqual(['나 도우미', '다 개발', '가 폐기'])
+  expect(within(table).getByRole('columnheader', { name: '담당자' })).toBeInTheDocument()
+  expect(within(table).getByText('다른 담당자')).toBeInTheDocument()
+  expect(within(table).getByText('2026-09-02')).toBeInTheDocument()
+  const open = within(table).getByText('오픈')
+  expect(open).toHaveAttribute('data-slot', 'badge')
+  expect(open).toHaveClass('bg-tone-success-bg')
+  expect(within(table).getByText('폐기')).toHaveClass('bg-tone-neutral-bg')
+  fireEvent.click(within(table).getByRole('button', { name: '에이전트' }))
+  expect(within(table).getByRole('columnheader', { name: '에이전트' })).toHaveAttribute('aria-sort', 'ascending')
+  expect(names()).toEqual(['가 폐기', '나 도우미', '다 개발'])
+  fireEvent.click(within(table).getByRole('button', { name: '에이전트' }))
+  expect(names()).toEqual(['다 개발', '나 도우미', '가 폐기'])
+  fireEvent.click(within(table).getByRole('button', { name: '상태' }))
+  expect(names()).toEqual(['나 도우미', '다 개발', '가 폐기'])
+  fireEvent.click(within(table).getByRole('button', { name: '수정일' }))
+  expect(names()).toEqual(['나 도우미', '다 개발', '가 폐기'])
+  fireEvent.click(within(table).getByRole('button', { name: '수정일' }))
+  expect(names()).toEqual(['가 폐기', '다 개발', '나 도우미'])
+  fireEvent.click(within(table).getAllByRole('button', { name: '편집' })[1]!)
+  const dialog = screen.getByRole('dialog', { name: '에이전트 편집' })
+  expect(within(dialog).getByRole('radio', { name: '개발 중' }).querySelector('[data-slot="badge"]')).toHaveClass('bg-tone-warning-bg')
+})
+
+it('입력 중인 연결 모델·설명은 Escape로 시트를 닫을 때 확정되고 blur 직후 닫아도 한 번만 보낸다', async () => {
+  const bodies: Record<string, unknown>[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'PATCH') { bodies.push(JSON.parse(String(init.body))); return jsonResponse(200, assistant) }
+    return jsonResponse(200, url === '/api/llm/models' ? { models: [] } : [])
+  }))
+  const user = userEvent.setup()
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  await user.click(screen.getByRole('button', { name: '편집' }))
+  fireEvent.change(screen.getByLabelText('설명'), { target: { value: '블러 저장' } })
+  fireEvent.blur(screen.getByLabelText('설명'))
+  fireEvent.change(screen.getByRole('combobox', { name: '연결 모델' }), { target: { value: 'typed-model' } })
+  await user.keyboard('{Escape}') // 첫 Escape는 모델 목록만 닫는다
+  expect(screen.getByRole('dialog', { name: '에이전트 편집' })).toBeInTheDocument()
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '에이전트 편집' })).not.toBeInTheDocument())
+  await waitFor(() => expect(bodies).toEqual([{ summary: '블러 저장' }, { modelId: 'typed-model' }]))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(bodies).toHaveLength(2)
 })

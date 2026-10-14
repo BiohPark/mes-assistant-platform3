@@ -29,9 +29,10 @@ describe('내 정보 프로필 세그먼트', () => {
     expect(localStorage.getItem(tutorialKey(me.id))).toBe('accepted')
     expect(takeTutorialReplay(me.id)).toBe(true)
     expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(true)
+    expect(screen.queryByRole('button', { name: '저장' })).not.toBeInTheDocument()
     act(() => useUiStore.setState({ assistantOpen: false }))
   })
-  it.each(['u1@example-.com', `u1@${'a'.repeat(64)}.com`, `u1@${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.com`])('기본 이메일 %s를 그대로 두면 이름 저장을 막지 않고 이메일은 전송하지 않는다', async (defaultEmail) => {
+  it.each(['u1@example-.com', `u1@${'a'.repeat(64)}.com`, `u1@${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.com`])('기본 이메일 %s를 그대로 두면 이름 blur 저장을 막지 않고 이메일은 전송하지 않는다', async (defaultEmail) => {
     let server = { ...me, email: defaultEmail, emailIsDefault: true }
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       if (init?.method === 'PATCH') server = { ...server, ...JSON.parse(init.body as string) }
@@ -43,13 +44,18 @@ describe('내 정보 프로필 세그먼트', () => {
     expect(email).toHaveValue(defaultEmail)
     await userEvent.clear(screen.getByLabelText('이름'))
     await userEvent.type(screen.getByLabelText('이름'), '새 이름')
-    expect(email.closest('form')!.checkValidity()).toBe(true)
-    await userEvent.click(screen.getByRole('button', { name: '저장' }))
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/me', expect.objectContaining({ method: 'PATCH' }))
+    await userEvent.tab()
     await waitFor(() => expect(server.name).toBe('새 이름'))
     expect(fetchMock).toHaveBeenCalledWith('/api/me', expect.objectContaining({ body: JSON.stringify({ name: '새 이름' }) }))
+    expect(screen.getByLabelText('이름')).toHaveAccessibleDescription('저장됨')
+    await userEvent.click(email)
+    await userEvent.tab()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH')).toHaveLength(1)
     expect(server).toMatchObject({ email: defaultEmail, emailIsDefault: true })
   })
-  it('기본 이메일을 수정하면 이메일 형식 검증을 적용하고 되돌리면 이름만 저장한다', async () => {
+  it('기본 이메일을 수정하면 형식 검증 오류를 필드 근처에 보이고 되돌리면 전송하지 않는다', async () => {
     const server = { ...me, email: 'u1@example-.com', emailIsDefault: true }
     const fetchMock = vi.fn(async () => jsonResponse(200, server))
     vi.stubGlobal('fetch', fetchMock)
@@ -58,16 +64,18 @@ describe('내 정보 프로필 세그먼트', () => {
     await userEvent.clear(email)
     await userEvent.type(email, 'invalid')
     expect(email).toHaveAttribute('type', 'email')
-    expect(email.closest('form')!.checkValidity()).toBe(false)
-    await userEvent.click(screen.getByRole('button', { name: '저장' }))
+    await userEvent.tab()
+    expect(await screen.findByRole('alert')).toHaveTextContent('이메일 형식이 올바르지 않습니다')
+    expect(email).toHaveAttribute('aria-invalid', 'true')
     expect(fetchMock).not.toHaveBeenCalledWith('/api/me', expect.objectContaining({ method: 'PATCH' }))
     await userEvent.clear(email)
     await userEvent.type(email, server.email)
-    expect(email.closest('form')!.checkValidity()).toBe(true)
-    await userEvent.click(screen.getByRole('button', { name: '저장' }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/me', expect.objectContaining({ body: JSON.stringify({ name: me.name }) })))
+    await userEvent.tab()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/me', expect.objectContaining({ method: 'PATCH' }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
-  it.each(['ko', 'en'] as const)('이메일 표시·저장·해제와 기본값 구분 (%s)', async locale => {
+  it.each(['ko', 'en'] as const)('이메일 표시·blur 저장·해제와 기본값 구분 (%s)', async locale => {
     let server = { ...me, roles: [...me.roles], locale, email: 'u1@example.com', emailIsDefault: true }
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       if (init?.method === 'PATCH') {
@@ -81,28 +89,38 @@ describe('내 정보 프로필 세그먼트', () => {
     const email = await screen.findByLabelText(locale === 'ko' ? '이메일' : 'Email')
     expect(email).toHaveValue('u1@example.com')
     expect(email).toHaveAttribute('maxlength', '191')
-    await userEvent.click(screen.getByRole('button', { name: locale === 'ko' ? '저장' : 'Save' }))
-    expect(fetchMock).toHaveBeenCalledWith('/api/me', expect.objectContaining({ body: JSON.stringify({ name: me.name }) }))
+    await userEvent.click(email)
+    await userEvent.tab()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/me', expect.objectContaining({ method: 'PATCH' }))
     await userEvent.clear(email)
     await userEvent.type(email, 'Mixed.Case@example.net')
     expect(email).toHaveAttribute('type', 'email')
-    await userEvent.click(screen.getByRole('button', { name: locale === 'ko' ? '저장' : 'Save' }))
+    await userEvent.tab()
     await waitFor(() => expect(server.email).toBe('Mixed.Case@example.net'))
-    expect(fetchMock).toHaveBeenCalledWith('/api/me', expect.objectContaining({ body: JSON.stringify({ name: me.name, email: 'Mixed.Case@example.net' }) }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/me', expect.objectContaining({ body: JSON.stringify({ email: 'Mixed.Case@example.net' }) }))
+    expect(email).toHaveAccessibleDescription(locale === 'ko' ? /저장됨/ : /Saved/)
     await userEvent.clear(email)
-    await userEvent.click(screen.getByRole('button', { name: locale === 'ko' ? '저장' : 'Save' }))
+    await userEvent.tab()
     await waitFor(() => expect(email).toHaveValue('u1@example.com'))
-    expect(fetchMock).toHaveBeenCalledWith('/api/me', expect.objectContaining({ body: JSON.stringify({ name: me.name, email: null }) }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/me', expect.objectContaining({ body: JSON.stringify({ email: null }) }))
     expect(server.emailIsDefault).toBe(true)
   })
-  it('이메일 저장 실패 시 입력값은 유지하고 저장 버튼을 다시 활성화한다', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => jsonResponse(init?.method === 'PATCH' ? 400 : 200, init?.method === 'PATCH' ? { message: 'invalid email' } : { ...me, email: null, emailIsDefault: false })))
+  it('이메일 저장 실패 시 입력값은 유지하고 오류를 필드 근처에 보이며 다시 blur하면 재시도한다', async () => {
+    const patches: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'PATCH') { patches.push(String(init.body)); return jsonResponse(400, { message: 'invalid email' }) }
+      return jsonResponse(200, { ...me, email: null, emailIsDefault: false })
+    }))
     renderWithProviders(<AuthGate><TooltipProvider><MyInfoPage /></TooltipProvider></AuthGate>)
     const email = await screen.findByLabelText('이메일')
     await userEvent.type(email, 'a@example.com')
-    await userEvent.click(screen.getByRole('button', { name: '저장' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: '저장' })).toBeEnabled())
+    await userEvent.tab()
+    expect(await screen.findByRole('alert')).toHaveTextContent('invalid email')
     expect(email).toHaveValue('a@example.com')
+    await userEvent.click(email)
+    await userEvent.tab()
+    await waitFor(() => expect(patches).toHaveLength(2))
   })
   it('테마 저장 중 /me의 다른 필드 변경을 유지하고 실패 시 바꾼 필드만 되돌린다', async () => {
     let server: Me = { ...me, roles: [...me.roles] }
@@ -172,7 +190,6 @@ describe('내 정보 프로필 세그먼트', () => {
     await screen.findByLabelText('이름')
     await userEvent.clear(screen.getByLabelText('이름'))
     await userEvent.type(screen.getByLabelText('이름'), '새 이름')
-    await userEvent.click(screen.getByRole('button', { name: '저장' }))
     await userEvent.click(screen.getByRole('radio', { name: '다크' }))
     server = { ...server, name: '새 이름' }
     finishName(jsonResponse(200, { name: '새 이름', theme: 'dark', locale: 'ko', email: null, emailIsDefault: false }))
@@ -202,9 +219,19 @@ describe('내 정보 프로필 세그먼트', () => {
     await waitFor(() => expect(screen.getByRole('radio', { name: 'English' })).toBeEnabled())
     await userEvent.clear(screen.getByLabelText('Name'))
     await userEvent.type(screen.getByLabelText('Name'), '새 이름')
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.tab()
     await waitFor(() => expect(screen.getByRole('button', { name: /새 이름/ })).toBeInTheDocument())
     expect(document.documentElement).toHaveClass('dark')
     expect(document.documentElement.lang).toBe('en')
+  })
+  it('빈 이름은 저장하지 않고 오류를 보인다', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, me))
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithProviders(<AuthGate><TooltipProvider><MyInfoPage /></TooltipProvider></AuthGate>)
+    const name = await screen.findByLabelText('이름')
+    await userEvent.clear(name)
+    await userEvent.tab()
+    expect(await screen.findByRole('alert')).toHaveTextContent('이름을 입력하세요')
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/me', expect.objectContaining({ method: 'PATCH' }))
   })
 })
