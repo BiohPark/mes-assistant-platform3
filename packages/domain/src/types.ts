@@ -174,6 +174,11 @@ export interface Task {
   dueDate?: ISODate
   /** 연결 태그 (SR 코드·CCA·자유 키워드). 같은 태그를 가진 대화끼리 자료를 발견할 수 있다 */
   tags: string[]
+  /**
+   * 연결 SR 번호(서버 목록·단건 응답이 채운다): 시작한 SR(sr_id) → 접수된 SR 번호 태그(태그를 단 순서). 표시·이동용이며 권한 근거가 아니다.
+   * 접수되지 않은 번호 태그는 빠진다.
+   */
+  linkedSrCodes?: string[]
   checklist: ChecklistItem[]
   /** 사람이 선택한 입력 (주/참고). 태그만으로는 AI에 전달되지 않는다 */
   inputs: TaskInput[]

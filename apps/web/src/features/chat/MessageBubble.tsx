@@ -8,6 +8,7 @@ import { HttpError } from '@/app/auth'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { UserAvatar } from '@/components/UserAvatar'
+import { remarkSrCodes, SR_CODE_HREF, SrCodeLink } from '@/components/SrCodeLink'
 import { Badge } from '@/components/ui/badge'
 import { useUserMap } from '@/app/hooks'
 import { useDates } from '@/lib/dates'
@@ -71,8 +72,8 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
         }} className="min-h-11 cursor-pointer rounded-lg px-3 py-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('chat.reasoning')}</summary>
       <div ref={reasoningScroll} aria-live="off" className="max-h-64 overflow-y-auto scroll-auto whitespace-pre-wrap break-words px-3 pb-3 text-sm">{reasoning}</div>
     </details>}
-    {(!assistant || hasContent) && <div className={`rounded-2xl px-3.5 py-2.5 ${tone === 'card' ? 'border bg-card' : tone === 'warning' ? 'rounded-tr-sm border border-dashed border-tone-warning-fg/40 bg-tone-warning-bg' : 'rounded-tr-sm bg-primary text-primary-foreground'}`}><div className="md-body" data-tone={tone}><ReactMarkdown remarkPlugins={[remarkGfm]} components={{
-        a: ({ href, title, children }) => <a href={href} title={title} target="_blank" rel="noreferrer">{children}</a>,
+    {(!assistant || hasContent) && <div className={`rounded-2xl px-3.5 py-2.5 ${tone === 'card' ? 'border bg-card' : tone === 'warning' ? 'rounded-tr-sm border border-dashed border-tone-warning-fg/40 bg-tone-warning-bg' : 'rounded-tr-sm bg-primary text-primary-foreground'}`}><div className="md-body" data-tone={tone}><ReactMarkdown remarkPlugins={[remarkGfm, remarkSrCodes]} components={{
+        a: ({ href, title, children }) => href?.startsWith(SR_CODE_HREF) ? <SrCodeLink code={href.slice(SR_CODE_HREF.length)}>{children}</SrCodeLink> : <a href={href} title={title} target="_blank" rel="noreferrer">{children}</a>,
         pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
       }}>{message.content}</ReactMarkdown></div></div>}
     {!assistant && attachments.length > 0 && <div className="flex flex-wrap justify-end gap-1 text-xs">{attachments.map((attachment, index) => <span key={message.attachmentIds[index]} className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5"><Paperclip className="size-3" />{intake ? <a href={`/api/files/${encodeURIComponent(message.attachmentIds[index]!)}/content`} className="underline">{attachment.data?.name ?? t('sr.attachment', { number: index + 1 })}</a> : attachment.data ? <button type="button" className="hover:underline" onClick={(event) => { previewOpener.current = event.currentTarget; setPreview(attachment.data) }}>{attachment.data.name}</button> : (attachment.isError ? attachmentFallback(attachment.error) : t('chat.checkingFile'))}</span>)}</div>}

@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common'
 import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
-import { draftFromConversation, isSrClosed, srElapsedDays, srReasonRequired, srStage, type SrManualStatus, type SrStatus } from '@mes/domain'
-import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
+import { draftFromConversation, isSrClosed, isSrTag, normalizeTag, srElapsedDays, srReasonRequired, srStage, type SrManualStatus, type SrStatus } from '@mes/domain'
+import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileObject, message, messageAttachment, serviceRequest, sharedResult, sharedResultFile, tag, task, taskAssignee, thread } from '../db/schema.js'
+import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileObject, message, messageAttachment, serviceRequest, sharedResult, sharedResultFile, tag, task, taskAssignee, taskTag, thread } from '../db/schema.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
 import { EventsService } from '../events/events.service.js'
 import { NotificationsService } from '../notifications/notifications.service.js'
@@ -93,8 +93,11 @@ export class SrService {
       // 후보 = 이 SR에 업로드된 파일 전체(데모 SrIntakePage의 originSrId 조회와 같음). 전환·수정 Sheet가 나열하고 사람이 고른다.
       this.db.select({ id: fileObject.id }).from(fileObject).where(and(eq(fileObject.originSrId, row.id), isNull(fileObject.deletedAt))).orderBy(fileObject.uploadedAt, fileObject.id),
       this.db.select().from(sharedResult).where(eq(sharedResult.srId, row.id)).orderBy(sharedResult.at),
-      this.db.select({ id: task.id, code: task.code, title: task.title, status: task.status, ownerId: task.ownerId, threadId: thread.id }).from(task)
-        .leftJoin(thread, eq(thread.taskId, task.id)).where(and(eq(task.srId, row.id), isNull(task.deletedAt))),
+      // 연결 업무(S14) = 이 SR에서 시작한 업무(sr_id) + 이 SR 번호 태그를 단 업무(담당자 무관). 표시용 메타만 — 권한은 sr_id로만 판정(access.ts).
+      this.db.select({ id: task.id, code: task.code, title: task.title, status: task.status, ownerId: task.ownerId, threadId: thread.id, srId: task.srId }).from(task)
+        .leftJoin(thread, eq(thread.taskId, task.id)).where(and(isNull(task.deletedAt), row.code
+          ? or(eq(task.srId, row.id), inArray(task.id, this.db.select({ id: taskTag.taskId }).from(taskTag).where(eq(taskTag.tagKey, row.code.toLowerCase()))))
+          : eq(task.srId, row.id))),
     ])
     const assignees = includeInternal && linked.length ? await this.db.select().from(taskAssignee).where(inArray(taskAssignee.taskId, linked.map(item => item.id))) : []
     const names = await this.db.select({ id: appUser.id, name: appUser.name }).from(appUser).where(inArray(appUser.id, [row.requesterId, ...results.map(result => result.byUser)]))
@@ -103,8 +106,9 @@ export class SrService {
       .where(and(eq(message.threadId, srThread.id), eq(message.role, 'user'))).orderBy(message.seq).limit(1) : []
     return { ...row, requesterName: names.find(user => user.id === row.requesterId)?.name, firstMessage: firstMessage?.content.slice(0, 40) ?? '', code: row.code ?? '', threadId: srThread?.id ?? '', attachmentIds: [...new Set(attachments.map((item) => item.id))], candidateAttachmentIds: candidates.map((item) => item.id),
       results: results.map((item) => ({ id: item.id, ...(includeInternal && item.taskId && { taskId: item.taskId }), text: item.text, fileIds: files.filter((file) => file.resultId === item.id).map((file) => file.fileId), by: item.byUser, byName: names.find(user => user.id === item.byUser)?.name, at: item.at.toISOString() })),
-      taskCount: new Set(linked.map(item => item.id)).size, elapsedDays: srElapsedDays(row.submittedAt),
-      conversations: includeInternal ? linked.map(item => ({ ...item, assigneeIds: assignees.filter(assigned => assigned.taskId === item.id).map(assigned => assigned.userId) })) : [], submittedAt: row.submittedAt?.toISOString(), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }
+      // 요청자(BO) 화면은 기존 규칙 그대로 — 시작한 업무(sr_id)만 센다
+      taskCount: new Set((includeInternal ? linked : linked.filter(item => item.srId === row.id)).map(item => item.id)).size, elapsedDays: srElapsedDays(row.submittedAt),
+      conversations: includeInternal ? linked.map(({ srId: _srId, ...item }) => ({ ...item, assigneeIds: assignees.filter(assigned => assigned.taskId === item.id).map(assigned => assigned.userId) })) : [], submittedAt: row.submittedAt?.toISOString(), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }
   }
   async create(actor: string, key?: string) {
     await this.user(actor)
@@ -142,6 +146,15 @@ export class SrService {
     const rows = await this.db.select().from(serviceRequest)
       .where(user.isBusinessOwner && !user.isSystemOwner || scope === 'mine' ? eq(serviceRequest.requesterId, actor) : scope === 'inbox' ? ne(serviceRequest.status, 'draft') : undefined)
       .orderBy(desc(serviceRequest.createdAt))
+    return Promise.all(rows.map((row) => this.assemble(row, !user.isBusinessOwner || user.isSystemOwner)))
+  }
+  /** SR 번호로 찾기(원클릭 이동·검색) — 목록과 같은 열람 범위(BO는 본인 SR만). 없거나 범위 밖이면 빈 배열로 존재를 드러내지 않는다. */
+  async byCode(actor: string, raw: string) {
+    const user = await this.user(actor)
+    const code = normalizeTag(raw)
+    if (!isSrTag(code)) return []
+    const rows = await this.db.select().from(serviceRequest)
+      .where(and(eq(serviceRequest.code, code), ...(user.isBusinessOwner && !user.isSystemOwner ? [eq(serviceRequest.requesterId, actor)] : [])))
     return Promise.all(rows.map((row) => this.assemble(row, !user.isBusinessOwner || user.isSystemOwner)))
   }
   async get(actor: string, srId: string) {
@@ -210,7 +223,7 @@ export class SrService {
     const [setting] = await this.db.select().from(appSetting).where(eq(appSetting.key, 'srIntakeAssistantId'))
     if (typeof setting?.value === 'string') {
       const [intake] = await this.db.select().from(assistant).where(eq(assistant.id, setting.value))
-      if (intake) await this.notifications.send([intake.ownerId], actor, 'SR이 접수되었습니다', `${(await this.row(srId)).code} ${input.title.trim()}`, '/sr/manage')
+      if (intake) await this.notifications.send([intake.ownerId], actor, 'SR이 접수되었습니다', `${(await this.row(srId)).code} ${input.title.trim()}`, `/sr/manage?id=${srId}`)
     }
     return this.get(actor, srId)
   }
@@ -271,7 +284,7 @@ export class SrService {
     })
     if (changed) {
       this.events.publish('sr.updated', { srId })
-      await this.notifications.send([changed.requesterId], actor, `SR 상태가 변경되었습니다: ${SR_STATUS_LABEL[status]}`, `${changed.code} ${changed.title}${reason ? ` — 사유: ${reason}` : ''}`, '/sr')
+      await this.notifications.send([changed.requesterId], actor, `SR 상태가 변경되었습니다: ${SR_STATUS_LABEL[status]}`, `${changed.code} ${changed.title}${reason ? ` — 사유: ${reason}` : ''}`, `/sr?id=${srId}`)
     }
     return changed
   }
@@ -363,7 +376,7 @@ export class SrService {
       if (locked.status !== nextStatus) await tx.insert(activityLog).values({ id: id(), type: 'sr.status_changed', userId: actor, srId, payload: { from: locked.status, to: nextStatus } })
     })
     this.events.publish('sr.updated', { srId })
-    await this.notifications.send([row.requesterId], actor, '요청 결과가 공유되었습니다', `${row.code} ${row.title}`, '/sr')
+    await this.notifications.send([row.requesterId], actor, '요청 결과가 공유되었습니다', `${row.code} ${row.title}`, `/sr?id=${srId}`)
     return (await this.results(actor, srId)).find((item) => item.id === resultId)!
   }
   async results(actor: string, srId: string) { return (await this.get(actor, srId)).results }

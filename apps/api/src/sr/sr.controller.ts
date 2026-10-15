@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, HttpException, Inject, Param, Patch, Post, Query, Req, Res } from '@nestjs/common'
 import type { Response } from 'express'
 import { z } from 'zod'
-import { SR_MANUAL_STATUSES } from '@mes/domain'
+import { SR_MANUAL_STATUSES, isSrTag, normalizeTag } from '@mes/domain'
 import type { AuthedRequest } from '../auth/guards.js'
 import type { SrAiStreamOptions } from '../requests/requests.service.js'
 import { SrService } from './sr.service.js'
@@ -13,6 +13,8 @@ const statusSchema = z.object({ status: z.enum(SR_MANUAL_STATUSES), reason: z.st
 const refineSchema = z.object({ title: z.string(), body: z.string() }).strict()
 const taskSchema = z.object({ assistantId: z.string().min(1), forceNew: z.boolean().optional() }).strict()
 const resultSchema = z.object({ taskId: z.string().optional(), text: z.string().optional(), fileIds: z.array(z.string()).optional() }).strict()
+/** SR 번호(대소문자·# 무관) → 정규화 표기 */
+const codeSchema = z.string().transform(normalizeTag).refine(isSrTag)
 const contentSchema = z.object({ title: z.string(), body: z.string(), attachmentIds: z.array(z.string()), titleSource: z.enum(['ai', 'manual']).optional(), updatedAt: z.iso.datetime().optional() }).strict()
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value)
@@ -25,7 +27,12 @@ export class SrController {
   @Get('intake-assistant')
   intakeAssistant() { return this.sr.intakeAssistant() }
   @Get()
-  list(@Req() req: AuthedRequest, @Query('scope') scope?: string) {
+  list(@Req() req: AuthedRequest, @Query('scope') scope?: string, @Query('code') code?: string) {
+    // ?code= — SR 번호로 찾기(S14). 요청자(BO) 세션 가드가 허용한 목록 경로를 그대로 쓰고 응답도 같은 배열 모양이다.
+    if (code !== undefined) {
+      if (scope !== undefined) throw new BadRequestException('요청 형식이 올바르지 않습니다')
+      return this.sr.byCode(req.user!.id, parse(codeSchema, code))
+    }
     if (scope === undefined) return this.sr.list(req.user!.id)
     return this.sr.list(req.user!.id, parse(z.enum(['mine', 'inbox']), scope))
   }

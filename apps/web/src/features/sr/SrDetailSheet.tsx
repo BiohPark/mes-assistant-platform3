@@ -86,7 +86,7 @@ export function SrDetailSheet({ sr, onSaved }: { sr: SrDetail; onSaved: () => vo
       <p className="whitespace-pre-wrap break-words text-sm">{sr.body}</p>
       <div className="min-w-0 space-y-2"><h4 className="text-xs font-medium text-muted-foreground">{t('sr.attachments')}</h4><SrAttachments ids={sr.attachmentIds} compact /></div>
     </section>
-    {sr.conversations.length > 0 && <section className="min-w-0 space-y-1"><h3 className="font-medium">{t('sr.linkedTasks')}</h3>{sr.conversations.map((item) => <Link key={item.id} to={`/c/${item.id}`} className="block break-words text-sm text-primary underline">{item.code} {item.title} ({t(TASK_STATUS_KEY[item.status as TaskStatus])})</Link>)}</section>}
+    {sr.conversations.length > 0 && <section className="min-w-0 space-y-1"><h3 className="font-medium">{t('sr.linkedTasks')}</h3>{sr.conversations.map((item) => <p key={item.id} className="break-words text-sm"><Link to={`/c/${item.id}`} className="text-primary underline">{item.code} {item.title} ({t(TASK_STATUS_KEY[item.status as TaskStatus])})</Link>{item.ownerId && users.get(item.ownerId) && <span className="text-muted-foreground"> · {t('sr.linkedTaskOwner', { name: users.get(item.ownerId)!.name })}</span>}</p>)}</section>}
     <SharedResults results={sr.results} />
     <IntakeConversation key={sr.id} messages={sr.intakeMessages ?? messages} />
     <section className="space-y-1"><h3 className="font-medium">{t('srFlow.statusHistory')}</h3><SrStatusHistory key={sr.id} history={sr.statusHistory ?? []} compact /></section>

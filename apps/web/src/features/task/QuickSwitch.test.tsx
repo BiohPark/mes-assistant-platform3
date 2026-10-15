@@ -56,3 +56,33 @@ it('tells when there is nothing to switch to and keeps the trigger keyboard oper
   await userEvent.keyboard('{Escape}')
   await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
 })
+
+it('S14: Ctrl+K 검색어로 대화와 SR(번호·제목, 서버 열람 범위)을 찾고 SR은 처리 상세로 연다', async () => {
+  const srs = [
+    { id: 'sr-1', code: 'SR-2026-0001', title: '설비 알람 개선', status: 'submitted' },
+    { id: 'sr-2', code: 'SR-2026-0002', title: '리포트', status: 'in_progress' },
+  ]
+  const fetch = vi.fn(async (url: string) => new Response(JSON.stringify(url === '/api/tasks' ? [task('11'), task('12', { title: '알람 정리', ownerId: 'other' })] : url === '/api/service-requests?scope=inbox' ? srs : []), { status: 200 }))
+  vi.stubGlobal('fetch', fetch)
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><MemoryRouter initialEntries={['/c/11']}><Routes><Route path="*" element={<><QuickSwitch currentTaskId="11" /><ProbeSearch /></>} /></Routes></MemoryRouter></MeContext></QueryClientProvider>)
+  await userEvent.keyboard('{Control>}k{/Control}')
+  const search = await screen.findByRole('textbox', { name: '대화·SR 검색' })
+  await waitFor(() => expect(search).toHaveFocus())
+  expect(fetch).not.toHaveBeenCalledWith('/api/service-requests?scope=inbox', expect.anything()) // 검색 전에는 SR 목록을 부르지 않는다
+  await userEvent.type(search, '알람')
+  const items = await screen.findAllByRole('menuitem')
+  expect(items.map(item => item.textContent)).toEqual([expect.stringContaining('WK-2026-0012'), expect.stringContaining('SR-2026-0001')])
+  await userEvent.clear(search)
+  await userEvent.type(search, 'sr-2026-0002')
+  await userEvent.click(await screen.findByRole('menuitem', { name: /SR-2026-0002/ }))
+  await waitFor(() => expect(screen.getByLabelText('경로')).toHaveTextContent('/sr/manage?id=sr-2'))
+})
+
+it('S14: 검색 결과가 없으면 알린다', async () => {
+  renderSwitch([task('11')])
+  await userEvent.click(screen.getByRole('button', { name: /빠른 전환/ }))
+  await userEvent.type(await screen.findByRole('textbox', { name: '대화·SR 검색' }), 'zzz')
+  expect(await screen.findByText('찾는 대화·SR이 없습니다')).toBeInTheDocument()
+})
+
+function ProbeSearch() { const location = useLocation(); return <output aria-label="경로">{location.pathname + location.search}</output> }

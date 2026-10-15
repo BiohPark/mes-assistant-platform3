@@ -74,10 +74,16 @@ export class DbTasksService {
     const latestId = this.db.select({ id: latestRequest.id }).from(latestRequest).where(eq(latestRequest.threadId, thread.id))
       .orderBy(desc(latestRequest.createdAt), desc(latestRequest.id)).limit(1)
     const pickedRequestId = sql`coalesce((${activeId}), (${latestId}))`
+    // 연결 SR(S14): 시작한 SR(sr_id, PK) + 접수된 SR 번호 태그(코드 유니크) — 둘 다 1:1 조인이라 상세 쿼리에 붙여도 행·쿼리 수가 늘지 않는다.
+    // 태그 키는 소문자, SR 코드는 대문자 표기(binary 정렬) — 태그 쪽을 대문자로 바꿔 코드 인덱스로 찾는다.
+    const startedSr = alias(serviceRequest, 'started_sr')
+    const taggedSr = alias(serviceRequest, 'tagged_sr')
     const [details, materials, extras, aiRequests] = await Promise.all([
-      this.db.select({ taskId: task.id, label: tag.label, userId: taskAssignee.userId, taskThread: thread }).from(task)
+      this.db.select({ taskId: task.id, label: tag.label, userId: taskAssignee.userId, taskThread: thread, startedSrCode: startedSr.code, taggedSrCode: taggedSr.code }).from(task)
         .leftJoin(taskTag, eq(taskTag.taskId, task.id)).leftJoin(tag, eq(taskTag.tagKey, tag.key))
         .leftJoin(taskAssignee, eq(taskAssignee.taskId, task.id)).leftJoin(thread, eq(thread.taskId, task.id))
+        .leftJoin(startedSr, eq(startedSr.id, task.srId))
+        .leftJoin(taggedSr, and(sql`${taskTag.tagKey} like 'sr-%'`, eq(taggedSr.code, sql`upper(${taskTag.tagKey})`)))
         .where(inArray(task.id, ids)).orderBy(taskTag.addedAt),
       unionAll(
         this.db.select({ taskId: taskInput.taskId, fileId: taskInput.fileId, weight: taskInput.weight, sortOrder: taskInput.sortOrder, selectedBy: taskInput.selectedBy, selectedAt: taskInput.selectedAt, isOutput: sql<boolean>`false` }).from(taskInput).where(inArray(taskInput.taskId, ids)),
@@ -117,6 +123,7 @@ export class DbTasksService {
         status: row.status as TaskStatus, ownerId: row.ownerId,
         assigneeIds: [...new Set(taskDetails.filter((item) => item.userId !== null).map((item) => item.userId!))], priority: row.priority as Task['priority'],
         ...(row.dueDate && { dueDate: row.dueDate }), tags: [...new Set(taskDetails.filter((item) => item.label !== null).map((item) => item.label!))],
+        linkedSrCodes: [...new Set([taskDetails[0]?.startedSrCode, ...taskDetails.map((item) => item.taggedSrCode)].filter((code): code is string => !!code))],
         checklist: checks.map((item) => ({ id: item.id, label: item.label, required: item.required, checked: item.checked,
           ...(item.checkedBy && { checkedBy: item.checkedBy }), ...(item.checkedAt && { checkedAt: item.checkedAt.toISOString() }) })),
         ...(review && { checklistReview: { by: review.byUser, at: review.at.toISOString(), met: review.met, total: review.total,
@@ -134,6 +141,14 @@ export class DbTasksService {
           updatedAt: (aiRequest.finishedAt ?? aiRequest.createdAt).toISOString() } : null,
       }
     })
+  }
+
+  /** SR 번호 태그가 붙거나 떨어지면 그 SR 처리 화면(연결 업무·연결 수)을 갱신하도록 sr.updated를 보낸다. 접수되지 않은 번호는 건너뛴다. */
+  private async publishSrTagChange(labels: string[]) {
+    const codes = [...new Set(labels.map(normalizeTag).filter(isSrTag))]
+    if (!codes.length || !this.events) return
+    const rows = await this.db.select({ id: serviceRequest.id }).from(serviceRequest).where(inArray(serviceRequest.code, codes))
+    for (const row of rows) this.events.publish('sr.updated', { srId: row.id })
   }
 
   async get(taskId: string, actor?: string): Promise<Task & { thread?: Thread }> {
@@ -232,6 +247,7 @@ export class DbTasksService {
         Logger.warn(`업무 ${taskId} 알림 저장 실패: ${String(error)}`, DbTasksService.name)
       }
       this.events?.publish('task.created', { taskId, assistantId: selected.id })
+      await this.publishSrTagChange(tags)
       if (input.firstMessage?.trim()) {
         const [first] = await this.db.select({ id: message.id }).from(message).where(eq(message.threadId, threadId)).orderBy(message.seq).limit(1)
         if (first) this.events?.publish('message.appended', { threadId, taskId, messageId: first.id })
@@ -316,7 +332,7 @@ export class DbTasksService {
     if (!label) throw new BadRequestException('태그가 필요합니다')
     checkTagLength(label)
     const key = tagKey(label)
-    await this.db.transaction(async (tx) => {
+    const added = await this.db.transaction(async (tx) => {
       await this.ensureEditable(tx, taskId)
       await tx.insert(tag).values({ key, label, kind: isSrTag(label) ? 'sr' : 'keyword' }).onDuplicateKeyUpdate({ set: { key } })
       const [existing] = await tx.select({ taskId: taskTag.taskId }).from(taskTag).where(and(eq(taskTag.taskId, taskId), eq(taskTag.tagKey, key)))
@@ -325,21 +341,25 @@ export class DbTasksService {
         await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, taskId))
         await tx.insert(activityLog).values({ id: id(), type: 'tag.added', userId: actor, taskId, payload: { tag: label } })
       }
+      return !existing
     })
     this.events?.publish('task.updated', { taskId })
+    if (added) await this.publishSrTagChange([label])
   }
 
   async removeTag(actor: string, taskId: string, raw: string): Promise<void> {
     await assertTaskAccess(this.db, actor, taskId)
-    await this.db.transaction(async (tx) => {
+    const removed = await this.db.transaction(async (tx) => {
       await this.ensureEditable(tx, taskId)
       const removed = await tx.delete(taskTag).where(and(eq(taskTag.taskId, taskId), eq(taskTag.tagKey, tagKey(raw))))
       if (removed[0].affectedRows) {
         await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, taskId))
         await tx.insert(activityLog).values({ id: id(), type: 'tag.removed', userId: actor, taskId, payload: { tag: normalizeTag(raw) } })
       }
+      return removed[0].affectedRows > 0
     })
     this.events?.publish('task.updated', { taskId })
+    if (removed) await this.publishSrTagChange([raw])
   }
 
   /**

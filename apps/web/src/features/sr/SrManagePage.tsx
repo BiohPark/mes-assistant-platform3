@@ -1,4 +1,4 @@
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Inbox, SearchX } from 'lucide-react'
@@ -26,7 +26,10 @@ export function SrManagePage() {
   const { formatDate } = useDates()
   const client = useQueryClient()
   const list = useQuery({ queryKey: ['sr', 'inbox'], queryFn: () => listSr('inbox') })
-  const [selectedId, setSelectedId] = useState('')
+  // 선택한 SR은 주소(?id=)에 둔다 — 알림·SR 번호 원클릭이 같은 주소로 상세를 연다(S14)
+  const [params, setParams] = useSearchParams()
+  const selectedId = params.get('id') ?? ''
+  const setSelectedId = (id: string) => setParams(id ? { id } : {}, { replace: true })
   const [search, setSearch] = useState('')
   const [queue, setQueue] = useState<'' | 'unstarted' | 'mine'>('')
   const [status, setStatus] = useState<SrStage | ''>('')
