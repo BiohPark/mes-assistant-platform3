@@ -1,7 +1,9 @@
-import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Patch, Post, Query, Req } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, HttpException, Inject, Param, Patch, Post, Query, Req, Res } from '@nestjs/common'
+import type { Response } from 'express'
 import { z } from 'zod'
 import { SR_MANUAL_STATUSES } from '@mes/domain'
 import type { AuthedRequest } from '../auth/guards.js'
+import type { SrAiStreamOptions } from '../requests/requests.service.js'
 import { SrService } from './sr.service.js'
 
 const submitSchema = z.object({ title: z.string(), titleSource: z.enum(['ai', 'manual']).optional(), body: z.string(), attachmentIds: z.array(z.string()).optional(), updatedAt: z.iso.datetime().optional() }).strict()
@@ -44,8 +46,46 @@ export class SrController {
   content(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) { return this.sr.content(req.user!.id, id, parse(contentSchema, body)) }
   @Patch(':id/status')
   status(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) { const input = parse(statusSchema, body); return this.sr.status(req.user!.id, id, input.status, input.reason) }
+  /** AI 자동작성 제안 — Accept: text/event-stream이면 started·delta·completed/failed로 진행을 보낸다(달성도 점검과 같은 패턴). */
+  @Post(':id/compose')
+  compose(@Req() req: AuthedRequest, @Param('id') id: string, @Headers('accept') accept: string | undefined, @Res() res: Response) {
+    return this.proposal(accept, res, (options) => this.sr.compose(req.user!.id, id, options), 'AI 자동작성에 실패했습니다')
+  }
   @Post(':id/refine')
-  refine(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) { return this.sr.refine(req.user!.id, id, parse(refineSchema, body)) }
+  refine(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown, @Headers('accept') accept: string | undefined, @Res() res: Response) {
+    const input = parse(refineSchema, body)
+    return this.proposal(accept, res, (options) => this.sr.refine(req.user!.id, id, input, options), 'AI 다듬기에 실패했습니다')
+  }
+  /** 제안 공통 응답 — JSON(201) 또는 SSE. 슬롯·권한 오류는 헤더 전송 전에 그대로 던져 JSON 오류로 나간다. */
+  private async proposal(accept: string | undefined, res: Response, run: (options: SrAiStreamOptions) => Promise<unknown>, failure: string) {
+    if (!accept?.includes('text/event-stream')) {
+      res.status(201).json(await run({}))
+      return
+    }
+    const controller = new AbortController()
+    const close = () => { if (!res.writableEnded) controller.abort() }
+    res.on('close', close)
+    const emit = (event: string, data: unknown) => {
+      if (!res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+    }
+    try {
+      const result = await run({
+        signal: controller.signal,
+        onStart: () => {
+          res.status(201).set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
+          res.flushHeaders()
+          emit('started', {})
+        },
+        onDelta: (text) => emit('delta', { text }),
+      })
+      emit('completed', result)
+      res.end()
+    } catch (error) {
+      if (!res.headersSent && !res.destroyed) throw error
+      emit('failed', { error: error instanceof HttpException ? error.message : failure })
+      res.end()
+    } finally { res.off('close', close) }
+  }
   @Delete(':id')
   @HttpCode(204)
   delete(@Req() req: AuthedRequest, @Param('id') id: string) { return this.sr.delete(req.user!.id, id) }

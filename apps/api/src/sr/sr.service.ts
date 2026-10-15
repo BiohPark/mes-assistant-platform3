@@ -8,7 +8,7 @@ import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileO
 import { DbTasksService } from '../tasks/tasks.service.js'
 import { EventsService } from '../events/events.service.js'
 import { NotificationsService } from '../notifications/notifications.service.js'
-import { RequestsService } from '../requests/requests.service.js'
+import { RequestsService, type SrAiStreamOptions } from '../requests/requests.service.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { assertSrAccess } from './access.js'
@@ -275,15 +275,29 @@ export class SrService {
     }
     return changed
   }
-  /** 현재 제목·본문을 다듬은 제안만 돌려준다. 저장하지 않으며 적용·제출은 사람이 한다. */
-  async refine(actor: string, srId: string, input: { title: string; body: string }) {
+  /** AI 자동작성·다듬기 공통 — 요청자 또는 SO만, 접수 대화가 있어야 한다. 제안만 돌려주고 저장하지 않는다. */
+  private async aiThread(actor: string, srId: string) {
     const row = await this.view(actor, srId), user = await this.user(actor)
-    if (row.requesterId !== actor && !user.isSystemOwner) throw new ForbiddenException('요청자 또는 SO만 다듬을 수 있습니다')
-    if (!input.title.trim() && !input.body.trim()) throw new BadRequestException('다듬을 제목이나 본문을 입력하세요')
-    if (!this.requests) throw new ServiceUnavailableException('AI 다듬기를 사용할 수 없습니다')
+    if (row.requesterId !== actor && !user.isSystemOwner) throw new ForbiddenException('요청자 또는 SO만 AI 제안을 받을 수 있습니다')
+    if (!this.requests) throw new ServiceUnavailableException('AI 제안을 사용할 수 없습니다')
     const [owner] = await this.db.select({ id: thread.id }).from(thread).where(eq(thread.srId, srId))
     if (!owner) throw new NotFoundException('접수 대화를 찾을 수 없습니다')
-    return this.requests.refineSrDraft(actor, owner.id, { title: input.title, body: input.body })
+    return { owner, requests: this.requests }
+  }
+  /** 접수 대화 전체로 제목·본문 초안을 제안만 한다. 저장하지 않으며 적용·제출은 사람이 한다. */
+  async compose(actor: string, srId: string, options: SrAiStreamOptions = {}) {
+    const { owner, requests } = await this.aiThread(actor, srId)
+    // 접수 본문 메시지(discussion)만 있는 대화는 자동작성 근거가 없다
+    const [spoken] = await this.db.select({ id: message.id }).from(message)
+      .where(and(eq(message.threadId, owner.id), eq(message.role, 'user'), eq(message.status, 'done'), isNull(message.kind))).limit(1)
+    if (!spoken) throw new BadRequestException('접수 대화가 없어 자동작성할 수 없습니다')
+    return requests.composeSrDraft(actor, owner.id, options)
+  }
+  /** 현재 제목·본문을 다듬은 제안만 돌려준다. 저장하지 않으며 적용·제출은 사람이 한다. */
+  async refine(actor: string, srId: string, input: { title: string; body: string }, options: SrAiStreamOptions = {}) {
+    const { owner, requests } = await this.aiThread(actor, srId)
+    if (!input.title.trim() && !input.body.trim()) throw new BadRequestException('다듬을 제목이나 본문을 입력하세요')
+    return requests.refineSrDraft(actor, owner.id, { title: input.title, body: input.body }, options)
   }
   async delete(actor: string, srId: string) {
     const row = await this.view(actor, srId)

@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createPool } from '../db/connection.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
-import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileObject, notification, serviceRequest, sharedResult, task, taskAssignee } from '../db/schema.js'
+import { activityLog, appSetting, appUser, assistant, chatRequest, dbLock, fileObject, message, notification, serviceRequest, sharedResult, task, taskAssignee } from '../db/schema.js'
 import { loadConfig } from '../config/config.js'
 import { RequestsService } from '../requests/requests.service.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -341,8 +341,45 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     const requests = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' }), provider)
     const withRequests = new SrService(db, new DbTasksService(db), new EventsService(), undefined, requests)
     await expect(withRequests.refine('other', draft.id, { title: '  알람   필터 ', body: '본문\n\n\n\n끝  ' })).rejects.toMatchObject({ status: 403 })
-    expect(await withRequests.refine('requester', draft.id, { title: '  알람   필터 ', body: '본문\n\n\n\n끝  ' })).toEqual({ title: '알람 필터', body: '본문\n\n끝' })
+    expect(await withRequests.refine('requester', draft.id, { title: '  알람   필터 ', body: '본문\n\n\n\n끝  ' })).toEqual({ title: '알람 필터', body: '본문\n\n끝', suggestions: [], source: 'rule' })
     await expect(withRequests.refine('requester', draft.id, { title: '', body: '' })).rejects.toMatchObject({ status: 400 })
+    expect((await sr.get('requester', draft.id)).title).toBe('')
+  })
+
+  it('composes a draft proposal from the whole intake conversation without saving, streaming progress to the caller', async () => {
+    const draft = await sr.create('requester')
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' })
+    const mock = { kind: 'mock' as const, ping: async () => ({ ok: true, detail: '' }), listModels: async () => ['glm-5.2'], async *stream() { yield { type: 'done' as const } } }
+    const ruled = new SrService(db, new DbTasksService(db), new EventsService(), undefined, new RequestsService(db, config, mock))
+    // 접수 본문 메시지(discussion)만 있는 대화는 근거가 없어 400
+    await expect(ruled.compose('requester', draft.id)).rejects.toMatchObject({ status: 400 })
+    await db.insert(message).values({ id: 'compose-user', threadId: draft.threadId, seq: 1, role: 'user', content: '알람 필터 요청\n라인 2 알람이 너무 많아요', status: 'done' })
+    await db.insert(message).values({ id: 'compose-ai', threadId: draft.threadId, seq: 2, role: 'assistant', content: '어떤 알람을 줄일까요?', status: 'done' })
+    await expect(ruled.compose('other', draft.id)).rejects.toMatchObject({ status: 403 })
+    expect(await ruled.compose('requester', draft.id)).toMatchObject({ title: '알람 필터 요청', suggestions: [], source: 'rule' })
+    expect(await ruled.compose('owner', draft.id)).toMatchObject({ source: 'rule' })
+    const seen: string[] = []
+    const live = { kind: 'live' as const, ping: async () => ({ ok: true, detail: '' }), listModels: async () => [],
+      async *stream(request: { messages: Array<{ role: string; content: string }> }) {
+        seen.push(request.messages.find((item) => item.role === 'user')!.content)
+        yield { type: 'delta' as const, text: '제목: 라인 2 알람 필터\n' }; yield { type: 'delta' as const, text: '## 요청\n온도 경보만 남김' }; yield { type: 'done' as const }
+      } }
+    const ai = new SrService(db, new DbTasksService(db), new EventsService(), undefined, new RequestsService(db, config, live))
+    const started = vi.fn(), deltas: string[] = []
+    expect(await ai.compose('requester', draft.id, { onStart: started, onDelta: (text) => deltas.push(text) })).toMatchObject({ title: '라인 2 알람 필터', body: '## 요청\n온도 경보만 남김', source: 'ai' })
+    expect(started).toHaveBeenCalledOnce()
+    expect(deltas.join('')).toBe('제목: 라인 2 알람 필터\n## 요청\n온도 경보만 남김')
+    expect(seen[0]).toContain('사용자: 알람 필터 요청')
+    expect(seen[0]).toContain('AI: 어떤 알람을 줄일까요?')
+    expect(await ai.refine('requester', draft.id, { title: '제목', body: '본문' })).toMatchObject({ title: '라인 2 알람 필터', source: 'ai', suggestions: [] })
+    expect(seen[1]).toContain('[현재 초안]\n제목: 제목\n본문')
+    // 한도 초과는 자르지 않고 413
+    await db.insert(appSetting).values({ key: 'requestBudgetBytes', value: 64 }).onDuplicateKeyUpdate({ set: { value: 64 } })
+    try {
+      await expect(ai.compose('requester', draft.id)).rejects.toMatchObject({ status: 413 })
+      await expect(ai.refine('requester', draft.id, { title: '제목', body: '본문' })).rejects.toMatchObject({ status: 413 })
+    } finally { await db.delete(appSetting).where(eq(appSetting.key, 'requestBudgetBytes')) }
+    expect(seen).toHaveLength(2)
     expect((await sr.get('requester', draft.id)).title).toBe('')
   })
 
@@ -585,6 +622,10 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
       await get('requester', '/api/files/http-own-attachment/versions').expect(403)
       await request(app.getHttpServer()).patch('/api/files/http-own-attachment').set('Cookie', 'mes_session=requester').send({ isOutput: true }).expect(403)
       await get('staff', '/api/files/http-internal-output').expect(200)
+      // S13: BO 요청자도 세션 가드를 지나 AI 다듬기·자동작성 경로에 닿는다(mock → 규칙 결과, 발화 없는 자동작성은 400). 남의 SR은 그대로 403.
+      await request(app.getHttpServer()).post(`/api/service-requests/${draft.id}/refine`).set('Cookie', 'mes_session=requester').send({ title: ' 메타 ', body: '' }).expect(201, { title: '메타', body: '', suggestions: [], source: 'rule' })
+      await request(app.getHttpServer()).post(`/api/service-requests/${draft.id}/compose`).set('Cookie', 'mes_session=requester').expect(400)
+      await request(app.getHttpServer()).post(`/api/service-requests/${foreign.id}/refine`).set('Cookie', 'mes_session=requester').send({ title: 't', body: '' }).expect(403)
     } finally {
       await app.close()
     }

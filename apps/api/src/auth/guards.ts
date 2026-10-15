@@ -16,7 +16,7 @@ function allowedBusinessOwnerRoute(method: string, path: string): boolean {
   if (path === '/api/service-requests') return method === 'GET' || method === 'POST'
   if (/^\/api\/service-requests\/[^/]+$/.test(path)) return method === 'GET' || method === 'DELETE'
   if (/^\/api\/service-requests\/[^/]+\/draft$/.test(path)) return method === 'GET'
-  if (/^\/api\/service-requests\/[^/]+\/(?:submit|files)$/.test(path)) return method === 'POST'
+  if (/^\/api\/service-requests\/[^/]+\/(?:submit|files|compose|refine)$/.test(path)) return method === 'POST'
   if (/^\/api\/service-requests\/[^/]+\/(?:title|content)$/.test(path)) return method === 'PATCH'
   if (/^\/api\/service-requests\/[^/]+\/results$/.test(path)) return method === 'GET'
   if (/^\/api\/threads\/[^/]+\/messages$/.test(path)) return method === 'GET' || method === 'POST'

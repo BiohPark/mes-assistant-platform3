@@ -200,6 +200,18 @@ test('chat brief calls get a deterministic two-line card and stay out of the E2E
   assert.deepEqual(await (await fetch(`${base}/__e2e/requests`)).json(), [])
 }))
 
+test('SR compose and refine calls get deterministic title/body (refine adds a recommendation list) and stay out of the E2E capture', async () => withServer(true, async base => {
+  const cases = [
+    ['다음은 서비스 요청(SR) 접수 대화 기록이다. 이 기록만 근거로 SR 제목과 본문 초안을 한국어로 작성하라.', '제목: 가짜 OpenWebUI 자동작성 제목\n## 요청 내용\n가짜 OpenWebUI가 접수 대화로 쓴 본문'],
+    ['다음 서비스 요청의 제목과 본문을 뜻을 바꾸지 않고 더 명확하고 간결하게 다듬어라.', '제목: 가짜 OpenWebUI 다듬은 제목\n가짜 OpenWebUI가 다듬은 본문\n추천:\n- 가짜 OpenWebUI 추천 항목'],
+  ]
+  for (const [prompt, expected] of cases) for (const stream of [true, false]) {
+    const response = await chat(base, { stream, messages: [{ role: 'system', content: prompt }, { role: 'user', content: '사용자: 알람 필터 요청' }] })
+    assert.equal(stream ? answer(await response.text()) : (await response.json()).choices[0].message.content, expected)
+  }
+  assert.deepEqual(await (await fetch(`${base}/__e2e/requests`)).json(), [])
+}))
+
 // 세션 모드(S12, OpenWebUI v0.12): session_id·id·parent_id:null → chat_id만 즉시, 결과는 채팅 GET으로
 const session = (base, content, body = {}) => chat(base, { session_id: 'mes-test', id: 'msg-1', parent_id: null, messages: [{ role: 'user', content }], ...body })
 async function pollUntilDone(base, chatId, timeoutMs = 10_000) {

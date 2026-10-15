@@ -4,6 +4,7 @@ import { createPool } from '../../apps/api/src/db/connection.js'
 import { FileStorageService } from '../../apps/api/src/files/fileStorage.service.js'
 
 const password = 'e2e-password-1234'
+const live = (process.env.E2E_LLM_MODE ?? process.env.LLM_MODE) === 'live'
 
 test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유', async ({ page, browser }) => {
   const loginId = `sr-${Date.now().toString(36)}`
@@ -74,6 +75,12 @@ test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유',
     expect(sentMessages[0]!.attachmentIds).toHaveLength(1)
     const fileId = sentMessages[0]!.attachmentIds[0]!
     expect((await page.request.get(`/api/files/${fileId}`)).ok()).toBe(true)
+    // S13: 자동작성·다듬기는 요청 경로로 저장된 실제 사용자 발화만 근거로 삼는다(위 route 대체 메시지는 discussion이라 제외) — 실제 요청을 한 번 보내 둔다.
+    // page.request는 page.route의 영향을 받지 않으므로 서버가 그대로 처리한다(mock은 시나리오 답, live는 가짜 OpenWebUI).
+    const utterance = await page.request.post(`/api/threads/${row.threadId}/requests`, { headers: { 'Idempotency-Key': `sr-e2e-utterance-${Date.now().toString(36)}` }, data: { content: '온도 경보만 남기고 싶습니다' } })
+    expect(utterance.ok()).toBe(true)
+    await expect.poll(async () => ((await (await page.request.get(`/api/threads/${row.threadId}/messages`)).json()) as Array<{ role: string; status: string }>)
+      .some((item) => item.role === 'assistant' && item.status === 'done'), { timeout: 30_000 }).toBe(true)
     // 두 번째 파일은 화면을 다시 불러오기 전에 올려 Sheet 후보에 포함되게 한다
     const extraUpload = await page.request.post(`/api/service-requests/${srId}/files`, { multipart: { file: { name: 'sr-e2e-extra.txt', mimeType: 'text/plain', buffer: Buffer.from('해제할 파일') } } })
     expect(extraUpload.ok()).toBe(true)
@@ -85,6 +92,22 @@ test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유',
     // U9: 전환은 오른쪽 Sheet — AI 초안 로딩 후 제목이 채워지고, 첨부는 이 SR의 파일 전체가 후보로 나열되며(기본 전부 선택) 해제한 파일은 접수에서 빠진다.
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByLabel('SR 제목')).not.toBeEmpty()
+    // S13: AI 자동작성은 제안만 — 적용 전에는 제목·본문이 그대로이고, 적용은 사람이 누른다(mock은 규칙 초안, live는 가짜 OpenWebUI 고정 응답).
+    const titleBefore = await dialog.getByLabel('SR 제목').inputValue()
+    await dialog.getByRole('button', { name: 'AI 자동작성' }).click()
+    const proposal = dialog.getByRole('region', { name: 'AI 제안 (적용 전)' })
+    await expect(proposal).toBeVisible({ timeout: 30_000 })
+    await expect(dialog.getByLabel('SR 제목')).toHaveValue(titleBefore)
+    if (live) {
+      await expect(proposal).toContainText('가짜 OpenWebUI 자동작성 제목')
+      await proposal.getByRole('button', { name: '제안 적용' }).click()
+      await expect(dialog.getByLabel('SR 제목')).toHaveValue('가짜 OpenWebUI 자동작성 제목')
+    } else {
+      await expect(proposal.getByRole('alert')).toContainText('규칙으로만 정리')
+      await proposal.getByRole('button', { name: '제안 닫기' }).click()
+      await expect(dialog.getByLabel('SR 제목')).toHaveValue(titleBefore)
+    }
+    await expect(proposal).toBeHidden()
     const attachmentCheck = dialog.getByRole('checkbox', { name: 'sr-e2e.txt' })
     const extraCheck = dialog.getByRole('checkbox', { name: 'sr-e2e-extra.txt' })
     await expect(attachmentCheck).toBeChecked()
@@ -108,7 +131,8 @@ test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유',
     await owner.getByRole('button', { name: new RegExp(srCode) }).click()
     const sheet = owner.getByRole('dialog')
     await expect(sheet.getByRole('region', { name: '접수 대화' })).toContainText('알람 필터 요청')
-    await expect(sheet.getByText('sr-e2e.txt v1')).toBeVisible()
+    // exact: 접수 대화의 AI 답(mock)이 사용한 자료로 같은 파일명을 언급해도 첨부 행만 가리킨다
+    await expect(sheet.getByText('sr-e2e.txt v1', { exact: true })).toBeVisible()
     const picker = sheet.getByRole('combobox', { name: '연결 업무 에이전트' })
     await picker.fill(intakeAssistant.name)
     await owner.getByRole('option', { name: intakeAssistant.name, exact: true }).click() // 추천 목록은 포털로 시트 밖에 렌더링된다

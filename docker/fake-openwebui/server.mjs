@@ -47,11 +47,17 @@ const isFirstQuestions = (payload) => (payload.messages ?? []).some((m) => m.rol
 // 대화 요약 카드(보조 호출) — 같은 방식으로 알아보고 결정적인 두 줄(주제·다음)을 돌려준다
 const CHAT_BRIEF = '주제: 가짜 OpenWebUI 대화 요약\n다음: 가짜 OpenWebUI가 제안하는 다음 할 일'
 const isChatBrief = (payload) => (payload.messages ?? []).some((m) => m.role === 'system' && typeof m.content === 'string' && m.content.includes('요약 카드'))
+// SR AI 자동작성·다듬기(보조 호출) — 제목 한 줄 + 본문, 다듬기는 추천 목록까지 결정적으로 돌려준다
+const SR_COMPOSE = '제목: 가짜 OpenWebUI 자동작성 제목\n## 요청 내용\n가짜 OpenWebUI가 접수 대화로 쓴 본문'
+const SR_REFINE = '제목: 가짜 OpenWebUI 다듬은 제목\n가짜 OpenWebUI가 다듬은 본문\n추천:\n- 가짜 OpenWebUI 추천 항목'
+const isSrCompose = (payload) => (payload.messages ?? []).some((m) => m.role === 'system' && typeof m.content === 'string' && m.content.includes('SR 제목과 본문 초안'))
+const isSrRefine = (payload) => (payload.messages ?? []).some((m) => m.role === 'system' && typeof m.content === 'string' && m.content.includes('뜻을 바꾸지 않고'))
+const isAuxiliary = (payload) => isFirstQuestions(payload) || isChatBrief(payload) || isSrCompose(payload) || isSrRefine(payload)
 
 /** 기본·legacy 모두 같은 생각·본문·첨부 시나리오를 사용한다. legacy는 sources만 앞에 더한다. */
 async function completeChat(payload, res) {
   const userText = lastUserText(payload.messages)
-  const text = isFirstQuestions(payload) ? FIRST_QUESTIONS : isChatBrief(payload) ? CHAT_BRIEF : answerText(payload, userText)
+  const text = isFirstQuestions(payload) ? FIRST_QUESTIONS : isChatBrief(payload) ? CHAT_BRIEF : isSrCompose(payload) ? SR_COMPOSE : isSrRefine(payload) ? SR_REFINE : answerText(payload, userText)
   const id = `chatcmpl-${randomUUID()}`
   if (!payload.stream) {
     return json(res, 200, { id, object: 'chat.completion', model: payload.model, choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }] })
@@ -189,8 +195,8 @@ const server = createServer(async (req, res) => {
   }
   if (req.method === 'POST' && url.pathname === '/api/chat/completions') {
     const payload = JSON.parse((await readBody(req)).toString('utf8') || '{}')
-    // 추천 첫 질문·요약 카드는 백그라운드 호출이라 순서를 기대하는 E2E 기록에 넣지 않는다
-    if (captureRequests && !isFirstQuestions(payload) && !isChatBrief(payload)) {
+    // 추천 첫 질문·요약 카드·SR 자동작성·다듬기는 보조 호출이라 순서를 기대하는 E2E 기록에 넣지 않는다
+    if (captureRequests && !isAuxiliary(payload)) {
       requests.push(payload)
       if (requests.length > 200) requests.shift()
     }
