@@ -49,7 +49,7 @@ test('칸반 보드 섹션: 허브 섹션 다음에 필터·AI 상태 칩·열·
   await expect(dialog.getByText(/검색·단계·상태·내 것·태그로 대화를 걸러 봅니다/)).toBeVisible()
   await page.keyboard.press('Enter')
   await expect(dialog.getByText(/AI 상태 칩입니다/)).toBeVisible()
-  await expectSpotlightAround(page, page.getByRole('group', { name: 'AI 상태 필터' }))
+  await expectSpotlightAround(page, page.getByRole('toolbar', { name: 'AI 상태 필터' }))
   await page.keyboard.press('Enter')
   await expect(dialog.getByText(/에이전트별 대화 열입니다/)).toBeVisible()
   await page.keyboard.press('Enter')

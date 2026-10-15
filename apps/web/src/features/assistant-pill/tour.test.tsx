@@ -38,6 +38,16 @@ it('conversation sections cover basics, materials, discussion, tags, brief and s
   expect(TOUR_SECTIONS.hub.find(section => section.id === 'kanban')?.steps.map(step => step.target)).toEqual(['kanban-filters', 'kanban-ai-filter', 'kanban-columns', 'kanban-card'])
 })
 
+it('a step that opens the materials panel counts as available while the panel tab exists, and is dropped with it', () => {
+  target('composer'); target('pill')
+  const tabs = target('task-tabs')
+  begin('conversation') // 다른 대화 대상(요약 카드 등)이 없어 대기 뒤 확정
+  expect(stepIds()).toEqual(['composer', 'task-tabs', 'materials-library', 'materials-staged', 'pill']) // 자료 패널은 아직 안 열렸지만 탭이 있다
+  state().close(); tabs.remove()
+  begin('conversation')
+  expect(stepIds()).toEqual(['composer', 'pill'])
+})
+
 it('picks the first shown target — hidden duplicates (display:none, e.g. the other breakpoint tablist) are ignored', () => {
   const hidden = target('task-tabs', 'none')
   const shown = target('task-tabs')
@@ -93,10 +103,10 @@ it('waits for late conversation targets without exposing a pill-only tour, then 
   expect(state().sections).toEqual([])
   vi.advanceTimersByTime(1)
   expect(sectionIds()).toEqual(['basics', 'materials', 'assistant'])
-  expect(stepIds()).toEqual(['composer', 'task-tabs', 'pill'])
+  expect(stepIds()).toEqual(['composer', 'task-tabs', 'materials-library', 'materials-staged', 'pill']) // 자료 패널 단계는 탭이 있으면 센다(보일 때 탭을 연다)
   target('related')
   vi.advanceTimersByTime(100)
-  expect(stepIds()).toHaveLength(3) // 확정 후 total은 그대로
+  expect(stepIds()).toHaveLength(5) // 확정 후 total은 그대로
 })
 
 it('starts on the next frame when all late targets appear, without waiting for the deadline', () => {

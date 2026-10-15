@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { useT } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { useMediaQuery } from '@/app/useMediaQuery'
-import { pageRoute } from './pageActions'
+import { focusPageTarget, pageRoute } from './pageActions'
 import { tourTarget, useTourStore } from './tour'
 import { saveGuideOffer, TUTORIAL_REPLAY } from './tutorial'
 
@@ -71,17 +71,27 @@ export function GuideTour({ userId, pillRef }: { userId: string; pillRef: RefObj
 
   useLayoutEffect(() => {
     if (!step) { setRect(null); return }
-    const target = tourTarget(step.target)
-    target?.scrollIntoView({ block: wide ? 'center' : 'start', behavior: reduced ? 'auto' : 'smooth' })
-    setRect(target?.getBoundingClientRect() ?? null)
+    const show = (target: HTMLElement | undefined) => {
+      target?.scrollIntoView({ block: wide ? 'center' : 'start', behavior: reduced ? 'auto' : 'smooth' })
+      setRect(target?.getBoundingClientRect() ?? null)
+    }
     let frame = 0
+    let opening = 0
+    const target = tourTarget(step.target)
+    if (!target && step.opens) {
+      // 자료 탭을 열어야 생기는 대상 — 탭 클릭의 렌더는 이 효과 뒤에 커밋되므로 프레임마다 확인한다(최대 약 1.5초)
+      focusPageTarget(step.opens, t)
+      let frames = 90
+      const wait = () => { const opened = tourTarget(step.target); if (opened || --frames <= 0) show(opened); else opening = requestAnimationFrame(wait) }
+      wait()
+    } else show(target)
     const measure = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => setRect(tourTarget(step.target)?.getBoundingClientRect() ?? null)) }
     window.addEventListener('resize', measure)
     document.addEventListener('scroll', measure, true) // 스크롤 컨테이너·부드러운 스크롤 중에도 따라간다
     setHeight(cardRef.current?.offsetHeight || CARD_FALLBACK_HEIGHT)
     cardRef.current?.focus({ preventScroll: true })
-    return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', measure); document.removeEventListener('scroll', measure, true) }
-  }, [step, wide, reduced])
+    return () => { cancelAnimationFrame(frame); cancelAnimationFrame(opening); window.removeEventListener('resize', measure); document.removeEventListener('scroll', measure, true) }
+  }, [step, wide, reduced, t])
   useLayoutEffect(() => { if (step) setHeight(cardRef.current?.offsetHeight || CARD_FALLBACK_HEIGHT) }, [step, listOpen])
 
   if (!step || !section) return null

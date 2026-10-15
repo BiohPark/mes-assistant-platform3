@@ -128,6 +128,28 @@ it('section list: shows every section with the current one marked, skips the cur
   expect(pill).toHaveFocus()
 })
 
+it('opens the materials tab when a materials step comes up, then spotlights the panel target', () => {
+  const tabs = target('task-tabs')
+  tabs.setAttribute('role', 'tablist')
+  const tab = document.createElement('button')
+  tab.setAttribute('role', 'tab'); tab.textContent = '자료'
+  // 탭을 누르면 패널이 렌더된다 — React처럼 클릭한 그 순간이 아니라 뒤이은 커밋에서
+  tab.addEventListener('click', () => { requestAnimationFrame(() => { target('materials-library', box(700, 100, 300, 400)) }) })
+  tabs.append(tab)
+  target('composer')
+  renderWithProviders(<GuideTour userId="materials-user" pillRef={{ current: pill }} />)
+  act(() => { useTourStore.getState().start('conversation', 'materials-user'); vi.advanceTimersByTime(1500) }) // 앞 테스트가 'u'의 진행을 남겨도 영향받지 않게
+  expect(screen.getByText('1/5')).toBeInTheDocument() // composer · task-tabs · materials-library · materials-staged · pill
+  fireEvent.keyDown(dialog(), { key: 'Enter' })
+  fireEvent.keyDown(dialog(), { key: 'Enter' })
+  expect(within(dialog()).getByRole('heading', { name: '자료함' })).toBeInTheDocument()
+  expect(document.querySelector('[data-tour="materials-library"]')).toBeNull()
+  act(() => { vi.advanceTimersByTime(32) })
+  expect(document.querySelector('[data-tour="materials-library"]')).not.toBeNull()
+  expect(spotlight()).toHaveStyle({ left: '696px', top: '96px', width: '308px', height: '408px' })
+  expect(dialog()).toHaveFocus()
+})
+
 it('resumes at the first section not done yet; the replay event starts the tour for the current page and records acceptance', () => {
   target('composer'); target('discussion')
   markSectionDone('u', 'conversation', 'basics')
