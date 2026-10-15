@@ -17,7 +17,7 @@ export function useSrFiles(ids: string[]) {
   return useSrFileQueries(ids).flatMap(query => query.data ? [query.data] : [])
 }
 
-export function SrAttachments({ ids, compact = false }: { ids: string[]; compact?: boolean }) {
+export function SrAttachments({ ids, compact = false, renderActions }: { ids: string[]; compact?: boolean; renderActions?: (file: FileMeta) => React.ReactNode }) {
   const me = useMe()
   const t = useT()
   const queries = useSrFileQueries(ids)
@@ -26,6 +26,6 @@ export function SrAttachments({ ids, compact = false }: { ids: string[]; compact
   const requesterOnly = me.roles.includes('requester') && !me.roles.includes('system_owner')
   return <div className={compact ? 'min-w-0 [&_ul]:flex [&_ul]:flex-wrap [&_ul]:gap-2 [&_ul]:space-y-0 [&_li]:max-w-full [&_li]:rounded-full' : undefined}>
     {failed > 0 && <p className="text-xs text-destructive">{t('sr.attachmentsUnavailable', { count: failed })}</p>}
-    <FileList files={queries.flatMap(query => query.data ? [query.data] : [])} canDelete={false} canViewHistory={!requesterOnly} />
+    <FileList files={queries.flatMap(query => query.data ? [query.data] : [])} canDelete={false} canViewHistory={!requesterOnly} renderActions={renderActions} />
   </div>
 }

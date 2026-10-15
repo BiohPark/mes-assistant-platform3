@@ -53,7 +53,8 @@ test('E3a 직접 공유 후보와 전체 원문은 팀 의견을 제외한다', 
   await openMaterials(page, consumer.id)
   await expect(page.getByTestId(`conversation-${source.id}`)).toBeVisible()
   await expect(page.getByTestId(`conversation-${unrelated.id}`)).toHaveCount(0)
-  await page.getByTestId(`conversation-${source.id}`).getByLabel(`${source.code} 참고 입력으로 선택`).click() // 선택은 서버 저장 뒤에 반영된다 — check()의 즉시 상태 검사와 맞지 않는다
+  await page.getByTestId('conversation-candidates').getByRole('button', { name: `${source.code} 담기` }).click()
+  await page.getByRole('button', { name: '적용', exact: true }).click()
   await expect.poll(async () => (await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json() as unknown[]).length).toBe(1)
   const selected = await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json() as Array<{ snapshot: { messageIds: string[] } }>
   expect(selected[0]!.snapshot.messageIds).toHaveLength(2)
@@ -69,7 +70,7 @@ test('E3b 메시지 선택은 고른 범위만 스냅샷에 고정한다', async
   const { source, consumer } = await setup(page, 'messages')
   await request(page, source.threadId, '원본 질문 E3b')
   await openMaterials(page, consumer.id)
-  await page.getByTestId(`conversation-${source.id}`).getByRole('button', { name: `${source.code} 세부 조절` }).click()
+  await page.getByTestId('conversation-candidates').getByRole('button', { name: `${source.code} 담기` }).click()
   await page.getByRole('tab', { name: '메시지 선택' }).click()
   await page.getByRole('button', { name: '해제' }).click()
   await page.getByLabel('1번째 메시지 선택').click()
@@ -88,7 +89,7 @@ test('E3c 요약 초안을 명시적으로 만들고 수정본을 적용한다',
   const { source, consumer } = await setup(page, 'summary')
   await request(page, source.threadId, '원본 질문 E3c')
   await openMaterials(page, consumer.id)
-  await page.getByTestId(`conversation-${source.id}`).getByRole('button', { name: `${source.code} 세부 조절` }).click()
+  await page.getByTestId('conversation-candidates').getByRole('button', { name: `${source.code} 담기` }).click()
   await page.getByRole('tab', { name: '요약' }).click()
   await expect(page.getByRole('textbox', { name: '참조 대화 요약' })).toHaveValue('')
   await page.getByRole('button', { name: '요약 만들기' }).click()
@@ -108,21 +109,16 @@ test('E3d 선택 시점은 고정되고 새 메시지는 갱신 뒤 포함된다
   const { source, consumer } = await setup(page, 'refresh')
   await request(page, source.threadId, '원본 질문 E3d 첫째')
   await openMaterials(page, consumer.id)
-  await page.getByTestId(`conversation-${source.id}`).getByLabel(`${source.code} 참고 입력으로 선택`).click() // 선택은 서버 저장 뒤에 반영된다 — check()의 즉시 상태 검사와 맞지 않는다
+  await page.getByTestId('conversation-candidates').getByRole('button', { name: `${source.code} 담기` }).click()
+  await page.getByRole('button', { name: '적용', exact: true }).click()
   const first = await selectedInputs<{ snapshot: { id: string; messageIds: string[] } }>(page, consumer.id)
   await request(page, source.threadId, '원본 질문 E3d 둘째')
   await page.reload()
   await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
-  await expect(page.getByTestId(`conversation-${source.id}`).getByText(/새 메시지 2 · 갱신/)).toBeVisible()
+  await expect(page.getByTestId('selected-conversations').getByText(/새 메시지 2 · 갱신/)).toBeVisible()
   const still = await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json() as Array<{ snapshot: { id: string; messageIds: string[] } }>
   expect(still[0]!.snapshot.id).toBe(first[0]!.snapshot.id)
-  if (live) {
-    await request(page, consumer.threadId, '갱신 전 소비 E3d')
-    const before = await modelRequest(page, '갱신 전 소비 E3d')
-    expect(before).toContain('원본 질문 E3d 첫째')
-    expect(before).not.toContain('원본 질문 E3d 둘째')
-  }
-  await page.getByTestId(`conversation-${source.id}`).getByText(/새 메시지 2 · 갱신/).click()
+  await page.getByTestId('selected-conversations').getByText(/새 메시지 2 · 갱신/).click()
   await expect.poll(async () => {
     const rows = await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json() as Array<{ snapshot: { messageIds: string[] } }>
     return rows[0]?.snapshot.messageIds.length
@@ -132,4 +128,28 @@ test('E3d 선택 시점은 고정되고 새 메시지는 갱신 뒤 포함된다
     const after = await modelRequest(page, '갱신 후 소비 E3d')
     expect(after).toContain('원본 질문 E3d 둘째')
   }
+})
+
+
+test('E3e 참고 대화는 한 질문에서 소비되고 자료함에서 다시 담는다', async ({ page }) => {
+  const { source, consumer } = await setup(page, 'consume')
+  await request(page, source.threadId, '원본 질문 E3e')
+  await openMaterials(page, consumer.id)
+  await expect(page.locator('[data-tour="materials-conversations"]')).toContainText('같은 태그 대화 1개')
+  await page.getByTestId('conversation-candidates').getByRole('button', { name: `${source.code} 담기` }).click()
+  await page.getByRole('button', { name: '적용', exact: true }).click()
+  const selected = await selectedInputs<{ snapshot: { id: string } }>(page, consumer.id)
+  await request(page, consumer.threadId, '첫 소비 E3e')
+  // 둘째 요청 기록에도 첫 질문이 대화 이력으로 남으므로, 첫 요청 본문은 둘째를 보내기 전에 확인한다
+  if (live) expect(await modelRequest(page, '첫 소비 E3e')).toContain('원본 질문 E3e')
+  expect(await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json()).toEqual([])
+  await page.reload()
+  await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
+  await expect(page.getByTestId('conversation-candidates')).toContainText('쓴 적 있음')
+  await request(page, consumer.threadId, '둘째 소비 E3e')
+  if (live) expect(await modelRequest(page, '둘째 소비 E3e')).not.toContain('## 참조 대화')
+  await page.getByTestId('conversation-candidates').getByRole('button', { name: `${source.code} 담기` }).click()
+  await page.getByRole('button', { name: '적용', exact: true }).click()
+  const again = await selectedInputs<{ snapshot: { id: string } }>(page, consumer.id)
+  expect(again[0]!.snapshot.id).not.toBe(selected[0]!.snapshot.id)
 })

@@ -1,3 +1,4 @@
+import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
 import { randomUUID } from 'node:crypto'
 import { resumeHeldTask } from '../tasks/resume-held-task.js'
 import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common'
@@ -7,7 +8,7 @@ import type { LlmSettings, Message, RequestInfo, RequestInput, ServiceRequest, T
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
 import { isDuplicateKey } from '../db/errors.js'
-import { activityLog, appSetting, assistant, chatRequest, chatRequestInput, dbLock, fileObject, message, messageAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
+import { activityLog, appSetting, assistant, chatRequest, chatRequestInput, conversationInput, dbLock, fileObject, message, messageAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { EventsService } from '../events/events.service.js'
 import { DbLlmPorts } from '../llm/dbLlmPorts.js'
@@ -338,7 +339,7 @@ export class RequestsService implements OnModuleDestroy {
           { id: replyMessageId, threadId, seq: seq + 2, role: 'assistant', content: '', status: 'streaming' }])
         if (attachments.length) await tx.insert(messageAttachment).values(attachments.map((fileId) => ({ messageId: userMessageId, fileId })))
         // 보낼 자료(스테이징)는 이 요청이 소비한다 — 같은 트랜잭션에서 읽고 비운다. 첨부는 모두 이번 요청에만(oneShot)
-        let staged: StagedFile[] = []
+        let staged: StagedFile[] = attachments.map(fileId => ({ fileId, weight: 'reference', oneShot: true }))
         if (owner.taskId) {
           const selected = await tx.select({ fileId: taskInput.fileId, weight: taskInput.weight }).from(taskInput).where(eq(taskInput.taskId, owner.taskId)).orderBy(taskInput.sortOrder)
           staged = [...mainFirst(selected).map((item) => ({ fileId: item.fileId, weight: item.weight as StagedFile['weight'], oneShot: false })),
@@ -357,6 +358,14 @@ export class RequestsService implements OnModuleDestroy {
           model: owner.modelId ?? currentTask?.modelId ?? currentAssistant?.modelId ?? await readEffectiveDefaultModel(tx as Db, this.config),
           bytes: 0, limitBytes, leaseUntil: dbLeaseUntil(this.config.request.leaseMs) })
         await this.recordStaged(tx, requestId, staged)
+        if (owner.taskId) {
+          const conversations = await tx.select().from(conversationInput).where(eq(conversationInput.taskId, owner.taskId)).orderBy(conversationInput.selectedAt, conversationInput.id)
+          if (conversations.length) {
+            await tx.insert(chatRequestInput).values(mainFirst(conversations).map((item, index) => ({ requestId, seq: staged.length + index,
+              kind: 'conversation', sourceTaskId: item.sourceTaskId, snapshotId: item.snapshotId, mode: item.mode, weight: item.weight })))
+            await tx.delete(conversationInput).where(eq(conversationInput.taskId, owner.taskId))
+          }
+        }
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'message.sent', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         const autoStarted = await resumeHeldTask(tx, currentTask, actor)
@@ -373,6 +382,7 @@ export class RequestsService implements OnModuleDestroy {
       this.appEvents?.publish('message.appended', { threadId, taskId: acquired.taskId, messageId: acquired.replyMessageId })
       // 스테이징 소비·'쓴 적 있음' 표시가 바뀌었다
       if (acquired.staged?.length) this.appEvents?.publish('input.updated', { taskId: acquired.taskId })
+      this.appEvents?.publish('context.updated', { taskId: acquired.taskId })
     }
     this.appEvents?.publish('request.updated', { requestId: acquired.id, threadId, taskId: acquired.taskId ?? null, status: 'pending', phase: null })
     this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString(), autoStarted: acquired.autoStarted ?? false } })
@@ -401,7 +411,7 @@ export class RequestsService implements OnModuleDestroy {
       if (active) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
       await this.assertGlobalCapacity(tx)
       // 재시도는 원래 요청이 시작 때 기록한 자료(스테이징·첨부) 기준 — 지금 담아 둔 자료(다음 질문 몫)는 쓰지도 비우지도 않는다
-      const files = await tx.select().from(messageAttachment).where(eq(messageAttachment.messageId, original.userMessageId))
+      const files = original.retryOf ? [] : await tx.select().from(messageAttachment).where(eq(messageAttachment.messageId, original.userMessageId))
       const recorded = (await tx.select().from(chatRequestInput).where(and(eq(chatRequestInput.requestId, original.id), eq(chatRequestInput.kind, 'file'))).orderBy(chatRequestInput.seq))
         .flatMap((item): StagedFile[] => item.fileId ? [{ fileId: item.fileId, weight: item.weight as StagedFile['weight'], oneShot: item.oneShot }] : [])
       const snapshot = [...recorded, ...files.filter((item) => !recorded.some((input) => input.fileId === item.fileId)).map((item) => ({ fileId: item.fileId, weight: 'reference' as const, oneShot: true }))]
@@ -424,6 +434,9 @@ export class RequestsService implements OnModuleDestroy {
         model: original.model, bytes: 0, limitBytes, leaseUntil: dbLeaseUntil(this.config.request.leaseMs) })
       const staged = snapshot.filter((item) => !exclude.includes(item.fileId))
       await this.recordStaged(tx, id, staged)
+      const conversations = await tx.select().from(chatRequestInput).where(and(eq(chatRequestInput.requestId, original.id), eq(chatRequestInput.kind, 'conversation'))).orderBy(chatRequestInput.seq)
+      if (conversations.length) await tx.insert(chatRequestInput).values(conversations.map((item, index) => ({ requestId: id, seq: staged.length + index,
+        kind: 'conversation', sourceTaskId: item.sourceTaskId, snapshotId: item.snapshotId, mode: item.mode, weight: item.weight })))
       await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId: id, retryOf: original.id } })
       const [currentTask] = owner.taskId ? await tx.select().from(task).where(eq(task.id, owner.taskId)) : []
       const autoStarted = await resumeHeldTask(tx, currentTask, actor)
@@ -590,7 +603,17 @@ export class RequestsService implements OnModuleDestroy {
       const domainThread: Thread = { id: owner.id, ...(owner.taskId ? { taskId: owner.taskId } : { srId: owner.srId! }), title: owner.title,
         createdBy: owner.createdBy, createdAt: owner.createdAt.toISOString(), archived: false, ...(owner.modelId ? { modelId: owner.modelId } : {}) }
       if (controller.signal.aborted) throw new Error('요청 시간 초과')
-      const built = await Promise.race([buildChatRequest(scope, domainThread, history, { inputs: staged.filter((item) => !item.oneShot),
+      const recorded = await this.db.select().from(chatRequestInput).where(and(eq(chatRequestInput.requestId, id), eq(chatRequestInput.kind, 'conversation'))).orderBy(chatRequestInput.seq)
+      const loaded = owner.taskId ? await new DbConversationInputsService(this.db).load(owner.taskId, undefined,
+        recorded.flatMap(item => item.snapshotId && item.sourceTaskId ? [{ snapshotId: item.snapshotId, sourceTaskId: item.sourceTaskId, weight: item.weight as 'main' | 'reference' }] : [])) : []
+      const sources = await ports.getTasks(loaded.map(item => item.input.sourceTaskId))
+      const assistants = await ports.getAssistants()
+      const conversations = loaded.map((item, index) => {
+        const source = sources[index]
+        if (!source) throw new Error('참조 대화 기록을 찾을 수 없습니다')
+        return { input: item.input, snapshot: item.snapshot, messages: item.messages, source, assistant: assistants.find(agent => agent.id === source.assistantId) }
+      })
+      const built = await Promise.race([buildChatRequest(scope, domainThread, history, { conversations, inputs: staged.filter((item) => !item.oneShot),
         oneShotFileIds: staged.filter((item) => item.oneShot).map((item) => item.fileId), forceInlineFileIds: forceInline,
         deadlineAt,
         signal: controller.signal, onProgress: (progress) => { const phase = `${progress.phase === 'uploading' ? '파일 올리는 중' : '파일 처리 대기'} ${progress.index + 1}/${progress.total} · ${progress.name}`

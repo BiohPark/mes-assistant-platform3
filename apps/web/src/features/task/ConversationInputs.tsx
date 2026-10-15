@@ -3,13 +3,15 @@ import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { ConversationCandidate } from '@/api/files'
 import { formatSize } from '@/api/files'
-import { listConversationInputs, refreshConversationInput, removeConversationInput, selectConversation, setConversationWeight, type LoadedConversationInput } from '@/api/conversationInputs'
-import { useT } from '@/i18n'
-import { InputToggle, StagedToggle } from './InputToggle'
+import { listConversationInputs, refreshConversationInput, removeConversationInput, setConversationWeight, type LoadedConversationInput } from '@/api/conversationInputs'
+import { Badge } from '@/components/ui/badge'
+import { useLocale, useT } from '@/i18n'
+import { StagedToggle } from './InputToggle'
 import { ConversationPickerDialog } from './ConversationPickerDialog'
 
 export function ConversationInputs({ taskId, candidates, disabled, selectedOnly = false }: { taskId: string; candidates: ConversationCandidate[]; disabled: boolean; selectedOnly?: boolean }) {
   const t = useT()
+  const locale = useLocale()
   const selected = useQuery({ queryKey: ['conversation-inputs', taskId], queryFn: () => listConversationInputs(taskId) })
   const [target, setTarget] = useState<ConversationCandidate | null>(null)
   const selectedBySource = new Map((selected.data ?? []).map((item) => [item.input.sourceTaskId, item]))
@@ -22,7 +24,7 @@ export function ConversationInputs({ taskId, candidates, disabled, selectedOnly 
       if (current) {
         if (weight) await setConversationWeight(taskId, candidate.taskId, weight)
         else await removeConversationInput(taskId, candidate.taskId)
-      } else if (weight) await selectConversation(taskId, candidate.taskId, { mode: 'full', weight })
+      } else if (weight) setTarget(candidate)
     } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
   }
   async function refresh(candidate: ConversationCandidate) {
@@ -37,11 +39,11 @@ export function ConversationInputs({ taskId, candidates, disabled, selectedOnly 
       return <div key={candidate.taskId} className="rounded-xl border p-2" data-testid={`conversation-${candidate.taskId}`}>
         <div className="flex items-center gap-2"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setTarget(candidate)}>
           <span className="font-mono text-muted-foreground">{candidate.code}</span> · {candidate.title}</button>
-          {(selectedOnly || !current) && <button type="button" className="rounded-xl border px-1" disabled={disabled || (!current && !candidate.messageCount)} aria-label={t('task.inputs.adjustLabel', { code: candidate.code })} onClick={() => setTarget(candidate)}>{t('task.inputs.adjust')}</button>}
-          {/* 보낼 자료(selectedOnly)는 ★·×, 자료함은 담기 체크만 — 같은 라벨이 한 화면에 두 번 나오지 않게 한다 */}
-          {selectedOnly && current ? <StagedToggle weight={current.input.weight} label={candidate.code} disabled={disabled} onChange={(weight) => void change(candidate, current, weight)} />
-            : <InputToggle weight={current?.input.weight} label={candidate.code} showMain={false} disabled={disabled || (!current && !candidate.messageCount)} onChange={(weight) => void change(candidate, current, weight)} />}</div>
+          {!selectedOnly && candidate.used && <Badge tone="success" title={t('task.materials.usedTitle')}>{t('task.materials.used')}</Badge>}
+          {selectedOnly && current ? <><button type="button" className="rounded-lg border px-2 py-1" disabled={disabled} aria-label={t('task.inputs.adjustLabel', { code: candidate.code })} onClick={() => setTarget(candidate)}>{t('task.inputs.adjust')}</button><StagedToggle weight={current.input.weight} label={candidate.code} disabled={disabled} onChange={(weight) => void change(candidate, current, weight)} /></>
+            : <button type="button" className="shrink-0 rounded-lg border px-2 py-1" disabled={disabled || !candidate.messageCount} aria-label={t('task.materials.addConversation', { code: candidate.code })} onClick={() => setTarget(candidate)}>{current ? t('task.materials.added') : t('task.materials.add')}</button>}</div>
         <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground"><span className="rounded-full border px-1.5" style={{ borderColor: candidate.assistant.color }}>{candidate.assistant.name}</span><span>· {candidate.status}</span><span>{t('task.inputs.messages', { count: current?.messageCount ?? candidate.messageCount })}</span><span>· {formatSize(current?.bytes ?? candidate.bytes)}</span>
+          {candidate.lastActivityAt && <time dateTime={candidate.lastActivityAt}>{new Date(candidate.lastActivityAt).toLocaleString(locale)}</time>}
           {candidate.sharedTags.map((value) => <span key={value} className="rounded-full bg-muted px-1">{value}</span>)}
           {current?.detached && <span>{t('task.inputs.detached')}</span>}
           {current && <span>· {current.snapshot.mode === 'summary' ? t('task.inputs.modeSummary') : current.snapshot.mode === 'messages' ? t('task.inputs.modeMessages') : t('task.inputs.modeFull')}</span>}

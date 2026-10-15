@@ -30,11 +30,13 @@ export function queueFirstRequest(threadId: string, body: { content: string; att
   else firstDrafts.delete(threadId)
 }
 
-export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFailure?: (draft: ComposerDraft, error: unknown) => void) {
+export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFailure?: (draft: ComposerDraft, error: unknown) => void, onStarted?: () => void) {
   const t = useT()
   const query = useQueryClient()
   const autoStarted = useRef(onAutoStarted)
   autoStarted.current = onAutoStarted
+  const started = useRef(onStarted)
+  started.current = onStarted
   const firstFailure = useRef(onFirstFailure)
   firstFailure.current = onFirstFailure
   const [run, setRun] = useState<ChatRun | null>(null)
@@ -58,6 +60,7 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
           try {
             await streamRequest(attempt.path, attempt.body, (event, data) => {
               if (event === 'started') {
+                started.current?.()
                 // 재시도는 처음부터 requestId가 있으므로 요청 ID가 아니라 시도별 표시로 알림 중복(재연결 재생)을 막는다
                 const notify = data.autoStarted === true && !attempt.autoStartNotified
                 if (notify) attempt.autoStartNotified = true

@@ -12,11 +12,11 @@ const messages = ['first', 'second'].map((content, index) => ({ id: `m${index + 
 
 afterEach(() => vi.unstubAllGlobals())
 
-function renderPicker(calls: Array<[string, RequestInit | undefined]>) {
+function renderPicker(calls: Array<[string, RequestInit | undefined]>, history = messages) {
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push([url, init])
     if (url === '/api/tasks/source') return jsonResponse(200, { threadId: 'h' })
-    if (url === '/api/threads/h/messages') return jsonResponse(200, messages)
+    if (url === '/api/threads/h/messages') return jsonResponse(200, history)
     if (url.endsWith('/summary-draft')) return jsonResponse(201, { text: 'generated', source: 'rule' })
     if (url === '/api/tasks/t/conversation-inputs/source' && init?.method === 'PUT') return jsonResponse(200, {})
     return jsonResponse(200, [])
@@ -107,4 +107,22 @@ it('모드 탭은 방향키로 옮기고 포커스를 따라간다', async () =>
   fireEvent.keyDown(messages, { key: 'ArrowLeft' })
   expect(full).toHaveAttribute('aria-selected', 'true')
   expect(full).toHaveFocus()
+})
+
+
+it('previews and applies the last N complete user turns as a pinned message selection', async () => {
+  const calls: Array<[string, RequestInit | undefined]> = []
+  const history = [...messages, ...messages.map(item => ({ ...item, id: `${item.id}-last`, seq: item.seq + 2, content: `last ${item.content}` }))]
+  renderPicker(calls, history)
+  fireEvent.click(screen.getByRole('tab', { name: '메시지 선택' }))
+  await screen.findByRole('checkbox', { name: '4번째 메시지 선택' })
+  fireEvent.change(screen.getByRole('spinbutton', { name: '최근 턴 수' }), { target: { value: '1' } })
+  fireEvent.click(screen.getByRole('button', { name: '최근 N턴 선택' }))
+  expect(screen.getByRole('checkbox', { name: '1번째 메시지 선택' })).not.toBeChecked()
+  expect(screen.getByRole('checkbox', { name: '2번째 메시지 선택' })).not.toBeChecked()
+  expect(screen.getByRole('checkbox', { name: '3번째 메시지 선택' })).toBeChecked()
+  expect(screen.getByRole('checkbox', { name: '4번째 메시지 선택' })).toBeChecked()
+  fireEvent.click(screen.getByRole('button', { name: '적용' }))
+  await waitFor(() => expect(calls.some(([, init]) => init?.method === 'PUT')).toBe(true))
+  expect(JSON.parse(String(calls.find(([, init]) => init?.method === 'PUT')![1]?.body))).toMatchObject({ mode: 'messages', messageIds: ['m1-last', 'm2-last'] })
 })

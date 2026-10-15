@@ -144,12 +144,13 @@ test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유',
     taskId = new URL(owner.url()).pathname.split('/')[2]!
     const task = await (await owner.request.get(`/api/tasks/${taskId}`)).json() as { id: string; threadId: string; tags: string[]; inputs: Array<{ fileId: string; weight: string }> }
     expect(task.tags).toContain(submitted.code)
-    // S13: 접수 첨부 정본은 복사 없이 같은 파일로 참고 입력에 기본 선택되고, 업무 자료함 '연결된 SR 첨부'에 보인다(접수에서 뺀 후보는 없다)
-    expect(task.inputs).toEqual([expect.objectContaining({ fileId, weight: 'reference' })])
+    // S13-S: 접수 대화에 올린 모든 파일은 복사 없이 연결 업무 자료함에 보인다
+    expect(task.inputs.map(item => item.fileId).sort()).toEqual([fileId, extraFileId].sort())
+    expect(task.inputs.every(item => item.weight === 'reference')).toBe(true)
     await owner.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
     const srSection = owner.getByTestId('materials-sr-files')
     await expect(srSection).toContainText('sr-e2e.txt v1')
-    await expect(srSection).not.toContainText('sr-e2e-extra.txt')
+    await expect(srSection).toContainText('sr-e2e-extra.txt')
     await expect(owner.getByTestId(`selected-file-${fileId}`)).toContainText(`SR 첨부 · ${submitted.code}`)
     const shared = await owner.request.post(`/api/tasks/${taskId}/outputs`, { data: { name: 'shared.md', content: '# 완료' } })
     const hidden = await owner.request.post(`/api/tasks/${taskId}/outputs`, { data: { name: 'internal.md', content: '# 내부' } })
