@@ -6,7 +6,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createPool } from '../db/connection.js'
 import type { Db } from '../db/db.module.js'
 import { runMigrations } from '../db/migrate.js'
-import { createTempDb } from '../test/tempDb.js'
+import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { appUser, assistant, code, codeGroup } from '../db/schema.js'
 import { AdminService } from './admin.service.js'
 
@@ -25,7 +25,7 @@ beforeAll(async () => {
   admin = new AdminService(db)
   await db.insert(codeGroup).values(['assistant_level1', 'assistant_level2'].map(key => ({ key, name: key })))
   await db.insert(appUser).values({ id: 'owner', name: '운영자', initials: '운', color: '#123456' })
-})
+}, MIGRATION_TEST_TIMEOUT_MS)
 afterAll(async () => { await client?.end(); await temp?.drop() })
 
 it('기존 행은 수동 코드이며 정규화 이름으로 재사용·재활성하고 ID 입력도 유지한다', async () => {
@@ -104,7 +104,7 @@ it('마이그레이션은 이미 저장된 코드도 is_auto=false로 보존한�
     const migrated = drizzle(connection)
     expect(await migrated.select().from(code)).toMatchObject([{ id: 'old', isAuto: false }])
   } finally { await connection.end(); await old.drop() }
-})
+}, MIGRATION_TEST_TIMEOUT_MS)
 
 it('중복 키가 발생하면 잠금 재조회로 승자의 코드를 재사용한다', async () => {
   let injected = false

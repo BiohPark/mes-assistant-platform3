@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { drizzle } from 'drizzle-orm/mysql2'
 import { migrate } from 'drizzle-orm/mysql2/migrator'
 import { expect, it } from 'vitest'
-import { createTempDb } from '../test/tempDb.js'
+import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { createPool } from './connection.js'
 import { runMigrations } from './migrate.js'
 
@@ -31,4 +31,4 @@ it('이메일 추가 마이그레이션은 기존 계정 값을 변경·백필�
     await temp.drop()
     await rm(previous, { recursive: true, force: true })
   }
-})
+}, MIGRATION_TEST_TIMEOUT_MS)

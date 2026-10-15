@@ -1,5 +1,6 @@
 import type { ActivityLog, ChecklistItem, ChecklistReview, ChecklistReviewItem, Message, Note, Task, TaskStatus, Thread } from '@mes/domain'
 import type { TagSuggestion } from '@mes/domain'
+import { ChatBriefSchema, type ChatBrief } from '@mes/contracts'
 import { HttpError } from '@/app/auth'
 import { readSse } from './requests'
 import { queryClient } from './queryClient'
@@ -43,6 +44,9 @@ export async function listTasks(filter: TaskFilter = {}): Promise<Task[]> {
 }
 export const getTask = (taskId: string) => request<Task>(`/tasks/${encodeURIComponent(taskId)}`)
 export const getMessages = (threadId: string, signal?: AbortSignal) => request<Message[]>(`/threads/${encodeURIComponent(threadId)}/messages`, 'GET', undefined, undefined, signal)
+/** 대화 요약 카드(표시 전용). 응답 모양이 다르면 실패로 본다 — 카드만 숨고 화면은 그대로 */
+export const getChatBrief = async (taskId: string, signal?: AbortSignal): Promise<ChatBrief> =>
+  ChatBriefSchema.parse(await request<unknown>(`/tasks/${encodeURIComponent(taskId)}/brief`, 'GET', undefined, undefined, signal))
 export const getActivity = (taskId: string) => request<ActivityLog[]>(`/tasks/${encodeURIComponent(taskId)}/activity`)
 export const getChecklist = (taskId: string) => request<ChecklistItem[]>(`/tasks/${encodeURIComponent(taskId)}/checklist`)
 export async function addChecklistItem(taskId: string, label: string): Promise<ChecklistItem[]> {

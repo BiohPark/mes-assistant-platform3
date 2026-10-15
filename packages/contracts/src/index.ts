@@ -1,5 +1,6 @@
 export * from './auth.js'
 export * from './catalog.js'
+export * from './chatBrief.js'
 export * from './health.js'
 export * from './llm.js'
 export * from './systemAssistant.js'

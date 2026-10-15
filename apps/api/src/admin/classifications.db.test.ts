@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm'
 import { createPool } from '../db/connection.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
-import { createTempDb } from '../test/tempDb.js'
+import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { appUser, code } from '../db/schema.js'
 import { AdminService } from './admin.service.js'
 import { DbCatalogReader } from '../catalog/catalog.service.js'
@@ -19,7 +19,7 @@ beforeAll(async () => {
   pool = createPool(temp.url); const db = drizzle(pool); await seedCatalog(db)
   await db.insert(appUser).values({ id: 'classification-owner', name: 'Owner', initials: 'O', color: '#123456' })
   admin = new AdminService(db); catalog = new DbCatalogReader(db)
-})
+}, MIGRATION_TEST_TIMEOUT_MS)
 afterAll(async () => { await pool?.end(); await temp?.drop() })
 const fields = { name: 'Paths', summary: '', ownerId: 'classification-owner', status: 'open' as const, usageExample: '', expectedInputs: [], expectedOutputs: [], checklistTemplate: [] }
 const first = { level1CodeId: 'assistant_level1:SDLC', level2CodeId: 'assistant_level2:분석' }

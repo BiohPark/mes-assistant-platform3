@@ -211,6 +211,11 @@ export const en = {
     },
   },
   chat: {
+    brief: {
+      title: 'AI summary·suggestion', ruleBased: ' · rule-based', toggle: 'Collapse or expand the summary card', generating: 'AI is writing the summary…', refreshing: 'Updating for new messages…',
+      failed: 'Could not make the AI summary. It will retry next time you open this conversation.', pending: 'The summary appears after the first AI answer.',
+      questions: { one: '{count} question', other: '{count} questions' }, participants: 'with {names}', started: 'started {when}', next: 'Next',
+    },
     reopenTitle: 'Reopen this conversation?',
     reopenDescription: 'This conversation is complete. Enter a reason to reopen it and send your draft.',
     reopenStoredDescription: 'This conversation is complete. Enter a reason to reopen it and resend the request that could not be sent. Your new draft stays in the composer.',

@@ -5,13 +5,13 @@ import type { Pool } from 'mysql2/promise'
 import { createPool } from './connection.js'
 import { runMigrations } from './migrate.js'
 import { activityLog, fileObject, message, serviceRequest, task } from './schema.js'
-import { createTempDb } from '../test/tempDb.js'
+import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { seedScale } from './seedScale.js'
 
 describe('규모 시드', () => {
   let temp: Awaited<ReturnType<typeof createTempDb>>
   let client: Pool
-  beforeAll(async () => { temp = await createTempDb('scale'); await runMigrations(temp.url); client = createPool(temp.url) })
+  beforeAll(async () => { temp = await createTempDb('scale'); await runMigrations(temp.url); client = createPool(temp.url) }, MIGRATION_TEST_TIMEOUT_MS)
   afterAll(async () => { await client?.end(); await temp?.drop() })
   it('업무·메시지·파일 메타·SR·활동 이력을 지정 수량으로 만든다', async () => {
     const db = drizzle(client)

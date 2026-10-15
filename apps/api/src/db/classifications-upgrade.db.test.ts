@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { drizzle } from 'drizzle-orm/mysql2'
 import { migrate } from 'drizzle-orm/mysql2/migrator'
 import { eq } from 'drizzle-orm'
-import { createTempDb } from '../test/tempDb.js'
+import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { createPool } from './connection.js'
 import { runMigrations } from './migrate.js'
 import { assertClassificationInvariants } from './classifications.js'
@@ -45,7 +45,7 @@ it('upgrades the pre-D schema preserving inactive original pairs, reruns safely 
     await db.delete(assistantClassification)
     await expect(new DbModule(pool, db).onModuleInit()).rejects.toThrow(/불변식/)
   } finally { await pool.end(); await temp.drop(); await rm(folder, { recursive: true, force: true }) }
-})
+}, MIGRATION_TEST_TIMEOUT_MS)
 
 it('enforces unique pairs, unique order, code foreign keys and assistant cascade', async () => {
   const temp = await createTempDb('paths_constraints'); const pool = createPool(temp.url)
@@ -64,4 +64,4 @@ it('enforces unique pairs, unique order, code foreign keys and assistant cascade
     await db.delete(assistant).where(eq(assistant.id, 'a'))
     expect(await db.select().from(assistantClassification)).toEqual([])
   } finally { await pool.end(); await temp.drop() }
-})
+}, MIGRATION_TEST_TIMEOUT_MS)

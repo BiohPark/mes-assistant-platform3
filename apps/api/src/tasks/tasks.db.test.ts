@@ -8,7 +8,7 @@ import type { ChatProvider } from '@mes/llm'
 import { appSetting, appUser, assistant, assistantChecklistTemplate, chatRequest, checklistItem, checklistReview, fileObject, message, messageAttachment, noteAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
-import { createTempDb } from '../test/tempDb.js'
+import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { loadConfig } from '../config/config.js'
 import { DbTasksService } from './tasks.service.js'
 import { TaskExtrasService } from './task-extras.service.js'
@@ -40,7 +40,7 @@ describe('tasks DB', () => {
     extras = new TaskExtrasService(db, { kind: 'mock' } as never, { runAuxiliary: async () => undefined } as never,
       new FileStorageService(reportRoot), { publish: () => undefined } as never)
     service = new DbTasksService(db, undefined, extras)
-  })
+  }, MIGRATION_TEST_TIMEOUT_MS)
   afterAll(async () => { await client?.end(); await temp?.drop(); if (reportRoot) await rm(reportRoot, { recursive: true, force: true }) })
 
   it('resumes held discussions once, preserves startedAt, and allows a one-click hold', async () => {

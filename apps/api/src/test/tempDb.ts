@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { createPool } from '../db/connection.js'
 
+// Windows CI의 DDL 비용을 고려해 마이그레이션을 실행하는 테스트·훅에만 적용한다.
+export const MIGRATION_TEST_TIMEOUT_MS = 120_000
+
 /** DATABASE_URL 서버에 임시 DB를 만들고 연결 URL을 돌려준다. drop()으로 정리. */
 export async function createTempDb(label: string) {
   const base = process.env.DATABASE_URL

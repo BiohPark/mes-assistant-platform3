@@ -1,6 +1,8 @@
-import { QueryClient, QueryObserver } from '@tanstack/react-query'
+import { createElement } from 'react'
+import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query'
+import { renderHook } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
-import { applyEvent } from './useEvents'
+import { applyEvent, useEvents } from './useEvents'
 
 it.each(['reassigned', 'deleted'] as const)('task.updated refetches SR list and detail after a linked conversation is %s', async (change) => {
   const query = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -90,4 +92,26 @@ it('sr.updated refetches the SR through GET without trusting event content', asy
   await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1))
   await vi.waitFor(() => expect(query.getQueryData(['sr', 's'])).toEqual({ id: 's', title: '서버에서 다시 읽은 제목' }))
   unsubscribe(); query.clear()
+})
+
+it('brief.updated refetches only that conversation brief — new messages alone do not regenerate it', () => {
+  const query = new QueryClient()
+  const invalidate = vi.spyOn(query, 'invalidateQueries')
+  applyEvent(query, 'brief.updated', { taskId: 't' })
+  expect(invalidate.mock.calls).toEqual([[{ queryKey: ['chat-brief', 't'] }]])
+  invalidate.mockClear()
+  applyEvent(query, 'message.appended', { taskId: 't', threadId: 'h', messageId: 'm' })
+  expect(invalidate.mock.calls.some(([filters]) => filters?.queryKey?.[0] === 'chat-brief')).toBe(false)
+})
+
+it('listens for brief.updated on the live event stream', () => {
+  const added: string[] = []
+  class FakeSource { addEventListener(name: string) { added.push(name) } removeEventListener() {} close() {} }
+  vi.stubGlobal('EventSource', FakeSource)
+  const query = new QueryClient()
+  try {
+    const { unmount } = renderHook(() => useEvents(), { wrapper: ({ children }) => createElement(QueryClientProvider, { client: query }, children) })
+    expect(added).toContain('brief.updated')
+    unmount()
+  } finally { vi.unstubAllGlobals() }
 })

@@ -10,7 +10,7 @@ import { eq } from 'drizzle-orm'
 import type { Pool } from 'mysql2/promise'
 import { AssistantSchema, SystemAssistantToolArgs } from '@mes/contracts'
 import { SYSTEM_TOOLS, mockSystemAssistant } from '@mes/llm'
-import { createTempDb } from '../test/tempDb.js'
+import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { createPool } from '../db/connection.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
@@ -41,7 +41,7 @@ beforeAll(async () => {
     { provide: APP_GUARD, useClass: SessionGuard }, { provide: APP_GUARD, useClass: RolesGuard },
   ] }).compile()
   app = module.createNestApplication(); app.setGlobalPrefix('api'); app.use(cookieParser()); await app.listen(0, '127.0.0.1')
-})
+}, MIGRATION_TEST_TIMEOUT_MS)
 afterAll(async () => { await app?.close(); await pool?.end(); await temp?.drop() })
 const fields = { name: 'HTTP paths', summary: '', ownerId: 'owner', status: 'open', usageExample: '', expectedInputs: [], expectedOutputs: [] }
 const paths = [{ level1: 'HTTP One', level2: 'HTTP Two' }, { level1: 'HTTP Three', level2: 'HTTP Four' }]

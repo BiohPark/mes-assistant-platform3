@@ -3,6 +3,7 @@ import type { Response } from 'express'
 import type { AuthedRequest } from '../auth/guards.js'
 import { DbTasksService } from './tasks.service.js'
 import { TaskExtrasService } from './task-extras.service.js'
+import { TaskBriefService } from './task-brief.service.js'
 import { z } from 'zod'
 import { CONFIG, type AppConfig } from '../config/config.js'
 
@@ -30,7 +31,8 @@ const values = (value: unknown): string[] => value === undefined ? [] : Array.is
 
 @Controller('tasks')
 export class TasksController {
-  constructor(@Inject(DbTasksService) private readonly tasks: DbTasksService, @Inject(TaskExtrasService) private readonly extras: TaskExtrasService) {}
+  constructor(@Inject(DbTasksService) private readonly tasks: DbTasksService, @Inject(TaskExtrasService) private readonly extras: TaskExtrasService,
+    @Inject(TaskBriefService) private readonly brief: TaskBriefService) {}
 
   @Post()
   async create(@Req() req: AuthedRequest, @Body() body: unknown, @Headers('idempotency-key') key?: string) {
@@ -59,6 +61,10 @@ export class TasksController {
     const { status, reason } = parse(statusSchema, body)
     return this.tasks.setStatus(req.user!.id, id, status, reason)
   }
+
+  /** 대화 요약 카드(표시 전용) — 필요하면 백그라운드 생성을 걸고 지금 있는 것을 바로 돌려준다 */
+  @Get(':id/brief')
+  getBrief(@Req() req: AuthedRequest, @Param('id') id: string) { return this.brief.get(req.user!.id, id) }
 
   @Get(':id/checklist')
   checklist(@Req() req: AuthedRequest, @Param('id') id: string) { return this.extras.checklist(req.user!.id, id) }
