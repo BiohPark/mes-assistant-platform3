@@ -36,6 +36,8 @@ it('conversation sections cover basics, materials, discussion, tags, brief and s
   expect(TOUR_SECTIONS.conversation[0]!.steps.map(step => step.target)).toEqual(['composer', 'model', 'chat-search', 'chat-toc', 'quick-switch', 'popout'])
   expect(TOUR_SECTIONS.conversation[1]!.steps.map(step => step.target)).toEqual(['task-tabs', 'materials-library', 'materials-conversations', 'materials-staged'])
   expect(TOUR_SECTIONS.conversation[1]!.steps.find(step => step.target === 'materials-conversations')).toEqual({ target: 'materials-conversations', text: 'tour.steps.materialsConversations', opens: 'materials' })
+  // S14: 첨부 단계의 앵커는 입력창 칩 줄 — 안내 문구 키는 그대로, 자료 탭 단계 뒤에 온다
+  expect(TOUR_SECTIONS.conversation[1]!.steps.at(-1)).toEqual({ target: 'materials-staged', text: 'tour.steps.materialsStaged', opens: 'materials' })
   expect(TOUR_SECTIONS.hub.find(section => section.id === 'kanban')?.steps.map(step => step.target)).toEqual(['kanban-filters', 'kanban-ai-filter', 'kanban-columns', 'kanban-card'])
 })
 

@@ -1,5 +1,5 @@
 import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react'
-import { MessagesSquare, Paperclip, Send, Square, X } from 'lucide-react'
+import { ClipboardList, FileText, MessagesSquare, Paperclip, Send, Square, Star, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -16,6 +16,26 @@ export interface PendingAttachment {
   uploadedId?: string
   uploadedTaskId?: string
 }
+
+/** 입력창 위 첨부 칩 1개 — 자료함에서 첨부한 파일·대화·SR 본문. 직접 올린 파일 칩과 같은 줄·같은 모양으로 보이고 ×로 뺀다 */
+export interface AttachmentChip {
+  key: string
+  kind: 'file' | 'conversation' | 'sr'
+  label: string
+  /** 툴팁 — 버전·전달 방식·제목 등 칩에 다 못 쓰는 설명 */
+  title?: string
+  /** onToggleMain이 있으면 ★ 주 입력 전환을 보인다 */
+  main?: boolean
+  onToggleMain?: () => void
+  onRemove?: () => void
+  disabled?: boolean
+  /** 전달 실패 등 */
+  danger?: boolean
+  /** 새 추정을 기다리는 중 — 흐리게 */
+  busy?: boolean
+}
+const chipIcon = { file: FileText, conversation: MessagesSquare, sr: ClipboardList }
+const chipClass = 'inline-flex max-w-full items-center gap-1 rounded-full border bg-muted/50 px-2 py-0.5 text-xs'
 
 /** 드래그앤드랍 등 바깥에서 파일을 넣는 경로 — 첨부 버튼과 같은 한도를 적용한다 */
 export interface ComposerHandle {
@@ -55,9 +75,15 @@ interface ComposerProps {
   draftKey?: string
   /** 입력창 왼쪽 아래(첨부 옆)에 놓는 도구 — 업무 채팅의 모델 선택 */
   tools?: ReactNode
+  /** 자료함에서 첨부한 것 — 직접 올린 파일 칩 앞에 같은 줄로 보인다 */
+  attachments?: AttachmentChip[]
+  /** 칩 아래·입력창 위 안내 — 업무 채팅의 요청 크기(한도 근처에서만) */
+  notice?: ReactNode
+  /** 안쪽(칩·입력창) 폭 — 업무 채팅은 메시지 열과 같은 최대 폭 */
+  contentClassName?: string
 }
 
-export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, stagedAttachmentCount = 0, onSend, beforeSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey, tools }: ComposerProps) {
+export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, stagedAttachmentCount = 0, onSend, beforeSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey, tools, attachments = [], notice, contentClassName }: ComposerProps) {
   const t = useT()
   const [saved] = useState(() => (draftKey ? getDraft(draftKey) : undefined))
   const [discussion, setDiscussionState] = useState(saved?.discussion ?? false)
@@ -144,8 +170,9 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
     } finally { submitting.current = false }
   }
 
+  const chipCount = attachments.length + pending.length
   return (
-    <div className="border-t bg-card p-2.5" data-tour="composer">
+    <div className="border-t bg-card p-2.5" data-tour="composer"><div className={cn('mx-auto w-full', contentClassName)}>
       {suggestions && suggestions.length > 0 && text === '' && !streaming && (
         <div className="mb-2 flex flex-wrap gap-1">
           {suggestions.map((s) => (
@@ -160,19 +187,29 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
           ))}
         </div>
       )}
-      {pending.length > 0 && (
-        <div className="mb-1.5 flex flex-wrap gap-1">
+      {chipCount > 0 && (
+        <ul aria-label={t('chat.attachments')} data-tour="materials-staged" data-testid="composer-attachments" className="mb-1.5 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+          {attachments.map((chip) => {
+            const Icon = chipIcon[chip.kind]
+            return <li key={chip.key} title={chip.title} className={cn(chipClass, chip.danger && 'border-destructive/50 text-destructive', chip.busy && 'opacity-60')}>
+              {chip.onToggleMain && <button type="button" disabled={chip.disabled} aria-label={t('chat.toggleMain', { name: chip.label })} aria-pressed={!!chip.main} onClick={chip.onToggleMain}>
+                <Star className={cn('size-3', chip.main && 'fill-tone-warning-fg text-tone-warning-fg')} />
+              </button>}
+              <Icon className="size-3 shrink-0" /><span className="truncate">{chip.label}</span>
+              {chip.onRemove && <button type="button" disabled={chip.disabled} aria-label={t('task.materials.unstage', { label: chip.label })} onClick={chip.onRemove}><X className="size-3" /></button>}
+            </li>
+          })}
           {pending.map((p, i) => (
-            <span key={i} className="inline-flex items-center gap-1 rounded-full border bg-muted/50 px-1.5 py-0.5 text-xs">
-              <Paperclip className="size-3" />
-              {p.file.name}
+            <li key={`pending-${i}`} className={chipClass}>
+              <Paperclip className="size-3 shrink-0" /><span className="truncate">{p.file.name}</span>
               <button type="button" aria-label={t('chat.removeAttachment')} onClick={() => setPending((cur) => cur.filter((_, j) => j !== i))}>
                 <X className="size-3" />
               </button>
-            </span>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
+      {notice}
       {attachmentError && <div role="alert" className="mb-1 text-xs text-destructive">{attachmentError}</div>}
       <div className={cn('rounded-xl border bg-background p-1.5 focus-within:ring-2 focus-within:ring-ring/40', discussion && 'border-tone-warning-fg/40 bg-tone-warning-bg')}>
         <Textarea
@@ -197,7 +234,7 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
         {/* 아래 줄: 왼쪽에 첨부·도구(모델), 오른쪽에 팀 의견·전송 */}
         <div className="flex items-center gap-1">
           {allowAttachments && (
-            <Button type="button" variant="ghost" size="icon-sm" aria-label={t('chat.attachFile')} onClick={() => inputRef.current?.click()} disabled={disabled}>
+            <Button type="button" variant="ghost" size="icon-sm" aria-label={t('chat.attachFile')} data-tour={chipCount ? undefined : 'materials-staged'} onClick={() => inputRef.current?.click()} disabled={disabled}>
               <Paperclip />
             </Button>
           )}
@@ -239,6 +276,6 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
           )}
         </div>
       </div>
-    </div>
+    </div></div>
   )
 }

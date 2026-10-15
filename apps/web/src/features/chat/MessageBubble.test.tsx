@@ -239,3 +239,13 @@ it('shows reasoning text as received from the model', () => {
   renderThinking({ ...thinkingMessage, reasoning: 'original reasoning' })
   expect(screen.getByText('original reasoning')).toBeVisible()
 })
+
+it('S14: 답변은 넓게(모바일 전체 폭), 내 질문은 모바일 90%·데스크톱 80%까지 쓴다', () => {
+  const at = '2026-10-15T00:00:00.000Z'
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  const { container } = renderWithProviders(<TooltipProvider><MessageBubble message={{ id: 'a', threadId: 'h', seq: 1, role: 'assistant', content: '답변', status: 'done', createdAt: at, attachmentIds: [] } as Message} />
+    <MessageBubble message={{ id: 'u', threadId: 'h', seq: 2, role: 'user', content: '질문', status: 'done', createdAt: at, attachmentIds: [] } as Message} /></TooltipProvider>)
+  const [answer, question] = Array.from(container.querySelectorAll('[data-message-id] > div.flex-col'))
+  expect(answer).toHaveClass('max-w-full', 'sm:max-w-[92%]')
+  expect(question).toHaveClass('max-w-[90%]', 'sm:max-w-[80%]')
+})

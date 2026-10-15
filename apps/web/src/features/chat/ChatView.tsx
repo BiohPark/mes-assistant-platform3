@@ -18,13 +18,16 @@ import { SaveAsOutputDialog } from './SaveAsOutputDialog'
 import { RequestInfoDialog } from './RequestInfoDialog'
 import { RetryFilesDialog } from './RetryFilesDialog'
 import { useChat } from './useChat'
-import { ContextTray } from './ContextTray'
+import { RequestSizeNotice, useRequestAttachments } from './RequestAttachments'
 import { useRequestEstimate } from './useRequestEstimate'
 import { getDraft } from './drafts'
 import { toast } from 'sonner'
 import { useConversationViewed } from '@/lib/conversationRead'
 import { useT } from '@/i18n'
 import { ChatBrief } from '@/features/task/ChatBrief'
+
+/** 대화 열 최대 폭 — 1440 이하에서는 열 전체, 1920 같은 넓은 화면에서만 가운데로 모은다 */
+const CHAT_COLUMN = 'mx-auto w-full max-w-5xl'
 
 /** headerTools가 있으면 검색·질문 목차 아이콘은 그 자리(대화 헤더)로 가고, 펼친 검색 줄만 메시지 위 툴바에 남는다 */
 export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { task: Task; assistant?: Assistant; onOpenMaterials?: () => void; headerTools?: HTMLElement | null }) {
@@ -86,6 +89,7 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
   }
   const revision = JSON.stringify({ inputs: task.inputs, modelId: task.modelId, messages: messages.data?.map((item) => [item.id, item.status, item.content.length]) })
   const estimate = useRequestEstimate(task.threadId, draft, revision, !!task.threadId)
+  const attachments = useRequestAttachments(task, estimate)
   useEffect(() => {
     const unsubscribe = subscribeEvent(({ event, data }) => {
       if (event !== 'presence.typing' || data.threadId !== task.threadId || data.userId === selfId ||
@@ -193,8 +197,9 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
   return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={sending || chat.sending} onFiles={(files) => composer.current?.dropFiles(files)}>
     <ChatBrief taskId={task.id} />
     <div ref={setToolbar} data-testid="chat-question-toolbar" className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b px-4 py-2 empty:hidden" />
-    <div ref={conversationPanel} data-testid="chat-message-scroll" className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-    <ChatMessages key={task.id} assistantName={assistant?.name} messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince ?? submissionSince} questionIndexContainer={headerTools ?? toolbar} searchContainer={toolbar} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-3 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p>{t('chat.emptyHint')}</p>{onOpenMaterials && <Button variant="outline" size="sm" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</div>}
+    {/* 넓은 화면에서도 메시지·입력창은 같은 최대 폭(CHAT_COLUMN)의 가운데 열 — 스크롤바는 가장자리에 둔다 */}
+    <div ref={conversationPanel} data-testid="chat-message-scroll" className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6"><div className={`${CHAT_COLUMN} space-y-4`}>
+    <ChatMessages key={task.id} assistantName={assistant?.name} messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince ?? submissionSince} questionIndexContainer={headerTools ?? toolbar} searchContainer={toolbar} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-2 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p className="text-xs">{t('chat.emptyHint')}{onOpenMaterials && <Button variant="link" size="xs" className="ml-1 h-auto p-0" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</p></div>}
       actions={(item) => ({
         onAskAgain: item.role === 'user' && item.kind !== 'discussion' ? () => askAgain(item) : undefined,
         askAgainDisabled,
@@ -204,11 +209,11 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
         onRetryWithoutFiles: item.requestId && item.status === 'error' ? () => { void chooseRetry(item.requestId!, 'exclude') } : undefined,
         onRetryAsText: item.requestId && item.status === 'error' ? () => { void chooseRetry(item.requestId!, 'inline') } : undefined,
       })} />
-  </div>{Object.values(typing).some((item) => item.until > Date.now()) && <p className="px-4 py-1 text-xs text-muted-foreground">{t('chat.typing', { names: Object.values(typing).filter((item) => item.until > Date.now()).map((item) => item.name).join(', ') })}</p>}
-  <ContextTray task={task} estimate={estimate} />
+  </div></div>{Object.values(typing).some((item) => item.until > Date.now()) && <p className="px-4 py-1 text-xs text-muted-foreground">{t('chat.typing', { names: Object.values(typing).filter((item) => item.until > Date.now()).map((item) => item.name).join(', ') })}</p>}
   {prefilled && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.askAgainHint')}</p>}
   {pendingAttempt && !sending && !chat.sending && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.pendingAttemptHint')}</p>}
   <Composer ref={composer} clearOnSubmit disabled={(sending || chat.sending) && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowDiscussion
+    attachments={attachments} notice={<RequestSizeNotice task={task} estimate={estimate} />} contentClassName={CHAT_COLUMN}
     blockedReason={task.status !== 'done' && estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping} draftKey={task.id}
     placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}
     tools={assistant && <ModelPicker task={task} assistant={assistant} disabled={task.status === 'done'} />}

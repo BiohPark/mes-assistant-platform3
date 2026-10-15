@@ -15,7 +15,8 @@ const NAVIGATION: TourSection = { id: 'navigation', title: 'tour.sections.naviga
 
 /**
  * 페이지별 섹션 — 코드 데이터. 알약은 모든 페이지에 있으므로 마지막 섹션으로 두어 투어가 비지 않게 한다. UI 안내만, 업무 절차는 넣지 않는다.
- * 자료함의 materials-library·materials-conversations·materials-staged 앵커는 자료 패널 쪽에서 붙인다
+ * materials-library·materials-conversations 앵커는 자료 패널이, materials-staged는 입력창(Composer)의 첨부 칩 줄(칩이 없으면 📎 버튼)이 붙인다.
+ * materials-staged는 자료 탭 단계들 뒤에 오므로 opens를 유지한다 — 넓은 화면에서는 입력창이 보여 탭을 열지 않고, 좁은 화면에서 자료 탭이 열려 있으면 대상 없이 안내만 보인다
  */
 export const TOUR_SECTIONS: Record<PageRoute, readonly TourSection[]> = {
   hub: [

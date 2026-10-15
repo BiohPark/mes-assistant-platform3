@@ -37,7 +37,7 @@ test('indirect tag not listed — 다른 태그로만 이어진 대화는 패널
   await page.getByText('같은 태그 대화 1').click()
   await expect(panel(page).getByRole('link', { name: new RegExp(bridge.code) })).toBeVisible()
   await expect(panel(page).getByRole('link', { name: new RegExp(indirect.code) })).toHaveCount(0)
-  const box = panel(page).getByRole('checkbox', { name: `${bridge.code} 대화 본문(전체 스냅샷) 담기` })
+  const box = panel(page).getByRole('checkbox', { name: `${bridge.code} 대화 본문(전체 스냅샷) 첨부` })
   await expect(box).toBeEnabled()
   await expect(box).not.toBeChecked()
   await expect(panel(page).getByRole('checkbox')).toHaveCount(1)
@@ -56,22 +56,22 @@ test('estimate equals send after add — 패널에서 대화 본문·파일을 �
 
   await page.goto(`/c/${consumer.id}`)
   await page.getByText('같은 태그 대화 1').click()
-  await panel(page).getByRole('checkbox', { name: `${source.code} 대화 본문(전체 스냅샷) 담기` }).check()
+  await panel(page).getByRole('checkbox', { name: `${source.code} 대화 본문(전체 스냅샷) 첨부` }).check()
   await panel(page).getByRole('button', { name: `${source.code} 파일 펼치기` }).click()
   await panel(page).getByRole('radiogroup', { name: `${fileName} 버전` }).getByRole('radio', { name: 'v1' }).check()
-  await panel(page).getByRole('button', { name: '담기 · 2' }).click()
-  await expect(panel(page).getByText('담음 2 · 실패 0 · 미처리 0')).toBeVisible()
-  // 담긴 항목은 체크·비활성 — 덮어쓰기 없음
-  await expect(panel(page).getByRole('checkbox', { name: `${source.code} 대화 본문(전체 스냅샷) 담기` })).toBeDisabled()
-  await expect(panel(page).getByRole('checkbox', { name: `${source.code} 대화 본문(전체 스냅샷) 담기` })).toBeChecked()
+  await panel(page).getByRole('button', { name: '첨부 · 2' }).click()
+  await expect(panel(page).getByText('첨부 2 · 실패 0 · 미처리 0')).toBeVisible()
+  // 첨부된 항목은 체크·비활성 — 덮어쓰기 없음
+  await expect(panel(page).getByRole('checkbox', { name: `${source.code} 대화 본문(전체 스냅샷) 첨부` })).toBeDisabled()
+  await expect(panel(page).getByRole('checkbox', { name: `${source.code} 대화 본문(전체 스냅샷) 첨부` })).toBeChecked()
 
   const draft = '담은 자료로 답해 줘 U2'
   await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill(draft)
-  const tray = page.getByLabel('다음 질문에 보낼 자료')
-  await expect(tray.getByText('다음 질문에 보낼 자료 · 2')).toBeVisible()
-  const estimate = await (await page.request.post(`/api/threads/${consumer.threadId}/requests/estimate`, { data: { draft } })).json() as { bytes: number }
-  // 화면 추정(트레이 미터)이 같은 조립 함수의 추정과 같다
-  await expect(tray.getByRole('meter')).toHaveAttribute('aria-valuenow', String(estimate.bytes))
+  const chips = page.getByRole('list', { name: '첨부', exact: true }).getByRole('listitem')
+  await expect(chips).toHaveCount(2)
+  const estimate = await (await page.request.post(`/api/threads/${consumer.threadId}/requests/estimate`, { data: { draft } })).json() as { bytes: number; inputs: Array<{ kind: string; name?: string; code?: string }> }
+  // 입력창 칩이 같은 조립 함수의 추정(보낼 것)과 같다
+  await expect(chips).toHaveText(estimate.inputs.map((input) => (input.kind === 'file' ? input.name : input.code)!))
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(async () => {
     const messages = await (await page.request.get(`/api/threads/${consumer.threadId}/messages`)).json() as Array<{ role: string; requestId?: string }>

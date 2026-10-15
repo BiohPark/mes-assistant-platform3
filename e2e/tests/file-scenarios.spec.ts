@@ -62,12 +62,13 @@ test('T-01/T-03 공유 자료함은 출처를 대화 코드·제목으로 보여
   await expect(row).toContainText(`업로드 · ${source.code} · 알람 이력 분석 · ${tag}`)
   await expect(row).not.toContainText(source.id) // 내부 ID는 화면에 보이지 않는다
   await expect(row.getByRole('link', { name: source.code })).toHaveAttribute('href', `/c/${source.id}`)
-  await row.getByRole('checkbox', { name: '알람_이력_0901.csv 참고 입력으로 선택' }).click()
-  // 조작 영역은 32px 이상(S8 A6 ⑩) — ★·×는 아래 '다음 질문에 보낼 자료'에 있다
-  const staged = page.getByTestId('materials-staged')
-  for (const name of ['알람_이력_0901.csv 주 입력으로 지정', '알람_이력_0901.csv 보낼 자료에서 빼기']) {
-    const box = await staged.getByRole('button', { name }).boundingBox()
-    expect(Math.min(box!.width, box!.height)).toBeGreaterThanOrEqual(32)
-  }
-  await expect(page.getByTestId('materials-inputs')).toContainText(`참고 · ${source.code} · 알람 이력 분석`)
+  const attach = row.getByRole('button', { name: '알람_이력_0901.csv 첨부', exact: true })
+  // 조작 영역은 32px 이상(S8 A6 ⑩)
+  expect((await attach.boundingBox())!.height).toBeGreaterThanOrEqual(32)
+  await attach.click()
+  await expect(attach).toHaveAttribute('aria-pressed', 'true')
+  // S14: 첨부는 입력창 위 칩 하나로 보이고 ×로 뺀다
+  const chips = page.getByRole('list', { name: '첨부', exact: true })
+  await expect(chips).toContainText('알람_이력_0901.csv')
+  await expect(chips.getByRole('button', { name: '알람_이력_0901.csv 첨부 빼기' })).toBeVisible()
 })

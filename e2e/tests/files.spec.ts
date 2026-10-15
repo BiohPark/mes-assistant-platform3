@@ -16,7 +16,7 @@ async function openMaterials(page: import('@playwright/test').Page) {
   await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
 }
 
-test('S1 첨부는 그 요청에만 가고 자료함에 남으며(쓴 적 있음), 담은 버전은 새 버전으로 직접 전환한다', async ({ page }) => {
+test('S1 첨부는 그 요청에만 가고 자료함에 남으며(사용됨), 첨부한 버전은 새 버전으로 직접 전환한다', async ({ page }) => {
   await signUp(page)
   await page.getByRole('link', { name: /새 대화/ }).first().click()
   await page.locator('input[type="file"]').setInputFiles({ name: 'e2e-note.txt', mimeType: 'text/plain', buffer: Buffer.from('first') })
@@ -25,17 +25,18 @@ test('S1 첨부는 그 요청에만 가고 자료함에 남으며(쓴 적 있음
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page).toHaveURL(/\/c\/[^/]+$/)
   await openMaterials(page)
-  // D54 개정: 첨부는 자료함에 남고 그 요청에만 갔다 — 보낼 자료는 비어 있고 '쓴 적 있음'이 붙는다
+  // D54 개정: 첨부는 자료함에 남고 그 요청에만 갔다 — 입력창 첨부 칩은 비고 '사용됨'이 붙는다
+  const chips = page.getByRole('list', { name: '첨부', exact: true })
   await expect(page.getByTestId('materials-own')).toContainText('e2e-note.txt v1')
-  await expect(page.getByTestId('materials-own').getByText('쓴 적 있음')).toBeVisible()
-  await expect(page.getByTestId('materials-inputs')).not.toContainText('e2e-note.txt')
+  await expect(page.getByTestId('materials-own').getByText('사용됨')).toBeVisible()
+  await expect(chips).toHaveCount(0)
   await page.getByTestId('materials-own').locator('input[type="file"]').setInputFiles({ name: 'e2e-note.txt', mimeType: 'text/plain', buffer: Buffer.from('second') })
   await expect(page.getByTestId('materials-own')).toContainText('e2e-note.txt v2')
-  // v1을 다시 담으면 새 버전 안내 → 사람이 바꾼다
-  await page.getByTestId('materials-own').locator('li', { hasText: 'e2e-note.txt v1' }).getByRole('checkbox').click()
-  await expect(page.getByTestId('materials-inputs')).toContainText('e2e-note.txt v1')
+  // v1을 다시 첨부하면 새 버전 안내 → 사람이 바꾼다
+  await page.getByTestId('materials-own').locator('li', { hasText: 'e2e-note.txt v1' }).getByRole('button', { name: 'e2e-note.txt 첨부', exact: true }).click()
+  await expect(chips.getByRole('listitem')).toHaveAttribute('title', /e2e-note\.txt v1/)
   await page.getByRole('button', { name: '새 버전 있음 · 바꾸기' }).click()
-  await expect(page.getByTestId('materials-inputs')).toContainText('e2e-note.txt v2')
+  await expect(chips.getByRole('listitem')).toHaveAttribute('title', /e2e-note\.txt v2/)
   await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('새 버전으로 다시 답변해 줘')
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByRole('button', { name: '사용한 자료' })).toHaveCount(2, { timeout: 15_000 }) // 두 번째 답변의 기록 버튼이 생길 때까지(live는 가짜 서버 응답이 느리다) — last()만 보면 첫 기록을 연다
@@ -55,15 +56,16 @@ test('S4 직접 공유 파일의 주 입력과 참고 입력이 순서대로 표
   await page.goto(`/c/${consumer.id}`)
   await openMaterials(page)
   await expect(page.getByTestId('materials-shared')).toContainText('main.txt v1')
-  // 선택되면 aria-label이 '입력 해제'로 바뀌어 같은 로케이터가 사라진다 → check() 대신 click() 후 새 라벨로 확인
-  await page.getByRole('checkbox', { name: 'reference.txt 참고 입력으로 선택' }).click()
-  await expect(page.getByRole('checkbox', { name: 'reference.txt 입력 해제' })).toBeChecked()
-  // 자료함에서 담고 ★는 아래 '다음 질문에 보낼 자료'에서 바꾼다
-  await page.getByRole('checkbox', { name: 'main.txt 참고 입력으로 선택' }).click()
-  await page.getByTestId('materials-staged').getByRole('button', { name: 'main.txt 주 입력으로 지정' }).click()
-  await expect(page.getByTestId('materials-inputs')).toContainText('주 입력')
-  await expect(page.getByTestId('materials-inputs')).toContainText('참고')
-  await expect(page.getByTestId('materials-inputs').locator('[data-testid^="selected-file-"]')).toHaveText([/main.txt v1.*주 입력/, /reference.txt v1.*참고/])
+  // 자료함에서 [첨부]하고 ★는 입력창 칩에서 바꾼다 — 칩은 전송과 같은 조립 순서(주 입력 먼저)
+  const reference = page.getByRole('button', { name: 'reference.txt 첨부', exact: true })
+  await reference.click()
+  await expect(reference).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'main.txt 첨부', exact: true }).click()
+  const chips = page.getByRole('list', { name: '첨부', exact: true })
+  await expect(chips.getByRole('listitem')).toHaveText(['reference.txt', 'main.txt'])
+  await chips.getByRole('button', { name: 'main.txt 주 입력 전환' }).click()
+  await expect(chips.getByRole('button', { name: 'main.txt 주 입력 전환' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(chips.getByRole('listitem')).toHaveText(['main.txt', 'reference.txt'])
 })
 
 test('S3 같은 산출물 이름으로 두 번 저장하면 v2가 된다', async ({ page }) => {

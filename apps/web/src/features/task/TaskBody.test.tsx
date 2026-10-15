@@ -74,22 +74,24 @@ it('방향키로 보조 패널 탭을 옮기고 단일 tabpanel이 활성 탭을
   renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
   const panelTabs = within(screen.getByRole('tablist', { name: '보조 패널' }))
   const history = panelTabs.getByRole('tab', { name: '이력' })
-  expect(history).toHaveAttribute('id', 'task-tab-history')
-  expect(history).toHaveAttribute('tabindex', '0')
-  expect(panelTabs.getByRole('tab', { name: '자료' })).toHaveAttribute('tabindex', '-1')
+  const materials = panelTabs.getByRole('tab', { name: '자료' })
+  // 기본 탭은 자료(S14)
+  expect(materials).toHaveAttribute('id', 'task-tab-materials')
+  expect(materials).toHaveAttribute('tabindex', '0')
+  expect(history).toHaveAttribute('tabindex', '-1')
   const panel = screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })
   expect(panel).toHaveAttribute('id', 'task-panel')
-  expect(panel).toHaveAttribute('aria-labelledby', 'task-tab-history')
-  expect(history).toHaveAttribute('aria-controls', 'task-panel')
+  expect(panel).toHaveAttribute('aria-labelledby', 'task-tab-materials')
+  expect(materials).toHaveAttribute('aria-controls', 'task-panel')
 
-  history.focus()
+  materials.focus()
+  fireEvent.keyDown(materials, { key: 'End' })
+  expect(history).toHaveAttribute('aria-selected', 'true')
+  expect(history).toHaveFocus()
+  expect(screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })).toHaveAttribute('aria-labelledby', 'task-tab-history')
   fireEvent.keyDown(history, { key: 'ArrowRight' })
-  const materials = panelTabs.getByRole('tab', { name: '자료' })
   expect(materials).toHaveAttribute('aria-selected', 'true')
   expect(materials).toHaveFocus()
-  expect(screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })).toHaveAttribute('aria-labelledby', 'task-tab-materials')
-  fireEvent.keyDown(materials, { key: 'End' })
-  expect(panelTabs.getByRole('tab', { name: '이력' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.getAllByRole('tabpanel')).toHaveLength(1)
 
   // 좁은 화면 탭도 같은 훅 — 대화에서 → 는 자료로 가고 채팅 영역은 계속 마운트돼 있다
@@ -162,7 +164,7 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
   const panelTabs = within(screen.getByRole('tablist', { name: '보조 패널' }))
   const mobileTabs = within(screen.getByRole('tablist', { name: '대화 화면 탭' }))
   for (const [tabs, steps] of [
-    [panelTabs, [['이력', 'ArrowRight', '자료'], ['자료', 'ArrowLeft', '이력'], ['이력', 'Home', '자료'], ['자료', 'End', '이력']]],
+    [panelTabs, [['자료', 'End', '이력'], ['이력', 'ArrowRight', '자료'], ['자료', 'ArrowLeft', '이력'], ['이력', 'Home', '자료']]],
     [mobileTabs, [['대화', 'ArrowRight', '자료'], ['자료', 'ArrowRight', '체크'], ['체크', 'ArrowLeft', '자료'], ['자료', 'Home', '대화'], ['대화', 'End', '이력'], ['이력', 'Home', '대화']]],
   ] as const) {
     for (const [from, key, to] of steps) {
@@ -177,7 +179,7 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
   }
 })
 
-it('keeps history as the default and opens materials on both layouts without remounting chat or selecting inputs', async () => {
+it('defaults to materials and opens materials on both layouts without remounting chat or selecting inputs', async () => {
   const calls: Array<{ url: string; method?: string }> = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push({ url, method: init?.method })
@@ -188,9 +190,8 @@ it('keeps history as the default and opens materials on both layouts without rem
   renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
   const desktop = within(screen.getByRole('tablist', { name: '보조 패널' }))
   const mobile = within(screen.getByRole('tablist', { name: '대화 화면 탭' }))
-  expect(desktop.getByRole('tab', { name: '이력' })).toHaveAttribute('aria-selected', 'true')
-  expect(screen.queryByTestId('materials-panel')).not.toBeInTheDocument()
-  expect(calls.some(({ url }) => url.includes('candidates'))).toBe(false)
+  expect(desktop.getByRole('tab', { name: '자료' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByTestId('materials-panel')).toBeInTheDocument()
   const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
   fireEvent.change(input, { target: { value: '유지할 입력' } })
   fireEvent.click(await screen.findByRole('button', { name: '자료 열기' }))

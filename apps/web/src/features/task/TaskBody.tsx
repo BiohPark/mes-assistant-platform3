@@ -28,7 +28,7 @@ const mobileValues: MobileTab[] = ['chat', ...panelValues]
 export function TaskBody({ task, assistant, headerTools }: { task: Task; assistant: Assistant; headerTools?: HTMLElement | null }) {
   const t = useT()
   const [mobileTab, setMobileTab] = useState<MobileTab>('chat')
-  const [panel, setPanel] = useState<Panel>('history')
+  const [panel, setPanel] = useState<Panel>('materials')
   const [focusMaterials, setFocusMaterials] = useState(false)
   const mobileTabsRef = useRef<HTMLDivElement>(null)
   const panelTabsRef = useRef<HTMLDivElement>(null)
