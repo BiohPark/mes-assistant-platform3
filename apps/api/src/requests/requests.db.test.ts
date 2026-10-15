@@ -51,6 +51,50 @@ describe('RequestService DB', () => {
   })
   afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); await rm(root, { recursive: true, force: true }) })
 
+  it('publishes request updates only for status and phase changes, never for repeated chunks or flushes', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let ready!: () => void
+    const streaming = new Promise<void>(resolve => { ready = resolve })
+    const manyChunks: ChatProvider = { ...provider, async *stream() {
+      for (let i = 0; i < 100; i++) yield { type: 'status', text: '자료 확인 중' }
+      for (let i = 0; i < 100; i++) yield { type: 'reasoning', text: '검토' }
+      for (let i = 0; i < 100; i++) yield { type: 'delta', text: '답변' }
+      ready()
+      await gate
+      yield { type: 'done' }
+    } }
+    const events = new EventsService()
+    const published = vi.spyOn(events, 'publish')
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32),
+      APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root, REQUEST_FLUSH_MS: '10', REQUEST_KEEPALIVE_MS: '10' }), manyChunks, events)
+    const created = await tasks.create('member', { assistantId, title: 'Request event frequency' })
+    try {
+      const run = await runner.start('member', created.thread.id, { content: '반복 청크' }, 'request-event-frequency')
+      const seen: Array<{ event: string; data: Record<string, unknown> }> = []
+      const unsubscribe = runner.subscribe(run.id, event => seen.push(event))
+      try {
+        await streaming
+        // 실제 주기 저장이 실행된 뒤에도 app SSE가 추가 발행되지 않아야 한다.
+        await vi.waitFor(async () => {
+          const [reply] = await db.select().from(message).where(eq(message.id, run.replyMessageId))
+          expect(reply).toMatchObject({ content: '답변'.repeat(100), reasoning: '검토'.repeat(100) })
+        })
+        release()
+        await run.done
+        const updates = published.mock.calls.flatMap(([event, data]) =>
+          event === 'request.updated' && 'requestId' in data && data.requestId === run.id ? [data] : [])
+        expect(updates.map(data => [data.status, data.phase])).toEqual([
+          ['pending', null], ['streaming', null], ['streaming', '자료 확인 중'],
+          ['streaming', '생각 중'], ['streaming', '답변 중'], ['succeeded', null],
+        ])
+        expect(seen.filter(event => event.event === 'reasoning')).toHaveLength(100)
+        expect(seen.filter(event => event.event === 'delta')).toHaveLength(100)
+        expect(seen.filter(event => event.event === 'completed')).toHaveLength(1)
+      } finally { release(); await run.done; unsubscribe() }
+    } finally { release(); runner.onModuleDestroy() }
+  })
+
   it.each(['succeeded', 'failed', 'cancelled', 'interrupted'] as const)('updates task activity atomically when a response becomes %s', async status => {
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })
