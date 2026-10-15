@@ -605,6 +605,18 @@ export const ko = {
   pill: {
     menu: { title: '할 수 있는 것', search: '에이전트 검색', exampleStart: '대화 시작 예시', exampleTag: '태그 예시', related: '같은 태그 대화 패널', materials: '자료 탭 열기', mySr: '내 SR 요청', manageAgents: '에이전트 관리', settings: '시스템 설정', users: '사용자 관리', diagnostics: '진단', exampleCreate: '에이전트 등록 예시', unavailable: '현재 페이지에는 이 항목이 없습니다.', hub: '에이전트 허브', myWork: '내 작업' },
     open: 'AI 도우미 열기', close: 'AI 도우미 닫기', characterAlt: 'AI 도우미 캐릭터', moveHint: '끌거나 화살표 키로 옮기고, Home 키로 원위치',
+
+    greet: {
+      hub: '안녕하세요! 여기는 에이전트 허브예요. 함께할 에이전트를 같이 골라 볼까요? 🙂',
+      conversation: '대화 중이시네요! 자료 붙이기나 같은 태그 대화가 궁금하면 불러 주세요 🙂',
+      sr: 'SR 요청 화면이에요. 새 요청이나 진행 상황을 같이 볼까요?',
+      myWork: '내 작업이에요. 맡은 대화를 한눈에 모아 봐요 🙂',
+      admin: '관리 화면이에요. 에이전트·설정 일은 제가 거들게요.',
+      other: '안녕하세요! 무엇을 도와드릴까요? 🙂',
+    },
+    logLabel: '도우미 대화 기록',
+    history: { tabsLabel: '도우미 창 보기', notices: '알림 이력', chat: '대화', empty: '아직 알림이 없어요. 말풍선으로 알려 드린 것이 여기에 모여요 🙂' },
+    log: { askGuide: '이 화면 사용법 알려 줘', guideStart: '좋아요! 반짝이는 곳을 따라와요 ✨', guideDone: '잘하셨어요! 🎉 궁금하면 또 불러 주세요', guideStop: '언제든 또 물어봐요 🙂' },
   },
   bubble: {
     region: 'AI 도우미 말풍선', close: '말풍선 닫기',
@@ -616,7 +628,7 @@ export const ko = {
     guideRegion: 'AI 도우미 가이드 제안', guideOffer: '이 화면, 같이 둘러볼까요?', guideYes: '사용법 보기', guideNo: '다시 묻지 않기',
     guideDone: '다 봤어요! 잘하셨어요 🎉 궁금하면 언제든 저를 눌러 주세요',
   },
-  tutorial: { replay: '튜토리얼 다시 보기', guide: '가이드해 주세요' },
+  tutorial: { replay: '튜토리얼 다시 보기', guide: '이 화면 사용법' },
   tour: {
     title: '페이지 가이드', progress: '{current}/{total}', prev: '이전', next: '다음', finish: '다 봤어요', close: '가이드 닫기',
     sectionList: '섹션 목록', sectionListLabel: '가이드 섹션', skipSection: '이 섹션 건너뛰기', doneReplay: '{title} 완료 — 다시 보기',
@@ -645,7 +657,7 @@ export const ko = {
       kanbanColumns: '에이전트별 열이에요. 열 머리의 +로 새 대화를 시작해요.',
       kanbanCard: '대화 카드예요. 누르면 대화로 들어가요.',
       nav: '왼쪽 메뉴로 허브·내 작업·SR·관리를 오가요.',
-      pill: '저예요! 누르면 도우미 창이 열리고, 끌어서 옮길 수 있어요. 이 안내는 창의 "가이드해 주세요"로 언제든 다시 봐요.',
+      pill: '저예요! 누르면 도우미 창이 열리고, 끌어서 옮길 수 있어요. 이 안내는 창의 "🧭 이 화면 사용법"으로 언제든 다시 봐요.',
       hubView: '에이전트 카드와 전체 대화 칸반을 여기서 바꿔요.',
       hubSearch: '이름·요약·업무 분류로 에이전트를 찾아요.',
       hubCards: '카드를 눌러 그 에이전트와 새 대화를 시작해요.',

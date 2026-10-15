@@ -2,12 +2,13 @@ import { act, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MeContext } from '@/app/auth'
 import { renderWithProviders } from '@/test/render'
-import { AssistantMenu } from './AssistantMenu'
+import { AssistantMenu, GUIDE_DELAY_MS } from './AssistantMenu'
 import { PAGE_ACTIONS, pageRoute } from './pageActions'
 import { useTourStore } from './tour'
 import { guideOfferKey } from './tutorial'
 import { newId } from '@/lib/ids'
 import { useSearchAgents } from './useSearchAgents'
+import { resetHistory, useAssistantHistory } from './history'
 
 let userId = ''
 const prefill = vi.fn()
@@ -27,19 +28,39 @@ function pillTarget() {
   return pill
 }
 const menu = () => screen.getByRole('region', { name: '할 수 있는 것' })
-beforeEach(() => { userId = newId(); localStorage.clear(); vi.clearAllMocks() })
-afterEach(() => { act(() => useTourStore.getState().close()); document.querySelectorAll('[data-tour]').forEach(element => element.remove()) })
+beforeEach(() => { userId = newId(); localStorage.clear(); vi.clearAllMocks(); resetHistory() })
+afterEach(() => { vi.useRealTimers(); act(() => useTourStore.getState().close()); document.querySelectorAll('[data-tour]').forEach(element => element.remove()) })
 
-it('every page lists the guide first; it marks this page as accepted and starts the tour after the window closes (perform)', () => {
+it('S14-HH: 첫 항목 🧭 이 화면 사용법을 누르면 대화 기록에 요청·대답을 남긴 뒤 잠깐 있다가 창을 닫고(perform) 투어를 시작한다', () => {
+  vi.useFakeTimers()
   pillTarget()
   mount('/c/task')
   expect(screen.queryByText('둘러볼까요?')).not.toBeInTheDocument() // 옛 창 안 질문은 사라졌다 — 묻는 건 페이지 진입 말풍선뿐
   const buttons = within(menu()).getAllByRole('button')
-  expect(buttons[0]).toHaveTextContent('가이드해 주세요')
+  expect(buttons[0]).toHaveAccessibleName('이 화면 사용법')
+  expect(within(buttons[0]!).getByText('🧭')).toHaveAttribute('aria-hidden', 'true')
   fireEvent.click(buttons[0]!)
+  const lines = () => useAssistantHistory.getState().log.map(entry => entry.kind === 'line' && `${entry.who}:${entry.text}`)
+  expect(lines()).toEqual(['user:pill.log.askGuide', 'helper:pill.log.guideStart'])
+  expect(localStorage.getItem(guideOfferKey(userId, 'conversation'))).toBe('accepted')
+  fireEvent.click(buttons[0]!) // 기다리는 동안 다시 눌러도 한 번만
+  act(() => vi.advanceTimersByTime(GUIDE_DELAY_MS - 1))
+  expect(perform).not.toHaveBeenCalled()
+  act(() => vi.advanceTimersByTime(1))
   expect(perform).toHaveBeenCalledOnce()
   expect(useTourStore.getState().route).toBe('conversation')
-  expect(localStorage.getItem(guideOfferKey(userId, 'conversation'))).toBe('accepted')
+  expect(lines()).toHaveLength(2)
+})
+
+it('S14-HH: 기다리는 동안 창이 닫히면(언마운트) 투어를 시작하지 않는다', () => {
+  vi.useFakeTimers()
+  pillTarget()
+  const view = mount('/')
+  fireEvent.click(within(menu()).getAllByRole('button')[0]!)
+  view.unmount()
+  act(() => vi.advanceTimersByTime(GUIDE_DELAY_MS))
+  expect(perform).not.toHaveBeenCalled()
+  expect(useTourStore.getState().route).toBeNull()
 })
 
 it('menu contains no AI call: examples prefill, actions only navigate, focus or guide', () => {
@@ -56,7 +77,7 @@ it('menu contains no AI call: examples prefill, actions only navigate, focus or 
 it('management suggestions are shown only to SO (the guide stays), and routes match exactly', () => {
   const view = mount('/settings')
   expect(screen.queryByRole('button', { name: '에이전트 관리' })).not.toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '가이드해 주세요' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '이 화면 사용법' })).toBeInTheDocument()
   view.unmount()
   mount('/settings', true)
   expect(screen.getByRole('button', { name: '에이전트 관리' })).toBeInTheDocument()
@@ -68,7 +89,7 @@ it('management suggestions are shown only to SO (the guide stays), and routes ma
 
 it('other pages (My info) and My work offer the guide plus a hub shortcut', () => {
   const view = mount('/my-info')
-  expect(within(menu()).getByRole('button', { name: '가이드해 주세요' })).toBeInTheDocument()
+  expect(within(menu()).getByRole('button', { name: '이 화면 사용법' })).toBeInTheDocument()
   fireEvent.click(within(menu()).getByRole('button', { name: '에이전트 허브' }))
   expect(perform).toHaveBeenCalledOnce()
   view.unmount()

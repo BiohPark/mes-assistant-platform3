@@ -101,19 +101,73 @@ export function tourTarget(id: string): HTMLElement | undefined {
   return Array.from(document.querySelectorAll<HTMLElement>(`[data-tour="${id}"]`)).find(isShown)
 }
 
-/** 말풍선과 화면 가장자리·대상 사이 여백 */
+/** 말풍선과 화면 가장자리·알약·대상 사이 여백 */
 export const COACH_MARGIN = 8
+/** 넓은 화면의 말풍선 폭 */
+export const DOCK_WIDTH = 340
+
+type Box = { left: number; top: number; right: number; bottom: number }
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), Math.max(min, max))
+/** 여백까지 닿으면 가린 것으로 본다 */
+const covers = (target: Box, card: Box) =>
+  target.left - COACH_MARGIN < card.right && target.right + COACH_MARGIN > card.left && target.top - COACH_MARGIN < card.bottom && target.bottom + COACH_MARGIN > card.top
 
 /**
- * 말풍선 자리(S14 코치) — 화면 하단 중앙이 기본, 대상(+여백)이 그 자리를 가리면 상단. 위도 그만큼 가리면(화면 가득한 대상) 아래 그대로.
- * 대상을 따라다니지 않고 두 자리만 오간다
+ * 말풍선 자리(S14-HH) — 도우미 창 자리: 알약 왼쪽에 들어가면 왼쪽, 아니면 오른쪽, 알약 아래끝에 맞춘다(창과 같은 규칙).
+ * 양옆 모두 모자라면(좁은 화면) 알약 바로 위에 좌우 여백만 두고, 위가 모자라면 알약 아래. 늘 화면 안. 대상을 따라 움직이지 않는다
  */
-export function cardSide(rect: { top: number; bottom: number } | null, height: number, viewport: number): 'top' | 'bottom' {
-  if (!rect) return 'bottom'
-  const overlap = (start: number, end: number) => Math.max(0, Math.min(rect.bottom + COACH_MARGIN, end) - Math.max(rect.top - COACH_MARGIN, start))
-  const bottom = overlap(viewport - COACH_MARGIN - height, viewport - COACH_MARGIN)
-  const top = overlap(COACH_MARGIN, COACH_MARGIN + height)
-  return bottom > 0 && top < bottom ? 'top' : 'bottom'
+export function dockPlace(pill: Box | null, card: { width: number; height: number }, viewport: { width: number; height: number }): { left: number; top: number; width: number } {
+  const maxTop = viewport.height - card.height - COACH_MARGIN
+  if (!pill) return { left: Math.max(COACH_MARGIN, viewport.width - card.width - COACH_MARGIN), top: clamp(maxTop, COACH_MARGIN, maxTop), width: card.width }
+  const top = clamp(pill.bottom - card.height, COACH_MARGIN, maxTop)
+  const left = pill.left - COACH_MARGIN - card.width
+  if (left >= COACH_MARGIN) return { left, top, width: card.width }
+  const right = pill.right + COACH_MARGIN
+  if (right + card.width + COACH_MARGIN <= viewport.width) return { left: right, top, width: card.width }
+  const width = viewport.width - COACH_MARGIN * 2
+  const above = pill.top - COACH_MARGIN - card.height
+  return { left: COACH_MARGIN, top: clamp(above >= COACH_MARGIN ? above : pill.bottom + COACH_MARGIN, COACH_MARGIN, maxTop), width }
+}
+
+/**
+ * 대상이 말풍선에 가리면 대상을 말풍선 위로(위가 모자라면 아래로) 옮길 세로 스크롤량 — 양수면 내용을 아래로 스크롤(대상이 올라간다).
+ * 안 가리거나 들어갈 자리가 없으면 0. 말풍선은 움직이지 않는다
+ */
+export function clearScroll(target: Box, card: Box, viewport: number): number {
+  if (!covers(target, card)) return 0
+  const height = target.bottom - target.top
+  if (height <= card.top - COACH_MARGIN * 2) return target.bottom - (card.top - COACH_MARGIN)
+  if (height <= viewport - card.bottom - COACH_MARGIN * 2) return target.top - (card.bottom + COACH_MARGIN)
+  return 0
+}
+
+/**
+ * 스크롤로 비킬 수 없는 대상(fixed·sticky·스크롤 끝)만 — 말풍선을 같은 가로 자리에서 세로로만 대상 위(모자라면 아래)로 옮긴 top.
+ * 자리가 없거나 화면의 반대쪽 절반으로 건너가야 하면(큰 대상) 그대로 — 일부를 가리더라도 알약 곁을 떠나지 않는다
+ */
+export function nudgeTop(target: Box, card: Box, viewport: number): number {
+  if (!covers(target, card)) return card.top
+  const height = card.bottom - card.top
+  const lower = (top: number) => top + height / 2 > viewport / 2
+  const fits = (top: number) => top >= COACH_MARGIN && top + height <= viewport - COACH_MARGIN && lower(top) === lower(card.top)
+  const above = target.top - COACH_MARGIN - height
+  if (fits(above)) return above
+  const below = target.bottom + COACH_MARGIN
+  return fits(below) ? below : card.top
+}
+
+/** 대상의 가장 가까운 스크롤 조상(없으면 문서)과 실제로 움직일 수 있는 만큼으로 줄인 스크롤량. 움직일 수 없으면 null */
+export function clampScroll(target: HTMLElement, delta: number): { node: Element; delta: number } | null {
+  if (!delta) return null
+  let node: Element | null = target.parentElement
+  for (; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node)
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) break
+  }
+  node ??= document.scrollingElement
+  if (!node) return null
+  const moved = clamp(delta, -node.scrollTop, node.scrollHeight - node.clientHeight - node.scrollTop)
+  return moved ? { node, delta: moved } : null
 }
 
 /**

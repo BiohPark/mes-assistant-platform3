@@ -31,7 +31,7 @@ test('asks once per session and page with a light bubble — folding it (press e
   await expect(offer(page)).toHaveCount(0)
   let dialog = await open(page)
   await expect(dialog.getByText('둘러볼까요?', { exact: true })).toHaveCount(0)
-  await expect(dialog.getByRole('region', { name: '할 수 있는 것' }).getByRole('button').first()).toHaveText('가이드해 주세요')
+  await expect(dialog.getByRole('region', { name: '할 수 있는 것' }).getByRole('button').first()).toHaveAccessibleName('이 화면 사용법')
   await close(page)
   await page.reload()
   await expect(page.getByRole('button', { name: 'AI 도우미 열기' })).toBeVisible()
