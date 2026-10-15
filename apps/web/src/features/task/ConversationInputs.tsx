@@ -4,15 +4,19 @@ import { toast } from 'sonner'
 import type { TaskStatus } from '@mes/domain'
 import type { ConversationCandidate } from '@/api/files'
 import { formatSize } from '@/api/files'
-import { listConversationInputs, refreshConversationInput, removeConversationInput } from '@/api/conversationInputs'
+import { listConversationInputs, refreshConversationInput, removeConversationInput, selectConversation } from '@/api/conversationInputs'
 import { useLocale, useT } from '@/i18n'
+import { cn } from '@/lib/utils'
 import { AttachToggle, UsedMark } from './AttachToggle'
 import { ConversationPickerDialog } from './ConversationPickerDialog'
 
 const TASK_STATUSES: readonly string[] = ['todo', 'in_progress', 'on_hold', 'done'] satisfies TaskStatus[]
 
-/** 자료함의 같은 태그 대화 — 파일처럼 [첨부](범위 미리보기 뒤 적용), '첨부됨'을 다시 누르면 뺀다. 제목을 누르면 범위를 다시 고른다 */
-export function ConversationInputs({ taskId, candidates, disabled }: { taskId: string; candidates: ConversationCandidate[]; disabled: boolean }) {
+/**
+ * 자료함의 같은 태그 대화 — 파일처럼 [첨부] 한 번에 대화 전체(전체 원문)가 붙고, '첨부됨'을 다시 누르면 뺀다.
+ * 범위 좁히기(메시지 선택·요약)는 선택 — 제목을 누르면 고른다. fresh는 방금 태그로 들어온 대화(tagShare)
+ */
+export function ConversationInputs({ taskId, candidates, disabled, fresh }: { taskId: string; candidates: ConversationCandidate[]; disabled: boolean; fresh?: ReadonlySet<string> }) {
   const t = useT()
   const locale = useLocale()
   const selected = useQuery({ queryKey: ['conversation-inputs', taskId], queryFn: () => listConversationInputs(taskId) })
@@ -26,12 +30,14 @@ export function ConversationInputs({ taskId, candidates, disabled }: { taskId: s
     {!candidates.length && <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">{t('task.inputs.noneAvailable')}</div>}
     {candidates.map((candidate) => {
       const current = selectedBySource.get(candidate.taskId)
-      return <div key={candidate.taskId} className="rounded-xl border p-2" data-testid={`conversation-${candidate.taskId}`}>
-        <div className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setTarget(candidate)}>
+      const isFresh = !!fresh?.has(candidate.taskId)
+      return <div key={candidate.taskId} className={cn('rounded-xl border p-2', isFresh && 'border-tone-info-fg/40 bg-tone-info-bg')} data-testid={`conversation-${candidate.taskId}`} data-fresh={isFresh ? 'true' : undefined}>
+        <div className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" title={t('task.inputs.narrow')} onClick={() => setTarget(candidate)}>
           <span className="font-mono text-muted-foreground">{candidate.code}</span> · {candidate.title}</button>
+          {isFresh && <span className="shrink-0 text-[11px] text-tone-info-fg">{t('task.materials.fresh')}</span>}
           {candidate.used && <UsedMark />}
           <AttachToggle attached={!!current} label={candidate.code} disabled={disabled || (!current && !candidate.messageCount)}
-            onToggle={() => current ? void run(removeConversationInput(taskId, candidate.taskId)) : setTarget(candidate)} /></div>
+            onToggle={() => void run(current ? removeConversationInput(taskId, candidate.taskId) : selectConversation(taskId, candidate.taskId, { mode: 'full' }))} /></div>
         <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground"><span className="rounded-full border px-1.5" style={{ borderColor: candidate.assistant.color }}>{candidate.assistant.name}</span>
           {TASK_STATUSES.includes(candidate.status) && <span>· {t(`status.task.${candidate.status as TaskStatus}`)}</span>}<span>{t('task.inputs.messages', { count: current?.messageCount ?? candidate.messageCount })}</span><span>· {formatSize(current?.bytes ?? candidate.bytes)}</span>
           {candidate.lastActivityAt && <time dateTime={candidate.lastActivityAt}>{new Date(candidate.lastActivityAt).toLocaleString(locale)}</time>}

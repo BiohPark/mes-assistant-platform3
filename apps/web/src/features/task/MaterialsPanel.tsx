@@ -16,10 +16,13 @@ import { FilePreviewDialog } from './FilePreviewDialog'
 import { AttachToggle, UsedMark } from './AttachToggle'
 import { ConversationInputs } from './ConversationInputs'
 import { listSrInputs, removeSrInput, selectSrInput } from '@/api/srInputs'
+import { cn } from '@/lib/utils'
+import { useTagShareStore } from './tagShare'
 
 /**
  * 자료 패널(S14) — '자료함' 목록만: 이 대화·같은 태그 파일·연결 SR 본문·연결 SR 첨부·같은 태그 대화.
  * 각 항목의 [첨부]로 입력창 칩에 붙이고('첨부됨'을 다시 누르면 뺀다), 보낸 뒤에는 서버가 비우고 '사용됨'을 붙인다.
+ * 내 태그 변경 직후에는 들어온 항목을 표시(data-fresh)하고 빠진 항목을 잠시 남긴다(tagShare).
  */
 export function MaterialsPanel({ task }: { task: Task }) {
   const actor = useActor()
@@ -29,6 +32,8 @@ export function MaterialsPanel({ task }: { task: Task }) {
   const [preview, setPreview] = useState<FileMeta | null>(null)
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const share = useTagShareStore((state) => state.byTask[task.id])
+  const fresh = new Set(share?.fresh)
   const candidates = useQuery({ queryKey: ['candidates', task.id], queryFn: () => getCandidates(task.id) })
   const query = useQueryClient()
   // 연결 SR 첨부는 SR 쪽에서 바뀐다 — sr.updated(연결 업무 참여자에게도 전달됨)에 후보를 다시 읽는다.
@@ -74,6 +79,10 @@ export function MaterialsPanel({ task }: { task: Task }) {
     {(candidates.isError || own.isError) && <div role="alert">{t('task.materials.loadFailed')} <button type="button" className="underline" onClick={() => { void candidates.refetch(); void own.refetch() }}>{t('common.retry')}</button></div>}
     <section data-tour="materials-library" data-testid="materials-library" aria-labelledby={libraryId} className="min-h-0 flex-1 space-y-3 overflow-y-auto">
       <div className="flex items-center gap-1"><h3 id={libraryId} className="text-sm font-medium">{t('task.materials.library')}</h3><HelpTip text={t('task.materials.libraryHelp')} /></div>
+      {!!share?.gone.length && <div data-testid="materials-gone" className="space-y-1 rounded-xl border border-dashed p-2 text-muted-foreground">
+        <div className="flex items-center gap-1 font-medium">{t('task.materials.gone')}<HelpTip text={t('task.materials.goneHelp')} /></div>
+        <ul className="flex flex-wrap gap-1">{share.gone.map((item) => <li key={item.id} className={cn('rounded-full border px-1.5 line-through', item.kind === 'conversation' && 'font-mono')}>{item.label}</li>)}</ul>
+      </div>}
       <FileDropZone data-testid="materials-own" label={t('dropzone.toUpload')} disabled={disabled} onFiles={(files) => void upload(files)}><div className="space-y-2">
         <div className="font-medium">{t('task.materials.ownSection')}</div>
         <FileList files={own.data ?? []} taskId={task.id} onPreview={setPreview} onToggleOutput={disabled ? undefined : (fileId, isOutput) => void setOutputTag(actor, task.id, fileId, isOutput).catch((error: unknown) => toast.error(String(error)))} canDelete={!disabled} deletableBy={actor.userId} renderActions={stage} />
@@ -86,8 +95,8 @@ export function MaterialsPanel({ task }: { task: Task }) {
           : candidates.isError ? null
           : !shared.length && (search ? <div className="space-y-1 rounded-xl border border-dashed p-3 text-center text-muted-foreground"><p>{t('task.materials.noSearchResults', { query: search })}</p><button type="button" className="underline" onClick={() => setSearch('')}>{t('task.materials.clearSearch')}</button></div>
             : <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">{t('task.materials.noShared')}</div>)}
-        {candidates.isSuccess && sortedGroups.flatMap(([assistantId, items]) => [<div key={`group-${assistantId}`} className="pt-1 font-medium" data-testid={`shared-group-${assistantId}`}>{assistantById.get(assistantId)?.name ?? assistantId}</div>, ...items.sort((a, b) => a.file.name.localeCompare(b.file.name) || a.file.version - b.file.version).map((item) => <div key={item.file.id} className="rounded-xl border p-2" data-testid={`candidate-file-${item.file.id}`}>
-          <div className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(item.file)}>{item.file.name} v{item.file.version}</button>{stage(item.file)}</div>
+        {candidates.isSuccess && sortedGroups.flatMap(([assistantId, items]) => [<div key={`group-${assistantId}`} className="pt-1 font-medium" data-testid={`shared-group-${assistantId}`}>{assistantById.get(assistantId)?.name ?? assistantId}</div>, ...items.sort((a, b) => a.file.name.localeCompare(b.file.name) || a.file.version - b.file.version).map((item) => <div key={item.file.id} className={cn('rounded-xl border p-2', fresh.has(item.file.id) && 'border-tone-info-fg/40 bg-tone-info-bg')} data-testid={`candidate-file-${item.file.id}`} data-fresh={fresh.has(item.file.id) ? 'true' : undefined}>
+          <div className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(item.file)}>{item.file.name} v{item.file.version}</button>{fresh.has(item.file.id) && <span className="shrink-0 text-[11px] text-tone-info-fg">{t('task.materials.fresh')}</span>}{stage(item.file)}</div>
           <div className="mt-1 text-xs text-muted-foreground">{item.role === 'output' ? <Badge tone="violet">{t('task.materials.roleOutput')}</Badge> : <Badge tone="neutral">{t('task.materials.roleUpload')}</Badge>} · <SourceLink taskId={item.sourceTaskId} code={item.sourceCode} title={item.sourceTitle} /> · {item.viaTags.join(', ')}
             {!!item.olderVersionIds?.length && <button type="button" className="ml-2 underline" onClick={() => setExpanded(expanded === item.file.id ? null : item.file.id)}>{t('task.materials.olderVersions', { count: item.olderVersionIds.length })}</button>}
           </div>
@@ -111,7 +120,7 @@ export function MaterialsPanel({ task }: { task: Task }) {
           {stage(item.file)}
         </div>)}
       </div>}
-      <div data-tour="materials-conversations" className="space-y-2 border-t pt-2"><div className="text-sm font-semibold">{t('task.materials.sameTagConversations', { count: candidates.data?.conversations.length ?? 0 })}</div><ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} /></div>
+      <div data-tour="materials-conversations" className="space-y-2 border-t pt-2"><div className="flex items-center gap-1 text-sm font-semibold">{t('task.materials.sameTagConversations', { count: candidates.data?.conversations.length ?? 0 })}<HelpTip text={t('task.inputs.help')} /></div><ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} fresh={fresh} /></div>
     </section>
     <FilePreviewDialog file={preview} onClose={() => setPreview(null)} />
   </div>

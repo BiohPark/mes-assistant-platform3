@@ -12,6 +12,7 @@ import { ActivityPanel } from './ActivityPanel'
 import { MaterialsPanel } from './MaterialsPanel'
 import { ChecklistPanel } from './ChecklistPanel'
 import { NotesPanel } from './NotesPanel'
+import { useTagShareStore } from './tagShare'
 
 type Panel = 'materials' | 'checklist' | 'notes' | 'history'
 type MobileTab = 'chat' | Panel
@@ -39,6 +40,9 @@ export function TaskBody({ task, assistant, headerTools }: { task: Task; assista
     setFocusMaterials(false)
   }, [focusMaterials])
   const activity = useQuery({ queryKey: ['activity', task.id], queryFn: () => getActivity(task.id) })
+  // 태그 공유 말풍선을 누르면 자료 탭으로 — 들어오고 빠진 표시가 거기 있다
+  const openSeq = useTagShareStore((state) => state.openSeq[task.id] ?? 0)
+  useEffect(() => { if (openSeq) { setPanel('materials'); setMobileTab('materials') } }, [openSeq])
   // 좁은 화면에서 대화 탭이 아니면 헤더의 검색·질문 목차 아이콘을 숨긴다 — 분기점(lg)은 TaskHeader의 CSS가 맡으므로 데스크톱은 영향 없음
   useEffect(() => { if (headerTools) headerTools.dataset.chatHidden = String(mobileTab !== 'chat') }, [headerTools, mobileTab])
   const selectMobileTab = (value: MobileTab) => { setMobileTab(value); if (value !== 'chat') setPanel(value) }

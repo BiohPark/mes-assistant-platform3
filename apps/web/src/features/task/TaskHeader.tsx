@@ -24,6 +24,7 @@ import { useT } from '@/i18n'
 import { assistantLink1 } from '@/lib/links'
 import { QuickSwitch } from './QuickSwitch'
 import { RelatedStrip } from './RelatedStrip'
+import { changeTagWithShare } from './tagShare'
 import { TaskCompleteDialog } from './TaskCompleteDialog'
 
 /**
@@ -64,7 +65,7 @@ export function TaskHeader({ task, assistant, toolsRef }: { task: Task; assistan
       <TaskStatusBadge status={task.status} />
       <PriorityBadge priority={task.priority} />
       {startedSrs.map((code) => <TagChip key={code} tag={code} className="shrink-0" onSrClick={(value) => void openSr(value)} />)}
-      <TagInput compact data-tour="tags" className="shrink-0 flex-nowrap sm:flex-wrap" tags={task.tags} suggest={suggest} srStatus={srStatus} readOnly={task.status === 'done'} onAdd={async (value) => { await addTag(actor, task.id, value); refresh() }} onRemove={async (value) => { await removeTag(actor, task.id, value); refresh() }} onChipClick={(value) => navigate(`/?view=kanban&tag=${encodeURIComponent(value)}`)} onSrChipClick={(value) => void openSr(value)} />
+      <TagInput compact data-tour="tags" className="shrink-0 flex-nowrap sm:flex-wrap" tags={task.tags} suggest={suggest} srStatus={srStatus} readOnly={task.status === 'done'} onAdd={async (value) => { await changeTagWithShare(query, task.id, () => addTag(actor, task.id, value)); refresh() }} onRemove={async (value) => { await changeTagWithShare(query, task.id, () => removeTag(actor, task.id, value)); refresh() }} onChipClick={(value) => navigate(`/?view=kanban&tag=${encodeURIComponent(value)}`)} onSrChipClick={(value) => void openSr(value)} />
       {task.tags.length > 0 && <div className="shrink-0"><RelatedStrip tags={task.tags} excludeTaskId={task.id} /></div>}
       <div className="ml-auto flex shrink-0 items-center gap-1">
         <div ref={toolsRef} className="flex items-center gap-1 empty:hidden data-[chat-hidden=true]:max-lg:hidden" />
