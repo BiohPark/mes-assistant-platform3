@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, useLocation } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
@@ -136,4 +136,21 @@ it('hides the shortcut when neither a link nor a model is configured', async () 
   await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => url === '/api/settings')).toBe(true))
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(screen.queryByRole('link', { name: 'OpenWebUI에서 열기' })).toBeNull()
+})
+
+it('S14: SR 태그 칩과 태그가 없는 시작 SR 칩은 SR 처리 상세로, 일반 태그는 칸반 필터로 간다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(
+    url === '/api/service-requests?code=SR-2026-0001' ? [{ id: 'sr-1' }] : url === '/api/service-requests?code=SR-2026-0009' ? [{ id: 'sr-9' }]
+      : url.startsWith('/api/tags/suggest') ? { items: [{ tag: 'SR-2026-0001', count: 1, isSr: true, srStatus: 'accepted' }], srScope: 'all' } : []), { status: 200 })))
+  function Probe() { const location = useLocation(); return <output aria-label="경로">{location.pathname + location.search}</output> }
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MemoryRouter initialEntries={['/c/t']}>
+    <TaskHeader task={{ ...task, tags: ['SR-2026-0001', '일반'], linkedSrCodes: ['SR-2026-0009', 'SR-2026-0001'] }} assistant={assistant} /><Probe /></MemoryRouter></MeContext></QueryClientProvider>)
+  // 시작 SR(태그 없음)만 따로 칩으로 — 태그로 이미 보이는 SR은 한 번만
+  expect(screen.getAllByRole('button', { name: 'SR-2026-0001' })).toHaveLength(1)
+  await userEvent.click(screen.getByRole('button', { name: 'SR-2026-0009' }))
+  await waitFor(() => expect(screen.getByLabelText('경로')).toHaveTextContent('/sr/manage?id=sr-9'))
+  await userEvent.click(screen.getByRole('button', { name: 'SR-2026-0001' }))
+  await waitFor(() => expect(screen.getByLabelText('경로')).toHaveTextContent('/sr/manage?id=sr-1'))
+  await userEvent.click(screen.getByRole('button', { name: '일반' }))
+  await waitFor(() => expect(screen.getByLabelText('경로')).toHaveTextContent('/?view=kanban&tag=%EC%9D%BC%EB%B0%98'))
 })

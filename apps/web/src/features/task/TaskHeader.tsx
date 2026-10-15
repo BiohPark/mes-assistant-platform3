@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { CheckCircle2, ExternalLink, MoreHorizontal, PauseCircle, PlayCircle, Trash2 } from 'lucide-react'
-import type { Task, TaskStatus } from '@mes/domain'
+import { tagKey, type Task, type TaskStatus } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSettings } from '@/api/admin'
@@ -10,9 +10,11 @@ import { addTag, deleteTask, removeTag, setTaskStatus } from '@/api/tasks'
 import { useActor } from '@/app/hooks'
 import { isPopout, openPopout } from '@/app/popout'
 import { useSrStatus, useTagSuggest } from '@/app/useTagSuggest'
+import { useOpenSr } from '@/app/useOpenSr'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { OpenWebUiIcon } from '@/components/OpenWebUiIcon'
 import { TagInput } from '@/components/TagInput'
+import { TagChip } from '@/components/TagChip'
 import { ReasonDialog } from '@/components/ReasonDialog'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { PriorityBadge, TaskStatusBadge } from '@/components/StatusBadges'
@@ -35,6 +37,9 @@ export function TaskHeader({ task, assistant, toolsRef }: { task: Task; assistan
   const suggest = useTagSuggest()
   const srStatus = useSrStatus()
   const navigate = useNavigate()
+  const openSr = useOpenSr()
+  // 연결 SR 중 태그로 이미 보이지 않는 것(시작한 SR의 태그를 뗀 경우)만 따로 칩으로 — 태그 SR 칩도 같은 원클릭
+  const startedSrs = (task.linkedSrCodes ?? []).filter((code) => !task.tags.some((value) => tagKey(value) === tagKey(code)))
   // 사내 어시스턴트 바로가기 — 초안 화면(DraftConversationPage)과 같은 규칙: 저장된 링크 → 설정 규칙 → baseUrl, 없으면 숨김
   const link1Rule = useQuery({ queryKey: ['settings'], queryFn: getSettings }).data?.link1Rule
   const link1 = assistantLink1('', assistant, link1Rule)
@@ -58,7 +63,8 @@ export function TaskHeader({ task, assistant, toolsRef }: { task: Task; assistan
       <Link to={`/?view=kanban&assistant=${encodeURIComponent(assistant.id)}`} className="inline-flex max-w-48 shrink-0 items-center gap-1.5 rounded-full border py-0.5 pr-2 pl-0.5 text-xs hover:bg-muted sm:max-w-64"><AssistantAvatar assistant={assistant} size="xs" /><span className="truncate">{assistant.name}</span></Link>
       <TaskStatusBadge status={task.status} />
       <PriorityBadge priority={task.priority} />
-      <TagInput compact data-tour="tags" className="shrink-0 flex-nowrap sm:flex-wrap" tags={task.tags} suggest={suggest} srStatus={srStatus} readOnly={task.status === 'done'} onAdd={async (value) => { await addTag(actor, task.id, value); refresh() }} onRemove={async (value) => { await removeTag(actor, task.id, value); refresh() }} onChipClick={(value) => navigate(`/?view=kanban&tag=${encodeURIComponent(value)}`)} />
+      {startedSrs.map((code) => <TagChip key={code} tag={code} className="shrink-0" onSrClick={(value) => void openSr(value)} />)}
+      <TagInput compact data-tour="tags" className="shrink-0 flex-nowrap sm:flex-wrap" tags={task.tags} suggest={suggest} srStatus={srStatus} readOnly={task.status === 'done'} onAdd={async (value) => { await addTag(actor, task.id, value); refresh() }} onRemove={async (value) => { await removeTag(actor, task.id, value); refresh() }} onChipClick={(value) => navigate(`/?view=kanban&tag=${encodeURIComponent(value)}`)} onSrChipClick={(value) => void openSr(value)} />
       {task.tags.length > 0 && <div className="shrink-0"><RelatedStrip tags={task.tags} excludeTaskId={task.id} /></div>}
       <div className="ml-auto flex shrink-0 items-center gap-1">
         <div ref={toolsRef} className="flex items-center gap-1 empty:hidden data-[chat-hidden=true]:max-lg:hidden" />

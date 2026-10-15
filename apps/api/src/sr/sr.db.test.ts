@@ -238,6 +238,79 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     await expect(sr.share('staff', draft.id, { text: '위조' })).rejects.toMatchObject({ status: 403 })
   })
 
+  it('S14: SR 번호 태그로 여러 SR에 연결되고(시작한 SR 유지) 처리 화면 연결 수·목록에 반영되지만 권한은 주지 않는다', async () => {
+    const tasks = new DbTasksService(db)
+    const a = await sr.create('requester'), b = await sr.create('other')
+    const codeA = (await sr.submit('requester', a.id, { title: '태그 연결 A', body: '' })).code
+    const codeB = (await sr.submit('other', b.id, { title: '태그 연결 B', body: '' })).code
+    // 다른 담당자의 업무에 SR 번호 두 개(하나는 소문자 입력) + 접수되지 않은 번호
+    const tagged = (await tasks.create('staff', { assistantId, tags: [codeA, codeB.toLowerCase(), 'SR-2099-9999', '일반'] })).task
+    expect(tagged.linkedSrCodes).toEqual([codeA, codeB])
+    expect((await tasks.list({})).find(item => item.id === tagged.id)?.linkedSrCodes).toEqual([codeA, codeB])
+    const conversation = expect.objectContaining({ id: tagged.id, code: tagged.code, title: tagged.title, status: 'in_progress', ownerId: 'staff' })
+    expect((await sr.get('owner', a.id))).toMatchObject({ taskCount: 1, conversations: [conversation] })
+    expect((await sr.list('owner', 'inbox')).find(row => row.id === b.id)).toMatchObject({ taskCount: 1, conversations: [conversation] })
+    // 요청자(BO) 화면은 지금 규칙 그대로: 내부 대화 숨김, 연결 수는 시작한 업무(sr_id)만
+    expect(await sr.get('requester', a.id)).toMatchObject({ taskCount: 0, conversations: [] })
+    // 태그는 권한 근거가 아니다(HANDOFF §7)
+    await expect(assertSrAccess(db, 'staff', a.id)).rejects.toMatchObject({ status: 403 })
+    await expect(sr.status('staff', a.id, 'rejected', '태그')).rejects.toMatchObject({ status: 403 })
+    // 시작한 SR은 태그를 지워도 연결로 남고, 태그 연결과 겹쳐도 한 번만 센다
+    const started = await sr.startTask('owner', a.id, { assistantId, forceNew: true })
+    if (!('id' in started)) throw new Error('Expected a new linked task')
+    expect(started.linkedSrCodes).toEqual([codeA])
+    await new DbTasksService(db).removeTag('owner', started.id, codeA)
+    expect((await tasks.get(started.id)).linkedSrCodes).toEqual([codeA])
+    expect((await sr.get('owner', a.id)).conversations.map(item => item.id).sort()).toEqual([tagged.id, started.id].sort())
+    expect((await sr.get('owner', a.id)).taskCount).toBe(2)
+    expect((await sr.get('requester', a.id)).taskCount).toBe(1)
+    // 태그를 떼면 연결이 풀리고, 삭제한 업무는 빠진다
+    await tasks.removeTag('staff', tagged.id, codeB)
+    expect((await tasks.get(tagged.id)).linkedSrCodes).toEqual([codeA])
+    expect((await sr.get('owner', b.id))).toMatchObject({ taskCount: 0, conversations: [] })
+    await tasks.delete(tagged.id, 'staff')
+    expect((await sr.get('owner', a.id)).conversations.map(item => item.id)).toEqual([started.id])
+  })
+
+  it('S14: SR 태그를 달거나 떼면(생성 포함) 그 SR의 sr.updated를 발행하고, 일반·미접수 번호 태그는 발행하지 않는다', async () => {
+    const events = new EventsService(), tasks = new DbTasksService(db, events)
+    const draft = await sr.create('requester')
+    const code = (await sr.submit('requester', draft.id, { title: '태그 이벤트', body: '' })).code
+    const publish = vi.spyOn(events, 'publish')
+    const srEvents = () => publish.mock.calls.filter(([event]) => event === 'sr.updated').map(([, data]) => data)
+    const created = (await tasks.create('staff', { assistantId, tags: [code, 'SR-2099-9998'] })).task
+    expect(srEvents()).toEqual([{ srId: draft.id }])
+    await tasks.addTag('staff', created.id, '키워드')
+    await tasks.addTag('staff', created.id, 'SR-2099-9997')
+    expect(srEvents()).toHaveLength(1)
+    await tasks.removeTag('staff', created.id, code.toLowerCase())
+    expect(srEvents()).toEqual([{ srId: draft.id }, { srId: draft.id }])
+    await tasks.removeTag('staff', created.id, code)
+    expect(srEvents()).toHaveLength(2) // 이미 떨어진 태그는 변경이 아니다
+    await tasks.addTag('staff', created.id, code)
+    expect(srEvents()).toHaveLength(3)
+  })
+
+  it('S14: SR 번호로 찾기는 열람 범위를 따른다(요청자 BO는 본인 SR만, 없거나 남의 것은 빈 결과)', async () => {
+    const mine = await sr.create('requester'), foreign = await sr.create('other')
+    const code = (await sr.submit('requester', mine.id, { title: '번호 찾기', body: '' })).code
+    const foreignCode = (await sr.submit('other', foreign.id, { title: '남의 것', body: '' })).code
+    expect(await sr.byCode('staff', code.toLowerCase())).toEqual([expect.objectContaining({ id: mine.id, code, title: '번호 찾기' })])
+    expect(await sr.byCode('requester', code)).toEqual([expect.objectContaining({ id: mine.id, conversations: [] })])
+    expect(await sr.byCode('requester', foreignCode)).toEqual([])
+    expect(await sr.byCode('staff', 'SR-2099-9999')).toEqual([])
+  })
+
+  it('S14: SR 알림 링크는 해당 SR 상세(처리 /sr/manage?id= · 요청 /sr?id=)를 연다', async () => {
+    const draft = await sr.create('requester')
+    await sr.submit('requester', draft.id, { title: '알림 링크', body: '' })
+    await sr.startTask('staff', draft.id, { assistantId })
+    await sr.share('staff', draft.id, { text: '결과' })
+    const links = await db.select({ link: notification.link, userId: notification.userId }).from(notification)
+    expect(links).toContainEqual({ userId: 'staff', link: `/sr/manage?id=${draft.id}` })
+    expect(links.filter(item => item.userId === 'requester' && item.link.endsWith(`?id=${draft.id}`)).map(item => item.link)).toEqual([`/sr?id=${draft.id}`, `/sr?id=${draft.id}`])
+  })
+
   it('filters another requester SR events on live delivery and replay', async () => {
     const draft = await sr.create('requester')
     const events = new EventsService(), controller = new EventsController(events, db)

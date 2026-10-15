@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { Task } from '@mes/domain'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { MeContext } from '@/app/auth'
+import { useLocation } from 'react-router'
 import { renderWithProviders } from '@/test/render'
 import { ConversationCard } from './ConversationCard'
 
@@ -41,4 +42,17 @@ it('judges stalled time by the server clock, not a fast browser clock', async ()
   await waitFor(() => expect(health).toHaveBeenCalled())
   await new Promise(resolve => setTimeout(resolve, 20))
   expect(screen.queryByText('정체')).not.toBeInTheDocument()
+})
+
+it('S14: 카드의 SR 칩(태그·시작 SR)은 SR 상세를 열고 일반 태그는 필터로 쓴다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url === '/api/service-requests?code=SR-2026-0002' ? [{ id: 'sr-2' }] : [])))
+  const onTagClick = vi.fn()
+  function Probe() { const location = useLocation(); return <output aria-label="경로">{location.pathname + location.search}</output> }
+  renderWithProviders(<MeContext value={{ id: 'u', name: 'User', role: '', roles: ['member'], locale: 'ko', theme: 'system', email: null, emailIsDefault: false }}><TooltipProvider>
+    <ConversationCard task={{ ...oldTask, tags: ['SR-2026-0001', '일반'], linkedSrCodes: ['SR-2026-0002', 'SR-2026-0001'] }} onTagClick={onTagClick} /><Probe /></TooltipProvider></MeContext>)
+  await userEvent.click(screen.getByRole('button', { name: '일반' }))
+  expect(onTagClick).toHaveBeenCalledWith('일반')
+  await userEvent.click(screen.getByRole('button', { name: 'SR-2026-0002' }))
+  await waitFor(() => expect(screen.getByLabelText('경로')).toHaveTextContent('/sr/manage?id=sr-2'))
+  expect(onTagClick).toHaveBeenCalledTimes(1)
 })

@@ -179,3 +179,13 @@ it('inbox 표는 제목·경과일 열 머리로 정렬하고 기본은 경과�
   await userEvent.click(within(table).getByRole('button', { name: 'SR 상태' })) // 접수됨 2건 동률은 기본 비교(경과일 내림차순)로 가른다
   expect(titles()).toEqual(['옛 검토', '알람', '리포트'])
 })
+
+it('S14: ?id= 주소(알림·SR 번호 원클릭)로 들어오면 그 SR 상세를 바로 열고, 닫으면 주소에서 뺀다', async () => {
+  const target = { ...row('a', 'in_progress', '바로 열기'), body: '원클릭 본문' }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests?scope=inbox' ? jsonResponse(200, [target]) : url === '/api/service-requests/a' ? jsonResponse(200, target) : jsonResponse(200, [])))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrManagePage /></MeContext></TooltipProvider>, { route: '/sr/manage?id=a' })
+  const sheet = await screen.findByRole('dialog')
+  expect(await within(sheet).findByText('원클릭 본문')).toBeInTheDocument()
+  await userEvent.click(within(sheet).getByRole('button', { name: '닫기' }))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})

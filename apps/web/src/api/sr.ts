@@ -18,6 +18,8 @@ async function request<T>(path: string, method = 'GET', body?: unknown, key?: st
 }
 const path = (id: string) => `/${encodeURIComponent(id)}`
 export const listSr = (scope?: 'mine' | 'inbox') => request<SrDetail[]>(scope ? `?scope=${scope}` : '')
+/** SR 번호로 찾기 — 목록과 같은 열람 범위. 없거나 볼 수 없으면 빈 배열 */
+export const findSrByCode = (code: string) => request<SrDetail[]>(`?code=${encodeURIComponent(code)}`)
 export const getSrIntakeAssistant = () => request<{ srIntakeAssistantId: string | null; name?: string; summary?: string; usageExample?: string; /** 접수 에이전트 모델이 만든 추천 첫 질문(현재 기준으로 만든 것만) */ suggestedQuestions?: string[]; fileMaxPerRequest?: number }>('/intake-assistant')
 export const getSr = (id: string) => request<SrDetail>(path(id))
 export const createSr = (key?: string) => request<SrDetail>('', 'POST', undefined, key)

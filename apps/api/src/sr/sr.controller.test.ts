@@ -15,7 +15,7 @@ type Hooks = { onStart: () => void; onDelta: (text: string) => void }
 describe('SR HTTP API', () => {
   let app: INestApplication
   const sr = {
-    list: vi.fn(async () => []), create: vi.fn(async () => ({ id: 'sr', status: 'draft' })), get: vi.fn(async () => ({ id: 'sr' })),
+    list: vi.fn(async () => []), byCode: vi.fn(async () => []), create: vi.fn(async () => ({ id: 'sr', status: 'draft' })), get: vi.fn(async () => ({ id: 'sr' })),
     draft: vi.fn(async () => ({ title: '제목', body: '본문' })), submit: vi.fn(async () => ({ id: 'sr', code: 'SR-2026-0001' })),
     title: vi.fn(async () => ({ title: '사람 제목', titleSource: 'manual' })), status: vi.fn(async () => ({ status: 'in_progress' })),
     content: vi.fn(async () => ({ title: '사람 제목', body: '본문' })), refine: vi.fn<(actor: string, id: string, input: unknown, options: Hooks) => Promise<unknown>>(async () => ({ title: '다듬은 제목', body: '다듬은 본문' })),
@@ -42,6 +42,13 @@ describe('SR HTTP API', () => {
     await request(app.getHttpServer()).get('/api/service-requests?scope=all').set(auth()).expect(400)
     await request(app.getHttpServer()).post('/api/service-requests').set(auth()).set('Idempotency-Key', 'first-send').expect(201)
     expect(sr.create).toHaveBeenLastCalledWith('u', 'first-send')
+  })
+
+  it('S14: finds an SR by its number through the list route (normalized, format-checked) without changing scope calls', async () => {
+    await request(app.getHttpServer()).get('/api/service-requests?code=sr-2026-0007').set(auth()).expect(200, [])
+    expect(sr.byCode).toHaveBeenLastCalledWith('u', 'SR-2026-0007')
+    await request(app.getHttpServer()).get('/api/service-requests?code=WK-2026-0001').set(auth()).expect(400)
+    await request(app.getHttpServer()).get('/api/service-requests?code=SR-2026-0007&scope=mine').set(auth()).expect(400)
   })
 
   it('maps the actor and validates submit, status, task and result bodies', async () => {

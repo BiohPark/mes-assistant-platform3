@@ -10,7 +10,8 @@ import { TaskStatusBadge } from '@/components/StatusBadges'
 import { TagChip } from '@/components/TagChip'
 import { AvatarGroup } from '@/components/UserAvatar'
 import { useUserMap } from '@/app/hooks'
-import { primarySrTag, srTagColor, TASK_STATUSES, type Task, type TaskStatus } from '@mes/domain'
+import { useOpenSr } from '@/app/useOpenSr'
+import { primarySrTag, srTagColor, tagKey, TASK_STATUSES, type Task, type TaskStatus } from '@mes/domain'
 import { daysUntil, useDates } from '@/lib/dates'
 import { TASK_STATUS_KEY } from '@/lib/labels'
 import { cn } from '@/lib/utils'
@@ -37,10 +38,13 @@ export function ConversationCard({ task, onTagClick, onStatusChange, 'data-tour'
   const t = useT()
   const users = useUserMap()
   const unread = useConversationUnread(task, use(MeContext)?.id ?? '')
-  const sr = primarySrTag(task.tags)
+  const openSr = useOpenSr()
+  // 칩 = 태그 + 태그로 보이지 않는 연결 SR(시작한 SR의 태그를 뗀 경우). 목록 응답의 linkedSrCodes만 쓴다 — 카드마다 조회하지 않는다
+  const chips = [...task.tags, ...(task.linkedSrCodes ?? []).filter((code) => !task.tags.some((value) => tagKey(value) === tagKey(code)))]
+  const sr = primarySrTag(chips)
   const daysLeft = daysUntil(task.dueDate)
   const overdue = task.status !== 'done' && daysLeft !== undefined && daysLeft < 0
-  const extraTags = task.tags.length - MAX_TAGS
+  const extraTags = chips.length - MAX_TAGS
 
   return (
     <div
@@ -59,10 +63,10 @@ export function ConversationCard({ task, onTagClick, onStatusChange, 'data-tour'
         <span className="ml-auto min-w-0 truncate">{formatRelative(task.lastActivityAt)}</span>
       </div>
       <div className="pointer-events-none mt-1 line-clamp-2 text-[13px] leading-snug font-medium">{task.title}</div>
-      {task.tags.length > 0 && (
+      {chips.length > 0 && (
         <div className="relative z-10 mt-1.5 flex flex-wrap gap-1">
-          {task.tags.slice(0, MAX_TAGS).map((t) => (
-            <TagChip key={t} tag={t} size="xs" onClick={onTagClick} />
+          {chips.slice(0, MAX_TAGS).map((t) => (
+            <TagChip key={t} tag={t} size="xs" onClick={onTagClick} onSrClick={(code) => void openSr(code)} />
           ))}
           {extraTags > 0 && <span className="text-[11px] text-muted-foreground">+{extraTags}</span>}
         </div>

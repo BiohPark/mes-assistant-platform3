@@ -215,3 +215,14 @@ it('접수 대화는 기본으로 접고 요청자 원문과 AI의 3줄 미리�
   expect(screen.queryByRole('region', { name: '접수 대화' })).not.toBeInTheDocument()
   expect(fetch.mock.calls.some(([url]) => String(url).includes('/messages'))).toBe(false)
 })
+
+it('S14: 연결 업무(다른 사람 업무 포함)는 제목·상태·담당 메타만 보이고 원클릭으로 연다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/catalog/users' ? jsonResponse(200, [
+    { id: 'owner-uuid', name: '김담당', initials: '김', color: '#000', isSystemOwner: false, isBusinessOwner: false },
+  ]) : jsonResponse(200, [])))
+  const linked = { ...sr, conversations: [{ id: 'other-task', code: 'WK-2026-0007', title: '태그로 연결된 업무', status: 'on_hold', threadId: 'h7', ownerId: 'owner-uuid', assigneeIds: [] }] }
+  const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={linked} onSaved={() => undefined} /></MeContext></TooltipProvider>)
+  expect(screen.getByRole('link', { name: 'WK-2026-0007 태그로 연결된 업무 (보류)' })).toHaveAttribute('href', '/c/other-task')
+  await waitFor(() => expect(container).toHaveTextContent('담당 김담당'))
+  expect(container).not.toHaveTextContent('owner-uuid')
+})
