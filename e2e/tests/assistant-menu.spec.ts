@@ -20,14 +20,14 @@ async function close(page: Page) {
   await page.getByRole('button', { name: '시스템 assistant 닫기' }).click()
   await expect(page.getByRole('dialog', { name: '시스템 assistant' })).toHaveCount(0)
 }
-const offer = (page: Page) => page.getByRole('status', { name: 'AI 도우미 가이드 제안' }).getByText('이 화면에서 도와드릴까요?')
+const offer = (page: Page) => page.getByRole('status', { name: 'AI 도우미 가이드 제안' }).getByText('이 화면, 같이 둘러볼까요?')
 const stored = (page: Page, userId: string, route: string) => page.evaluate(([id, r]) => localStorage.getItem(`tutorial:${id}:${r}:v1`), [userId, route] as const)
 
-test('asks once per user and page with a bubble — closing without an answer counts, "No thanks" is remembered, the window does not ask again', async ({ page }) => {
+test('asks once per session and page with a light bubble — folding it (press elsewhere) counts for the session, "Don\'t ask again" is remembered, the window does not ask again', async ({ page }) => {
   const userId = await signUp(page)
   await expect(offer(page)).toBeVisible()
   expect(await stored(page, userId, 'hub')).toBe('asked')
-  await page.getByRole('button', { name: '말풍선 닫기' }).click()
+  await page.getByRole('heading', { level: 1 }).first().click() // 밖을 누르면 접힌다
   await expect(offer(page)).toHaveCount(0)
   let dialog = await open(page)
   await expect(dialog.getByText('둘러볼까요?', { exact: true })).toHaveCount(0)
@@ -38,7 +38,7 @@ test('asks once per user and page with a bubble — closing without an answer co
   await expect(offer(page)).toHaveCount(0)
   await page.goto('/sr') // 다른 페이지는 따로 한 번
   await expect(offer(page)).toBeVisible()
-  await page.getByRole('button', { name: '괜찮아요' }).click()
+  await page.getByRole('button', { name: '다시 묻지 않기' }).click()
   await expect(offer(page)).toHaveCount(0)
   expect(await stored(page, userId, 'sr')).toBe('skipped')
   await page.reload()
@@ -48,19 +48,44 @@ test('asks once per user and page with a bubble — closing without an answer co
   await expect(dialog.getByText('둘러볼까요?', { exact: true })).toHaveCount(0)
 })
 
+test('S14 코치: 새 세션(새 탭)은 끝까지 보지 않은 페이지만 다시 가볍게 묻는다 — 끝까지 본 페이지·다시 묻지 않기는 조용하다', async ({ page }) => {
+  const userId = await signUp(page)
+  await page.getByRole('status', { name: 'AI 도우미 가이드 제안' }).getByRole('button', { name: '사용법 보기' }).click()
+  const tour = page.getByRole('dialog', { name: '페이지 가이드' })
+  const total = Number((await tour.getByText(/^1\/(\d+)$/).textContent())!.split('/')[1])
+  for (let step = 1; step < total; step++) await page.keyboard.press('Enter')
+  await expect(tour.getByText(`${total}/${total}`, { exact: true })).toBeVisible()
+  await page.keyboard.press('Enter') // 마지막 — 다 봤어요
+  await expect(tour).toHaveCount(0)
+  expect(await stored(page, userId, 'hub')).toBe('done')
+  await expect(page.getByRole('status', { name: 'AI 도우미 말풍선' }).getByText(/다 봤어요! 잘하셨어요/)).toBeVisible()
+  await page.goto('/my-work')
+  await expect(offer(page)).toBeVisible()
+  await page.getByRole('heading', { level: 1 }).first().click() // 답 없이 접기
+  await page.goto('/sr')
+  await page.getByRole('button', { name: '다시 묻지 않기' }).click()
+  const next = await page.context().newPage()
+  for (const [path, asked] of [['/', false], ['/sr', false], ['/my-work', true]] as const) {
+    await next.goto(path)
+    await expect(next.getByRole('button', { name: 'AI 도우미 열기' })).toBeVisible()
+    if (asked) await expect(offer(next)).toBeVisible()
+    else await expect(offer(next)).toHaveCount(0)
+  }
+})
+
 test('replays from My info as a spotlight tour of the current page without opening the window', async ({ page }) => {
   const userId = await signUp(page)
   await page.goto('/my-info')
-  await page.getByRole('button', { name: '괜찮아요' }).click()
+  await page.getByRole('button', { name: '다시 묻지 않기' }).click()
   await page.getByRole('button', { name: '튜토리얼 다시 보기' }).click()
   await expect(page.getByRole('dialog', { name: '시스템 assistant' })).toHaveCount(0)
   const tour = page.getByRole('dialog', { name: '페이지 가이드' })
-  await expect(tour.getByText('1/2', { exact: true })).toBeVisible() // '섹션 1/2'와 구분
+  await expect(tour.getByText('1/2', { exact: true })).toBeVisible()
   await expect(tour.getByText(/왼쪽 메뉴로 허브/)).toBeVisible()
   expect(await stored(page, userId, 'other')).toBe('accepted')
   await tour.getByRole('button', { name: '다음' }).click()
   await expect(tour.getByText('2/2', { exact: true })).toBeVisible()
-  await tour.getByRole('button', { name: '마치기' }).click()
+  await tour.getByRole('button', { name: '다 봤어요' }).click()
   await expect(tour).toHaveCount(0)
 })
 
@@ -74,7 +99,7 @@ test('storage failure shows once per session and sessionStorage survives reload'
   })
   await signUp(page)
   await expect(offer(page)).toBeVisible()
-  await page.getByRole('button', { name: '괜찮아요' }).click()
+  await page.getByRole('button', { name: '다시 묻지 않기' }).click()
   await expect(offer(page)).toHaveCount(0)
   await page.goto('/my-info')
   await expect(page.getByRole('button', { name: '튜토리얼 다시 보기' })).toBeVisible()

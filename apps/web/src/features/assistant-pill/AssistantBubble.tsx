@@ -9,7 +9,7 @@ import { BUBBLE_TTL_MS, isReplyBubble, useBubbleStore, type Bubble, type BubbleS
 import { usePillAnchor } from './pillAnchor'
 
 const WIDTH = 260
-const MESSAGE = { 'budget.warn': 'bubble.budgetWarn', 'budget.over': 'bubble.budgetOver', 'request.slow': 'bubble.requestSlow', 'share.in': 'bubble.shareIn', 'share.out': 'bubble.shareOut', 'share.none': 'bubble.shareNone' } as const satisfies Record<Exclude<BubbleSource, ReplySource>, string>
+const MESSAGE = { 'budget.warn': 'bubble.budgetWarn', 'budget.over': 'bubble.budgetOver', 'request.slow': 'bubble.requestSlow', 'share.in': 'bubble.shareIn', 'share.out': 'bubble.shareOut', 'share.none': 'bubble.shareNone', 'guide.done': 'bubble.guideDone' } as const satisfies Record<Exclude<BubbleSource, ReplySource>, string>
 const REPLY = { 'reply.done': 'bubble.replyDone', 'reply.failed': 'bubble.replyFailed', 'reply.cancelled': 'bubble.replyCancelled' } as const satisfies Record<ReplySource, string>
 
 /** 알약 옆 말풍선(U6) — 큐 1개, 8초 뒤 소멸(hover·focus 중 정지), 클릭하면 요청 크기 안내(onOpen)나 요청 정보를 연다. reply.*는 제목·답 첫 문장과 [바로 가기](그 대화로 이동). 서버 알림(벨)과 겹치지 않고 AI를 호출하지 않는다 */
