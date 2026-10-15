@@ -57,8 +57,8 @@ test('첫 진입 말풍선 → 가이드: 실제 컨트롤을 파란 테두리�
   expect(writes).toEqual([])
 })
 
-test('창의 "가이드해 주세요"는 창을 닫고 투어를 시작한다; 대화 페이지에서는 없는 대상(같은 태그 패널)을 건너뛰고 마지막은 알약이다', async ({ page }) => {
-  await signUp(page)
+test('창의 "가이드해 주세요"는 창을 닫고 섹션 투어를 시작한다; 섹션 목록·건너뛰기·다시 보기, 완료는 사용자별로 남아 다음에는 안 본 섹션부터', async ({ page }) => {
+  const userId = await signUp(page)
   const task = await createTask(page) // 태그 없음 → 같은 태그 패널 없음
   await page.goto(`/c/${task.id}`)
   await expect(page.getByRole('textbox', { name: 'AI 요청 입력' })).toBeVisible()
@@ -70,18 +70,45 @@ test('창의 "가이드해 주세요"는 창을 닫고 투어를 시작한다; �
   await actions.first().click()
   await expect(window).toHaveCount(0)
   const dialog = guide(page)
-  await expect(dialog.getByText('1/3')).toBeVisible() // composer · task-tabs · pill — related 없음
+  await expect(dialog.getByRole('heading', { name: '대화 기본' })).toBeVisible()
+  await expect(dialog.getByText(/^1\/\d+$/)).toBeVisible()
   await expect(dialog.getByText(/메시지를 쓰고 파일을 첨부해 보냅니다/)).toBeVisible()
-  await page.keyboard.press('Space')
-  await expect(dialog.getByText('2/3')).toBeVisible()
+  await page.keyboard.press('Space') // 같은 섹션의 다음 단계 — 모델 선택
+  await expect(dialog.getByText(/^2\/\d+$/)).toBeVisible()
+  await expect(dialog.getByText(/이 대화에서 쓸 AI 모델입니다/)).toBeVisible()
+  await expectSpotlightAround(page, page.getByTitle('이 대화의 모델 변경'))
+  // 섹션 목록: 현재 위치가 표시되고 다른 섹션으로 바로 간다
+  await dialog.getByRole('button', { name: '섹션 목록' }).click()
+  const list = dialog.getByRole('list', { name: '가이드 섹션' })
+  for (const name of ['대화 기본', '자료함', '팀 의견', '태그·같은 태그', '보류·완료', 'AI 도우미']) await expect(list.getByRole('button', { name, exact: true })).toBeVisible()
+  await expect(list.getByRole('button', { name: '요약 카드' })).toHaveCount(0) // 새 대화에는 요약 카드가 없다 → 섹션째 건너뜀
+  await expect(list.getByRole('button', { name: '대화 기본', exact: true })).toHaveAttribute('aria-current', 'step')
+  await dialog.getByRole('button', { name: '이 섹션 건너뛰기' }).click()
+  await expect(dialog.getByRole('heading', { name: '자료함' })).toBeVisible()
   await expectSpotlightAround(page, page.getByRole('tablist', { name: '보조 패널' }))
+  await page.keyboard.press('Enter') // 자료 탭을 열고 자료함을 짚는다(기본 패널은 이력)
+  await expect(page.getByRole('tab', { name: '자료', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(dialog.getByText(/☑ 체크하면 아래/)).toBeVisible()
+  await expectSpotlightAround(page, page.getByTestId('materials-library'))
   await page.keyboard.press('Enter')
-  await expect(dialog.getByText('3/3')).toBeVisible()
+  await expect(dialog.getByText(/다음 질문과 한 번만 함께 가고, 보내면 비워져요/)).toBeVisible()
+  await expectSpotlightAround(page, page.getByTestId('materials-staged'))
+  await list.getByRole('button', { name: 'AI 도우미', exact: true }).click()
   await expectSpotlightAround(page, page.getByRole('button', { name: 'AI 도우미 열기' }))
   await expect(dialog.getByRole('button', { name: '다음' })).toHaveCount(0)
   await dialog.getByRole('button', { name: '마치기' }).click()
   await expect(dialog).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'AI 도우미 열기' })).toBeFocused()
+  expect(await page.evaluate(id => JSON.parse(localStorage.getItem(`tour-progress:${id}:conversation:v1`) ?? '[]'), userId)).toEqual(['assistant']) // 건너뛴 섹션은 완료가 아니다
+  // 다시 열면 안 본 첫 섹션(대화 기본)부터, 끝낸 섹션은 ✓ + 다시 보기
+  await page.getByRole('button', { name: 'AI 도우미 열기' }).click()
+  await actions.first().click()
+  await expect(dialog.getByRole('heading', { name: '대화 기본' })).toBeVisible()
+  await dialog.getByRole('button', { name: '섹션 목록' }).click()
+  await dialog.getByRole('list', { name: '가이드 섹션' }).getByRole('button', { name: 'AI 도우미 완료 — 다시 보기' }).click()
+  await expect(dialog.getByRole('heading', { name: 'AI 도우미' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
 })
 
 test.describe('390px', () => {

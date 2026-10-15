@@ -24,6 +24,8 @@ interface TagInputProps {
   className?: string
   /** 칩 + [+] 버튼만 두고 입력은 팝오버로 연다 — 가로 스크롤 줄(대화 헤더)에서도 후보 목록이 잘리지 않는다 */
   compact?: boolean
+  /** 가이드 투어 앵커 */
+  'data-tour'?: string
 }
 
 /**
@@ -33,7 +35,7 @@ interface TagInputProps {
  * 후보가 재정렬돼도 고른 것만 붙고, 후보에서 사라지면 선택이 풀린다. Backspace(빈 입력)로 마지막 칩 삭제.
  * 저장 실패 시 입력을 되살리고 토스트로 알린다. 저장 중에는 중복 제출하지 않는다.
  */
-export function TagInput({ tags, onAdd, onRemove, suggest, srStatus, onChipClick, readOnly, placeholder, className, compact }: TagInputProps) {
+export function TagInput({ tags, onAdd, onRemove, suggest, srStatus, onChipClick, readOnly, placeholder, className, compact, 'data-tour': tourId }: TagInputProps) {
   const translate = useT()
   const [text, setText] = useState('')
   const [open, setOpen] = useState(false)
@@ -148,7 +150,7 @@ export function TagInput({ tags, onAdd, onRemove, suggest, srStatus, onChipClick
   )
 
   return (
-    <div className={cn('relative flex min-w-0 flex-wrap items-center gap-1', className)}>
+    <div data-tour={tourId} className={cn('relative flex min-w-0 flex-wrap items-center gap-1', className)}>
       {tags.map((t) => (
         <TagChip key={t} tag={t} onClick={onChipClick} onRemove={readOnly ? undefined : onRemove} note={note(t)} />
       ))}

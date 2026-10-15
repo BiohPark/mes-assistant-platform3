@@ -85,7 +85,7 @@ test('390px 대화 헤더는 한 줄로 가로 스크롤하고 모델창과 관�
   await mobileTabs.getByRole('tab', { name: '대화', exact: true }).click()
   await expect(searchToggle).toBeVisible()
   await trigger.click()
-  const popup = page.getByRole('dialog', { name: 'assistant 모델' })
+  const popup = page.getByRole('dialog', { name: 'AI 모델' })
   await expect(popup).toBeVisible()
   const modelBox = await popup.boundingBox()
   expect(modelBox).not.toBeNull()

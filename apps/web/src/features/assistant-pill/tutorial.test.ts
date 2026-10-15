@@ -52,3 +52,24 @@ it('restores session fallback after a reload when only localStorage fails', asyn
   const fresh = await import('./tutorial')
   expect(fresh.offerGuideOnce(userId, 'hub')).toBe(false)
 })
+
+it('section progress is per user and page, de-duplicated, and tolerates corrupt or blocked storage', async () => {
+  const { markSectionDone, readTourProgress, tourProgressKey } = await import('./tutorial')
+  expect(readTourProgress(userId, 'conversation')).toEqual([])
+  expect(markSectionDone(userId, 'conversation', 'basics')).toEqual(['basics'])
+  expect(markSectionDone(userId, 'conversation', 'basics')).toEqual(['basics'])
+  expect(markSectionDone(userId, 'conversation', 'tags')).toEqual(['basics', 'tags'])
+  expect(JSON.parse(localStorage.getItem(tourProgressKey(userId, 'conversation'))!)).toEqual(['basics', 'tags'])
+  expect(readTourProgress(userId, 'hub')).toEqual([])
+  expect(readTourProgress(`${userId}-other`, 'conversation')).toEqual([])
+  localStorage.setItem(tourProgressKey(userId, 'hub'), '{not json')
+  expect(readTourProgress(userId, 'hub')).toEqual([])
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+  expect(markSectionDone(userId, 'sr', 'basics')).toEqual(['basics']) // 저장이 막혀도 이번 투어에는 반영
+})
+
+it('the agent editor guide is offered once per user, like a page', () => {
+  expect(offerGuideOnce(userId, 'assistantEditor')).toBe(true)
+  expect(offerGuideOnce(userId, 'assistantEditor')).toBe(false)
+  expect(localStorage.getItem(guideOfferKey(userId, 'assistantEditor'))).toBe('asked')
+})

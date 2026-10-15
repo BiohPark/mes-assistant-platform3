@@ -1,10 +1,10 @@
-import { act, fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import { Link } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/test/render'
 import { GuideTour } from './GuideTour'
 import { useTourStore } from './tour'
-import { guideOfferKey, requestTutorial } from './tutorial'
+import { guideOfferKey, markSectionDone, readTourProgress, requestTutorial } from './tutorial'
 
 const box = (left: number, top: number, width: number, height: number) => ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON() { return {} } })
 function target(id: string, rect = box(100, 200, 50, 20), tag = 'div') {
@@ -25,7 +25,8 @@ const scrollIntoView = vi.fn()
 let pill: HTMLButtonElement
 const dialog = () => screen.getByRole('dialog', { name: '페이지 가이드' })
 const spotlight = () => screen.getByTestId('tour-spotlight')
-const start = (route: Parameters<ReturnType<typeof useTourStore.getState>['start']>[0]) => act(() => { useTourStore.getState().start(route); vi.advanceTimersByTime(1500) })
+const start = (route: Parameters<ReturnType<typeof useTourStore.getState>['start']>[0]) => act(() => { useTourStore.getState().start(route, 'u'); vi.advanceTimersByTime(1500) })
+const sectionList = () => within(dialog()).getByRole('list', { name: '가이드 섹션' })
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -38,7 +39,7 @@ afterEach(() => { act(() => useTourStore.getState().close()); document.querySele
 
 it('renders no card or spotlight while waiting; Escape cancels and returns focus without a delayed tour', () => {
   renderWithProviders(<GuideTour userId="u" pillRef={{ current: pill }} />)
-  act(() => useTourStore.getState().start('conversation'))
+  act(() => useTourStore.getState().start('conversation', 'u'))
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(screen.queryByTestId('tour-spotlight')).not.toBeInTheDocument()
   fireEvent.keyDown(window, { key: 'Escape' })
@@ -52,14 +53,14 @@ it('renders no card or spotlight while waiting; Escape cancels and returns focus
 
 it('navigating away during the wait cancels the pending tour', () => {
   renderWithProviders(<><GuideTour userId="u" pillRef={{ current: pill }} /><Link to="/sr">go</Link></>)
-  act(() => useTourStore.getState().start('conversation'))
+  act(() => useTourStore.getState().start('conversation', 'u'))
   fireEvent.click(screen.getByRole('link', { name: 'go' }))
   act(() => vi.advanceTimersByTime(1500))
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(useTourStore.getState().route).toBeNull()
 })
 
-it('spotlights the current target with a primary border, moves with Enter·Space·buttons, finishes on the last step and returns focus to the pill', () => {
+it('spotlights the current target with a primary border, names the section, moves with Enter·Space·buttons, finishes on the last step, records progress and returns focus to the pill', () => {
   const search = target('hub-search')
   target('hub-cards').style.display = 'none' // 보이지 않는 대상은 단계에서 빠진다
   renderWithProviders(<GuideTour userId="u" pillRef={{ current: pill }} />)
@@ -67,6 +68,7 @@ it('spotlights the current target with a primary border, moves with Enter·Space
   start('hub')
   expect(dialog()).toHaveFocus()
   expect(screen.getByText('1/2')).toBeInTheDocument()
+  expect(within(dialog()).getByRole('heading', { name: '에이전트 허브' })).toBeInTheDocument()
   expect(screen.getByText(/이름·요약·업무 분류로 에이전트를 찾습니다/)).toBeInTheDocument()
   expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' })
   expect(scrollIntoView.mock.contexts[0]).toBe(search)
@@ -77,6 +79,7 @@ it('spotlights the current target with a primary border, moves with Enter·Space
   expect(screen.getByRole('button', { name: '이전' })).toBeDisabled()
   fireEvent.keyDown(dialog(), { key: 'Enter' })
   expect(screen.getByText('2/2')).toBeInTheDocument()
+  expect(within(dialog()).getByRole('heading', { name: 'AI 도우미' })).toBeInTheDocument()
   expect(spotlight()).toHaveStyle({ left: '12px', top: '696px' })
   expect(Number.parseFloat(dialog().style.top)).toBeLessThan(700 - 12) // 아래 자리가 없으면 대상 위에 놓인다
   fireEvent.click(screen.getByRole('button', { name: '이전' }))
@@ -87,7 +90,78 @@ it('spotlights the current target with a primary border, moves with Enter·Space
   fireEvent.click(screen.getByRole('button', { name: '마치기' }))
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(useTourStore.getState().route).toBeNull()
+  expect(readTourProgress('u', 'hub')).toEqual(['hub', 'assistant'])
   expect(pill).toHaveFocus()
+})
+
+it('section list: shows every section with the current one marked, skips the current section, jumps to any section, and marks passed sections done with a replay label', () => {
+  target('composer'); target('model'); target('discussion'); target('tags')
+  renderWithProviders(<GuideTour userId="u" pillRef={{ current: pill }} />)
+  start('conversation')
+  expect(screen.getByText('1/5')).toBeInTheDocument()
+  const toggle = within(dialog()).getByRole('button', { name: '섹션 목록' })
+  expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.queryByRole('list', { name: '가이드 섹션' })).not.toBeInTheDocument()
+  fireEvent.click(toggle)
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  const items = within(sectionList()).getAllByRole('listitem')
+  expect(items.map(item => item.textContent)).toEqual(['대화 기본', '팀 의견', '태그·같은 태그', 'AI 도우미'])
+  expect(within(items[0]!).getByRole('button')).toHaveAttribute('aria-current', 'step')
+  expect(within(items[1]!).getByRole('button')).not.toHaveAttribute('aria-current')
+  fireEvent.click(within(dialog()).getByRole('button', { name: '이 섹션 건너뛰기' }))
+  expect(within(dialog()).getByRole('heading', { name: '팀 의견' })).toBeInTheDocument()
+  expect(screen.getByText('3/5')).toBeInTheDocument()
+  expect(toggle).toHaveAttribute('aria-expanded', 'true') // 목록은 열어 둔 채 유지
+  expect(within(sectionList()).queryByText('완료')).not.toBeInTheDocument() // 건너뛴 섹션은 완료가 아니다
+  fireEvent.click(within(sectionList()).getByRole('button', { name: '대화 기본' }))
+  expect(screen.getByText('1/5')).toBeInTheDocument()
+  fireEvent.click(within(dialog()).getByRole('button', { name: '다음' }))
+  fireEvent.click(within(dialog()).getByRole('button', { name: '다음' })) // 대화 기본 끝 → 완료
+  expect(screen.getByText('3/5')).toBeInTheDocument()
+  const done = within(sectionList()).getByRole('button', { name: '대화 기본 완료 — 다시 보기' })
+  expect(done).toBeInTheDocument()
+  expect(readTourProgress('u', 'conversation')).toEqual(['basics'])
+  fireEvent.click(done) // 다시 보기
+  expect(screen.getByText('1/5')).toBeInTheDocument()
+  expect(within(dialog()).getByRole('heading', { name: '대화 기본' })).toBeInTheDocument()
+  fireEvent.keyDown(dialog(), { key: 'Escape' })
+  expect(pill).toHaveFocus()
+})
+
+it('opens the materials tab when a materials step comes up, then spotlights the panel target', () => {
+  const tabs = target('task-tabs')
+  tabs.setAttribute('role', 'tablist')
+  const tab = document.createElement('button')
+  tab.setAttribute('role', 'tab'); tab.textContent = '자료'
+  // 탭을 누르면 패널이 렌더된다 — React처럼 클릭한 그 순간이 아니라 뒤이은 커밋에서
+  tab.addEventListener('click', () => { requestAnimationFrame(() => { target('materials-library', box(700, 100, 300, 400)) }) })
+  tabs.append(tab)
+  target('composer')
+  renderWithProviders(<GuideTour userId="materials-user" pillRef={{ current: pill }} />)
+  act(() => { useTourStore.getState().start('conversation', 'materials-user'); vi.advanceTimersByTime(1500) }) // 앞 테스트가 'u'의 진행을 남겨도 영향받지 않게
+  expect(screen.getByText('1/5')).toBeInTheDocument() // composer · task-tabs · materials-library · materials-staged · pill
+  fireEvent.keyDown(dialog(), { key: 'Enter' })
+  fireEvent.keyDown(dialog(), { key: 'Enter' })
+  expect(within(dialog()).getByRole('heading', { name: '자료함' })).toBeInTheDocument()
+  expect(document.querySelector('[data-tour="materials-library"]')).toBeNull()
+  act(() => { vi.advanceTimersByTime(32) })
+  expect(document.querySelector('[data-tour="materials-library"]')).not.toBeNull()
+  expect(spotlight()).toHaveStyle({ left: '696px', top: '96px', width: '308px', height: '408px' })
+  expect(dialog()).toHaveFocus()
+})
+
+it('resumes at the first section not done yet; the replay event starts the tour for the current page and records acceptance', () => {
+  target('composer'); target('discussion')
+  markSectionDone('u', 'conversation', 'basics')
+  renderWithProviders(<GuideTour userId="u" pillRef={{ current: pill }} />, { route: '/c/t1' })
+  act(() => requestTutorial())
+  act(() => vi.advanceTimersByTime(1500))
+  expect(useTourStore.getState().route).toBe('conversation')
+  expect(localStorage.getItem(guideOfferKey('u', 'conversation'))).toBe('accepted')
+  expect(within(dialog()).getByRole('heading', { name: '팀 의견' })).toBeInTheDocument()
+  expect(screen.getByText('2/3')).toBeInTheDocument()
+  fireEvent.click(within(dialog()).getByRole('button', { name: '섹션 목록' }))
+  expect(within(sectionList()).getByRole('button', { name: '대화 기본 완료 — 다시 보기' })).toBeInTheDocument()
 })
 
 it('desktop card stays inside the viewport: below a top target, at the top margin over a full-screen target, clamped above the bottom for a target still below the fold', () => {

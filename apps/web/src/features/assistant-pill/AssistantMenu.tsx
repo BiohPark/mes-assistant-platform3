@@ -20,7 +20,7 @@ export function AssistantMenu({ userId, prefill, perform, searchAgents }: { user
   function run(action: PageAction) {
     setUnavailable(false)
     if (action.kind === 'prefill') prefill(t(action.example))
-    else if (action.kind === 'tutorial') { saveGuideOffer(userId, route, 'accepted'); perform(() => { useTourStore.getState().start(route) }) }
+    else if (action.kind === 'tutorial') { saveGuideOffer(userId, route, 'accepted'); perform(() => { useTourStore.getState().start(route, userId) }) }
     else if (action.kind === 'navigate') perform(() => { void navigate(action.to) })
     else if (action.target === 'search') perform(searchAgents)
     else if (!pageTarget(action.target, t)) setUnavailable(true)

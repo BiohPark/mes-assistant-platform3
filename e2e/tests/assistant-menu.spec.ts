@@ -55,11 +55,11 @@ test('replays from My info as a spotlight tour of the current page without openi
   await page.getByRole('button', { name: '튜토리얼 다시 보기' }).click()
   await expect(page.getByRole('dialog', { name: '시스템 assistant' })).toHaveCount(0)
   const tour = page.getByRole('dialog', { name: '페이지 가이드' })
-  await expect(tour.getByText('1/2')).toBeVisible()
+  await expect(tour.getByText('1/2', { exact: true })).toBeVisible() // '섹션 1/2'와 구분
   await expect(tour.getByText(/왼쪽 메뉴로 허브/)).toBeVisible()
   expect(await stored(page, userId, 'other')).toBe('accepted')
   await tour.getByRole('button', { name: '다음' }).click()
-  await expect(tour.getByText('2/2')).toBeVisible()
+  await expect(tour.getByText('2/2', { exact: true })).toBeVisible()
   await tour.getByRole('button', { name: '마치기' }).click()
   await expect(tour).toHaveCount(0)
 })

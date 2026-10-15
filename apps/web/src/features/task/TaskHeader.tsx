@@ -57,17 +57,17 @@ export function TaskHeader({ task, assistant, toolsRef }: { task: Task; assistan
       <Link to={`/?view=kanban&assistant=${encodeURIComponent(assistant.id)}`} className="inline-flex max-w-48 shrink-0 items-center gap-1.5 rounded-full border py-0.5 pr-2 pl-0.5 text-xs hover:bg-muted sm:max-w-64"><AssistantAvatar assistant={assistant} size="xs" /><span className="truncate">{assistant.name}</span></Link>
       <TaskStatusBadge status={task.status} />
       <PriorityBadge priority={task.priority} />
-      <TagInput compact className="shrink-0 flex-nowrap sm:flex-wrap" tags={task.tags} suggest={suggest} srStatus={srStatus} readOnly={task.status === 'done'} onAdd={async (value) => { await addTag(actor, task.id, value); refresh() }} onRemove={async (value) => { await removeTag(actor, task.id, value); refresh() }} onChipClick={(value) => navigate(`/?view=kanban&tag=${encodeURIComponent(value)}`)} />
+      <TagInput compact data-tour="tags" className="shrink-0 flex-nowrap sm:flex-wrap" tags={task.tags} suggest={suggest} srStatus={srStatus} readOnly={task.status === 'done'} onAdd={async (value) => { await addTag(actor, task.id, value); refresh() }} onRemove={async (value) => { await removeTag(actor, task.id, value); refresh() }} onChipClick={(value) => navigate(`/?view=kanban&tag=${encodeURIComponent(value)}`)} />
       {task.tags.length > 0 && <div className="shrink-0"><RelatedStrip tags={task.tags} excludeTaskId={task.id} /></div>}
       <div className="ml-auto flex shrink-0 items-center gap-1">
         <div ref={toolsRef} className="flex items-center gap-1 empty:hidden data-[chat-hidden=true]:max-lg:hidden" />
         <QuickSwitch currentTaskId={task.id} />
         {link1 && <Button variant="ghost" size="icon" asChild className="relative text-muted-foreground after:absolute after:-inset-1.5"><a href={link1} target="_blank" rel="noreferrer" aria-label={t('chat.openWebUi')} title={t('chat.openWebUi')}><ExternalLink aria-hidden /></a></Button>}
         {/* 새 창으로 띄우기 — 메뉴(onSelect)가 아니라 버튼 onClick 이어야 사용자 제스처로 인정돼 팝업이 덜 막힌다. 막히면 같은 탭으로 가지 않고 토스트. 팝업 안에서는 없다 */}
-        {!isPopout() && <Button variant="ghost" size="icon" className="relative text-muted-foreground after:absolute after:-inset-1.5" aria-label={t('task.header.popout')} title={t('task.header.popout')} onClick={() => { if (!openPopout(task.id)) toast.error(t('task.header.popoutBlocked')) }}><AppWindow aria-hidden /></Button>}
+        {!isPopout() && <Button variant="ghost" size="icon" data-tour="popout" className="relative text-muted-foreground after:absolute after:-inset-1.5" aria-label={t('task.header.popout')} title={t('task.header.popout')} onClick={() => { if (!openPopout(task.id)) toast.error(t('task.header.popoutBlocked')) }}><AppWindow aria-hidden /></Button>}
         {task.status === 'done' ? <Button size="sm" variant="outline" onClick={() => setReopen(true)}><PlayCircle data-icon="inline-start" />{t('task.header.reopen')}</Button> : <>
-          {task.status === 'on_hold' ? <Button size="sm" variant="outline" onClick={() => void changeStatus('in_progress')}><PlayCircle data-icon="inline-start" />{t('task.header.resume')}</Button> : <Button size="sm" variant="outline" onClick={() => void changeStatus('on_hold')}><PauseCircle data-icon="inline-start" />{t('task.header.hold')}</Button>}
-          <Button size="sm" onClick={() => setComplete(true)}><CheckCircle2 data-icon="inline-start" />{t('task.header.complete')}</Button>
+          {task.status === 'on_hold' ? <Button size="sm" variant="outline" data-tour="task-hold" onClick={() => void changeStatus('in_progress')}><PlayCircle data-icon="inline-start" />{t('task.header.resume')}</Button> : <Button size="sm" variant="outline" data-tour="task-hold" onClick={() => void changeStatus('on_hold')}><PauseCircle data-icon="inline-start" />{t('task.header.hold')}</Button>}
+          <Button size="sm" data-tour="task-complete" onClick={() => setComplete(true)}><CheckCircle2 data-icon="inline-start" />{t('task.header.complete')}</Button>
         </>}
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={t('task.header.more')} title={t('task.header.more')}><MoreHorizontal /></Button></DropdownMenuTrigger>

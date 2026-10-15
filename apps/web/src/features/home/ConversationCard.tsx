@@ -24,13 +24,15 @@ interface ConversationCardProps {
   onTagClick: (tag: string) => void
   /** 완료로 바꾸는 것은 완료 절차(리포트·피드백)가 있어 대화 화면에서만 한다 */
   onStatusChange?: (status: TaskStatus) => void
+  /** 가이드 투어 앵커 — 칸반이 첫 카드에만 붙인다 */
+  'data-tour'?: string
 }
 
 /**
  * 칸반 카드 = 대화 하나. SR 태그가 있으면 좌측에 가는 SR 색 선만 둔다(무지개 방지).
  * stretched-link + z-10 액션 패턴으로 <a> 중첩을 피한다.
  */
-export function ConversationCard({ task, onTagClick, onStatusChange }: ConversationCardProps) {
+export function ConversationCard({ task, onTagClick, onStatusChange, 'data-tour': tourId }: ConversationCardProps) {
   const { formatRelative } = useDates()
   const t = useT()
   const users = useUserMap()
@@ -42,6 +44,7 @@ export function ConversationCard({ task, onTagClick, onStatusChange }: Conversat
 
   return (
     <div
+      data-tour={tourId}
       className={cn('group relative rounded-xl border bg-card p-2.5 shadow-xs transition hover:shadow-md', task.status === 'done' && 'opacity-70')}
       style={{ borderLeftColor: sr ? srTagColor(sr) : undefined, borderLeftWidth: sr ? 3 : undefined }}
     >
