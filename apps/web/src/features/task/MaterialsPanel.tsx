@@ -15,7 +15,7 @@ import { FileList } from './FileList'
 import { FilePreviewDialog } from './FilePreviewDialog'
 import { AttachToggle, UsedMark } from './AttachToggle'
 import { ConversationInputs } from './ConversationInputs'
-import { listSrInputs, setSrInput, srInputsKey } from './srInputs'
+import { listSrInputs, removeSrInput, selectSrInput } from '@/api/srInputs'
 
 /**
  * 자료 패널(S14) — '자료함' 목록만: 이 대화·같은 태그 파일·연결 SR 본문·연결 SR 첨부·같은 태그 대화.
@@ -31,12 +31,16 @@ export function MaterialsPanel({ task }: { task: Task }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const candidates = useQuery({ queryKey: ['candidates', task.id], queryFn: () => getCandidates(task.id) })
   const query = useQueryClient()
-  // 연결 SR 첨부는 SR 쪽에서 바뀐다 — sr.updated(연결 업무 참여자에게도 전달됨)에 후보를 다시 읽는다
-  useEffect(() => subscribeEvent(({ event }) => { if (event === 'sr.updated') void query.invalidateQueries({ queryKey: ['candidates', task.id] }) }), [query, task.id])
+  // 연결 SR 첨부는 SR 쪽에서 바뀐다 — sr.updated(연결 업무 참여자에게도 전달됨)에 후보를 다시 읽는다.
+  // SR 본문 첨부는 요청 시작 때 서버가 비운다(input.updated) — 첨부됨·사용됨을 다시 읽는다
+  useEffect(() => subscribeEvent(({ event, data }) => {
+    if (event === 'sr.updated') { void query.invalidateQueries({ queryKey: ['candidates', task.id] }); void query.invalidateQueries({ queryKey: ['sr-inputs', task.id] }) }
+    if (event === 'input.updated' && data.taskId === task.id) void query.invalidateQueries({ queryKey: ['sr-inputs', task.id] })
+  }), [query, task.id])
   const assistants = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
   const own = useQuery({ queryKey: ['files', task.id], queryFn: () => filesForTask(task.id) })
   // 서버가 아직 연결 SR 본문 첨부를 모르면(404) 구역째 숨긴다 — 오류 안내는 하지 않는다
-  const srBodies = useQuery({ queryKey: srInputsKey(task.id), queryFn: () => listSrInputs(task.id), retry: false })
+  const srBodies = useQuery({ queryKey: ['sr-inputs', task.id], queryFn: () => listSrInputs(task.id), retry: false })
   const srFiles = candidates.data?.srFiles ?? []
   const used = new Set(candidates.data?.usedFileIds ?? [])
   const weightOf = (fileId: string) => task.inputs.find((input) => input.fileId === fileId)?.weight
@@ -96,7 +100,7 @@ export function MaterialsPanel({ task }: { task: Task }) {
           <ClipboardList className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate"><span className="font-mono">{item.code}</span> · {item.title}</span>
           {item.used && <UsedMark />}
-          <AttachToggle attached={item.selected} label={item.code} disabled={disabled} onToggle={() => void run(setSrInput(task.id, item.srId, !item.selected))} />
+          <AttachToggle attached={item.selected} label={item.code} disabled={disabled} onToggle={() => void run(item.selected ? removeSrInput(task.id, item.srId) : selectSrInput(task.id, item.srId))} />
         </div>)}
       </div>}
       {srFiles.length > 0 && <div data-testid="materials-sr-files" className="space-y-2 border-t pt-2">

@@ -600,8 +600,8 @@ export const ko = {
   },
   bubble: {
     region: 'AI 도우미 말풍선', close: '말풍선 닫기',
-    budgetWarn: '요청 크기가 한도의 80%를 넘었어요. 눌러서 자료 트레이를 확인하세요',
-    budgetOver: '요청 크기가 한도를 넘어 전송이 막혀요. 눌러서 자료 트레이에서 조정하세요',
+    budgetWarn: '요청 크기가 한도의 80%를 넘었어요. 눌러서 입력창의 첨부를 확인하세요',
+    budgetOver: '요청 크기가 한도를 넘어 전송이 막혀요. 눌러서 첨부를 빼거나 줄이세요',
     requestSlow: '응답이 30초 넘게 오지 않아요. 눌러서 요청 정보를 확인하세요',
     replyDone: '"{title}" 답변이 끝났어요', replyFailed: '"{title}" 답변이 실패했어요', replyCancelled: '"{title}" 답변이 중단됐어요', goToConversation: '바로 가기',
     guideRegion: 'AI 도우미 가이드 제안', guideOffer: '이 화면에서 도와드릴까요?', guideYes: '네, 가이드해 주세요', guideNo: '괜찮아요',

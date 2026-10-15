@@ -602,8 +602,8 @@ export const en = {
   },
   bubble: {
     region: 'AI assistant bubble', close: 'Close bubble',
-    budgetWarn: 'The request is over 80% of the size limit. Tap to check the inputs tray',
-    budgetOver: 'The request exceeds the size limit, so it cannot be sent. Tap to adjust it in the inputs tray',
+    budgetWarn: 'The request is over 80% of the size limit. Tap to check the attachments above the input',
+    budgetOver: 'The request exceeds the size limit, so it cannot be sent. Tap to remove or shrink attachments',
     requestSlow: 'No reply for over 30 seconds. Tap to see the request details',
     replyDone: 'The reply to "{title}" is ready', replyFailed: 'The reply to "{title}" failed', replyCancelled: 'The reply to "{title}" was stopped', goToConversation: 'Open conversation',
     guideRegion: 'AI assistant guide offer', guideOffer: 'Need help on this screen?', guideYes: 'Yes, guide me', guideNo: 'No thanks',

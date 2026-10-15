@@ -19,7 +19,7 @@ async function openMaterials(page: import('@playwright/test').Page) {
 test('S1 첨부는 그 요청에만 가고 자료함에 남으며(사용됨), 첨부한 버전은 새 버전으로 직접 전환한다', async ({ page }) => {
   await signUp(page)
   await page.getByRole('link', { name: /새 대화/ }).first().click()
-  await page.locator('input[type="file"]').setInputFiles({ name: 'e2e-note.txt', mimeType: 'text/plain', buffer: Buffer.from('first') })
+  await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: 'e2e-note.txt', mimeType: 'text/plain', buffer: Buffer.from('first') })
   await expect(page.getByText('e2e-note.txt', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: /입력으로 고정|이번 메시지만/ })).toHaveCount(0)
   await page.getByRole('button', { name: '전송', exact: true }).click()

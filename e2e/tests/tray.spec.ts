@@ -32,7 +32,7 @@ test('E6 요청 기록에서 사용한 자료와 원본 JSON을 연다', async (
   await signup(page, 'info')
   const task = await createTask(page)
   await page.goto(`/c/${task.id}`)
-  await page.locator('input[type="file"]').setInputFiles({ name: `tray-${Date.now()}.txt`, mimeType: 'text/plain', buffer: Buffer.from('자료') })
+  await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: `tray-${Date.now()}.txt`, mimeType: 'text/plain', buffer: Buffer.from('자료') })
   await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('자료로 답변해 줘')
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByRole('button', { name: '사용한 자료' })).toBeVisible()

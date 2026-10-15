@@ -11,14 +11,12 @@ import { cn } from '@/lib/utils'
 import type { RequestEstimateState } from './useRequestEstimate'
 import type { AttachmentChip } from './Composer'
 import { ConversationPickerDialog } from '@/features/task/ConversationPickerDialog'
-import { setSrInput } from '@/features/task/srInputs'
+import { removeSrInput } from '@/api/srInputs'
 import { useBudgetBubble } from '@/features/assistant-pill/bubbles'
 import { useT } from '@/i18n'
 
 const delivery = { attached: 'chat.delivery.attached', inline: 'chat.delivery.inline', metadata_only: 'chat.delivery.metadata_only', failed: 'chat.delivery.failed' } as const
 const mode = { full: 'task.inputs.modeFull', messages: 'task.inputs.modeMessages', summary: 'task.inputs.modeSummary' } as const
-/** s14-sr-body-once 서버의 SR 본문 첨부(kind 'sr') — 이 브랜치의 RequestInput 유니온에 아직 없어 모양만 읽는다 */
-type SrInput = { kind: 'sr'; srId: string; code: string; title: string }
 
 async function run(action: Promise<unknown>) {
   try { await action } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
@@ -30,7 +28,7 @@ export function useRequestAttachments(task: Task, estimate: RequestEstimateState
   const actor = useActor()
   const disabled = task.status === 'done'
   const busy = estimate.revisionChanged
-  return (estimate.data?.inputs ?? []).map((input: RequestInput | SrInput): AttachmentChip => {
+  return (estimate.data?.inputs ?? []).map((input: RequestInput): AttachmentChip => {
     if (input.kind === 'file') return { key: `file:${input.fileId}`, kind: 'file', label: input.name, title: `${input.name} v${input.version} · ${t(delivery[input.delivery])}`,
       danger: input.delivery === 'failed', main: input.weight === 'main', disabled, busy,
       onToggleMain: () => void run(setInput(actor, task.id, input.fileId, input.weight === 'main' ? 'reference' : 'main')),
@@ -39,7 +37,7 @@ export function useRequestAttachments(task: Task, estimate: RequestEstimateState
       main: input.weight === 'main', disabled, busy,
       onToggleMain: () => void run(setConversationWeight(task.id, input.sourceTaskId, input.weight === 'main' ? 'reference' : 'main')),
       onRemove: () => void run(removeConversationInput(task.id, input.sourceTaskId)) }
-    return { key: `sr:${input.srId}`, kind: 'sr', label: input.code, title: input.title, disabled, busy, onRemove: () => void run(setSrInput(task.id, input.srId, false)) }
+    return { key: `sr:${input.srId}`, kind: 'sr', label: input.code, title: input.title, disabled, busy, onRemove: () => void run(removeSrInput(task.id, input.srId)) }
   })
 }
 
@@ -72,7 +70,7 @@ export function RequestSizeNotice({ task, estimate }: { task: Task; estimate: Re
     if (!first) return
     if (first.kind === 'file') void run(setInput(actor, task.id, first.fileId, null))
     else if (first.kind === 'conversation') void run(removeConversationInput(task.id, first.sourceTaskId))
-    else void run(setSrInput(task.id, (first as SrInput).srId, false))
+    else void run(removeSrInput(task.id, first.srId))
   }
   return <div ref={ref} tabIndex={-1} role={over ? 'alert' : 'status'} aria-busy={pending} className={cn('mb-1.5 rounded-lg px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring', over && 'border border-destructive/40')}>
     <div className="flex flex-wrap items-center gap-2">

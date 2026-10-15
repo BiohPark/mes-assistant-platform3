@@ -4,9 +4,9 @@ import type { PageRoute } from './pageActions'
 import { markSectionDone, readTourProgress } from './tutorial'
 
 /** 한 단계 = 화면의 `data-tour` 대상 + 설명. 대상이 페이지에 없으면 건너뛴다. `opens`가 있으면 그 패널(탭)을 열어야 대상이 생긴다 — 탭이 있으면 단계로 세고, 보일 때 탭을 연다 */
-export interface TourStep { target: string; text: Extract<TranslationKey, `tour.steps.${string}`>; opens?: 'materials' }
-/** opens 패널을 여는 탭의 앵커 — 이 탭이 보이면 패널 안 대상도 열 수 있다 */
-export const OPENERS: Record<NonNullable<TourStep['opens']>, string> = { materials: 'task-tabs' }
+export interface TourStep { target: string; text: Extract<TranslationKey, `tour.steps.${string}`>; opens?: 'materials' | 'chat' }
+/** opens 패널을 여는 탭의 앵커 — 이 탭이 보이면 패널 안 대상도 열 수 있다. 대화(chat)는 좁은 화면 탭에서 자료 탭에 가려진 입력창을 다시 연다 */
+export const OPENERS: Record<NonNullable<TourStep['opens']>, string> = { materials: 'task-tabs', chat: 'task-tabs' }
 /** 섹션 = 화면의 한 주제. 단계가 모두 없으면 섹션째 건너뛰고, 완료는 사용자별로 기억한다 */
 export interface TourSection { id: string; title: Extract<TranslationKey, `tour.sections.${string}`>; steps: readonly TourStep[] }
 
@@ -16,7 +16,7 @@ const NAVIGATION: TourSection = { id: 'navigation', title: 'tour.sections.naviga
 /**
  * 페이지별 섹션 — 코드 데이터. 알약은 모든 페이지에 있으므로 마지막 섹션으로 두어 투어가 비지 않게 한다. UI 안내만, 업무 절차는 넣지 않는다.
  * materials-library·materials-conversations 앵커는 자료 패널이, materials-staged는 입력창(Composer)의 첨부 칩 줄(칩이 없으면 📎 버튼)이 붙인다.
- * materials-staged는 자료 탭 단계들 뒤에 오므로 opens를 유지한다 — 넓은 화면에서는 입력창이 보여 탭을 열지 않고, 좁은 화면에서 자료 탭이 열려 있으면 대상 없이 안내만 보인다
+ * materials-staged는 좁은 화면에서 앞 단계가 연 자료 탭에 입력창이 가려지므로 대화 탭을 연다(opens: 'chat'). 넓은 화면은 입력창이 늘 보여 탭을 열지 않는다
  */
 export const TOUR_SECTIONS: Record<PageRoute, readonly TourSection[]> = {
   hub: [
@@ -47,7 +47,7 @@ export const TOUR_SECTIONS: Record<PageRoute, readonly TourSection[]> = {
       { target: 'task-tabs', text: 'tour.steps.taskTabs' },
       { target: 'materials-library', text: 'tour.steps.materialsLibrary', opens: 'materials' },
       { target: 'materials-conversations', text: 'tour.steps.materialsConversations', opens: 'materials' },
-      { target: 'materials-staged', text: 'tour.steps.materialsStaged', opens: 'materials' },
+      { target: 'materials-staged', text: 'tour.steps.materialsStaged', opens: 'chat' },
     ] },
     { id: 'discussion', title: 'tour.sections.discussion', steps: [{ target: 'discussion', text: 'tour.steps.discussion' }] },
     { id: 'tags', title: 'tour.sections.tags', steps: [

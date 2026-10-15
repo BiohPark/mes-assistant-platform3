@@ -44,7 +44,7 @@ test('SR 접수에 끌어 놓은 파일은 전송 후에도 SR 첨부로 남는�
   })
   await page.goto('/sr')
   await page.getByRole('button', { name: '새 요청' }).click()
-  await expect(page.getByText('📎 또는 끌어 놓기로 파일을 첨부할 수 있습니다')).toBeVisible()
+  await expect(page.getByText('📎나 끌어 놓기로 파일을 첨부할 수 있어요.')).toBeVisible()
   const zone = page.getByTestId('sr-dropzone')
   const data = await dataTransfer(page, [{ name: 'sr-dnd.txt', content: '현장 알람 첨부' }])
   await zone.dispatchEvent('dragenter', { dataTransfer: data })

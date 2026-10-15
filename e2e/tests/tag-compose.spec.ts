@@ -34,7 +34,7 @@ test('indirect tag not listed — 다른 태그로만 이어진 대화는 패널
   const bridge = await createTask(page, [`cmp-x-${stamp}`, `cmp-y-${stamp}`])
   const indirect = await createTask(page, [`cmp-y-${stamp}`])
   await page.goto(`/c/${me.id}`)
-  await page.getByText('같은 태그 대화 1').click()
+  await page.locator('[data-tour="related"] > summary').click() // 자료함의 '같은 태그 대화 1개' 제목과 구분
   await expect(panel(page).getByRole('link', { name: new RegExp(bridge.code) })).toBeVisible()
   await expect(panel(page).getByRole('link', { name: new RegExp(indirect.code) })).toHaveCount(0)
   const box = panel(page).getByRole('checkbox', { name: `${bridge.code} 대화 본문(전체 스냅샷) 첨부` })
@@ -43,7 +43,7 @@ test('indirect tag not listed — 다른 태그로만 이어진 대화는 패널
   await expect(panel(page).getByRole('checkbox')).toHaveCount(1)
 })
 
-test('estimate equals send after add — 패널에서 대화 본문·파일을 담은 뒤 트레이 추정과 실제 전송 크기가 같다', async ({ page }) => {
+test('estimate equals send after add — 패널에서 대화 본문·파일을 첨부한 뒤 입력창 칩·추정과 실제 전송 크기가 같다', async ({ page }) => {
   test.skip((process.env.E2E_LLM_MODE ?? process.env.LLM_MODE) === 'live', 'Mock 전용 기록 검사')
   await signup(page, 'est')
   const tag = `cmp-est-${Date.now().toString(36)}`
@@ -55,7 +55,7 @@ test('estimate equals send after add — 패널에서 대화 본문·파일을 �
   expect(upload.ok()).toBe(true)
 
   await page.goto(`/c/${consumer.id}`)
-  await page.getByText('같은 태그 대화 1').click()
+  await page.locator('[data-tour="related"] > summary').click() // 자료함의 '같은 태그 대화 1개' 제목과 구분
   await panel(page).getByRole('checkbox', { name: `${source.code} 대화 본문(전체 스냅샷) 첨부` }).check()
   await panel(page).getByRole('button', { name: `${source.code} 파일 펼치기` }).click()
   await panel(page).getByRole('radiogroup', { name: `${fileName} 버전` }).getByRole('radio', { name: 'v1' }).check()

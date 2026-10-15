@@ -758,3 +758,21 @@ it('S14: 메시지와 입력창은 같은 가운데 열(최대 폭)을 쓰고 �
   expect(scroll.firstElementChild).toHaveClass('mx-auto', 'max-w-5xl')
   expect(screen.getByRole('textbox', { name: 'AI 요청 입력' }).closest('.max-w-5xl')).not.toBeNull()
 })
+
+it('S14: 요청이 끝나면 자료함의 사용됨·첨부됨을 SSE와 무관하게 다시 읽는다', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client.setQueryData(['messages', 'h'], [])
+  for (const key of [['candidates', 't'], ['sr-inputs', 't'], ['conversation-inputs', 't']]) client.setQueryData(key, [])
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/threads/h/requests/estimate') return Response.json({ at: '2026-09-28T00:00:00.000Z', provider: 'mock', transport: 'inline', model: 'mock', bytes: 10, limitBytes: 1000, inputs: [], srCodes: [], srs: [], overLimit: false, attachmentLimit: 10 })
+    if (url === '/api/threads/h/requests') return new Response('event: started\ndata: {"requestId":"r","replyMessageId":"a","userMessageId":"u"}\n\nevent: completed\ndata: {}\n\n', { status: 201 })
+    return Response.json([])
+  }))
+  const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
+  render(<QueryClientProvider client={client}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '질문' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(client.getQueryState(['candidates', 't'])?.isInvalidated).toBe(true))
+  expect(client.getQueryState(['sr-inputs', 't'])?.isInvalidated).toBe(true)
+  expect(client.getQueryState(['conversation-inputs', 't'])?.isInvalidated).toBe(true)
+})

@@ -31,3 +31,12 @@ it('opens and focuses the visible materials tab at either layout breakpoint', ()
   expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
   expect(tabs[1]).toHaveFocus()
 })
+
+it('S14: 좁은 화면의 보이는 대화 탭을 연다(투어의 첨부 단계가 입력창을 짚도록)', () => {
+  const t = createT('ko')
+  render(<><div role="tablist" style={{ display: 'none' }}><button role="tab">{t('task.conversation')}</button></div><div role="tablist"><button role="tab" onClick={event => event.currentTarget.setAttribute('aria-selected', 'true')}>{t('task.conversation')}</button></div></>)
+  focusPageTarget('chat', t)
+  const tabs = screen.getAllByRole('tab', { hidden: true })
+  expect(tabs[0]).not.toHaveAttribute('aria-selected', 'true')
+  expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
+})

@@ -19,12 +19,12 @@ it('announces politely, disappears after 8 s and then shows the queued bubble', 
   expect(bubble()).toBeNull()
   push({ source: 'budget.warn' })
   push({ source: 'budget.over' })
-  expect(screen.getByText('요청 크기가 한도의 80%를 넘었어요. 눌러서 자료 트레이를 확인하세요')).toBeVisible()
+  expect(screen.getByText('요청 크기가 한도의 80%를 넘었어요. 눌러서 입력창의 첨부를 확인하세요')).toBeVisible()
   expect(bubble()).toHaveClass('motion-reduce:animate-none')
   advance(BUBBLE_TTL_MS - 1)
   expect(screen.getByText(/한도의 80%/)).toBeVisible()
   advance(1)
-  expect(screen.getByText('요청 크기가 한도를 넘어 전송이 막혀요. 눌러서 자료 트레이에서 조정하세요')).toBeVisible()
+  expect(screen.getByText('요청 크기가 한도를 넘어 전송이 막혀요. 눌러서 첨부를 빼거나 줄이세요')).toBeVisible()
   advance(BUBBLE_TTL_MS)
   expect(bubble()).toBeNull()
 })
@@ -47,7 +47,7 @@ it('pauses the timer on hover and on focus, resuming with the remaining time', (
   expect(bubble()).toBeNull()
 })
 
-it('click runs the bubble action (tray) and dismisses; the close button dismisses without the action', () => {
+it('click runs the bubble action (size notice) and dismisses; the close button dismisses without the action', () => {
   const onOpen = vi.fn()
   renderWithProviders(<AssistantBubble pillRef={{ current: null }} pos={null} />)
   push({ source: 'budget.warn', onOpen })

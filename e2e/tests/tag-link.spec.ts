@@ -51,7 +51,7 @@ test('Enter는 후보를 고르지 않으면 입력값 그대로 붙이고, ↑�
   await page.keyboard.press('Escape') // 태그 입력 팝오버 닫기
 
   // 같은 태그 대화 — 태그별 묶음 안에 상대 대화 링크
-  await page.getByText('같은 태그 대화 1').click()
+  await page.locator('[data-tour="related"] > summary').click() // 자료함의 '같은 태그 대화 1개' 제목과 구분
   const popup = page.getByText('같은 태그를 가진 대화').locator('..')
   await expect(popup.getByRole('link', { name: new RegExp(other.code) })).toHaveAttribute('href', `/c/${other.id}`)
   await expect(popup.getByText(popular, { exact: true })).toBeVisible()
@@ -90,7 +90,7 @@ test('초안에서 입력한 태그를 쓰는 대화 수를 미리 보여 주되
   await page.goto(`/new/${await activeAssistantId(page)}`)
   await tagInput(page).fill(tag)
   await tagInput(page).press('Enter')
-  await page.getByText('같은 태그 대화 1').click()
+  await page.locator('[data-tour="related"] > summary').click() // 자료함의 '같은 태그 대화 1개' 제목과 구분
   await expect(page.getByRole('link', { name: new RegExp(existing.code) })).toBeVisible()
   expect(await countTasks()).toBe(before)
 })

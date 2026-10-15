@@ -12,8 +12,7 @@ import type { RequestEstimateState } from './useRequestEstimate'
 const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [], assistantId: 'a' } as unknown as Task
 const file = { kind: 'file' as const, fileId: 'f', name: 'spec.txt', version: 2, weight: 'reference' as const, delivery: 'attached' as const, text: true, bytes: 300 }
 const conversation = { kind: 'conversation' as const, sourceTaskId: 's', code: 'WK-2026-0002', title: '원본 대화', assistantName: 'A', mode: 'summary' as const, weight: 'main' as const, snapshotId: 'snap', messageCount: 3, bytes: 50 }
-// 서버 s14-sr-body-once의 SR 본문 첨부 — 이 브랜치의 RequestInput 유니온에는 아직 없다
-const sr = { kind: 'sr', srId: 'sr1', code: 'SR-2026-0001', title: '알람 필터', weight: 'reference', bytes: 40 } as unknown as typeof file
+const sr = { kind: 'sr' as const, srId: 'sr1', code: 'SR-2026-0001', title: '알람 필터', weight: 'reference' as const, bytes: 40 }
 const data: NonNullable<RequestEstimateState['data']> = {
   at: '2026-09-28T00:00:00.000Z', provider: 'mock', transport: 'inline', model: 'mock', bytes: 400, limitBytes: 1000, srCodes: ['SR-2026-0009'], srs: [{ code: 'SR-2026-0009', title: '연결만 된 SR' }], overLimit: false, attachmentLimit: 10,
   inputs: [file, conversation, sr],
