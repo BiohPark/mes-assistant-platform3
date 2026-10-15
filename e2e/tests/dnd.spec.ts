@@ -88,17 +88,19 @@ test('초안 화면에 끌어다 놓으면 첨부 대기 칩이 되고 첫 전�
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page).toHaveURL(/\/c\/[^/]+$/)
   await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
-  await expect(page.getByTestId('materials-inputs')).toContainText('dnd-one.txt v1')
-  await expect(page.getByTestId('materials-inputs')).toContainText('dnd-two.txt v1')
+  // 첨부는 자료함에 남고 첫 요청에만 갔다(D54 개정) — '쓴 적 있음', 보낼 자료에는 없다
+  await expect(page.getByTestId('materials-own')).toContainText('dnd-one.txt v1')
+  await expect(page.getByTestId('materials-own')).toContainText('dnd-two.txt v1')
+  await expect(page.getByTestId('materials-own').getByText('쓴 적 있음')).toHaveCount(2)
+  await expect(page.getByTestId('materials-inputs')).not.toContainText('dnd-one.txt')
 })
 
-test('대화 화면: 자료 패널에 놓으면 저장, 팀 의견 첨부는 AI 입력에서 제외, 빈 파일은 거부', async ({ page }) => {
+test('대화 화면: 자료 패널에 놓으면 저장, 팀 의견 첨부는 보낼 자료에서 제외, 빈 파일은 거부', async ({ page }) => {
   await signUp(page)
   const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
   const task = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id } })).json() as { id: string }
   await page.goto(`/c/${task.id}`)
   await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
-  await page.getByRole('tab', { name: '이 대화 파일' }).click()
   const own = page.getByTestId('materials-own')
   await own.dispatchEvent('dragenter', { dataTransfer: await dataTransfer(page, [{ name: 'dnd-own.txt', content: 'own' }]) })
   await expect(page.getByText('놓으면 이 대화 파일로 저장')).toBeVisible()
@@ -121,6 +123,5 @@ test('대화 화면: 자료 패널에 놓으면 저장, 팀 의견 첨부는 AI 
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByText('끌어다 놓은 파일 공유')).toBeVisible()
   await expect(own).toContainText('dnd-note.txt v1')
-  await page.getByRole('tab', { name: 'AI 입력' }).click()
   await expect(page.getByTestId('materials-inputs')).not.toContainText('dnd-note.txt')
 })

@@ -5,7 +5,7 @@ import type { ConversationCandidate } from '@/api/files'
 import { formatSize } from '@/api/files'
 import { listConversationInputs, refreshConversationInput, removeConversationInput, selectConversation, setConversationWeight, type LoadedConversationInput } from '@/api/conversationInputs'
 import { useT } from '@/i18n'
-import { InputToggle } from './InputToggle'
+import { InputToggle, StagedToggle } from './InputToggle'
 import { ConversationPickerDialog } from './ConversationPickerDialog'
 
 export function ConversationInputs({ taskId, candidates, disabled, selectedOnly = false }: { taskId: string; candidates: ConversationCandidate[]; disabled: boolean; selectedOnly?: boolean }) {
@@ -37,13 +37,15 @@ export function ConversationInputs({ taskId, candidates, disabled, selectedOnly 
       return <div key={candidate.taskId} className="rounded-xl border p-2" data-testid={`conversation-${candidate.taskId}`}>
         <div className="flex items-center gap-2"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setTarget(candidate)}>
           <span className="font-mono text-muted-foreground">{candidate.code}</span> · {candidate.title}</button>
-          <button type="button" className="rounded-xl border px-1" disabled={disabled || (!current && !candidate.messageCount)} aria-label={t('task.inputs.adjustLabel', { code: candidate.code })} onClick={() => setTarget(candidate)}>{t('task.inputs.adjust')}</button>
-          <InputToggle weight={current?.input.weight} label={candidate.code} disabled={disabled || (!current && !candidate.messageCount)} onChange={(weight) => void change(candidate, current, weight)} /></div>
+          {(selectedOnly || !current) && <button type="button" className="rounded-xl border px-1" disabled={disabled || (!current && !candidate.messageCount)} aria-label={t('task.inputs.adjustLabel', { code: candidate.code })} onClick={() => setTarget(candidate)}>{t('task.inputs.adjust')}</button>}
+          {/* 보낼 자료(selectedOnly)는 ★·×, 자료함은 담기 체크만 — 같은 라벨이 한 화면에 두 번 나오지 않게 한다 */}
+          {selectedOnly && current ? <StagedToggle weight={current.input.weight} label={candidate.code} disabled={disabled} onChange={(weight) => void change(candidate, current, weight)} />
+            : <InputToggle weight={current?.input.weight} label={candidate.code} showMain={false} disabled={disabled || (!current && !candidate.messageCount)} onChange={(weight) => void change(candidate, current, weight)} />}</div>
         <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground"><span className="rounded-full border px-1.5" style={{ borderColor: candidate.assistant.color }}>{candidate.assistant.name}</span><span>· {candidate.status}</span><span>{t('task.inputs.messages', { count: current?.messageCount ?? candidate.messageCount })}</span><span>· {formatSize(current?.bytes ?? candidate.bytes)}</span>
           {candidate.sharedTags.map((value) => <span key={value} className="rounded-full bg-muted px-1">{value}</span>)}
           {current?.detached && <span>{t('task.inputs.detached')}</span>}
           {current && <span>· {current.snapshot.mode === 'summary' ? t('task.inputs.modeSummary') : current.snapshot.mode === 'messages' ? t('task.inputs.modeMessages') : t('task.inputs.modeFull')}</span>}
-          {!!current?.newMessages && <button type="button" className="ml-auto underline" disabled={disabled} onClick={() => current.snapshot.mode === 'full' ? void refresh(candidate) : setTarget(candidate)}>{t('task.inputs.newMessages', { count: current.newMessages })}</button>}
+          {selectedOnly && !!current?.newMessages && <button type="button" className="ml-auto underline" disabled={disabled} onClick={() => current.snapshot.mode === 'full' ? void refresh(candidate) : setTarget(candidate)}>{t('task.inputs.newMessages', { count: current.newMessages })}</button>}
         </div>
       </div>
     })}

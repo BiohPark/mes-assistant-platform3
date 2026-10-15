@@ -40,7 +40,7 @@ test('프리필은 일반 입력과 트레이 추정·전송 경로가 같고 �
   const input = page.getByRole('textbox', { name: 'AI 요청 입력' })
   await page.locator('input[type="file"]').setInputFiles({ name: 'current.txt', mimeType: 'text/plain', buffer: Buffer.from('현재 첨부') })
   await input.fill(question)
-  const tray = page.getByLabel('AI에 함께 보내는 자료')
+  const tray = page.getByLabel('다음 질문에 보낼 자료')
   await expect(tray.getByText('계산 중')).toBeHidden()
   const manualEstimate = await tray.getByRole('meter').getAttribute('aria-valuenow')
   const manualInputs = await tray.getByRole('list').innerText()

@@ -291,7 +291,7 @@ it.each(['star', 'remove'] as const)('shows calculating and dims references duri
   render(<QueryClientProvider client={queryClient}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '질문' } })
   await screen.findByText('예상 400 B / 1000 B')
-  const root = screen.getByLabelText('AI에 함께 보내는 자료')
+  const root = screen.getByLabelText('다음 질문에 보낼 자료')
   const meter = screen.getByRole('meter')
   fireEvent.click(screen.getByRole('button', { name: action === 'star' ? 'C-1 주 입력 전환' : 'C-1 입력 선택 해제' }))
   await screen.findByText('계산 중')
@@ -307,12 +307,12 @@ it.each(['star', 'remove'] as const)('shows calculating and dims references duri
   await act(async () => finishRefetch(Response.json({ ...info, bytes: 100,
     inputs: action === 'star' ? [{ ...info.inputs[0], weight: 'main' }] : [] })))
   await screen.findByText('예상 100 B / 1000 B')
-  expect(screen.getByLabelText('AI에 함께 보내는 자료')).toBe(root)
+  expect(screen.getByLabelText('다음 질문에 보낼 자료')).toBe(root)
   expect(root).toHaveAttribute('aria-busy', 'false')
   expect(screen.getByRole('list')).not.toHaveClass('opacity-60')
 })
 
-const emptyHint = '같은 태그 대화의 파일·대화를 자료 탭에서 골라 AI 입력으로 쓸 수 있습니다.'
+const emptyHint = '자료 패널의 자료함에서 파일·대화를 담으면 다음 질문에 함께 보냅니다.'
 
 it('offers materials only after messages load empty and opening adds no requests or selections', async () => {
   let finish!: (response: Response) => void

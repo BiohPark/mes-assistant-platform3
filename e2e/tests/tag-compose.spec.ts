@@ -67,8 +67,8 @@ test('estimate equals send after add — 패널에서 대화 본문·파일을 �
 
   const draft = '담은 자료로 답해 줘 U2'
   await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill(draft)
-  const tray = page.getByLabel('AI에 함께 보내는 자료')
-  await expect(tray.getByText('AI에 함께 보내는 자료 · 2')).toBeVisible()
+  const tray = page.getByLabel('다음 질문에 보낼 자료')
+  await expect(tray.getByText('다음 질문에 보낼 자료 · 2')).toBeVisible()
   const estimate = await (await page.request.post(`/api/threads/${consumer.threadId}/requests/estimate`, { data: { draft } })).json() as { bytes: number }
   // 화면 추정(트레이 미터)이 같은 조립 함수의 추정과 같다
   await expect(tray.getByRole('meter')).toHaveAttribute('aria-valuenow', String(estimate.bytes))

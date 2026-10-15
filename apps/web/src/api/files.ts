@@ -39,7 +39,8 @@ export interface SrFileCandidate { file: FileMeta; srId: string; srCode: string;
 export interface ConversationCandidate { taskId: string; code: string; title: string; status: string; assistant: { id: string; name: string; color: string };
   sharedTags: string[]; messageCount: number; bytes: number; lastActivityAt: string;
   selected?: { weight: 'main' | 'reference'; mode: 'full' | 'messages' | 'summary'; snapshotId: string; newMessages: number; detached: boolean } }
-export interface Candidates { files: FileCandidate[]; srFiles?: SrFileCandidate[]; conversations: ConversationCandidate[] }
+/** usedFileIds: 이 대화의 요청 기록에 실린 파일('쓴 적 있음') */
+export interface Candidates { files: FileCandidate[]; srFiles?: SrFileCandidate[]; conversations: ConversationCandidate[]; usedFileIds?: string[] }
 
 async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const response = await fetch(`/api${path}`, { method, credentials: 'same-origin', ...(body !== undefined && { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) })

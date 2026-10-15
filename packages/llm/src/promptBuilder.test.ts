@@ -62,6 +62,21 @@ describe('buildChatRequest — files', () => {
     expect(built.meta.usedInputs?.[0]).toContain('★ 주 입력 · main.md v1')
   })
 
+  it('요청 시작 때 확정한 입력(inputs)을 주면 대화의 현재 선택 대신 그것만 보낸다(스테이징 소비·재시도)', async () => {
+    const me = await startConversation(dev, { assistantId: 'fds' })
+    const staged = await uploadFile(dev, { taskId: me.task.id }, text('staged.md', 'STAGED-BODY'))
+    const later = await uploadFile(dev, { taskId: me.task.id }, text('later.md', 'LATER-BODY'))
+    await setInput(dev, me.task.id, later.id, 'main') // 요청 시작 뒤 새로 담은 자료 — 다음 질문 몫
+    const { scope, thread } = await scopeOf(me.task.id)
+
+    const built = await buildChatRequest(scope, thread, await historyOf(thread.id), { inputs: [{ fileId: staged.id, weight: 'reference' }] })
+    expect(built.info.inputs).toMatchObject([{ kind: 'file', fileId: staged.id, weight: 'reference', oneShot: false }])
+    expect(built.messages[0].content).toContain('STAGED-BODY')
+    expect(built.messages[0].content).not.toContain('LATER-BODY')
+    const none = await buildChatRequest(scope, thread, await historyOf(thread.id), { inputs: [] })
+    expect(none.info.inputs).toEqual([])
+  })
+
   it('OpenWebUI dry run predicts attachments without calling the server', async () => {
     await setLlm({ mode: 'live', baseUrl: 'http://owui.test/api', apiKey: 'k', fileDelivery: 'openwebui' })
     const fetchMock = vi.fn()

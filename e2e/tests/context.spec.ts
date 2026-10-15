@@ -44,7 +44,6 @@ async function selectedInputs<T>(page: Page, taskId: string): Promise<T[]> {
 async function openMaterials(page: Page, taskId: string) {
   await page.goto(`/c/${taskId}`)
   await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
-  await page.getByTestId('materials-panel').getByRole('tab', { name: '대화', exact: true }).click()
 }
 
 test('E3a 직접 공유 후보와 전체 원문은 팀 의견을 제외한다', async ({ page }) => {
@@ -114,7 +113,6 @@ test('E3d 선택 시점은 고정되고 새 메시지는 갱신 뒤 포함된다
   await request(page, source.threadId, '원본 질문 E3d 둘째')
   await page.reload()
   await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
-  await page.getByTestId('materials-panel').getByRole('tab', { name: '대화', exact: true }).click()
   await expect(page.getByTestId(`conversation-${source.id}`).getByText(/새 메시지 2 · 갱신/)).toBeVisible()
   const still = await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json() as Array<{ snapshot: { id: string; messageIds: string[] } }>
   expect(still[0]!.snapshot.id).toBe(first[0]!.snapshot.id)

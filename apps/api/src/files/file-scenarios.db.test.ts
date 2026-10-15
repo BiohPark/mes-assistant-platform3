@@ -10,7 +10,7 @@ import type { RequestInfo } from '@mes/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createPool } from '../db/connection.js'
 import type { Db } from '../db/db.module.js'
-import { appUser, assistant, messageAttachment, tag, taskInput } from '../db/schema.js'
+import { appUser, assistant, fileObject, messageAttachment, tag, taskInput } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
@@ -204,6 +204,8 @@ describe('file scenarios (S8)', () => {
       const snapshot = await requests.snapshot(id) as { messages: Array<{ content: string }> }
       expect(snapshot.messages[0]!.content).toContain('v1 body')
       expect(snapshot.messages[0]!.content).not.toContain('v2 body')
+      expect((await tasks.get(consumer.id)).inputs).toEqual([]) // 보낸 자료는 스테이징에서 빠진다
+      await files.setInput('member', consumer.id, v1.id, 'main')
       await files.switchInputVersion('member', consumer.id, v1.id, v2.id)
       expect((await tasks.get(consumer.id)).inputs).toMatchObject([{ fileId: v2.id, weight: 'main' }])
       expect((await requests.estimate('member', threadId, { draft: '다시' })).inputs).toMatchObject([{ fileId: v2.id, version: 2 }])
@@ -263,7 +265,7 @@ describe('file scenarios (S8)', () => {
       const prompt = snapshot.messages[0]!.content
       expect(prompt.indexOf('shared body')).toBeLessThan(prompt.indexOf('own body'))
       expect(prompt.indexOf('own body')).toBeLessThan(prompt.indexOf('once body'))
-      expect((await tasks.get(consumer.id)).inputs.map((item) => item.fileId)).toEqual([shared.id, own.id]) // 이번 메시지만 첨부는 고정되지 않는다
+      expect((await tasks.get(consumer.id)).inputs).toEqual([]) // 보낸 자료는 그 턴 한 번만 — 스테이징은 비워진다
     })
   })
 
@@ -278,16 +280,17 @@ describe('file scenarios (S8)', () => {
       expect(await files.get(file.id, 'member')).toEqual(file)
     })
 
-    it('U-02 대화 첨부는 메시지에 묶이고 고정 첨부만 참고 입력으로 남는다', async () => {
+    it('U-02 대화 첨부는 메시지에 묶여 그 요청에만 가고, 다음 턴에는 다시 가지 않는다', async () => {
       const { task: owner, thread } = await tasks.create('member', { assistantId })
       const pinned = await files.upload('member', owner.id, 'pinned.txt', 'text/plain', text('pinned'))
       const once = await files.upload('member', owner.id, 'once.txt', 'text/plain', text('once'))
       const { record } = await completed(thread.id, '첨부와 함께', { attachmentIds: [pinned.id, once.id], oneShotFileIds: [once.id] })
       expect((await db.select().from(messageAttachment).where(eq(messageAttachment.messageId, (await tasks.messages(thread.id))[0]!.id))).map((row) => row.fileId).sort()).toEqual([pinned.id, once.id].sort())
-      expect((await tasks.get(owner.id)).inputs).toMatchObject([{ fileId: pinned.id, weight: 'reference' }])
-      expect(record.inputs.map((item) => [item.fileId, item.oneShot])).toEqual([[pinned.id, false], [once.id, true]])
+      expect((await tasks.get(owner.id)).inputs).toEqual([])
+      expect(record.inputs.map((item) => [item.fileId, item.oneShot])).toEqual([[pinned.id, true], [once.id, true]])
+      expect((await files.filesForTask(owner.id)).map((item) => item.id).sort()).toEqual([pinned.id, once.id].sort()) // 자료함에는 남는다
       const next = await completed(thread.id, '다음 턴')
-      expect(next.record.inputs.map((item) => item.fileId)).toEqual([pinned.id]) // 고정 첨부만 다음 턴에도 간다
+      expect(next.record.inputs).toEqual([])
     })
 
     it('U-04 크기 한도를 넘는 업로드·산출물 저장은 413이고 흔적을 남기지 않는다', async () => {
@@ -359,7 +362,36 @@ describe('file scenarios (S8)', () => {
       expect((await files.candidates(consumer.id)).files.find((item) => item.file.id === marked.id)).toMatchObject({ role: 'output' })
       await files.setOutput('member', marked.id, false)
       expect((await files.candidates(consumer.id)).files.find((item) => item.file.id === marked.id)).toMatchObject({ role: 'upload' })
-      expect((await db.select().from(taskInput).where(eq(taskInput.taskId, consumer.id))).map((row) => row.fileId)).toEqual([v1.id])
+      expect(await db.select().from(taskInput).where(eq(taskInput.taskId, consumer.id))).toEqual([])
+    })
+  })
+
+  describe('자료함·보낼 자료 (D54 개정)', () => {
+    it('S-01 자료함 파일에는 이 대화 요청 기록 기반 \'쓴 적 있음\'(usedFileIds)이 붙는다 — 스테이징·첨부 모두, 다른 대화의 사용은 무관', async () => {
+      const tag = `used-${uid()}`
+      const source = (await tasks.create('member', { assistantId, tags: [tag] })).task
+      const consumer = (await tasks.create('member', { assistantId, tags: [tag] })).task
+      const shared = await files.upload('member', source.id, 'shared-used.txt', 'text/plain', text('shared'))
+      const own = await files.upload('member', consumer.id, 'own-used.txt', 'text/plain', text('own'))
+      const idle = await files.upload('member', consumer.id, 'idle.txt', 'text/plain', text('idle'))
+      expect((await files.candidates(consumer.id)).usedFileIds).toEqual([])
+      await files.setInput('member', consumer.id, shared.id, 'reference')
+      await completed((await tasks.get(consumer.id)).threadId!, '공유 자료', { attachmentIds: [own.id] })
+      expect((await files.candidates(consumer.id)).usedFileIds.sort()).toEqual([shared.id, own.id].sort())
+      expect((await files.candidates(consumer.id)).usedFileIds).not.toContain(idle.id)
+      expect((await files.candidates(source.id)).usedFileIds).toEqual([])
+    })
+
+    it('S-02 자료함에서 내 파일만 제거(soft delete)할 수 있고, 다른 사람 파일은 403이다', async () => {
+      const owner = (await tasks.create('member', { assistantId, assigneeIds: ['member', 'other'] })).task
+      const mine = await files.upload('member', owner.id, 'mine.txt', 'text/plain', text('mine'))
+      const theirs = await files.upload('other', owner.id, 'theirs.txt', 'text/plain', text('theirs'))
+      await expect(files.remove(theirs.id, 'member')).rejects.toMatchObject({ status: 403 })
+      await files.setInput('member', owner.id, mine.id, 'reference')
+      await files.remove(mine.id, 'member')
+      expect((await db.select().from(fileObject).where(eq(fileObject.id, mine.id)))[0]?.deletedAt).toBeInstanceOf(Date)
+      expect((await files.filesForTask(owner.id)).map((item) => item.id)).toEqual([theirs.id])
+      expect((await tasks.get(owner.id)).inputs).toEqual([])
     })
   })
 })

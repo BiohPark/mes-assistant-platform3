@@ -72,7 +72,6 @@ test('데모 이관 계정은 비밀번호 변경 후 대화와 파일을 본다
     await page.goto(`/c/${task}`)
     await expect(page.getByText('Imported virtual message')).toBeVisible()
     await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
-    await page.getByRole('tab', { name: '이 대화 파일' }).click()
     await expect(page.getByTestId('materials-own')).toContainText('imported.txt v1')
   } finally { await rm(folder, { recursive: true, force: true }) }
 })

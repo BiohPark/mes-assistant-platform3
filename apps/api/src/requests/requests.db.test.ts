@@ -549,7 +549,7 @@ describe('RequestService DB', () => {
     await expect(service.estimate('member', thread.id, { draft: '조회만' })).resolves.toMatchObject({ overLimit: false })
   })
 
-  it('keeps file delivery and byte estimates identical for pinned and one-shot attachments', async () => {
+  it('대화에 올린 첨부는 모두 그 요청에만 가고(자료함에는 남음) 추정과 전송의 전달·바이트가 같다', async () => {
     const { task: owner, thread } = await tasks.create('member', { assistantId })
     const files = [crypto.randomUUID(), crypto.randomUUID()]
     for (const [index, fileId] of files.entries()) {
@@ -568,7 +568,11 @@ describe('RequestService DB', () => {
     const comparable = (info: import('@mes/domain').RequestInfo) => ({ provider: info.provider, transport: info.transport, model: info.model,
       bytes: info.bytes, limitBytes: info.limitBytes, srCodes: info.srCodes, inputs: info.inputs })
     expect(comparable(estimate)).toEqual(comparable(actual))
-    expect(actual.inputs).toMatchObject([{ kind: 'file', oneShot: false, delivery: 'inline' }, { kind: 'file', oneShot: true, delivery: 'inline' }])
+    expect(actual.inputs).toMatchObject([{ kind: 'file', oneShot: true, delivery: 'inline' }, { kind: 'file', oneShot: true, delivery: 'inline' }])
+    expect(await db.select().from(taskInput).where(eq(taskInput.taskId, owner.id))).toEqual([])
+    const next = await service.start('member', thread.id, { content: '다음 질문' }, 'estimate-files-next')
+    await next.done
+    expect((await service.get(next.id)).inputs).toEqual([])
   })
 
   it('matches an attachment-only request with a blank draft', async () => {
@@ -588,7 +592,7 @@ describe('RequestService DB', () => {
     expect((await tasks.messages(thread.id))[0]?.content).toBe('')
   })
 
-  it('appends a pinned attachment after two existing selected files in estimate and request', async () => {
+  it('보낼 자료(스테이징) 뒤에 이번 첨부를 붙여 추정·전송하고, 전송을 시작하면 스테이징을 비운다', async () => {
     const { task: owner, thread } = await tasks.create('member', { assistantId })
     const files = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]
     for (const [index, fileId] of files.entries()) {
@@ -607,8 +611,63 @@ describe('RequestService DB', () => {
     const actual = completed[0]?.requestInfo as import('@mes/domain').RequestInfo
     expect(estimate.inputs).toEqual(actual.inputs)
     expect(actual.inputs.filter((input) => input.kind === 'file').map((input) => input.fileId)).toEqual(files)
-    expect((await db.select().from(taskInput).where(eq(taskInput.taskId, owner.id))).sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((input) => input.sortOrder)).toEqual([0, 1, 2])
+    expect(await db.select().from(taskInput).where(eq(taskInput.taskId, owner.id))).toEqual([])
+  })
+
+  it('스테이징은 요청 시작과 같은 트랜잭션에서 소비·기록되고 input.updated를 알리며, 실행 중 새로 담은 자료는 다음 질문 몫이다', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const slow: ChatProvider = { ...provider, async *stream() { await gate; yield { type: 'delta', text: '늦음' }; yield { type: 'done' } } }
+    const events = new EventsService()
+    const seen: string[] = []
+    events.subscribe((event) => { if (event.event === 'input.updated') seen.push(event.data.taskId) })
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), slow, events)
+    const { task: owner, thread } = await tasks.create('member', { assistantId })
+    const files = [crypto.randomUUID(), crypto.randomUUID()]
+    for (const [index, fileId] of files.entries()) {
+      await new FileStorageService(root).write(`test/${fileId}.txt`, Buffer.from(`staged ${index}`))
+      await db.insert(fileObject).values({ id: fileId, kind: 'task_file', originTaskId: owner.id, originalName: `staged-${index}.txt`,
+        mime: 'text/plain', sizeBytes: 8, sha256: 'a'.repeat(64), storageKey: `test/${fileId}.txt`, source: 'upload', version: 1, uploadedBy: 'member' })
+    }
+    await db.insert(taskInput).values({ taskId: owner.id, fileId: files[0]!, weight: 'main', sortOrder: 0, selectedBy: 'member' })
+    try {
+      const run = await runner.start('member', thread.id, { content: '첫 질문' }, 'staged-first')
+      // 시작 직후(조립 전)에도 비워졌고, 무엇을 소비했는지 요청 기록에 남는다
+      expect(await db.select().from(taskInput).where(eq(taskInput.taskId, owner.id))).toEqual([])
+      expect((await runner.get(run.id)).inputs).toMatchObject([{ kind: 'file', fileId: files[0], weight: 'main', oneShot: false }])
+      expect(seen).toContain(owner.id)
+      await db.insert(taskInput).values({ taskId: owner.id, fileId: files[1]!, weight: 'reference', sortOrder: 0, selectedBy: 'member' })
+      release()
+      await run.done
+      expect((await runner.get(run.id)).inputs).toMatchObject([{ fileId: files[0], weight: 'main', delivery: 'inline' }])
+      expect((await runner.get(run.id)).inputs).toHaveLength(1)
+      expect((await db.select().from(taskInput).where(eq(taskInput.taskId, owner.id))).map((row) => row.fileId)).toEqual([files[1]])
+    } finally { release(); runner.onModuleDestroy() }
+  })
+
+  it('재시도는 원래 요청에 기록된 자료(스테이징·첨부) 기준이고, 지금 담아 둔 자료는 건드리지 않는다', async () => {
+    const failing: ChatProvider = { ...provider, async *stream() { yield { type: 'error', message: '모델 오류' } } }
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), failing)
+    const { task: owner, thread } = await tasks.create('member', { assistantId })
+    const [staged, attached, later] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]
+    for (const [index, fileId] of [staged, attached, later].entries()) {
+      await new FileStorageService(root).write(`test/${fileId}.txt`, Buffer.from(`retry ${index}`))
+      await db.insert(fileObject).values({ id: fileId!, kind: 'task_file', originTaskId: owner.id, originalName: `retry-${index}.txt`,
+        mime: 'text/plain', sizeBytes: 7, sha256: 'a'.repeat(64), storageKey: `test/${fileId}.txt`, source: 'upload', version: 1, uploadedBy: 'member' })
+    }
+    await db.insert(taskInput).values({ taskId: owner.id, fileId: staged!, weight: 'main', sortOrder: 0, selectedBy: 'member' })
+    try {
+      const first = await runner.start('member', thread.id, { content: '자료와 함께', attachmentIds: [attached!] }, 'retry-snapshot-first')
+      await first.done
+      expect(await runner.get(first.id)).toMatchObject({ status: 'failed', inputs: [{ fileId: staged, oneShot: false }, { fileId: attached, oneShot: true }] })
+      await db.insert(taskInput).values({ taskId: owner.id, fileId: later!, weight: 'reference', sortOrder: 0, selectedBy: 'member' })
+      await expect(service.retry('member', first.id, { excludeFileIds: [later!] }, 'retry-snapshot-invalid')).rejects.toMatchObject({ status: 400 })
+      const again = await service.retry('member', first.id, {}, 'retry-snapshot-again')
+      await again.done
+      expect(await service.get(again.id)).toMatchObject({ status: 'succeeded', inputs: [{ fileId: staged, weight: 'main', oneShot: false }, { fileId: attached, oneShot: true }] })
+      expect((await service.get(again.id)).inputs).toHaveLength(2)
+      expect((await db.select().from(taskInput).where(eq(taskInput.taskId, owner.id))).map((row) => row.fileId)).toEqual([later])
+    } finally { runner.onModuleDestroy() }
   })
 
   it('publishes request creation only after its row commits', async () => {
@@ -1145,7 +1204,7 @@ describe('RequestService DB', () => {
     await expect(service.retry('member', failed.id, { excludeFileIds: ['unrelated'] }, 'invalid-retry')).rejects.toMatchObject({ status: 400 })
     const recovered = await service.retry('member', failed.id, { excludeFileIds: [fileId] }, 'exclude-file')
     await recovered.done
-    expect((await service.get(recovered.id)).status).toBe('succeeded')
+    expect(await service.get(recovered.id)).toMatchObject({ status: 'succeeded', inputs: [] })
     expect(await db.select().from(taskInput).where(eq(taskInput.fileId, fileId))).toHaveLength(0)
   })
 
