@@ -627,6 +627,7 @@ export const en = {
       quickSwitch: 'Jump to one of your active conversations (Ctrl/⌘+K). Shows how many are still answering.',
       popout: 'Open this conversation in a new window so you can wait for the answer while looking at another screen.',
       materialsLibrary: 'The materials library: files of this conversation and of conversations sharing a tag gather here. Tick ☑ to stage one under \'Materials for the next question\'.',
+      materialsConversations: 'Add conversations sharing a tag just like files: select [+ Add], preview the scope, then add. They go along once, with the next question only.',
       materialsStaged: 'Materials for the next question. They go along once, with the next question only, and the list clears after sending (sent files are marked \'used\'). What is sent is what you see — only these reach the AI.',
       discussion: 'Team-note mode. Turn it on and your message stays with the team as a note instead of going to the AI.',
       tags: 'Tags. Conversations sharing a tag are loosely linked; select a tag to see them together on the kanban.',

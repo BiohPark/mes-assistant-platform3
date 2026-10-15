@@ -139,7 +139,7 @@ it('opens the materials tab when a materials step comes up, then spotlights the 
   target('composer')
   renderWithProviders(<GuideTour userId="materials-user" pillRef={{ current: pill }} />)
   act(() => { useTourStore.getState().start('conversation', 'materials-user'); vi.advanceTimersByTime(1500) }) // 앞 테스트가 'u'의 진행을 남겨도 영향받지 않게
-  expect(screen.getByText('1/5')).toBeInTheDocument() // composer · task-tabs · materials-library · materials-staged · pill
+  expect(screen.getByText('1/6')).toBeInTheDocument() // composer · task-tabs · materials-library · materials-conversations · materials-staged · pill
   fireEvent.keyDown(dialog(), { key: 'Enter' })
   fireEvent.keyDown(dialog(), { key: 'Enter' })
   expect(within(dialog()).getByRole('heading', { name: '자료함' })).toBeInTheDocument()

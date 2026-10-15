@@ -34,7 +34,8 @@ it('every page has sections with unique ids and ends with the assistant section 
 it('conversation sections cover basics, materials, discussion, tags, brief and status; the kanban section lives on the hub route', () => {
   expect(TOUR_SECTIONS.conversation.map(section => section.id)).toEqual(['basics', 'materials', 'discussion', 'tags', 'brief', 'status', 'assistant'])
   expect(TOUR_SECTIONS.conversation[0]!.steps.map(step => step.target)).toEqual(['composer', 'model', 'chat-search', 'chat-toc', 'quick-switch', 'popout'])
-  expect(TOUR_SECTIONS.conversation[1]!.steps.map(step => step.target)).toEqual(['task-tabs', 'materials-library', 'materials-staged'])
+  expect(TOUR_SECTIONS.conversation[1]!.steps.map(step => step.target)).toEqual(['task-tabs', 'materials-library', 'materials-conversations', 'materials-staged'])
+  expect(TOUR_SECTIONS.conversation[1]!.steps.find(step => step.target === 'materials-conversations')).toEqual({ target: 'materials-conversations', text: 'tour.steps.materialsConversations', opens: 'materials' })
   expect(TOUR_SECTIONS.hub.find(section => section.id === 'kanban')?.steps.map(step => step.target)).toEqual(['kanban-filters', 'kanban-ai-filter', 'kanban-columns', 'kanban-card'])
 })
 
@@ -42,7 +43,7 @@ it('a step that opens the materials panel counts as available while the panel ta
   target('composer'); target('pill')
   const tabs = target('task-tabs')
   begin('conversation') // 다른 대화 대상(요약 카드 등)이 없어 대기 뒤 확정
-  expect(stepIds()).toEqual(['composer', 'task-tabs', 'materials-library', 'materials-staged', 'pill']) // 자료 패널은 아직 안 열렸지만 탭이 있다
+  expect(stepIds()).toEqual(['composer', 'task-tabs', 'materials-library', 'materials-conversations', 'materials-staged', 'pill']) // 자료 패널은 아직 안 열렸지만 탭이 있다
   state().close(); tabs.remove()
   begin('conversation')
   expect(stepIds()).toEqual(['composer', 'pill'])
@@ -103,10 +104,10 @@ it('waits for late conversation targets without exposing a pill-only tour, then 
   expect(state().sections).toEqual([])
   vi.advanceTimersByTime(1)
   expect(sectionIds()).toEqual(['basics', 'materials', 'assistant'])
-  expect(stepIds()).toEqual(['composer', 'task-tabs', 'materials-library', 'materials-staged', 'pill']) // 자료 패널 단계는 탭이 있으면 센다(보일 때 탭을 연다)
+  expect(stepIds()).toEqual(['composer', 'task-tabs', 'materials-library', 'materials-conversations', 'materials-staged', 'pill']) // 자료 패널 단계는 탭이 있으면 센다(보일 때 탭을 연다)
   target('related')
   vi.advanceTimersByTime(100)
-  expect(stepIds()).toHaveLength(5) // 확정 후 total은 그대로
+  expect(stepIds()).toHaveLength(6) // 확정 후 total은 그대로
 })
 
 it('starts on the next frame when all late targets appear, without waiting for the deadline', () => {

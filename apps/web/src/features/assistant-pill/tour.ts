@@ -15,7 +15,7 @@ const NAVIGATION: TourSection = { id: 'navigation', title: 'tour.sections.naviga
 
 /**
  * 페이지별 섹션 — 코드 데이터. 알약은 모든 페이지에 있으므로 마지막 섹션으로 두어 투어가 비지 않게 한다. UI 안내만, 업무 절차는 넣지 않는다.
- * 자료함의 materials-library·materials-staged 앵커는 자료 패널 쪽에서 붙인다 — 아직 없으면 그 단계만 빠진다
+ * 자료함의 materials-library·materials-conversations·materials-staged 앵커는 자료 패널 쪽에서 붙인다
  */
 export const TOUR_SECTIONS: Record<PageRoute, readonly TourSection[]> = {
   hub: [
@@ -45,6 +45,7 @@ export const TOUR_SECTIONS: Record<PageRoute, readonly TourSection[]> = {
     { id: 'materials', title: 'tour.sections.materials', steps: [
       { target: 'task-tabs', text: 'tour.steps.taskTabs' },
       { target: 'materials-library', text: 'tour.steps.materialsLibrary', opens: 'materials' },
+      { target: 'materials-conversations', text: 'tour.steps.materialsConversations', opens: 'materials' },
       { target: 'materials-staged', text: 'tour.steps.materialsStaged', opens: 'materials' },
     ] },
     { id: 'discussion', title: 'tour.sections.discussion', steps: [{ target: 'discussion', text: 'tour.steps.discussion' }] },
