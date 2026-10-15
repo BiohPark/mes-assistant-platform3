@@ -65,11 +65,11 @@ it('연결 에이전트 추천·검색은 폐기를 제외하고 선택한 에�
   expect(screen.queryByRole('combobox', { name: 'SR 상태' })).not.toBeInTheDocument()
 })
 
-it('4단계 진행 표시와 완료·반려 버튼만 보이고, 옛 reviewing은 접수됨 단계로 표시한다', async () => {
+it('3단계 진행 표시와 완료·반려 버튼만 보이고, 옛 reviewing은 접수됨 단계로 표시한다', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
   const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={{ ...sr, status: 'reviewing' }} onSaved={() => undefined} /></MeContext></TooltipProvider>)
   const steps = screen.getByRole('list', { name: '요청 진행 단계' })
-  expect(within(steps).getAllByRole('listitem').map((item) => item.textContent?.replace('→ ', ''))).toEqual(['접수됨', '처리 중', '결과 공유', '완료'])
+  expect(within(steps).getAllByRole('listitem').map((item) => item.textContent?.replace('→ ', ''))).toEqual(['접수됨', '처리 중', '완료'])
   expect(within(steps).getByText('접수됨')).toHaveAttribute('aria-current', 'step')
   expect(container).not.toHaveTextContent('검토 중')
   expect(container).not.toHaveTextContent('reviewing')
@@ -120,10 +120,14 @@ it('상태 이력에 시각·처리자·변경·사유를 보여 준다', async 
   ]
   const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={{ ...sr, status: 'rejected', statusHistory: history }} onSaved={() => undefined} /></MeContext></TooltipProvider>)
   const list = screen.getByRole('list', { name: '상태 이력' })
+  expect(within(list).getAllByRole('listitem')).toHaveLength(1)
+  expect(within(list).getAllByRole('listitem')[0]).toHaveTextContent('담당자')
+  expect(within(list).getAllByRole('listitem')[0]).toHaveTextContent('접수됨 → 반려')
+  expect(within(list).getAllByRole('listitem')[0]).toHaveTextContent('사유: 범위 밖 요청')
+  await userEvent.click(screen.getByRole('button', { name: '전체 보기' }))
   expect(within(list).getAllByRole('listitem')).toHaveLength(2)
-  expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('담당자')
-  expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('접수됨 → 반려')
-  expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('사유: 범위 밖 요청')
+  await userEvent.click(screen.getByRole('button', { name: '접기' }))
+  expect(within(list).getAllByRole('listitem')).toHaveLength(1)
   expect(container).not.toHaveTextContent('rejected')
   expect(container).not.toHaveTextContent('검토 중')
   expect(screen.queryByRole('button', { name: /다음 단계/ })).not.toBeInTheDocument()
@@ -141,6 +145,7 @@ it('Sheet는 접수 첨부·원문 Markdown·연결 상태를 보여주고 생�
   }))
   renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={{ ...sr, attachmentIds: ['file'] }} onSaved={() => undefined} /><Location /></MeContext></TooltipProvider>)
   expect(await screen.findByText('알람.txt v1')).toBeInTheDocument()
+  await userEvent.click(await screen.findByRole('button', { name: '접수 대화 보기 · 메시지 1개' }))
   expect(await screen.findByText('원문 요청', { selector: 'strong' })).toBeInTheDocument()
   await userEvent.click(await screen.findByRole('button', { name: '접수 도우미' }))
   await userEvent.click(screen.getByRole('button', { name: '연결 업무 시작' }))
@@ -158,5 +163,55 @@ it('영문 Sheet의 파일 목록과 SR 액션은 번역된 이름을 사용한�
   expect(screen.getByRole('button', { name: 'Start linked task' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Complete' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument()
-  expect(screen.getByRole('list', { name: 'Request progress' })).toHaveTextContent('Result shared')
+  expect(screen.getByRole('list', { name: 'Request progress' })).toHaveTextContent('In progress')
+})
+
+
+it('상단에 요청 메타데이터·행동·요청 카드·연결 업무·공유 결과를 순서대로 표시한다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/files/file' ? jsonResponse(200, { id: 'file', name: '요청.txt', version: 1, size: 10, source: 'upload' }) : jsonResponse(200, [])))
+  const { container } = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={{ ...sr, requesterName: '김요청', submittedAt: '2026-10-01T09:30:00Z', elapsedDays: 7, attachmentIds: ['file'] }} onSaved={() => undefined} /></MeContext></TooltipProvider>)
+  const header = container.querySelector('header')!
+  expect(header).toHaveTextContent('SR-2026-0001 요청')
+  expect(header).toHaveTextContent('김요청')
+  expect(header).toHaveTextContent('접수됨')
+  expect(header).toHaveTextContent('7일')
+  expect(header.querySelector('time')).toHaveAttribute('dateTime', '2026-10-01T09:30:00Z')
+  const content = screen.getByRole('region', { name: '접수 내용' })
+  expect(content).toHaveTextContent('내용')
+  expect(await within(content).findByText('요청.txt v1')).toBeInTheDocument()
+  const order = [screen.getByRole('button', { name: '연결 업무 시작' }), screen.getByRole('button', { name: '완료' }), screen.getByRole('button', { name: '반려' }), screen.getByRole('button', { name: '결과 공유' }), content, screen.getByRole('heading', { name: '연결 업무 진행 현황' }), screen.getByRole('heading', { name: '공유된 결과' }), screen.getByRole('button', { name: '접수 대화 보기 · 메시지 0개' })]
+  order.slice(1).forEach((element, i) => expect(order[i].compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy())
+})
+
+it('접수 대화는 기본으로 접고 요청자 원문과 AI의 3줄 미리보기·펼치기를 제공한다', async () => {
+  const fetch = vi.fn(async (_url: string) => jsonResponse(200, []))
+  vi.stubGlobal('fetch', fetch)
+  const intakeMessages: NonNullable<SrDetail['intakeMessages']> = [
+    { id: 'user', threadId: sr.threadId, role: 'user', content: '**원문 전체**\n요청 마지막 줄', status: 'done', attachmentIds: [], createdAt: sr.createdAt },
+    { id: 'ai', threadId: sr.threadId, role: 'assistant', content: '**첫 줄**\n둘째 줄\n셋째 줄\n마지막 답변', status: 'done', attachmentIds: [], createdAt: sr.createdAt },
+  ]
+  const user = userEvent.setup()
+  renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><SrDetailSheet sr={{ ...sr, intakeMessages }} onSaved={() => undefined} /></MeContext></TooltipProvider>)
+  const disclosure = screen.getByRole('button', { name: '접수 대화 보기 · 메시지 2개' })
+  expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.queryByRole('region', { name: '접수 대화' })).not.toBeInTheDocument()
+  disclosure.focus()
+  await user.keyboard('{Enter}')
+  expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+  const conversation = screen.getByRole('region', { name: '접수 대화' })
+  expect(within(conversation).getByText('원문 전체', { selector: 'strong' })).toBeInTheDocument()
+  expect(within(conversation).getByText(/요청 마지막 줄/)).toBeInTheDocument()
+  const expand = within(conversation).getByRole('button', { name: '펼치기' })
+  expect(expand).toHaveAttribute('aria-expanded', 'false')
+  const preview = within(conversation).getByText(/마지막 답변/)
+  expect(preview).toHaveClass('line-clamp-3')
+  expect(within(conversation).queryByText('첫 줄', { selector: 'strong' })).not.toBeInTheDocument()
+  await user.click(expand)
+  expect(within(conversation).getByText('첫 줄', { selector: 'strong' })).toBeInTheDocument()
+  expect(within(conversation).getAllByRole('button', { name: '복사' })).toHaveLength(2)
+  await user.click(within(conversation).getByRole('button', { name: '접기' }))
+  expect(within(conversation).getByRole('button', { name: '펼치기' })).toHaveAttribute('aria-expanded', 'false')
+  await user.click(disclosure)
+  expect(screen.queryByRole('region', { name: '접수 대화' })).not.toBeInTheDocument()
+  expect(fetch.mock.calls.some(([url]) => String(url).includes('/messages'))).toBe(false)
 })

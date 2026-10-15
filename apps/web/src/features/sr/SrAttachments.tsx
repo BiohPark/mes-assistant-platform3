@@ -17,15 +17,15 @@ export function useSrFiles(ids: string[]) {
   return useSrFileQueries(ids).flatMap(query => query.data ? [query.data] : [])
 }
 
-export function SrAttachments({ ids }: { ids: string[] }) {
+export function SrAttachments({ ids, compact = false }: { ids: string[]; compact?: boolean }) {
   const me = useMe()
   const t = useT()
   const queries = useSrFileQueries(ids)
   const failed = queries.filter(query => query.isError).length
   // 요청자(BO)는 버전 기록 API(/files/:id/versions)가 403이므로 버튼을 보이지 않는다.
   const requesterOnly = me.roles.includes('requester') && !me.roles.includes('system_owner')
-  return <>
+  return <div className={compact ? 'min-w-0 [&_ul]:flex [&_ul]:flex-wrap [&_ul]:gap-2 [&_ul]:space-y-0 [&_li]:max-w-full [&_li]:rounded-full' : undefined}>
     {failed > 0 && <p className="text-xs text-destructive">{t('sr.attachmentsUnavailable', { count: failed })}</p>}
     <FileList files={queries.flatMap(query => query.data ? [query.data] : [])} canDelete={false} canViewHistory={!requesterOnly} />
-  </>
+  </div>
 }
