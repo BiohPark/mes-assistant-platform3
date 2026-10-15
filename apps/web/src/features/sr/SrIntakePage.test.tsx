@@ -1,10 +1,11 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { MeContext } from '@/app/auth'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { SrIntakePage } from './SrIntakePage'
+import { I18nProvider } from '@/i18n'
 
 vi.mock('@/app/TopBar', () => ({ TopBar: () => null }))
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear() })
@@ -212,6 +213,117 @@ it('접수자 화면에서 상태 이력을 펼치면 시각·처리자·변경�
 const me = { id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
 const intake = { srIntakeAssistantId: 'a', name: '접수 도우미', summary: '요청을 정리합니다', usageExample: '### 사용법\n- 시작\n- "설비 알람 확인"\n- 첨부 파일을 올리세요\n- "리포트 요청"' }
 const row = (id: string, status: string) => ({ id, requesterId: 'u', code: `SR-${id}`, title: `요청 ${id}`, titleSource: 'manual', body: '', status, threadId: `thread-${id}`, attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' })
+
+function dragFile(name = 'sr-drop.txt', content = '현장 알람') {
+  return { dataTransfer: { types: ['Files'], files: [new File([content], name, { type: 'text/plain' })], items: [] } }
+}
+
+it.each([true, false])('SR 대화에 놓은 파일은 같은 업로드·요청 경로로 보낸다: 새 요청=%s', async isNew => {
+  const sr = row('drop', 'draft')
+  const uploaded: File[] = []
+  const requests: unknown[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, intake)
+    if (url === '/api/service-requests' || url === '/api/service-requests/drop') return jsonResponse(200, sr)
+    if (url === '/api/service-requests/drop/files') { uploaded.push((init!.body as FormData).get('file') as File); return jsonResponse(201, { id: 'file-drop' }) }
+    if (url === '/api/threads/thread-drop/requests') {
+      requests.push(JSON.parse(init!.body as string))
+      return new Response('event: started\ndata: {"requestId":"r","replyMessageId":"reply"}\n\nevent: completed\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })
+    }
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: isNew ? '/sr?new=1' : '/sr?id=drop' })
+  await screen.findByRole('button', { name: '새 요청' })
+  const zone = await screen.findByTestId('sr-dropzone')
+  const drag = dragFile()
+  fireEvent.dragEnter(screen.getByRole('region', { name: '접수 대화' }), drag)
+  expect(screen.getByText('놓으면 첨부 대기에 추가')).toHaveAttribute('aria-hidden', 'true')
+  fireEvent.drop(zone, drag)
+  expect(screen.queryByText('놓으면 첨부 대기에 추가')).not.toBeInTheDocument()
+  expect(screen.getByText('sr-drop.txt')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '첨부 제거' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(requests).toEqual([{ content: '', attachmentIds: ['file-drop'], oneShotFileIds: [] }]))
+  expect(uploaded).toHaveLength(1)
+  expect(uploaded[0]!.name).toBe('sr-drop.txt')
+})
+
+it('SR 드롭도 첨부 버튼과 한도를 공유하고 빈 파일을 제외한다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/intake-assistant' ? jsonResponse(200, { ...intake, fileMaxPerRequest: 1 }) : jsonResponse(200, [])))
+  const { container } = renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?new=1' })
+  await screen.findByRole('button', { name: '새 요청' })
+  const zone = screen.getByTestId('sr-dropzone')
+  fireEvent.drop(zone, dragFile('empty.txt', ''))
+  expect(screen.queryByText('empty.txt')).not.toBeInTheDocument()
+  await userEvent.upload(container.querySelector('input[type=file]')!, new File(['a'], 'button.txt', { type: 'text/plain' }))
+  fireEvent.drop(zone, dragFile())
+  expect(screen.getByRole('alert')).toHaveTextContent('첨부 파일은 최대 1개까지 선택할 수 있습니다.')
+  expect(screen.getByText('button.txt')).toBeInTheDocument()
+  expect(screen.queryByText('sr-drop.txt')).not.toBeInTheDocument()
+})
+
+it.each(['no-agent', 'done', 'rejected'])('%s 상태에서는 SR 드롭을 받지 않는다', async state => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, { ...intake, srIntakeAssistantId: state === 'no-agent' ? null : 'a' })
+    if (url === '/api/service-requests/drop') return jsonResponse(200, row('drop', state === 'no-agent' ? 'draft' : state))
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=drop' })
+  await screen.findByRole('heading', { name: '요청 drop' })
+  const zone = screen.getByTestId('sr-dropzone')
+  fireEvent.dragEnter(zone, dragFile())
+  expect(screen.queryByText('놓으면 첨부 대기에 추가')).not.toBeInTheDocument()
+  fireEvent.drop(zone, dragFile())
+  expect(screen.queryByText('sr-drop.txt')).not.toBeInTheDocument()
+})
+
+it('업로드·응답 대기·스트리밍 동안 SR 드롭을 막고 완료 후 다시 받는다', async () => {
+  let finishUpload!: (response: Response) => void
+  let startResponse!: (response: Response) => void
+  let stream!: ReadableStreamDefaultController<Uint8Array>
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, intake)
+    if (url === '/api/service-requests/drop') return jsonResponse(200, row('drop', 'draft'))
+    if (url === '/api/service-requests/drop/files') return new Promise<Response>(resolve => { finishUpload = resolve })
+    if (url === '/api/threads/thread-drop/requests') return new Promise<Response>(resolve => { startResponse = resolve })
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=drop' })
+  await screen.findByRole('button', { name: '새 요청' })
+  const zone = await screen.findByTestId('sr-dropzone')
+  fireEvent.drop(zone, dragFile('first.txt'))
+  await userEvent.click(screen.getByRole('button', { name: '전송' }))
+  const expectBlocked = () => {
+    fireEvent.dragEnter(zone, dragFile())
+    expect(screen.queryByText('놓으면 첨부 대기에 추가')).not.toBeInTheDocument()
+    fireEvent.drop(zone, dragFile())
+    expect(screen.queryByText('sr-drop.txt')).not.toBeInTheDocument()
+  }
+  await waitFor(() => expect(finishUpload).toBeTypeOf('function'))
+  expectBlocked()
+  await act(async () => finishUpload(jsonResponse(201, { id: 'file-drop' })))
+  await waitFor(() => expect(startResponse).toBeTypeOf('function'))
+  expectBlocked()
+  await act(async () => {
+    startResponse(new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller } }), { headers: { 'content-type': 'text/event-stream' } }))
+    stream.enqueue(new TextEncoder().encode('event: started\ndata: {"requestId":"r","replyMessageId":"reply"}\n\n'))
+  })
+  await screen.findByRole('button', { name: '중지' })
+  expectBlocked()
+  await act(async () => { stream.enqueue(new TextEncoder().encode('event: completed\ndata: {}\n\n')); stream.close() })
+  await waitFor(() => expect(screen.getByRole('button', { name: '새 요청' })).toBeEnabled())
+  fireEvent.drop(zone, dragFile())
+  expect(screen.getByText('sr-drop.txt')).toBeInTheDocument()
+})
+
+it.each([
+  { locale: 'ko' as const, hint: '📎 또는 끌어 놓기로 파일을 첨부할 수 있습니다' },
+  { locale: 'en' as const, hint: 'Attach files with 📎 or drag and drop.' },
+])('빈 SR 대화에 첨부 방법을 안내한다: $locale', async ({ locale, hint }) => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/intake-assistant' ? jsonResponse(200, intake) : jsonResponse(200, [])))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><I18nProvider locale={locale}><SrIntakePage /></I18nProvider></MeContext></TooltipProvider>, { route: '/sr?new=1' })
+  expect(await screen.findByText(hint)).toBeInTheDocument()
+})
 
 it('목록·접수 에이전트를 불러오는 동안 뼈대를 보이고 끝나면 치운다', async () => {
   let release!: () => void

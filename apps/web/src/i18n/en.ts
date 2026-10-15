@@ -343,6 +343,7 @@ export const en = {
     settingsLink: "Go to Settings",
     intakeAgent: "Intake agent",
     intakeSummary: "Describe your request in a conversation before submitting it.",
+    attachmentHint: "Attach files with 📎 or drag and drop.",
     exampleQuestions: "Example first questions",
     loadFailed: "Could not load requests.",
     noMatchingStatus: "No requests in the selected state.",
