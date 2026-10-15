@@ -94,7 +94,7 @@ export function DiagnosticsPage() {
   return <><TopBar title={t('nav.diagnostics')} /><div className="flex-1 overflow-auto p-4"><div className="mx-auto max-w-3xl space-y-4">
     {query.data && <AiConnectionCard data={query.data} />}
     {query.data && <OwuiProbeCard live={query.data.llm.mode === 'live'} defaultModel={query.data.llm.defaultModel} />}
-    <div className="flex gap-2"><Button variant="outline" onClick={() => void query.refetch()}>{t('admin.diagnostics.recheck')}</Button>
+    <div className="flex gap-2" data-tour="admin-diagnostics"><Button variant="outline" onClick={() => void query.refetch()}>{t('admin.diagnostics.recheck')}</Button>
       <Button disabled={!query.data} onClick={() => { if (query.data) void copyText(formatDiagnostics(query.data, t)).then((ok) => toast[ok ? 'success' : 'error'](ok ? t('admin.diagnostics.copied') : t('admin.diagnostics.copyFailed'))) }}>{t('admin.diagnostics.copyText')}</Button></div>
     {query.isError && <p role="alert">{t('admin.diagnostics.loadFailed')}</p>}
     {query.data && <><section className="rounded-xl border bg-card p-4"><h2 className="mb-3 font-semibold">{t('admin.diagnostics.environment')}</h2>

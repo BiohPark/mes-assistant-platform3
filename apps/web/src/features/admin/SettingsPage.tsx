@@ -43,7 +43,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
       if (key === 'defaultModelOverride') { void client.invalidateQueries({ queryKey: ['system-assistant', 'model'] }); void client.invalidateQueries({ queryKey: ['diagnostics'] }) }
     })
   }
-  return <section aria-labelledby="general-settings" className="space-y-3 rounded-xl border bg-card p-4 text-sm"><h2 id="general-settings" className="font-semibold">{t('admin.settings.global')}</h2>
+  return <section aria-labelledby="general-settings" data-tour="admin-settings" className="space-y-3 rounded-xl border bg-card p-4 text-sm"><h2 id="general-settings" className="font-semibold">{t('admin.settings.global')}</h2>
     <div className="space-y-1.5">
       <Field label={t('admin.defaultModel')} status={states.defaultModelOverride}><ModelSelect aria-label={t('admin.defaultModel')} value={form.defaultModelOverride ?? ''}
         selectionOnly disabled={modelList.loading || !!modelList.error} placeholder={t('admin.settings.useEnvModel')}

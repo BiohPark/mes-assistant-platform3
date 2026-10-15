@@ -1,11 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { X } from 'lucide-react'
 import { useT } from '@/i18n'
 import type { PillPos } from '@/app/uiStore'
 import { RequestInfoDialog } from '@/features/chat/RequestInfoDialog'
 import { BUBBLE_TTL_MS, useBubbleStore, type Bubble, type BubbleSource } from './bubbles'
+import { usePillAnchor } from './pillAnchor'
 
-const MARGIN = 8
 const WIDTH = 260
 const MESSAGE = { 'budget.warn': 'bubble.budgetWarn', 'budget.over': 'bubble.budgetOver', 'request.slow': 'bubble.requestSlow' } as const satisfies Record<BubbleSource, string>
 
@@ -15,24 +15,11 @@ export function AssistantBubble({ pillRef, pos }: { pillRef: RefObject<HTMLButto
   const current = useBubbleStore((state) => state.current)
   const dismiss = useBubbleStore((state) => state.dismiss)
   const [infoId, setInfoId] = useState<string | null>(null)
-  const [place, setPlace] = useState<{ left: number; bottom: number }>({ left: MARGIN, bottom: MARGIN })
+  const place = usePillAnchor(current !== null, pillRef, pos, WIDTH)
   const paused = useRef(0) // hover + focus 겹침 수
   const deadline = useRef(0)
   const remaining = useRef(0) // 정지 시점의 남은 시간 — 재개 때 이어서 센다
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
-
-  useLayoutEffect(() => {
-    if (!current) return
-    const compute = () => {
-      const rect = pillRef.current?.getBoundingClientRect()
-      const right = (rect?.right ?? 0) + MARGIN
-      const left = right + WIDTH + MARGIN <= window.innerWidth ? right : Math.max(MARGIN, (rect?.left ?? window.innerWidth) - WIDTH - MARGIN)
-      setPlace({ left, bottom: Math.max(MARGIN, window.innerHeight - (rect?.bottom ?? window.innerHeight)) })
-    }
-    compute()
-    window.addEventListener('resize', compute)
-    return () => window.removeEventListener('resize', compute)
-  }, [current, pos, pillRef])
 
   useEffect(() => {
     if (!current) return

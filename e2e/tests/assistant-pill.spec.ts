@@ -29,7 +29,10 @@ test('알약을 끌면 창이 열리지 않고 위치가 남으며, 클릭·Esc�
   await page.mouse.down()
   expect(before.x).toBeLessThan(56) // 기본 위치는 사이드바 하단(왼쪽) — 입력창 전송 버튼을 가리지 않는다
   await page.mouse.move(before.x + before.width / 2 + 200, before.y + before.height / 2 - 120, { steps: 8 })
+  await expect.poll(() => pill.evaluate(el => el.style.transform)).toMatch(/^translate3d\(200px, -120px, 0(px)?\)$/) // 끌기 중에는 transform만(프레임마다) — 저장은 놓을 때 한 번. 브라우저는 0을 0px로 직렬화한다
+  expect(await pill.evaluate(el => el.style.left)).toBe('16px')
   await page.mouse.up()
+  expect(await pill.evaluate(el => el.style.transform)).toBe('')
   await expect(page.getByRole('dialog', { name: '시스템 assistant' })).toHaveCount(0) // 끌기 뒤의 클릭은 토글이 아니다
   const after = (await pill.boundingBox())!
   expect(Math.round(after.x)).toBe(Math.round(before.x + 200))

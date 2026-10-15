@@ -548,7 +548,7 @@ export const ko = {
     home: '홈으로',
   },
   pill: {
-    menu: { title: '할 수 있는 것', search: '에이전트 검색', exampleStart: '대화 시작 예시', exampleTag: '태그 예시', related: '같은 태그 대화 패널', materials: '자료 탭 열기', mySr: '내 SR 요청', manageAgents: '에이전트 관리', settings: '시스템 설정', users: '사용자 관리', diagnostics: '진단', exampleCreate: '에이전트 등록 예시', unavailable: '현재 페이지에는 이 항목이 없습니다.' },
+    menu: { title: '할 수 있는 것', search: '에이전트 검색', exampleStart: '대화 시작 예시', exampleTag: '태그 예시', related: '같은 태그 대화 패널', materials: '자료 탭 열기', mySr: '내 SR 요청', manageAgents: '에이전트 관리', settings: '시스템 설정', users: '사용자 관리', diagnostics: '진단', exampleCreate: '에이전트 등록 예시', unavailable: '현재 페이지에는 이 항목이 없습니다.', hub: '에이전트 허브', myWork: '내 작업' },
     open: 'AI 도우미 열기', close: 'AI 도우미 닫기', characterAlt: 'AI 도우미 캐릭터', moveHint: '끌거나 화살표 키로 옮기고, Home 키로 원위치',
   },
   bubble: {
@@ -556,10 +556,31 @@ export const ko = {
     budgetWarn: '요청 크기가 한도의 80%를 넘었어요. 눌러서 자료 트레이를 확인하세요',
     budgetOver: '요청 크기가 한도를 넘어 전송이 막혀요. 눌러서 자료 트레이에서 조정하세요',
     requestSlow: '응답이 30초 넘게 오지 않아요. 눌러서 요청 정보를 확인하세요',
+    guideRegion: 'AI 도우미 가이드 제안', guideOffer: '이 화면에서 도와드릴까요?', guideYes: '네, 가이드해 주세요', guideNo: '괜찮아요',
   },
-  tutorial: {
-    title: '페이지 둘러보기', ask: '둘러볼까요?', accept: '둘러보기', skip: '건너뛰기', finish: '마치기', replay: '튜토리얼 다시 보기', step: '현재 페이지 · 1/1',
-    pages: { hub: '허브에서 에이전트를 검색할 수 있습니다. 도우미 메뉴의 예시 질문은 입력창에만 채워집니다.', conversation: '같은 태그 대화 패널과 자료 탭에서 연결된 대화와 파일을 볼 수 있습니다. 메뉴에서 튜토리얼을 다시 볼 수 있습니다.', sr: '내 SR 요청에서 본인의 요청 목록과 접수 대화를 볼 수 있습니다.', admin: '시스템 운영자는 메뉴에서 기존 관리 도구로 이동하거나 에이전트 등록 예시를 입력창에 채울 수 있습니다.', other: 'AI 도우미는 알약으로 열고 닫을 수 있습니다. 내 정보에서 튜토리얼을 다시 볼 수 있습니다.' },
+  tutorial: { replay: '튜토리얼 다시 보기', guide: '가이드해 주세요' },
+  tour: {
+    title: '페이지 가이드', progress: '{current}/{total}', prev: '이전', next: '다음', finish: '마치기', close: '가이드 닫기',
+    steps: {
+      nav: '왼쪽 메뉴로 허브·내 작업·SR·관리 화면을 오갑니다.',
+      pill: 'AI 도우미 알약입니다. 누르면 도우미 창이 열리고 끌어서 옮길 수 있어요. 이 가이드는 창의 "가이드해 주세요"로 언제든 다시 볼 수 있습니다.',
+      hubView: '에이전트 카드와 전체 대화 칸반을 여기서 전환합니다.',
+      hubSearch: '이름·요약·업무 분류로 에이전트를 찾습니다.',
+      hubCards: '에이전트 카드입니다. 카드에서 그 에이전트와 새 대화를 시작합니다.',
+      composer: '여기에 메시지를 쓰고 파일을 첨부해 보냅니다.',
+      related: '같은 태그를 가진 다른 대화입니다. 펼쳐서 참조할 대화와 파일을 직접 고릅니다.',
+      taskTabs: '대화의 패널을 전환합니다. 자료 탭에서 이 대화의 파일과 참조 자료를 봅니다.',
+      srNew: '새 요청 대화를 시작합니다.',
+      srList: '내가 보낸 요청 목록입니다. 눌러서 대화와 진행 상태를 봅니다.',
+      srSearch: '제목·요청자로 요청을 찾습니다.',
+      srTable: '접수된 요청 목록입니다. 상태 칩으로 걸러 봅니다.',
+      myWorkCompleted: '완료된 업무까지 함께 볼지 여기서 고릅니다.',
+      myWorkList: '내가 담당한 대화 목록입니다.',
+      adminNewAssistant: '새 에이전트를 등록합니다.',
+      adminSettings: '전역 설정입니다. 저장하면 모든 사용자에게 적용됩니다.',
+      adminUsers: '사용자와 역할을 관리합니다.',
+      adminDiagnostics: 'AI 연결 상태를 다시 검사합니다.',
+    },
   },
   nav: {
     requests: '요청', work: '업무', admin: '관리',

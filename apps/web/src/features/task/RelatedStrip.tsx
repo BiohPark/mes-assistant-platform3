@@ -40,7 +40,7 @@ export function RelatedStrip({ tags, excludeTaskId }: { tags: string[]; excludeT
   })).filter((item) => item.viaTags.length > 0)
   if (rows.length === 0) return <span className={pill}><Link2 className="size-3" />{t('task.related.none')}</span>
   const groups = tags.map((tag) => ({ tag, rows: rows.filter((row) => row.viaTags.some((via) => tagKey(via) === tagKey(tag))) })).filter((group) => group.rows.length > 0)
-  return <details className="relative inline-block" onToggle={(event) => setOpen(event.currentTarget.open)}>
+  return <details className="relative inline-block" data-tour="related" onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary className="inline-flex h-6 cursor-pointer items-center gap-1 rounded-full border px-2 text-xs text-muted-foreground hover:bg-muted"><Link2 className="size-3" />{t('task.related.linked', { count: rows.length })}<span className="ml-0.5 flex -space-x-1">{rows.slice(0, 3).map((row) => row.assistant && <AssistantAvatar key={row.task.id} assistant={row.assistant} size="xs" singleInitial className="size-5 rounded-full text-xs ring-2 ring-background" />)}</span>{rows.length > 3 && <span className="text-xs">{t('task.related.more', { count: rows.length - 3 })}</span>}</summary>
     <div className="fixed inset-x-4 z-20 mt-1 w-auto sm:absolute sm:inset-x-auto sm:left-0 sm:w-[22rem] rounded-xl border bg-popover p-1 shadow-md"><div className="px-2 py-1 text-xs text-muted-foreground">{t('task.related.sameTag')}</div><ul className="max-h-72 overflow-y-auto">{groups.map((group) => <li key={group.tag}>
       <div className="flex items-center gap-1.5 px-2 pt-1.5 pb-0.5"><TagChip tag={group.tag} size="xs" /><span className="text-xs text-muted-foreground">{group.rows.length}</span></div>

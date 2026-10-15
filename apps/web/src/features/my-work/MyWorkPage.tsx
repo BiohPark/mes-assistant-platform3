@@ -57,7 +57,7 @@ export function MyWorkPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">{t('myWork.description')}</p>
           <div className="flex shrink-0 items-center gap-2">
-            <Switch id="my-work-completed" checked={includeCompleted} onCheckedChange={setIncludeCompleted} />
+            <Switch id="my-work-completed" data-tour="my-work-completed" checked={includeCompleted} onCheckedChange={setIncludeCompleted} />
             <Label htmlFor="my-work-completed">{t('myWork.includeCompleted')}</Label>
           </div>
         </div>
@@ -65,7 +65,7 @@ export function MyWorkPage() {
           <p>{t('myWork.loadFailed')}</p>
           <Button variant="outline" size="sm" disabled={tasks.isFetching || catalog.isFetching} onClick={() => { void tasks.refetch(); void catalog.refetch() }}>{t('common.retry')}</Button>
         </div> : loading ? <div role="status" aria-label={t('common.loading')} aria-busy="true" className="p-4 text-sm text-muted-foreground">{t('common.loading')}</div> : rows.length ?
-          <ul aria-label={t('myWork.list')} className="space-y-2">
+          <ul aria-label={t('myWork.list')} data-tour="my-work-list" className="space-y-2">
             {rows.map(task => {
               const assistant = assistants.get(task.assistantId)
               return <li key={task.id} className="min-w-0">
