@@ -4,10 +4,10 @@ import type { BudgetLevel } from '@mes/domain'
 
 /**
  * 분류표 — 코드 데이터(U6).
- * 벨(알림 목록)은 서버 notification.created 전부, 말풍선은 클라이언트 상태(budget·slow), 내 요청의 끝(reply.*, replyBubble.ts), 내 태그 변경으로 자료함에 들어오고 빠진 같은 태그 항목(share.*, task/tagShare.ts)뿐이다. 둘은 겹치지 않고, 말풍선은 AI를 호출하지 않는다.
+ * 벨(알림 목록)은 서버 notification.created 전부, 말풍선은 클라이언트 상태(budget·slow), 내 요청의 끝(reply.*, replyBubble.ts), 내 태그 변경으로 자료함에 들어오고 빠진 같은 태그 항목(share.*, task/tagShare.ts), 페이지 가이드를 끝까지 본 칭찬(guide.done, GuideTour)뿐이다. 둘은 겹치지 않고, 말풍선은 AI를 호출하지 않는다.
  */
 export const BELL_SOURCES = ['notification.created'] as const
-export const BUBBLE_SOURCES = ['budget.warn', 'budget.over', 'request.slow', 'reply.done', 'reply.failed', 'reply.cancelled', 'share.in', 'share.out', 'share.none'] as const
+export const BUBBLE_SOURCES = ['budget.warn', 'budget.over', 'request.slow', 'reply.done', 'reply.failed', 'reply.cancelled', 'share.in', 'share.out', 'share.none', 'guide.done'] as const
 export type BubbleSource = (typeof BUBBLE_SOURCES)[number]
 export type ReplySource = Extract<BubbleSource, `reply.${string}`>
 export const isReplyBubble = (bubble: Bubble): bubble is Bubble & { source: ReplySource; taskId: string } => bubble.source.startsWith('reply.') && typeof bubble.taskId === 'string'

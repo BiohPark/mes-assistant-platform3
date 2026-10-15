@@ -10,7 +10,7 @@ import { guideOfferKey } from './tutorial'
 
 let userId = ''
 const mount = (route = '/') => renderWithProviders(<GuideOffer userId={userId} pillRef={{ current: null }} pos={null} />, { route })
-const offer = () => screen.queryByText('이 화면에서 도와드릴까요?')
+const offer = () => screen.queryByText('이 화면, 같이 둘러볼까요?')
 
 beforeEach(() => { userId = newId(); localStorage.clear(); resetBubbles(); useUiStore.setState({ assistantOpen: false }) }) // 모듈 메모리도 사용자별이라 ID를 새로 쓴다
 afterEach(() => { act(() => useTourStore.getState().close()); document.querySelectorAll('[data-tour]').forEach(element => element.remove()); vi.unstubAllGlobals(); vi.restoreAllMocks() })
@@ -34,12 +34,15 @@ it('stays inside the viewport: no room above → below the pill; clamped horizon
   expect(region).toHaveStyle({ bottom: `${844 - 700 + 8}px` }) // 다시 자리가 나면 알약 위
 })
 
-it('asks once per user and page, politely; "No thanks" records skipped and the bubble never returns on that page', () => {
+it('S14 코치: 가볍게 한 줄 + [🧭 사용법 보기]·✕(다시 묻지 않기) — ✕는 skipped로 남아 그 페이지에서 다시 안 나오고, 다른 페이지는 따로 묻는다', () => {
   let view = mount()
   expect(offer()).toBeVisible()
   expect(screen.getByRole('status', { name: 'AI 도우미 가이드 제안' })).toHaveAttribute('aria-live', 'polite')
   expect(localStorage.getItem(guideOfferKey(userId, 'hub'))).toBe('asked')
-  fireEvent.click(screen.getByRole('button', { name: '괜찮아요' }))
+  const yes = screen.getByRole('button', { name: '사용법 보기' }) // 🧭은 장식(aria-hidden)
+  expect(yes).toHaveTextContent('🧭')
+  expect(screen.queryByRole('button', { name: '괜찮아요' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '다시 묻지 않기' }))
   expect(offer()).toBeNull()
   expect(localStorage.getItem(guideOfferKey(userId, 'hub'))).toBe('skipped')
   view.unmount()
@@ -48,9 +51,6 @@ it('asks once per user and page, politely; "No thanks" records skipped and the b
   view.unmount()
   mount('/sr') // 다른 페이지는 따로 묻는다
   expect(offer()).toBeVisible()
-  fireEvent.click(screen.getByRole('button', { name: '말풍선 닫기' }))
-  expect(offer()).toBeNull()
-  expect(localStorage.getItem(guideOfferKey(userId, 'sr'))).toBe('asked')
 })
 
 it('yields to a regular bubble while one is showing and comes back afterwards; hidden while the assistant window is open', () => {
@@ -87,7 +87,7 @@ it('"Yes" starts the page tour, records acceptance and makes no request', () => 
   pill.dataset.tour = 'pill'
   document.body.append(pill)
   mount('/c/t1')
-  fireEvent.click(screen.getByRole('button', { name: '네, 가이드해 주세요' }))
+  fireEvent.click(screen.getByRole('button', { name: '사용법 보기' }))
   expect(useTourStore.getState().route).toBe('conversation')
   expect(localStorage.getItem(guideOfferKey(userId, 'conversation'))).toBe('accepted')
   expect(offer()).toBeNull()

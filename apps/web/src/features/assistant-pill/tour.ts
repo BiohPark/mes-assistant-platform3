@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { TranslationKey } from '@/i18n'
 import type { PageRoute } from './pageActions'
-import { markSectionDone, readTourProgress } from './tutorial'
+import { markSectionDone, readTourProgress, saveGuideOffer } from './tutorial'
 
 /** 한 단계 = 화면의 `data-tour` 대상 + 설명. 대상이 페이지에 없으면 건너뛴다. `opens`가 있으면 그 패널(탭)을 열어야 대상이 생긴다 — 탭이 있으면 단계로 세고, 보일 때 탭을 연다 */
 export interface TourStep { target: string; text: Extract<TranslationKey, `tour.steps.${string}`>; opens?: 'materials' | 'chat' }
@@ -101,6 +101,34 @@ export function tourTarget(id: string): HTMLElement | undefined {
   return Array.from(document.querySelectorAll<HTMLElement>(`[data-tour="${id}"]`)).find(isShown)
 }
 
+/** 말풍선과 화면 가장자리·대상 사이 여백 */
+export const COACH_MARGIN = 8
+
+/**
+ * 말풍선 자리(S14 코치) — 화면 하단 중앙이 기본, 대상(+여백)이 그 자리를 가리면 상단. 위도 그만큼 가리면(화면 가득한 대상) 아래 그대로.
+ * 대상을 따라다니지 않고 두 자리만 오간다
+ */
+export function cardSide(rect: { top: number; bottom: number } | null, height: number, viewport: number): 'top' | 'bottom' {
+  if (!rect) return 'bottom'
+  const overlap = (start: number, end: number) => Math.max(0, Math.min(rect.bottom + COACH_MARGIN, end) - Math.max(rect.top - COACH_MARGIN, start))
+  const bottom = overlap(viewport - COACH_MARGIN - height, viewport - COACH_MARGIN)
+  const top = overlap(COACH_MARGIN, COACH_MARGIN + height)
+  return bottom > 0 && top < bottom ? 'top' : 'bottom'
+}
+
+/**
+ * 대상으로 갈 스크롤 — fixed·sticky(조상 포함)는 스크롤해도 제자리라 움직이지 않는다(none).
+ * 화면 밖이면 가운데로(center), 화면 안이면 nearest(이미 보이면 제자리 — 안쪽 스크롤 영역에 가린 경우만 조금 움직인다)
+ */
+export function scrollPlan(target: HTMLElement): 'none' | 'center' | 'nearest' {
+  for (let node: HTMLElement | null = target; node; node = node.parentElement) {
+    const { position } = getComputedStyle(node)
+    if (position === 'fixed' || position === 'sticky') return 'none'
+  }
+  const rect = target.getBoundingClientRect()
+  return rect.top < 0 || rect.bottom > window.innerHeight || rect.left < 0 || rect.right > window.innerWidth ? 'center' : 'nearest'
+}
+
 interface TourState {
   /** 대상 대기 중에도 route를 두어 Esc·페이지 이동으로 취소할 수 있다 */
   route: PageRoute | null
@@ -113,7 +141,7 @@ interface TourState {
   done: readonly string[]
   /** 최대 1.5초 기다린 뒤 보이는 대상만 확정한다. 하나도 없으면 닫는다. 완료하지 않은 첫 섹션에서 시작한다 */
   start: (route: PageRoute, userId: string) => void
-  /** 섹션의 마지막 단계를 지나면 그 섹션을 완료로 기록한다. 마지막 섹션이면 닫힌다 */
+  /** 섹션의 마지막 단계를 지나면 그 섹션을 완료로 기록한다. 마지막 섹션이면 페이지 제안을 done으로 남기고 닫힌다 */
   next: () => void
   prev: () => void
   /** 현재 섹션을 완료로 기록하지 않고 다음 섹션으로. 마지막이면 닫힌다 */
@@ -176,7 +204,11 @@ export const useTourStore = create<TourState>()((set, get) => {
       if (!section) return
       if (stepIndex + 1 < section.steps.length) { set({ stepIndex: stepIndex + 1 }); return }
       finishSection()
-      if (sectionIndex + 1 >= sections.length) get().close()
+      if (sectionIndex + 1 >= sections.length) {
+        const { route, userId } = get()
+        if (route) saveGuideOffer(userId, route, 'done') // 끝까지 봤다 — 이 페이지는 다시 제안하지 않는다
+        get().close()
+      }
       else set({ sectionIndex: sectionIndex + 1, stepIndex: 0 })
     },
     prev: () => set((state) => {

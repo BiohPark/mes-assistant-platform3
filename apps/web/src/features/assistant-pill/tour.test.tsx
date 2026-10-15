@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { PAGE_ACTIONS } from './pageActions'
-import { TOUR_SECTIONS, tourTarget, useTourStore } from './tour'
+import { TOUR_SECTIONS, cardSide, scrollPlan, tourTarget, useTourStore } from './tour'
 import { newId } from '@/lib/ids'
-import { readTourProgress, tourProgressKey } from './tutorial'
+import { guideOfferKey, readTourProgress, tourProgressKey } from './tutorial'
 
 function target(id: string, display = '') {
   const element = document.createElement('div')
@@ -189,4 +189,49 @@ it('resumes at the first section not yet done; when everything is done it starts
   expect(readTourProgress(userId, 'conversation')).toEqual(['basics', 'discussion', 'assistant'])
   begin('conversation')
   expect(state().sectionIndex).toBe(0)
+})
+
+it('S14 코치: 마지막 단계를 지나 끝까지 보면 그 페이지 제안을 done으로 기록한다(건너뛰기·닫기는 아니다)', () => {
+  target('nav'); target('pill')
+  begin('other')
+  state().skipSection(); state().skipSection()
+  expect(localStorage.getItem(guideOfferKey(userId, 'other'))).toBeNull()
+  begin('other')
+  state().close()
+  expect(localStorage.getItem(guideOfferKey(userId, 'other'))).toBeNull()
+  begin('other')
+  state().next(); state().next()
+  expect(state().route).toBeNull()
+  expect(localStorage.getItem(guideOfferKey(userId, 'other'))).toBe('done')
+})
+
+const rect = (top: number, height: number, left = 100, width = 50) => ({ top, bottom: top + height, left, right: left + width })
+it('S14 코치: 말풍선은 아래가 기본이고, 대상이 아래 자리를 가리면 위로 — 위도 그만큼 가리면(화면 가득) 아래에 둔다', () => {
+  // 화면 800, 말풍선 150 → 아래 자리 642–792, 위 자리 8–158
+  expect(cardSide(null, 150, 800)).toBe('bottom')
+  expect(cardSide(rect(200, 40), 150, 800)).toBe('bottom')
+  expect(cardSide(rect(700, 48), 150, 800)).toBe('top')
+  expect(cardSide(rect(610, 30), 150, 800)).toBe('top') // 여백(8px)까지 닿으면 가린 것으로 본다
+  expect(cardSide(rect(0, 800), 150, 800)).toBe('bottom')
+  expect(cardSide(rect(100, 650), 150, 800)).toBe('top') // 위를 덜 가린다
+})
+
+it('S14 코치: 스크롤 계획 — fixed·sticky(조상 포함)는 움직이지 않고, 화면 밖이면 가운데로, 화면 안이면 nearest(이미 보이면 제자리)', () => {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 })
+  Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 })
+  const place = (top: number, position = '') => {
+    const element = target('x')
+    element.style.position = position
+    Object.defineProperty(element, 'getBoundingClientRect', { value: () => ({ ...rect(top, 40), width: 50, height: 40 }) })
+    return element
+  }
+  expect(scrollPlan(place(1200))).toBe('center')
+  expect(scrollPlan(place(-100))).toBe('center')
+  expect(scrollPlan(place(300))).toBe('nearest')
+  expect(scrollPlan(place(1200, 'fixed'))).toBe('none')
+  const sticky = target('header')
+  sticky.style.position = 'sticky'
+  const inner = place(1200)
+  sticky.append(inner)
+  expect(scrollPlan(inner)).toBe('none')
 })

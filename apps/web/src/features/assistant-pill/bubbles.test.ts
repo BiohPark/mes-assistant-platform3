@@ -18,7 +18,7 @@ it('bubble sources are disjoint from notification (bell) sources and from every 
     expect(BELL_SOURCES).not.toContain(source)
     expect(SSE_EVENTS).not.toContain(source)
   }
-  expect(BUBBLE_SOURCES).toEqual(['budget.warn', 'budget.over', 'request.slow', 'reply.done', 'reply.failed', 'reply.cancelled', 'share.in', 'share.out', 'share.none'])
+  expect(BUBBLE_SOURCES).toEqual(['budget.warn', 'budget.over', 'request.slow', 'reply.done', 'reply.failed', 'reply.cancelled', 'share.in', 'share.out', 'share.none', 'guide.done'])
 })
 
 it('keeps one current bubble and one queued — a newer push replaces the queued one, dismiss promotes it', () => {

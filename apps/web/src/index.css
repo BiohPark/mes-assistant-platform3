@@ -6,6 +6,15 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* 가이드 코치(S14) 스포트라이트 — 바깥 딤은 그대로 두고 primary 링이 숨 쉬듯 퍼진다. reduced motion은 motion-reduce:animate-none으로 끈다 */
+@theme {
+    --animate-tour-pulse: tour-pulse 1.6s ease-in-out infinite;
+    @keyframes tour-pulse {
+        0%, 100% { box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.45), 0 0 0 0 color-mix(in oklab, var(--primary) 55%, transparent); }
+        50% { box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.45), 0 0 0 10px color-mix(in oklab, var(--primary) 0%, transparent); }
+    }
+}
+
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Pretendard Variable', Pretendard, 'Geist Variable', -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', 'Malgun Gothic', sans-serif;
