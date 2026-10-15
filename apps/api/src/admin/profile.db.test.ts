@@ -12,7 +12,7 @@ import { DB, type Db } from '../db/db.module.js'
 import { appUser } from '../db/schema.js'
 import { createPool } from '../db/connection.js'
 import { runMigrations } from '../db/migrate.js'
-import { createTempDb } from '../test/tempDb.js'
+import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { AccountsService } from './accounts.service.js'
 import { DbSessionStore } from '../auth/session.service.js'
 
@@ -33,7 +33,7 @@ describe('사용자 프로필 저장·세션 조회', () => {
     const module = await Test.createTestingModule({ imports: [AppModule] }).overrideProvider(CONFIG).useValue(config).overrideProvider(DB).useValue(db).compile()
     app = configureApp(module.createNestApplication(), config)
     await app.listen(0, '127.0.0.1')
-  })
+  }, MIGRATION_TEST_TIMEOUT_MS)
   afterAll(async () => { await app?.close(); await pool?.end(); await temp?.drop() })
 
   it('기본값은 system·ko, PATCH는 DB에 저장되고 다음 /me에서 읽힌다', async () => {

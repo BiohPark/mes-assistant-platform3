@@ -16,7 +16,7 @@ import { EventsService } from '../events/events.service.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
 import { RequestsService } from '../requests/requests.service.js'
-import { createTempDb } from '../test/tempDb.js'
+import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { TaskBriefService } from './task-brief.service.js'
 import { TaskExtrasService } from './task-extras.service.js'
 import { DbTasksService } from './tasks.service.js'
@@ -69,7 +69,7 @@ describe('대화 요약 카드 (표시 전용·백그라운드 생성)', () => {
     config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', LLM_DEFAULT_MODEL: 'default-model', FILE_STORAGE_ROOT: root })
     const extras = new TaskExtrasService(db, { kind: 'mock' } as never, { runAuxiliary: async () => undefined } as never, new FileStorageService(root), { publish: () => undefined } as never)
     tasks = new DbTasksService(db, undefined, extras)
-  })
+  }, MIGRATION_TEST_TIMEOUT_MS)
   afterAll(async () => { await client?.end(); await temp?.drop(); if (root) await rm(root, { recursive: true, force: true }) })
   beforeEach(() => { seen.length = 0; kinds.length = 0; answer = () => '주제: 알람 원인 분석\n다음: 센서 교체 이력을 확인해 보세요' })
 

@@ -6,7 +6,7 @@ import { createPool } from './connection.js'
 import { runMigrations } from './migrate.js'
 import { seedCatalog } from './seed.js'
 import { activityLog, appSetting, appUser, assistant, chatRequest, chatRequestInput, code, codeGroup, fileObject, fileRemoteRef, message, task, thread } from './schema.js'
-import { createTempDb } from '../test/tempDb.js'
+import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 
 // PostgreSQL 초안 SQL과의 문법 비교 대신 MariaDB에서 제약의 실제 동작을 확인한다.
 describe('MariaDB 제약 동작', () => {
@@ -19,7 +19,7 @@ describe('MariaDB 제약 동작', () => {
     pool = createPool(temp.url)
     db = drizzle(pool)
     await seedCatalog(db)
-  })
+  }, MIGRATION_TEST_TIMEOUT_MS)
   afterAll(async () => { await pool?.end(); await temp?.drop() })
 
   it('check·FK 위반을 거부한다', async () => {

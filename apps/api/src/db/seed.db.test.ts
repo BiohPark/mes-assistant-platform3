@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/mysql2'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
-import { createTempDb } from '../test/tempDb.js'
+import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { createPool } from './connection.js'
 import { runMigrations } from './migrate.js'
 import { appSetting, appUser } from './schema.js'
@@ -10,7 +10,7 @@ import { verifyPassword } from '../auth/password.js'
 
 let temp: Awaited<ReturnType<typeof createTempDb>>
 let client: ReturnType<typeof createPool>
-beforeAll(async () => { temp = await createTempDb('seed'); await runMigrations(temp.url); client = createPool(temp.url) })
+beforeAll(async () => { temp = await createTempDb('seed'); await runMigrations(temp.url); client = createPool(temp.url) }, MIGRATION_TEST_TIMEOUT_MS)
 afterAll(async () => { await client?.end(); await temp?.drop() })
 
 it('SEED_DEV_ACCOUNTS=true일 때 개발 시드는 접수 기본값과 역할별 계정을 멱등으로 만든다', async () => {

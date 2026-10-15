@@ -7,7 +7,7 @@ import { count, eq } from 'drizzle-orm'
 import type { Pool } from 'mysql2/promise'
 import { createPool } from './connection.js'
 import { runMigrations } from './migrate.js'
-import { createTempDb } from '../test/tempDb.js'
+import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { clearTables } from '../test/clearTables.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { verifyPassword } from '../auth/password.js'
@@ -61,7 +61,7 @@ describe('demo bundle DB import', () => {
   let temp: Awaited<ReturnType<typeof createTempDb>>
   let client: Pool
   let root: string
-  beforeAll(async () => { temp = await createTempDb('import'); await runMigrations(temp.url); client = createPool(temp.url); root = await mkdtemp(join(tmpdir(), 'mes-import-')) })
+  beforeAll(async () => { temp = await createTempDb('import'); await runMigrations(temp.url); client = createPool(temp.url); root = await mkdtemp(join(tmpdir(), 'mes-import-')) }, MIGRATION_TEST_TIMEOUT_MS)
   afterAll(async () => { await client?.end(); await temp?.drop(); if (root) await rm(root, { recursive: true, force: true }) })
   // 마이그레이션은 한 번만 하고 테스트마다 행만 비운다 — 테스트별 임시 DB+마이그레이션은 Windows CI에서 1건 ≈ 20초라 30초 한도를 넘겼다.
   beforeEach(() => clearTables(client))

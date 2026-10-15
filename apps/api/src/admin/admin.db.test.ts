@@ -6,7 +6,7 @@ import type { Db } from '../db/db.module.js'
 import { appSetting, appUser } from '../db/schema.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
-import { createTempDb } from '../test/tempDb.js'
+import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { AdminService } from './admin.service.js'
 import { AccountsService } from './accounts.service.js'
 import { activityLog, appSession, assistant, assistantChecklistTemplate, assistantExpectedIo, code, fileObject, task } from '../db/schema.js'
@@ -31,7 +31,7 @@ describe('SR 접수 에이전트 보호 (데모 테스트 4건)', () => {
     await db.insert(appUser).values({ id: 'owner', name: '운영자', initials: '운', color: '#123456', isSystemOwner: true })
     admin = new AdminService(db)
     await admin.settings({ srIntakeAssistantId: 'urs-analyst' })
-  })
+  }, MIGRATION_TEST_TIMEOUT_MS)
   afterAll(async () => { await client?.end(); await temp?.drop() })
 
   it('ID 없는 동시 생성은 짧고 고유한 서버 ID를 만들고 수정 후 유지한다', async () => {
