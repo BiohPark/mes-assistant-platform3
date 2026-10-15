@@ -9,13 +9,14 @@ import { createSr, deleteSr, getSr, getSrIntakeAssistant, listSr, uploadSrFile, 
 import { getMessages } from '@/api/tasks'
 import { queueFirstRequest, useChat } from '@/features/chat/useChat'
 import { ChatMessages } from '@/features/chat/ChatMessages'
-import { Composer, type PendingAttachment } from '@/features/chat/Composer'
+import { Composer, type ComposerHandle, type PendingAttachment } from '@/features/chat/Composer'
 import { TopBar } from '@/app/TopBar'
 import { Bot, Inbox, SearchX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/Chip'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { EmptyState } from '@/components/EmptyState'
+import { FileDropZone } from '@/components/FileDropZone'
 import { SrStatusBadge } from '@/components/StatusBadges'
 import { newId } from '@/lib/ids'
 import { SrList } from './SrList'
@@ -46,6 +47,7 @@ export function SrIntakePage() {
   const isNew = params.has('new')
   const first = useRef<{ key: string; sr?: SrDetail } | null>(null)
   const sending = useRef(false)
+  const composer = useRef<ComposerHandle>(null)
   const [filter, setFilter] = useState<'active' | 'complete'>('active')
   const [busy, setBusy] = useState(false)
   const [convert, setConvert] = useState(false)
@@ -99,7 +101,7 @@ export function SrIntakePage() {
   const loaded = !!list.data && !!settings
   const failed = list.isError || intake.isError
   const retry = () => { if (list.isError) void list.refetch(); if (intake.isError) void intake.refetch() }
-  const empty = <div className="mx-auto max-w-md space-y-2 py-8 text-center"><h2 className="font-semibold">{settings?.name || t('sr.intakeAgent')}</h2><p className="text-sm text-muted-foreground">{settings?.summary || t('sr.intakeSummary')}</p></div>
+  const empty = <div className="mx-auto max-w-md space-y-2 py-8 text-center"><h2 className="font-semibold">{settings?.name || t('sr.intakeAgent')}</h2><p className="text-sm text-muted-foreground">{settings?.summary || t('sr.intakeSummary')}</p><p className="text-sm text-muted-foreground">{t('sr.attachmentHint')}</p></div>
   return <><TopBar title={t('nav.sr')} /><p className="px-4 pt-3 text-sm text-muted-foreground">{t('sr.intakeDescription')}</p>
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[18rem_1fr]">
       <aside className={`${hasDetail ? 'hidden lg:block' : ''} space-y-3 overflow-y-auto`}>
@@ -128,13 +130,13 @@ export function SrIntakePage() {
           <SharedResults results={selected.results} />
           {selected.status !== 'draft' && <section className="space-y-2 rounded-lg border p-3"><h2 className="font-medium">{t('sr.content')}</h2><p className="whitespace-pre-wrap text-sm">{selected.body}</p>{selected.attachmentIds.length > 0 && <SrAttachments ids={selected.attachmentIds} />}</section>}
         </> : selectedQuery.isError ? <p role="alert">{String(selectedQuery.error)}</p> : !isNew && <p className="text-sm text-muted-foreground">{t('sr.selectRequest')}</p>}
-        {(selected || isNew) && <>
+        {(selected || isNew) && <FileDropZone data-testid="sr-dropzone" className="flex min-h-0 flex-1 flex-col gap-4" label={t('dropzone.toAttach')} disabled={!settings?.srIntakeAssistantId || closed || locked} onFiles={files => composer.current?.dropFiles(files)}>
           <section className="min-h-40 flex-1 space-y-4 overflow-y-auto rounded-lg border p-3" aria-label={t('sr.conversation')}>
             <ChatMessages messages={messages} run={chat.run} empty={empty} actions={message => ({ intake: true, assistantName: settings?.name || t('sr.intakeAgent'), onRetry: message.requestId && message.status === 'error' ? () => { void chat.retry(message.requestId!).catch(error => toast.error(String(error))) } : undefined })} />
           </section>
-          {closed ? <p role="status" className="text-sm text-muted-foreground">{t('sr.closed')}</p> : <Composer key={selectedId || 'new'} maxAttachments={settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST} inputLabel={t('sr.message')} placeholder={t('sr.messagePlaceholder')} disabled={busy || awaitingStart || !settings?.srIntakeAssistantId} streaming={!!chat.run} allowAttachments onSend={send} onStop={() => { void chat.stop() }} suggestions={!messages.length && examples.length > 0 ? examples : undefined} />}
+          {closed ? <p role="status" className="text-sm text-muted-foreground">{t('sr.closed')}</p> : <Composer ref={composer} key={selectedId || 'new'} maxAttachments={settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST} inputLabel={t('sr.message')} placeholder={t('sr.messagePlaceholder')} disabled={busy || awaitingStart || !settings?.srIntakeAssistantId} streaming={!!chat.run} allowAttachments onSend={send} onStop={() => { void chat.stop() }} suggestions={!messages.length && examples.length > 0 ? examples : undefined} />}
           {selected?.status === 'draft' && canEdit && !selected.hasRequests && <Button variant="ghost" className="self-start" onClick={() => setDeleting(true)}>{t('sr.deleteDraft')}</Button>}
-        </>}
+        </FileDropZone>}
         {selected && <><SrConvertSheet sr={selected} open={convert} onOpenChange={setConvert} onSaved={refresh} /><ConfirmDialog open={deleting} onOpenChange={setDeleting} title={t('sr.deleteConfirm')} description={t('sr.deleteDescription')} confirmLabel={t('sr.deleteDraft')} onConfirm={async () => { try { await deleteSr(selected.id); setSelectedId(''); refresh() } catch (error) { toast.error(String(error)); throw error } }} /></>}
       </div>
     </div>
