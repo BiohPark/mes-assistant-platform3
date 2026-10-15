@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { X } from 'lucide-react'
+import { useNavigate } from 'react-router'
+import { Button } from '@/components/ui/button'
 import { useT } from '@/i18n'
 import type { PillPos } from '@/app/uiStore'
 import { RequestInfoDialog } from '@/features/chat/RequestInfoDialog'
-import { BUBBLE_TTL_MS, useBubbleStore, type Bubble, type BubbleSource } from './bubbles'
+import { BUBBLE_TTL_MS, isReplyBubble, useBubbleStore, type Bubble, type BubbleSource, type ReplySource } from './bubbles'
 import { usePillAnchor } from './pillAnchor'
 
 const WIDTH = 260
-const MESSAGE = { 'budget.warn': 'bubble.budgetWarn', 'budget.over': 'bubble.budgetOver', 'request.slow': 'bubble.requestSlow' } as const satisfies Record<BubbleSource, string>
+const MESSAGE = { 'budget.warn': 'bubble.budgetWarn', 'budget.over': 'bubble.budgetOver', 'request.slow': 'bubble.requestSlow' } as const satisfies Record<Exclude<BubbleSource, ReplySource>, string>
+const REPLY = { 'reply.done': 'bubble.replyDone', 'reply.failed': 'bubble.replyFailed', 'reply.cancelled': 'bubble.replyCancelled' } as const satisfies Record<ReplySource, string>
 
-/** 알약 옆 말풍선(U6) — 큐 1개, 8초 뒤 소멸(hover·focus 중 정지), 클릭하면 트레이(onOpen)나 요청 정보를 연다. 서버 알림(벨)과 겹치지 않고 AI를 호출하지 않는다 */
+/** 알약 옆 말풍선(U6) — 큐 1개, 8초 뒤 소멸(hover·focus 중 정지), 클릭하면 트레이(onOpen)나 요청 정보를 연다. reply.*는 제목·답 첫 문장과 [바로 가기](그 대화로 이동). 서버 알림(벨)과 겹치지 않고 AI를 호출하지 않는다 */
 export function AssistantBubble({ pillRef, pos }: { pillRef: RefObject<HTMLButtonElement | null>; pos: PillPos | null }) {
   const t = useT()
+  const navigate = useNavigate()
   const current = useBubbleStore((state) => state.current)
   const dismiss = useBubbleStore((state) => state.dismiss)
   const [infoId, setInfoId] = useState<string | null>(null)
@@ -35,13 +39,20 @@ export function AssistantBubble({ pillRef, pos }: { pillRef: RefObject<HTMLButto
     else if (bubble.requestId) setInfoId(bubble.requestId)
     dismiss()
   }
+  const go = (taskId: string) => { void navigate(`/c/${encodeURIComponent(taskId)}`); dismiss() }
 
   return <>
     <div role="status" aria-live="polite" aria-label={t('bubble.region')} style={current ? { left: place.left, bottom: place.bottom, width: WIDTH } : undefined}
       className={current ? 'fixed z-40 max-w-[calc(100vw-16px)]' : 'sr-only'}>
       {current && <div key={current.id} data-testid="assistant-bubble" onMouseEnter={pause} onMouseLeave={resume} onFocus={pause} onBlur={resume}
         className="flex items-start gap-1 rounded-2xl border bg-popover p-2 text-sm text-popover-foreground shadow-lg animate-in fade-in-0 slide-in-from-left-2 motion-reduce:animate-none">
-        <button type="button" className="flex-1 text-left leading-snug hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-lg" onClick={() => open(current)}>{t(MESSAGE[current.source])}</button>
+        {isReplyBubble(current)
+          ? <div className="flex-1 space-y-1.5 leading-snug">
+            <p>{t(REPLY[current.source], { title: current.title ?? '' })}</p>
+            {current.excerpt && <p data-testid="bubble-excerpt" className="line-clamp-2 text-xs text-muted-foreground">{current.excerpt}</p>}
+            <Button size="xs" onClick={() => go(current.taskId)}>{t('bubble.goToConversation')}</Button>
+          </div>
+          : <button type="button" className="flex-1 text-left leading-snug hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-lg" onClick={() => open(current)}>{t(MESSAGE[current.source as keyof typeof MESSAGE])}</button>}
         <button type="button" aria-label={t('bubble.close')} className="rounded-full p-0.5 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" onClick={dismiss}><X className="size-3.5" /></button>
       </div>}
     </div>

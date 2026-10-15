@@ -2,11 +2,24 @@ import { screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { AppShell } from './AppShell'
+import { resetPopout } from './popout'
 
 vi.mock('@/components/ui/sonner', () => ({ Toaster: () => null }))
-vi.mock('./useEvents', () => ({ useEvents: () => undefined }))
+vi.mock('./useEvents', () => ({ useEvents: () => undefined, subscribeEvent: () => () => undefined }))
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); resetPopout(); window.history.replaceState({}, '', '/') })
+
+it('팝업 모드(?popout=1)에서는 사이드바와 도우미 알약이 없고 본문만 남는다', async () => {
+  window.history.replaceState({}, '', '/c/t?popout=1')
+  resetPopout()
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/me'
+    ? jsonResponse(200, { id: 'member', name: '담당자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const })
+    : jsonResponse(200, [])))
+  renderWithProviders(<AppShell />)
+  await screen.findByRole('main')
+  expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'AI 도우미 열기' })).not.toBeInTheDocument()
+})
 
 it('renders the forced password page with its avatar tooltip', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/me'

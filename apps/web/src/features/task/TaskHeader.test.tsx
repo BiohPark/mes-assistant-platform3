@@ -5,13 +5,15 @@ import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
+import { toast } from 'sonner'
 import { MeContext } from '@/app/auth'
+import { resetPopout } from '@/app/popout'
 import { I18nProvider } from '@/i18n'
 import { TaskHeader } from './TaskHeader'
 
 const task = { id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '기본 제목', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: [], checklist: [], inputs: [], outputFileIds: [], threadId: 'h', createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z' } satisfies Task
 const assistant = { id: 'a', name: '도우미', color: '#123456' } as Assistant
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); resetPopout(); window.history.replaceState({}, '', '/') })
 
 const wrap = (value: Task, agent: Assistant = assistant) => <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MemoryRouter><TaskHeader task={value} assistant={agent} /></MemoryRouter></MeContext></QueryClientProvider>
 
@@ -63,6 +65,26 @@ it('keeps metadata and actions in one row that scrolls on mobile, without the du
   expect(screen.queryByText(task.code)).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '대화 삭제' })).not.toBeInTheDocument()
   expect(screen.getByText('요약 한 줄')).toHaveClass('truncate')
+})
+
+it('새 창으로 띄우기 — /c/:id?popout=1 을 작은 창으로 열고, 막히면 같은 탭으로 가지 않고 토스트로 알린다; 팝업 안에서는 숨긴다', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
+  const open = vi.spyOn(window, 'open').mockReturnValue(null)
+  const error = vi.spyOn(toast, 'error').mockReturnValue('toast')
+  const { unmount } = render(wrap(task))
+  fireEvent.click(screen.getByRole('button', { name: '새 창으로 띄우기' }))
+  expect(open).toHaveBeenCalledWith('/c/t?popout=1', 'mes-popout-t', expect.stringMatching(/\bpopup\b/))
+  expect(error).toHaveBeenCalledWith('팝업이 차단되어 새 창을 열지 못했어요. 브라우저에서 이 사이트의 팝업을 허용해 주세요')
+  open.mockReturnValue({} as Window)
+  fireEvent.click(screen.getByRole('button', { name: '새 창으로 띄우기' }))
+  expect(open).toHaveBeenCalledTimes(2)
+  expect(error).toHaveBeenCalledTimes(1)
+  unmount()
+  window.history.replaceState({}, '', '/c/t?popout=1')
+  resetPopout()
+  render(wrap(task))
+  expect(screen.queryByRole('button', { name: '새 창으로 띄우기' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '업무 완료' })).toBeInTheDocument()
 })
 
 it('moves delete into the more menu and asks for confirmation', async () => {

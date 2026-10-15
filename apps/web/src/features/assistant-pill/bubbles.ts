@@ -4,11 +4,13 @@ import type { BudgetLevel } from '@mes/domain'
 
 /**
  * 분류표 — 코드 데이터(U6).
- * 벨(알림 목록)은 서버 notification.created 전부, 말풍선은 클라이언트 상태 두 가지뿐이다. 둘은 겹치지 않고, 말풍선은 AI를 호출하지 않는다.
+ * 벨(알림 목록)은 서버 notification.created 전부, 말풍선은 클라이언트 상태(budget·slow)와 내 요청의 끝(reply.*, replyBubble.ts)뿐이다. 둘은 겹치지 않고, 말풍선은 AI를 호출하지 않는다.
  */
 export const BELL_SOURCES = ['notification.created'] as const
-export const BUBBLE_SOURCES = ['budget.warn', 'budget.over', 'request.slow'] as const
+export const BUBBLE_SOURCES = ['budget.warn', 'budget.over', 'request.slow', 'reply.done', 'reply.failed', 'reply.cancelled'] as const
 export type BubbleSource = (typeof BUBBLE_SOURCES)[number]
+export type ReplySource = Extract<BubbleSource, `reply.${string}`>
+export const isReplyBubble = (bubble: Bubble): bubble is Bubble & { source: ReplySource; taskId: string } => bubble.source.startsWith('reply.') && typeof bubble.taskId === 'string'
 
 export const BUBBLE_TTL_MS = 8_000
 export const SLOW_REQUEST_MS = 30_000
@@ -22,6 +24,10 @@ export interface Bubble {
   requestId?: string
   /** budget.* — 클릭 시 트레이를 펼친다(ContextTray가 등록) */
   onOpen?: () => void
+  /** reply.* — [바로 가기] 대상 대화와 그 제목, 답 첫 문장(done만) */
+  taskId?: string
+  title?: string
+  excerpt?: string
 }
 
 interface BubbleState {

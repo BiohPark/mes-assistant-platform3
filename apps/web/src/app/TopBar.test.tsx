@@ -6,10 +6,29 @@ import { jsonResponse, renderWithProviders } from '@/test/render'
 import { AuthGate } from './AuthGate'
 import { MeContext } from './auth'
 import { TopBar } from './TopBar'
+import { resetPopout } from './popout'
 import { useProfile } from './profile'
 import { getDraft, setDraft } from '@/features/chat/drafts'
 
 vi.mock('./NotificationBell', () => ({ NotificationBell: () => null }))
+
+describe('TopBar 팝업 모드', () => {
+  afterEach(() => { vi.unstubAllGlobals(); resetPopout(); window.history.replaceState({}, '', '/') })
+
+  it('제목(과 actions)만 남기고 테마·언어·알림·사용자 메뉴는 숨긴다', () => {
+    window.history.replaceState({}, '', '/c/t?popout=1')
+    resetPopout()
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithProviders(<MeContext value={{ ...me, roles: [...me.roles] }}><TooltipProvider><TopBar title="팝업 제목" actions={<button type="button">도구</button>} /></TooltipProvider></MeContext>)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('팝업 제목')
+    expect(screen.getByRole('button', { name: '도구' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /모드로 전환$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'English로 전환' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /김운영/ })).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled() // LLM 상태 배지도 없다
+  })
+})
 
 const me = { theme: 'system' as const, locale: 'ko' as const, id: 'u1', name: '김운영', role: '', email: null, emailIsDefault: false, roles: ['member', 'system_owner'] as const }
 

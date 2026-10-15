@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { UserAvatar } from '@/components/UserAvatar'
 import { logout, useMe } from './auth'
+import { isPopout } from './popout'
 import { localeOptions, themeOptions, useProfile } from './profile'
 import type { Locale, Theme } from '@mes/contracts'
 import { NotificationBell } from './NotificationBell'
@@ -40,9 +41,10 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
   const dark = (useTheme().resolvedTheme ?? profile.theme) === 'dark'
   const isOwner = me.roles.includes('system_owner')
   const requesterOnly = me.roles.includes('requester') && !isOwner
+  const popout = isPopout() // 대화 팝업 창 — 제목(과 actions)만, 내비·상태 조회 없음
   const llmStatus = useQuery({
     queryKey: ['llm', 'status'],
-    enabled: isOwner && !me.mustChangePassword,
+    enabled: isOwner && !me.mustChangePassword && !popout,
     queryFn: async () => {
       const response = await fetch('/api/llm/status', { credentials: 'same-origin' })
       if (!response.ok) throw new Error(t('common.llmStatusFailed', { status: response.status }))
@@ -54,6 +56,7 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
     <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-background px-4">
       <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{title}</h1>
       {actions}
+      {!popout && <>
       <Button variant="ghost" size="icon-sm" aria-label={t(dark ? 'common.switchToLight' : 'common.switchToDark')} title={t(dark ? 'common.switchToLight' : 'common.switchToDark')} disabled={profile.pending} onClick={() => profile.save({ theme: dark ? 'light' : 'dark' })}>
         {dark ? <Sun /> : <Moon />}
       </Button>
@@ -98,6 +101,7 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      </>}
     </header>
   )
 }

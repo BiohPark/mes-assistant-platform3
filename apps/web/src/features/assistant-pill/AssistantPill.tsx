@@ -12,6 +12,7 @@ import { useActor } from '@/app/hooks'
 import { AssistantBubble } from './AssistantBubble'
 import { GuideOffer } from './GuideOffer'
 import { GuideTour } from './GuideTour'
+import { useReplyBubble } from './replyBubble'
 import { useSearchAgents } from './useSearchAgents'
 
 const PILL = 48
@@ -78,6 +79,7 @@ export function AssistantPill() {
   const drag = useRef<Drag | null>(null)
   const suppressClick = useRef(false)
   const close = useCallback(() => { setOpen(false); pillRef.current?.focus() }, [setOpen])
+  useReplyBubble() // 내 요청의 끝을 다른 화면에서 말풍선으로 — 알약이 있는 창(본창)에서만
 
   useEffect(() => {
     const reclamp = () => { const current = useUiStore.getState().pillPos; if (current) setPos(clampPos(current)) }
