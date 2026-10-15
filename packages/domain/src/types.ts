@@ -507,3 +507,19 @@ export interface Notification {
   at: ISODate
   read: boolean
 }
+
+/** Lightweight task list projection. Counts replace material IDs and checklist bodies. */
+export type TaskSummary = Pick<Task, 'id' | 'code' | 'assistantId' | 'title' | 'titleSource' | 'status' | 'ownerId' | 'assigneeIds' | 'priority' | 'dueDate' | 'tags' | 'linkedSrCodes' | 'threadId' | 'createdAt' | 'createdBy' | 'lastActivityAt' | 'startedAt' | 'completedAt' | 'completedBy' | 'aiRequest'> & {
+  checklist: { checked: number; total: number }
+  inputCount: number
+  outputCount: number
+}
+
+export interface TaskPage<T = TaskSummary> {
+  items: T[]
+  nextCursor: string | null
+}
+
+export interface TaskBoard {
+  columns: Array<TaskPage & { assistantId: ID; total: number }>
+}

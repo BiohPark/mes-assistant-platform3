@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { resumeHeldTask } from './resume-held-task.js'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common'
-import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSuggestions, type Message, type TagSuggestion, type Task, type TaskAiRequestStatus, type TaskStatus, type Thread } from '@mes/domain'
-import { and, desc, eq, exists, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
+import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, countedTagSuggestions, type Message, type TagSuggestion, type Task, type TaskPage, type TaskSummary, type TaskAiRequestStatus, type TaskStatus, type Thread } from '@mes/domain'
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { alias, unionAll } from 'drizzle-orm/mysql-core'
 import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appUser, assistant, assistantChecklistTemplate, chatRequest, chatRequestInput, checklistItem, checklistReview, checklistReviewItem, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, serviceRequest, srInput, tag, task, taskAssignee, taskFeedback, taskInput, taskTag, thread } from '../db/schema.js'
@@ -11,6 +11,8 @@ import { assertTaskAccess, assertThreadAccess } from '../sr/access.js'
 import { srAttachments } from '../files/sr-attachments.js'
 import type { TaskExtrasService } from './task-extras.service.js'
 import { NotificationsService } from '../notifications/notifications.service.js'
+import { TaskListing, encodeTaskCursor, taskPageLimit, type TaskFilter } from './task-listing.js'
+export type { TaskFilter } from './task-listing.js'
 
 export interface CreateTaskInput {
   assistantId: string
@@ -31,7 +33,6 @@ export interface TaskPatch {
   ownerId?: string
   modelId?: string | null
 }
-export interface TaskFilter { assistantId?: string; status?: string[]; tags?: string[]; mine?: string }
 
 const id = () => randomUUID()
 const iso = (value: Date | null | undefined) => value?.toISOString()
@@ -259,22 +260,21 @@ export class DbTasksService {
   }
 
   async list(filter: TaskFilter = {}, actor?: string): Promise<Task[]> {
-    const [viewer] = actor ? await this.db.select({ isBusinessOwner: appUser.isBusinessOwner, isSystemOwner: appUser.isSystemOwner }).from(appUser).where(eq(appUser.id, actor)) : []
-    const conditions = [
-      isNull(task.deletedAt),
-      ...(viewer?.isBusinessOwner && !viewer.isSystemOwner ? [or(eq(task.createdBy, actor!), eq(task.ownerId, actor!),
-        exists(this.db.select({ id: taskAssignee.taskId }).from(taskAssignee).where(and(eq(taskAssignee.taskId, task.id), eq(taskAssignee.userId, actor!)))))] : []),
-      ...(filter.assistantId ? [eq(task.assistantId, filter.assistantId)] : []),
-      ...(filter.status?.length ? [inArray(task.status, filter.status)] : []),
-      ...(filter.mine ? [or(
-        eq(task.ownerId, filter.mine),
-        exists(this.db.select({ id: taskAssignee.taskId }).from(taskAssignee).where(and(eq(taskAssignee.taskId, task.id), eq(taskAssignee.userId, filter.mine)))),
-      )] : []),
-      ...[...new Set((filter.tags ?? []).map(tagKey))].map((key) => exists(this.db.select({ id: taskTag.taskId }).from(taskTag).where(and(eq(taskTag.taskId, task.id), eq(taskTag.tagKey, key))))),
-    ]
-    const rows = await this.db.select().from(task).where(and(...conditions)).orderBy(desc(task.lastActivityAt))
-    return this.assemble(rows)
+    return this.assemble(await new TaskListing(this.db).detailRows(filter, actor))
   }
+
+  async listPage(filter: TaskFilter & { view: 'summary' }, actor?: string): Promise<TaskPage<TaskSummary>>
+  async listPage(filter?: TaskFilter, actor?: string): Promise<TaskPage<Task | TaskSummary>>
+  async listPage(filter: TaskFilter = {}, actor?: string): Promise<TaskPage<Task | TaskSummary>> {
+    const listing = new TaskListing(this.db)
+    if (filter.view === 'summary') return listing.summaryPage(filter, actor)
+    const limit = taskPageLimit(filter.limit)
+    const rows = await listing.detailRows(filter, actor, true)
+    const page = rows.slice(0, limit)
+    return { items: await this.assemble(page), nextCursor: rows.length > limit ? encodeTaskCursor(page.at(-1)!) : null }
+  }
+
+  board(filter: TaskFilter = {}, actor?: string) { return new TaskListing(this.db).board(filter, actor) }
 
   async update(actor: string, taskId: string, patch: TaskPatch): Promise<Task> {
     await assertTaskAccess(this.db, actor, taskId)
@@ -368,14 +368,17 @@ export class DbTasksService {
    * srScope는 그 범위가 전체인지('all') 일부인지('partial') — 일부만 보는 뷰어에게는 목록에 없는 SR 번호를 미접수로 단정하지 않는다('unknown').
    */
   async suggestions(actor: string | undefined, prefix: string, exclude: string[] = []): Promise<{ items: TagSuggestion[]; srScope: 'all' | 'partial' }> {
-    const [viewer] = actor ? await this.db.select({ isBusinessOwner: appUser.isBusinessOwner, isSystemOwner: appUser.isSystemOwner }).from(appUser).where(eq(appUser.id, actor)) : []
+    const listing = new TaskListing(this.db)
+    const viewer = await listing.viewer(actor)
     const srScope = viewer?.isBusinessOwner && !viewer.isSystemOwner ? 'partial' : 'all'
-    const [tasks, rows] = await Promise.all([
-      this.list({}, actor),
+    const [tags, rows] = await Promise.all([
+      this.db.select({ tag: tag.label, count: sql<number>`count(*)`.mapWith(Number) }).from(tag)
+        .innerJoin(taskTag, eq(taskTag.tagKey, tag.key)).innerJoin(task, eq(task.id, taskTag.taskId))
+        .where(listing.visibility(actor, viewer)).groupBy(tag.key, tag.label),
       this.db.select({ code: serviceRequest.code }).from(serviceRequest).where(and(isNotNull(serviceRequest.code), ...(srScope === 'partial' ? [eq(serviceRequest.requesterId, actor!)] : []))),
     ])
     const srCodes = rows.map((row) => row.code).filter((code): code is string => !!code)
-    return { items: tagSuggestions(tasks, srCodes, prefix, exclude, srScope), srScope }
+    return { items: countedTagSuggestions(tags, srCodes, prefix, exclude, srScope), srScope }
   }
 
   async messages(threadId: string, actor?: string) {

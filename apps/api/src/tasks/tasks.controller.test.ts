@@ -21,6 +21,7 @@ describe('tasks HTTP API', () => {
   let app: INestApplication
   const service = {
     create: vi.fn(async () => ({ task: { id: 't', code: 'WK-2026-0001', threadId: 'h' }, thread: { id: 'h', taskId: 't' } })),
+    listPage: vi.fn(async () => ({ items: [{ id: 'summary' }], nextCursor: 'next' })), board: vi.fn(async () => ({ columns: [] })),
     get: vi.fn(async () => ({ id: 't' })), list: vi.fn(async () => []), update: vi.fn(async () => ({ id: 't' })),
     setStatus: vi.fn(async () => ({ id: 't' })), addTag: vi.fn(async () => undefined), removeTag: vi.fn(async () => undefined),
     delete: vi.fn(async () => undefined), suggestions: vi.fn(async () => []), activity: vi.fn(async () => []),
@@ -44,6 +45,21 @@ describe('tasks HTTP API', () => {
   })
   afterEach(async () => { await app.close(); vi.clearAllMocks() })
   const auth = () => ({ Cookie: 'mes_session=member' })
+
+  it('keeps legacy arrays and exposes paging via a header with strict query validation', async () => {
+    const legacy = await request(app.getHttpServer()).get('/api/tasks').set(auth()).expect(200)
+    expect(legacy.body).toEqual([])
+    const page = await request(app.getHttpServer()).get('/api/tasks?limit=2&view=summary&q=hello&ai=failed&activeWithinDays=30&mine=true').set(auth()).expect(200)
+    expect(page.body).toEqual([{ id: 'summary' }])
+    expect(page.headers['x-next-cursor']).toBe('next')
+    expect(service.listPage).toHaveBeenCalledWith(expect.objectContaining({ limit: 2, view: 'summary', q: 'hello', ai: ['failed'], activeWithinDays: 30, mine: 'u' }), 'u')
+    for (const query of ['limit=0', 'limit=201', 'limit=1.5', 'cursor=broken', 'activeWithinDays=-1', 'view=detail', 'ai=wat', 'status=wat', 'mine=wat', 'limit[]=2']) {
+      await request(app.getHttpServer()).get(`/api/tasks?${query}`).set(auth()).expect(400)
+    }
+    await request(app.getHttpServer()).get('/api/tasks/board').expect(401)
+    expect((await request(app.getHttpServer()).get('/api/tasks/board?limit=2&status=in_progress').set(auth()).expect(200)).body).toEqual({ columns: [] })
+    expect(service.board).toHaveBeenCalledWith(expect.objectContaining({ limit: 2, status: ['in_progress'] }), 'u')
+  })
 
   it('authenticates SR input routes and maps list/select/remove to the task and SR IDs', async () => {
     await request(app.getHttpServer()).get('/api/tasks/t/sr-inputs').expect(401)

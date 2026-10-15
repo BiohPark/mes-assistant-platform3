@@ -62,6 +62,11 @@ export function rankTagSuggestions<T extends { tag: string; count: number }>(ite
  * srScope: srCodes가 전체 접수 SR이면 'all'(없는 번호 = 미접수), 일부만 보는 뷰어면 'partial'(없는 번호 = 확인 불가).
  */
 export function tagSuggestions(tasks: Task[], srCodes: string[], prefix: string, exclude: string[] = [], srScope: 'all' | 'partial' = 'all'): TagSuggestion[] {
+  return countedTagSuggestions(tasks.flatMap(task => task.tags.map(tag => ({ tag, count: 1 }))), srCodes, prefix, exclude, srScope)
+}
+
+/** SQL-counted tags share the same ranking and SR visibility semantics as local tasks. */
+export function countedTagSuggestions(tags: Array<{ tag: string; count: number }>, srCodes: string[], prefix: string, exclude: string[] = [], srScope: 'all' | 'partial' = 'all'): TagSuggestion[] {
   const excluded = new Set(exclude.map(tagKey))
   const accepted = new Set(srCodes.map(tagKey))
   const byKey = new Map<string, TagSuggestion>()
@@ -73,7 +78,7 @@ export function tagSuggestions(tasks: Task[], srCodes: string[], prefix: string,
     const srStatus: SrTagStatus = accepted.has(key) ? 'accepted' : srScope === 'all' ? 'unfiled' : 'unknown'
     byKey.set(key, { tag: cur?.tag ?? normalizeTag(tag), count: (cur?.count ?? 0) + n, isSr, ...(isSr && { srStatus }) })
   }
-  for (const t of tasks) for (const tag of t.tags) add(tag, 1)
+  for (const item of tags) add(item.tag, item.count)
   for (const code of srCodes) if (code) add(code, 0)
   return rankTagSuggestions([...byKey.values()], prefix)
 }

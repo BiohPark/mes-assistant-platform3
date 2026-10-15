@@ -6,6 +6,8 @@ import { TaskExtrasService } from './task-extras.service.js'
 import { TaskBriefService } from './task-brief.service.js'
 import { SrInputsService } from './sr-inputs.service.js'
 import { z } from 'zod'
+import { taskListQuerySchema } from '@mes/contracts'
+import { decodeTaskCursor, type TaskFilter } from './task-listing.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
 
 const createSchema = z.object({
@@ -42,11 +44,37 @@ export class TasksController {
     return { ...created.task, ...(created.warnings?.length && { warnings: created.warnings }) }
   }
 
+  private listFilter(query: Record<string, unknown>, actor: string): TaskFilter {
+    // Reject malformed arrays/objects for scalar controls instead of silently ignoring them.
+    for (const key of ['assistantId', 'mine', 'limit', 'cursor', 'q', 'activeWithinDays', 'view']) {
+      if (Object.keys(query).some(name => name.startsWith(`${key}[`)) || (query[key] !== undefined && typeof query[key] !== 'string')) throw new BadRequestException('요청 형식이 올바르지 않습니다')
+    }
+    const input = parse(taskListQuerySchema, {
+      ...query, status: values(query['status[]'] ?? query.status), tags: values(query['tag[]'] ?? query.tag), ai: values(query['ai[]'] ?? query.ai),
+    })
+    if (input.cursor) decodeTaskCursor(input.cursor)
+    return {
+      assistantId: input.assistantId, status: input.status, tags: input.tags, mine: input.mine === 'true' ? actor : undefined,
+      ...(input.limit !== undefined && { limit: input.limit }), ...(input.cursor !== undefined && { cursor: input.cursor }),
+      ...(input.q !== undefined && { q: input.q }), ...(input.ai?.length && { ai: input.ai }),
+      ...(input.activeWithinDays !== undefined && { activeWithinDays: input.activeWithinDays }), ...(input.view && { view: input.view }),
+    }
+  }
+
   @Get()
-  list(@Req() req: AuthedRequest, @Query() query: Record<string, unknown>) {
-    return this.tasks.list({ assistantId: typeof query.assistantId === 'string' ? query.assistantId : undefined,
-      status: values(query['status[]'] ?? query.status), tags: values(query['tag[]'] ?? query.tag),
-      mine: query.mine === 'true' ? req.user!.id : undefined }, req.user!.id)
+  async list(@Req() req: AuthedRequest, @Query() query: Record<string, unknown>, @Res({ passthrough: true }) res: Response) {
+    const filter = this.listFilter(query, req.user!.id)
+    if (!['limit', 'cursor', 'q', 'ai', 'ai[]', 'activeWithinDays', 'view'].some(key => query[key] !== undefined)) {
+      return this.tasks.list(filter, req.user!.id)
+    }
+    const page = await this.tasks.listPage(filter, req.user!.id)
+    if (page.nextCursor) res.setHeader('X-Next-Cursor', page.nextCursor)
+    return page.items
+  }
+
+  @Get('board')
+  board(@Req() req: AuthedRequest, @Query() query: Record<string, unknown>) {
+    return this.tasks.board(this.listFilter(query, req.user!.id), req.user!.id)
   }
 
   @Get(':id')
