@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { resumeHeldTask } from '../tasks/resume-held-task.js'
 import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common'
 import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
-import { buildChatRequest, createProvider, OWUI_DEFAULT_KEYS, refineSrDraft, suggestTitle, summarizeConversation, SummaryBudgetError, type ChatProvider, type ChatScope, type SrDraftText } from '@mes/llm'
+import { buildChatRequest, composeSrDraft, createProvider, OWUI_DEFAULT_KEYS, refineSrDraft, suggestTitle, summarizeConversation, SrDraftBudgetError, SummaryBudgetError, type ChatProvider, type ChatScope, type SrAiOptions, type SrDraftText, type SrProposal } from '@mes/llm'
 import type { LlmSettings, Message, RequestInfo, RequestInput, ServiceRequest, Thread } from '@mes/domain'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
@@ -23,6 +23,11 @@ export interface StartBody { content: string; attachmentIds?: string[]; oneShotF
 export interface RetryBody { excludeFileIds?: string[]; forceInlineFileIds?: string[] }
 export interface EstimateBody { draft?: string; attachmentIds?: string[]; oneShotFileIds?: string[] }
 export interface StartedRequest { id: string; replyMessageId: string; userMessageId: string; done: Promise<void> }
+/** SR 자동작성·다듬기 스트리밍 훅 — onStart는 슬롯 확보 뒤, onDelta는 받은 조각마다 */
+export interface SrAiStreamOptions { signal?: AbortSignal; onStart?: () => void; onDelta?: (text: string) => void }
+interface SrAiCallOptions extends SrAiStreamOptions { kind: 'compose' | 'refine' }
+/** 전체 상한은 첫 토큰·무응답 기준(config.request)이 대신한다 — 달성도 점검과 같다 */
+const SR_AUXILIARY_TIMEOUT_MS = 2_147_483_647
 
 const ACTIVE = ['pending', 'streaming']
 const dbLeaseUntil = (ms: number) => sql`timestampadd(microsecond, ${ms * 1000}, current_timestamp(6))`
@@ -87,6 +92,12 @@ export class RequestsService implements OnModuleDestroy {
     return () => { if (!released) { released = true; this.extraActive-- } }
   }
   async suggestSrTitle(actor: string, threadId: string): Promise<string | undefined> {
+    const { owner, history } = await this.intakeHistory(actor, threadId)
+    if (!history.some((row) => row.role === 'user')) return undefined
+    return this.runAuxiliary(actor, 'title', async (signal) => suggestTitle(this.provider, await this.srModel(owner.modelId), history, signal))
+  }
+  /** 접수 대화의 완료된 메시지(SR 보조 호출 공통). 접근 검증 포함. */
+  private async intakeHistory(actor: string, threadId: string) {
     await assertThreadAccess(this.db, actor, threadId)
     const [owner] = await this.db.select().from(thread).where(eq(thread.id, threadId))
     if (!owner?.srId) throw new BadRequestException('접수 대화가 아닙니다')
@@ -94,15 +105,33 @@ export class RequestsService implements OnModuleDestroy {
     const history: Message[] = rows.filter((row) => row.status === 'done').map((row) => ({ id: row.id, threadId,
       seq: row.seq, role: row.role as Message['role'], kind: row.kind as Message['kind'], content: row.content,
       authorId: row.authorId ?? undefined, status: row.status as Message['status'], createdAt: row.createdAt.toISOString(), attachmentIds: [] }))
-    if (!history.some((row) => row.role === 'user')) return undefined
-    return this.runAuxiliary(actor, 'title', async (signal) => suggestTitle(this.provider, await this.srModel(owner.modelId), history, signal))
+    return { owner, history }
   }
-  /** SR 제목·본문 다듬기 제안(보조 호출, 저장 없음). 적용은 사람이 한다. */
-  async refineSrDraft(actor: string, threadId: string, draft: SrDraftText): Promise<SrDraftText> {
-    await assertThreadAccess(this.db, actor, threadId)
-    const [owner] = await this.db.select().from(thread).where(eq(thread.id, threadId))
-    if (!owner?.srId) throw new BadRequestException('접수 대화가 아닙니다')
-    return this.runAuxiliary(actor, 'refine', async (signal) => refineSrDraft(this.provider, await this.srModel(owner.modelId), draft, signal))
+  /**
+   * SR 자동작성·다듬기 제안(보조 호출, 저장 없음) 공통부 — 접수 에이전트 모델, 본 요청의 첫 토큰·무응답 기준, 요청 크기 한도(초과는 413, 자르지 않음).
+   * onStart는 슬롯을 잡은 뒤(429 이후) 불려 SSE 헤더를 늦게 보낼 수 있게 한다.
+   */
+  private async srProposal(actor: string, threadId: string, options: SrAiCallOptions,
+    run: (model: string, history: Message[], opts: SrAiOptions) => Promise<SrProposal>): Promise<SrProposal> {
+    const { owner, history } = await this.intakeHistory(actor, threadId)
+    const [budgetSetting] = await this.db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
+    const limitBytes = typeof budgetSetting?.value === 'number' ? budgetSetting.value : this.config.request.budgetBytes
+    try {
+      return await this.runAuxiliary(actor, options.kind, async (signal) => {
+        const model = await this.srModel(owner.modelId)
+        if (signal.aborted) throw new Error('보조 요청 중지')
+        options.onStart?.()
+        return run(model, history, { limitBytes, signal, onDelta: options.onDelta, timeouts: this.config.request })
+      }, { signal: options.signal, timeoutMs: SR_AUXILIARY_TIMEOUT_MS })
+    } catch (error) { if (error instanceof SrDraftBudgetError) throw new HttpException(error.message, 413); throw error }
+  }
+  /** AI 자동작성 제안 — 접수 대화 전체로 제목·본문 초안. 적용은 사람이 한다. */
+  composeSrDraft(actor: string, threadId: string, options: SrAiStreamOptions = {}): Promise<SrProposal> {
+    return this.srProposal(actor, threadId, { ...options, kind: 'compose' }, (model, history, opts) => composeSrDraft(this.provider, model, history, opts))
+  }
+  /** AI 다듬기 제안 — 현재 제목·본문을 뜻 그대로 다듬고, 대화에서 빠진 점은 추천 목록으로만. 적용은 사람이 한다. */
+  refineSrDraft(actor: string, threadId: string, draft: SrDraftText, options: SrAiStreamOptions = {}): Promise<SrProposal> {
+    return this.srProposal(actor, threadId, { ...options, kind: 'refine' }, (model, history, opts) => refineSrDraft(this.provider, model, draft, history, opts))
   }
   private async srModel(threadModelId: string | null) {
     const [setting] = await this.db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'srIntakeAssistantId'))
@@ -121,7 +150,7 @@ export class RequestsService implements OnModuleDestroy {
     catch (error) { if (error instanceof SummaryBudgetError) throw new HttpException(error.message, 413); throw error }
   }
   /** 사용자별 단일 진행 — 도우미(assistant)는 제목·요약 등 다른 보조 호출과 별도 슬롯(U4). 전역 상한은 admit이 따로 센다 */
-  async runAuxiliary<T>(actor: string, kind: 'title' | 'summary' | 'checklist' | 'refine' | 'test' | 'assistant' | 'suggest' | 'brief', operation: (signal: AbortSignal) => Promise<T>,
+  async runAuxiliary<T>(actor: string, kind: 'title' | 'summary' | 'checklist' | 'refine' | 'compose' | 'test' | 'assistant' | 'suggest' | 'brief', operation: (signal: AbortSignal) => Promise<T>,
     options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<T> {
     const slot = kind === 'assistant' ? `${actor}:assistant` : `${actor}:aux`
     if (this.auxiliaryUsers.has(slot)) throw new HttpException(kind === 'assistant' ? '다른 보조 요청이 진행 중입니다' : '보조 요청이 이미 진행 중입니다', 429)

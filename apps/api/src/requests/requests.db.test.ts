@@ -1343,7 +1343,7 @@ describe('RequestService DB', () => {
           { id: 'dm-1', threadId: thread.id, seq: 1, role: 'assistant', content: '답변', status: 'done', createdAt: new Date().toISOString(), attachmentIds: [] },
         ])
         expect(summary).toMatchObject({ source: 'ai', model: expected })
-        expect(await runner.refineSrDraft('member', sr.threadId, { title: '제목', body: '본문' })).toEqual({ title: '다듬은 제목', body: '다듬은 본문' })
+        expect(await runner.refineSrDraft('member', sr.threadId, { title: '제목', body: '본문' })).toEqual({ title: '다듬은 제목', body: '다듬은 본문', suggestions: [], source: 'ai', model: expected })
         expect(models.length).toBeGreaterThanOrEqual(3)
         expect(new Set(models)).toEqual(new Set([expected]))
       }
