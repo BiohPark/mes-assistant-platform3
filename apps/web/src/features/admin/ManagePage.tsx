@@ -2,7 +2,6 @@ import { useT, type Translator } from '@/i18n'
 import { useSearchParams } from 'react-router'
 import { useMe } from '@/app/auth'
 import { ModelSelect } from '@/components/ModelSelect'
-import { OwuiAccessSummary } from './OwuiAccessSummary'
 import { EditorGuidePanel, HereMarker, type EditorPointer } from './EditorGuide'
 import { AgentTestChat } from '@/components/AgentTestChat'
 import { SuggestInput } from '@/components/SuggestInput'
@@ -100,7 +99,7 @@ function AssistantEditorSheet({ assistant, userId, initialPointer, onClose, onDe
   const deleteTrigger = useRef<HTMLButtonElement>(null)
   const ownerTouched = useRef(false)
   const [ownerInvalid, setOwnerInvalid] = useState(false)
-  // '여기예요'는 시트를 연 동안 1회 — 우선순위: 온 길(?point) › 비어 있는 필수값 › OpenWebUI 연결 확인 ❌ › 만들기 실패
+  // '여기예요'는 시트를 연 동안 1회 — 우선순위: 온 길(?point) › 비어 있는 필수값 › 만들기 실패
   const [pointer, setPointer] = useState<EditorPointer | null>(() => initialPointer ?? (assistant ? missingRequired(fromAssistant(assistant), initialPaths(assistant)) : null))
   const pointed = useRef(pointer !== null)
   const point = (target: EditorPointer) => { if (pointed.current) return; pointed.current = true; setPointer(target) }
@@ -202,7 +201,6 @@ function AssistantEditorSheet({ assistant, userId, initialPointer, onClose, onDe
           {STATUSES.map(value => <ToggleGroupItem key={value} value={value}><AssistantStatusBadge status={value} /></ToggleGroupItem>)}
         </ToggleGroup></Field>
         <HereMarker {...marker('model')}><Field label={t('admin.connectedModel')} status={states.modelId}><ModelSelect value={form.modelId ?? ''} onChange={value => change('modelId', value)} onBlur={() => commit('modelId', form.modelId ?? '')} disabled={busy} aria-label={t('admin.connectedModel')} /></Field></HereMarker>
-        <HereMarker {...marker('owui')}><OwuiAccessSummary modelId={form.modelId ?? ''} onIssue={(issue) => { if (issue) point('owui') }} /></HereMarker>
         {!!form.link1 && <div className="flex items-center gap-2 text-xs"><span>{t('admin.manage.linkOverride')}</span><span aria-hidden>·</span><Button type="button" size="xs" variant="ghost" disabled={busy} onClick={() => commit('link1', '')}>{t('admin.manage.clearLink')}</Button></div>}
         <SaveStatus state={states.link1} />
         <Field label={t('admin.documentUrl')} status={states.docUrl}><Input value={form.docUrl ?? ''} onChange={(event) => change('docUrl', event.target.value)} onBlur={(event) => commit('docUrl', event.target.value)} /></Field>

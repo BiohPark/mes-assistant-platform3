@@ -386,11 +386,11 @@ describe('③ 세션 방식 시험 (S13-J) — 결과 코드·시간·상태 이
   })
 })
 
-describe('checkOpenWebUiAccess (S13-J 에이전트 편집) — 모델 호출 없이 메타·접근·권한만', () => {
+describe('checkOpenWebUiAccess (연결 진단) — 모델 호출 없이 메타·접근·권한만', () => {
   const SECRET = 'sk-live-9f8e7d6c5b4a'
   it('도구·스킬 접근, 기본 터미널, 계정 역할, fetch_url 조건(session_id 제외)을 읽고 시험 호출·버전 조회는 하지 않는다', async () => {
     const settings = await serve({
-      'GET /api/models': json(200, { data: [{ id: 'agent-a', info: { meta: { toolIds: ['web_tool', 'private_tool'], skillIds: ['skill_a'], defaultFeatureIds: ['web_search'], terminalId: 'term-corp-1',
+      'GET /api/models': json(200, { data: [{ id: 'agent-a', info: { meta: { toolIds: ['web_tool', 'private_tool'], skillIds: ['skill_a'], defaultFeatureIds: [], terminalId: 'term-corp-1',
         capabilities: { web_search: true }, builtinTools: { skills: true } }, params: { function_calling: 'native', system: SECRET } } }] }),
       'GET /api/v1/tools/': json(200, [{ id: 'web_tool', name: '사내 도구' }]), 'GET /api/v1/skills/': json(200, [{ id: 'skill_a', is_active: true, description: SECRET }]),
       'GET /api/v1/users/permissions': json(200, { email: 'svc@corp.example', features: { web_search: true, image_generation: false } }),
@@ -398,7 +398,7 @@ describe('checkOpenWebUiAccess (S13-J 에이전트 편집) — 모델 호출 없
     })
     const result = await checkOpenWebUiAccess(settings, 'agent-a')
     expect(result).toEqual({ model: 'agent-a', ms: expect.any(Number),
-      meta: { found: true, toolIds: ['web_tool', 'private_tool'], defaultFeatureIds: ['web_search'], capabilities: { web_search: true }, builtinTools: { skills: true }, terminal: true, knowledgeCount: 0, functionCalling: 'native' },
+      meta: { found: true, toolIds: ['web_tool', 'private_tool'], defaultFeatureIds: [], capabilities: { web_search: true }, builtinTools: { skills: true }, terminal: true, knowledgeCount: 0, functionCalling: 'native' },
       access: { tools: { visible: 1, items: [{ id: 'web_tool', state: 'ok' }, { id: 'private_tool', state: 'denied' }] }, skills: { visible: 1, items: [{ id: 'skill_a', state: 'ok' }] } },
       account: { role: 'user', features: { web_search: true, image_generation: false, code_interpreter: null } },
       fetchUrl: [{ name: 'function_calling', ok: true }, { name: 'builtin_tools', ok: true }, { name: 'builtinTools.web_search', ok: true }, { name: 'web.search.enable', ok: null },

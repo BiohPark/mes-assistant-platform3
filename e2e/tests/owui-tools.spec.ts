@@ -18,7 +18,7 @@ test('OpenWebUI 자동 도구 전달·400 폴백·끔: 보낸 것=본 것, 한 �
       const task = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id, title: `owui-${mode}` } })).json() as { id: string; threadId: string }
       // 작업 모델을 지정해 에이전트 매핑·전역 모델에 영향받지 않는다.
       expect((await page.request.patch(`/api/tasks/${task.id}`, { data: { modelId: 'fake-general' } })).ok()).toBe(true)
-      const prompt = `owui-tools-${mode}-${Date.now()}`
+      const prompt = `owui-tools-${mode}-${Date.now()} https://example.com/read`
       await page.goto(`/c/${task.id}`)
       const estimate = await (await page.request.post(`/api/threads/${task.threadId}/requests/estimate`, { data: { draft: prompt } })).json()
       await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill(prompt)

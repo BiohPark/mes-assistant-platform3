@@ -45,7 +45,7 @@ test('version and model meta mimic OpenWebUI for the diagnostics probe', async (
   const { data } = await (await fetch(`${base}/api/models`)).json()
   const general = data.find((m) => m.id === 'fake-general')
   assert.deepEqual(general.info.meta.toolIds, ['fake_tool'])
-  assert.deepEqual(general.info.meta.defaultFeatureIds, ['web_search'])
+  assert.deepEqual(general.info.meta.defaultFeatureIds, [])
   assert.equal(general.info.meta.knowledge.length, 1)
   assert.equal(general.info.params.function_calling, 'native')
   assert.equal(data.find((m) => m.id === 'fake-writer').info, undefined)
@@ -244,7 +244,7 @@ test('session mode returns chat_id at once and the chat shows the same answer as
 }))
 
 test('session URL scenario records fetch status entries and mentions the fetched URL; reasoning goes to output reasoning items', async () => withServer(false, async base => {
-  const { chat_id } = await (await session(base, '[reasoning] https://example.com/page 요약')).json()
+  const { chat_id } = await (await session(base, '[reasoning] https://example.com/page 요약', { features: { web_search: true } })).json()
   const { message, seen } = await pollUntilDone(base, chat_id)
   assert.deepEqual(message.statusHistory.map(item => item.description), ['URL 읽는 중: https://example.com/page', 'URL 읽음'])
   assert.ok(seen.some(item => !item.done && item.statusHistory.length === 1), 'fetch status should be visible while running')
@@ -294,3 +294,12 @@ test('session tool rejection follows the same reject mode', async () => withServ
   assert.equal((await session(base, 'hi', { tool_ids: ['fake_tool'] })).status, 400)
   assert.equal((await session(base, 'hi')).status, 200)
 }, { FAKE_OWUI_REJECT_TOOL_IDS: '1' }))
+
+for (const features of [undefined, { web_search: false }]) {
+  test(`URL session requires enabled web search: ${JSON.stringify(features)}`, async () => withServer(false, async base => {
+    const { chat_id } = await (await session(base, 'https://example.com 요약', { features })).json()
+    const { message } = await pollUntilDone(base, chat_id)
+    assert.deepEqual(message.statusHistory, [])
+    assert.doesNotMatch(outputText(message, 'message'), /\[fetched:/)
+  }))
+}

@@ -36,7 +36,7 @@ function accessLine(list: OwuiProbeAccessListResult, t: Translator): string {
     : list.visible === null ? items : `${items} · ${t('admin.diagnostics.probe.visible', { count: String(list.visible) })}`
 }
 
-/** 서비스 계정 접근·권한·주입 조건 행 — 진단 카드와 에이전트 편집의 연결 확인이 같이 쓴다(S13-J). 이름·불린만 담긴다 */
+/** 서비스 계정 접근·권한·주입 조건 행 — 진단 카드와 에이전트 연결 확인이 같이 쓴다(S13-J). 이름·불린만 담긴다 */
 export function accessRows(result: Pick<OwuiAccessCheck, 'meta' | 'access' | 'account' | 'fetchUrl'>, t: Translator): [string, string][] {
   const builtin = Object.entries(result.meta.builtinTools)
   const { account } = result
@@ -48,7 +48,7 @@ export function accessRows(result: Pick<OwuiAccessCheck, 'meta' | 'access' | 'ac
     [t('admin.diagnostics.probe.knowledge'), `${t('common.items', { count: result.meta.knowledgeCount })} ${t('admin.diagnostics.probe.appliedByOwui')}`],
     [t('admin.diagnostics.probe.account'), [account.role ?? t('admin.diagnostics.probe.unknown'), ...Object.entries(account.features).map(([name, ok]) => `${name} ${mark(ok, t)}`)].join(' · ')
       + (account.error ? ` (${account.error})` : '')],
-    [t('admin.diagnostics.probe.fetchUrl'), result.fetchUrl.map((condition) => `${condition.name} ${mark(condition.ok, t)}`).join(' · ') || '—'],
+    [t('admin.diagnostics.probe.fetchUrl'), result.fetchUrl.map((condition) => `${condition.name} ${condition.name === 'features.web_search' && result.meta.capabilities.web_search === true ? t('admin.diagnostics.probe.urlAuto') : mark(condition.ok, t)}`).join(' · ') || '—'],
   ]
 }
 

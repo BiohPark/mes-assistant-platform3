@@ -92,6 +92,7 @@ test('SO OpenWebUI 진단: 모델 하나로 버튼 → 요약 카드·복사, �
     await expect(summary).toContainText('fake_skill ✅, fake_private_skill ❌')
     await expect(summary).toContainText('기본 터미널설정됨')
     await expect(summary).toContainText('서비스 계정user · web_search ✅')
+    await expect(summary).toContainText('features.web_search URL 포함 시 자동')
     await expect(summary).toContainText('③ 세션 방식HTTP 200')
     await expect(summary).toContainText('채팅 정리 성공')
     await expect(card.getByRole('button', { name: '진단 결과 복사' })).toBeEnabled()

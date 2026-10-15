@@ -8,6 +8,7 @@ import type { Pool } from 'mysql2/promise'
 import { createPool } from '../db/connection.js'
 import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { requestBytes } from '@mes/domain'
 import { OpenAICompatibleProvider, type ChatProvider } from '@mes/llm'
 import { loadConfig } from '../config/config.js'
 import { runMigrations } from '../db/migrate.js'
@@ -230,11 +231,11 @@ describe('RequestService DB', () => {
   const sessionStatusMs = sessionWaitMs * 3
 
   /** OpenWebUI v0.12 세션 모드 대역 — 생성은 chat_id만 돌려주고, 채팅 GET이 진행 상태를 보여 준다(S12) */
-  async function sessionUpstream(poll: (elapsedMs: number, count: number) => Record<string, unknown>, create?: (body: Record<string, unknown>) => { status: number; body: string; type?: string } | undefined) {
+  async function sessionUpstream(poll: (elapsedMs: number, count: number) => Record<string, unknown>, create?: (body: Record<string, unknown>) => { status: number; body: string; type?: string } | undefined, options: { defaultFeatureIds?: string[]; mode?: 'direct' | 'session' } = {}) {
     const bodies: Record<string, unknown>[] = [], deleted: string[] = [], stopped: string[] = []
     let messageId = '', createdAt = 0, polls = 0
     const server = createServer((req, res) => {
-      if (req.url === '/api/models') { res.end(JSON.stringify({ data: [{ id: 'fake-general', info: { meta: { toolIds: ['lookup'], skillIds: ['skill_a'], defaultFilterIds: ['filter_a'], defaultFeatureIds: ['web_search'], capabilities: { web_search: true }, terminalId: 'term-1' } } },
+      if (req.url === '/api/models') { res.end(JSON.stringify({ data: [{ id: 'fake-general', info: { meta: { toolIds: ['lookup'], skillIds: ['skill_a'], defaultFilterIds: ['filter_a'], defaultFeatureIds: options.defaultFeatureIds ?? ['web_search'], capabilities: { web_search: true }, terminalId: 'term-1' } } },
         // SR 접수 에이전트용 모델(S13-J) — 대화 요청과 다른 meta
         { id: 'intake-model', info: { meta: { toolIds: ['intake_tool'], skillIds: ['intake_skill'], defaultFilterIds: ['intake_filter'], defaultFeatureIds: ['web_search', 'code_interpreter'],
           capabilities: { web_search: true }, terminalId: 'intake-term', knowledge: [{ id: 'kb' }] } } }] })); return }
@@ -259,7 +260,7 @@ describe('RequestService DB', () => {
     })
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
     const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
-      LLM_MODE: 'live', LLM_PRESET: 'openwebui', LLM_API_KEY: 'test-key', LLM_BASE_URL: `http://127.0.0.1:${(server.address() as { port: number }).port}`, LLM_DEFAULT_MODEL: 'fake-general',
+      LLM_MODE: 'live', LLM_PRESET: 'openwebui', LLM_OWUI_MODE: options.mode ?? 'auto', LLM_API_KEY: 'test-key', LLM_BASE_URL: `http://127.0.0.1:${(server.address() as { port: number }).port}`, LLM_DEFAULT_MODEL: 'fake-general',
       REQUEST_FIRST_TOKEN_MS: String(sessionWaitMs), REQUEST_IDLE_MS: String(sessionWaitMs) })
     const events = new EventsService()
     const runner = new RequestsService(db, config, new OpenAICompatibleProvider(toLlmSettings(config.llm), undefined, { sessionPollMs }), events)
@@ -271,6 +272,33 @@ describe('RequestService DB', () => {
   const sessionMessage = (statuses: string[], reasoning: string, content: string, done = false) => ({ done, content,
     statusHistory: statuses.map(description => ({ description, done: false })),
     output: [...(reasoning ? [{ type: 'reasoning', content: [{ type: 'output_text', text: reasoning }] }] : []), ...(content ? [{ type: 'message', content: [{ type: 'output_text', text: content }] }] : [])] })
+
+  it.each(['direct', 'session'] as const)('%s: URL automatically enables web search without a default; estimate equals send and snapshot records actual features', async mode => {
+    const upstream = await sessionUpstream(() => sessionMessage([], '', '답변', true), undefined, { defaultFeatureIds: [], mode })
+    try {
+      for (const [index, content] of ['https://example.com 읽어 줘', 'URL 없는 다음 질문'].entries()) {
+        const estimate = await upstream.runner.estimate('member', upstream.thread.id, { draft: content })
+        const started = await upstream.runner.start('member', upstream.thread.id, { content }, `url-auto-${mode}-${index}`)
+        await started.done
+        const record = await upstream.runner.get(started.id)
+        expect(record).toMatchObject({ status: 'succeeded', bytes: estimate.bytes })
+        const snapshot = await upstream.runner.snapshot(started.id) as Record<string, unknown>
+        const body = upstream.bodies.at(-1)!
+        // 크기 한도는 모델·메시지·첨부 기준이며 features 등 OWUI 전송 옵션은 포함하지 않는다.
+        expect(record.bytes).toBe(requestBytes({ model: body.model, messages: body.messages, stream: true }))
+        expect(snapshot).toMatchObject({ mode, messages: body.messages, tool_ids: ['lookup'] })
+        if (index === 0) {
+          expect(body.features).toEqual({ web_search: true })
+          expect(snapshot.features).toEqual(body.features)
+          expect(record.owuiTools).toMatchObject({ features: body.features })
+        } else {
+          expect(body).not.toHaveProperty('features')
+          expect(snapshot).not.toHaveProperty('features')
+          expect(record.owuiTools).not.toHaveProperty('features')
+        }
+      }
+    } finally { await upstream.close() }
+  })
 
   it('보낸 것=본 것: 제목이 바뀌면(배경 AI 제목 등) 추정을 다시 하면 새 값이고, 실제 전송은 그 마지막 추정과 같다', async () => {
     const { thread } = await tasks.create('member', { assistantId })

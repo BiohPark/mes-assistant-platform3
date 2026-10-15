@@ -3,13 +3,16 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { LlmTestConnection } from '@mes/contracts'
 import { LlmTestError, testConnection } from '@/api/llm'
+import { useAssistants } from '@/app/hooks'
 import { TopBar } from '@/app/TopBar'
 import { AgentTestChat } from '@/components/AgentTestChat'
 import { ModelSelect } from '@/components/ModelSelect'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { copyText } from '@/lib/clipboard'
 import { useT, type Translator } from '@/i18n'
 import { OwuiProbeCard } from './DiagnosticsOwuiProbe'
+import { OwuiAccessSummary } from './OwuiAccessSummary'
 
 type Diagnostics = {
   app: { version: string; commit: string; builtAt: string; node: string; os: string }
@@ -94,6 +97,27 @@ function AiConnectionCard({ data }: { data: Diagnostics }) {
   </section>
 }
 
+function AgentAccessSection({ defaultModel }: { defaultModel: string }) {
+  const t = useT()
+  const assistants = useAssistants()
+  const [assistantId, setAssistantId] = useState('')
+  const selected = assistants.find((assistant) => assistant.id === assistantId)
+  const model = selected ? selected.modelId || defaultModel : ''
+  return <section className="space-y-3 rounded-xl border bg-card p-4">
+    <div className="space-y-2 text-sm">
+      <p>{t('admin.diagnostics.probe.agentLabel')}</p>
+      <Select value={assistantId} onValueChange={setAssistantId}>
+        <SelectTrigger aria-label={t('admin.diagnostics.probe.agentLabel')} className="w-full"><SelectValue placeholder={t('admin.diagnostics.probe.selectAgent')} /></SelectTrigger>
+        <SelectContent>{assistants.map((assistant) => <SelectItem key={assistant.id} value={assistant.id}>{assistant.name}</SelectItem>)}</SelectContent>
+      </Select>
+    </div>
+    {selected && <>
+      <p className="text-sm text-muted-foreground">{t('admin.connectedModel')}: {model || '—'}</p>
+      <OwuiAccessSummary key={selected.id} modelId={model} />
+    </>}
+  </section>
+}
+
 function TestChatSection() {
   const t = useT()
   const [model, setModel] = useState('')
@@ -114,6 +138,7 @@ export function DiagnosticsPage() {
   return <><TopBar title={t('nav.diagnostics')} /><div className="flex-1 overflow-auto p-4"><div className="mx-auto max-w-3xl space-y-4">
     {query.data && <AiConnectionCard data={query.data} />}
     {query.data && <OwuiProbeCard live={query.data.llm.mode === 'live'} defaultModel={query.data.llm.defaultModel} />}
+    {query.data?.llm.mode === 'live' && query.data.llm.preset === 'openwebui' && <AgentAccessSection defaultModel={query.data.llm.defaultModel} />}
     <div className="flex gap-2" data-tour="admin-diagnostics"><Button variant="outline" onClick={() => void query.refetch()}>{t('admin.diagnostics.recheck')}</Button>
       <Button disabled={!query.data} onClick={() => { if (query.data) void copyText(formatDiagnostics(query.data, t)).then((ok) => toast[ok ? 'success' : 'error'](ok ? t('admin.diagnostics.copied') : t('admin.diagnostics.copyFailed'))) }}>{t('admin.diagnostics.copyText')}</Button></div>
     {query.isError && <p role="alert">{t('admin.diagnostics.loadFailed')}</p>}

@@ -43,6 +43,33 @@ describe('owuiDefaults — OpenWebUI 화면이 모델을 고를 때 채우는 �
 })
 
 describe('OpenWebUI automatic tool delivery', () => {
+  it.each(['direct', 'session'] as const)('%s: URL in the last user message enables capable web search without a model default, and records the exact body', async owuiMode => {
+    const fetcher = upstream(undefined, { data: [{ id: 'm', info: { meta: { defaultFeatureIds: ['memory'], capabilities: { web_search: true, memory: true } } } }] })
+    const p = new OpenAICompatibleProvider(settings)
+    for (const content of ['https://example.com 요약', '다음 질문', 'HTTP://example.com/page']) {
+      const onDispatch = vi.fn()
+      await collect(p, { ...req, owuiMode, messages: [{ role: 'user', content }], onDispatch })
+      const body = bodies(fetcher).at(-1)!
+      const features = { memory: true, ...(/https?:/i.test(content) ? { web_search: true } : {}) }
+      expect(body.features).toEqual(features)
+      expect(onDispatch).toHaveBeenCalledExactlyOnceWith({ mode: 'tools', features }, body)
+    }
+  })
+  it.each([false, undefined, 'true'])('does not auto-enable web search unless capability is strictly true: %s', async capability => {
+    const fetcher = upstream(undefined, { data: [{ id: 'm', info: { meta: { capabilities: { web_search: capability } } } }] })
+    await collect(new OpenAICompatibleProvider(settings), { ...req, messages: [{ role: 'user', content: 'https://example.com' }] })
+    expect(bodies(fetcher)[0]).not.toHaveProperty('features')
+  })
+  it.each([
+    [{ role: 'system' as const, content: 'https://example.com' }, { role: 'user' as const, content: '질문' }],
+    [{ role: 'user' as const, content: 'https://example.com' }, { role: 'assistant' as const, content: '답변' }, { role: 'user' as const, content: '다음' }],
+    [{ role: 'user' as const, content: '질문' }, { role: 'tool' as const, content: 'https://example.com' }],
+    [{ role: 'user' as const, content: 'ftp://example.com http:// https://' }],
+  ])('ignores URLs outside the last user message or without an HTTP host: %j', async (...messages) => {
+    const fetcher = upstream(undefined, { data: [{ id: 'm', info: { meta: { capabilities: { web_search: true } } } }] })
+    await collect(new OpenAICompatibleProvider(settings), { ...req, messages })
+    expect(bodies(fetcher)[0]).not.toHaveProperty('features')
+  })
   it('sends every model default the screen would (skills, filters, capability-gated features, terminal) and no user variables (S13-J)', async () => {
     const fetcher = upstream(undefined, { data: [{ id: 'm', info: { meta: { toolIds: ['lookup'], skillIds: ['skill_a'], defaultFilterIds: ['filter_a'], defaultFeatureIds: ['web_search', 'image_generation'],
       capabilities: { web_search: true }, terminalId: 'term-1', knowledge: [{ id: 'kb' }] } } }] })
