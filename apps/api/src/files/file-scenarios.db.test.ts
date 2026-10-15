@@ -16,6 +16,7 @@ import { seedCatalog } from '../db/seed.js'
 import { createTempDb } from '../test/tempDb.js'
 import { loadConfig } from '../config/config.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
+import { SrInputsService } from '../tasks/sr-inputs.service.js'
 import { TaskExtrasService } from '../tasks/task-extras.service.js'
 import { RequestsService } from '../requests/requests.service.js'
 import { EventsService } from '../events/events.service.js'
@@ -134,7 +135,7 @@ describe('file scenarios (S8)', () => {
       expect((await files.candidates(upper.id)).files).toEqual([])
     })
 
-    it('T-06 SR 코드 태그는 대문자로 정규화되어 공유되고, 요청에는 연결된 SR 본문이 들어간다', async () => {
+    it('T-06 SR 코드 태그는 대문자로 정규화되어 공유되고, 담은 SR 본문만 요청에 한 번 들어간다', async () => {
       const draft = await sr.create('member')
       const submitted = await sr.submit('member', draft.id, { title: '알람 개선', body: 'SR 본문입니다', attachmentIds: [] })
       const code = submitted.code!
@@ -143,13 +144,27 @@ describe('file scenarios (S8)', () => {
       expect((await tasks.get(a.id)).tags).toEqual([code])
       const file = await files.upload('member', a.id, 'sr-shared.txt', 'text/plain', text('sr'))
       expect((await files.candidates(b.id)).files.find((item) => item.file.id === file.id)).toMatchObject({ viaTags: [code] })
-      const estimate = await requests.estimate('member', (await tasks.get(a.id)).threadId!, { draft: 'SR 확인' })
+      const threadId = (await tasks.get(a.id)).threadId!
+      const srInputs = new SrInputsService(db, new EventsService())
+      const unselected = await requests.estimate('member', threadId, { draft: 'SR 확인' })
+      expect(unselected.srCodes).toEqual([code])
+      expect(unselected.srs).toEqual([{ code, title: '알람 개선' }])
+      expect(unselected.inputs).toEqual([])
+      const before = await completed(threadId, '담기 전')
+      expect(JSON.stringify(await requests.snapshot(before.id))).not.toContain('SR 본문입니다')
+      await srInputs.select('member', a.id, draft.id)
+      const estimate = await requests.estimate('member', threadId, { draft: 'SR 확인' })
       expect(estimate.srCodes).toEqual([code])
-      const { id } = await completed((await tasks.get(a.id)).threadId!, 'SR 확인')
+      expect(estimate.inputs).toEqual([expect.objectContaining({ kind: 'sr', srId: draft.id, code, title: '알람 개선' })])
+      const { id, info } = await completed(threadId, 'SR 확인')
+      expect(info.inputs).toEqual(estimate.inputs)
       const snapshot = await requests.snapshot(id) as { messages: Array<{ role: string; content: string }> }
       expect(snapshot.messages[0]!.content).toContain('## 연결된 SR (1)')
       expect(snapshot.messages[0]!.content).toContain(`### ${code} 알람 개선\nSR 본문입니다`)
       expect(snapshot.messages[0]!.content).toContain(`- 태그: ${code}`)
+      expect((await requests.estimate('member', threadId, { draft: '다시' })).inputs).toEqual([])
+      const after = await completed(threadId, '다시')
+      expect(JSON.stringify(await requests.snapshot(after.id))).not.toContain('SR 본문입니다')
     })
 
     it('T-06b 백업에서 들어온 소문자·# 표기 SR 태그 라벨도 연결 SR을 찾고, 추정과 전송의 srCodes가 같다', async () => {
@@ -163,11 +178,21 @@ describe('file scenarios (S8)', () => {
           const threadId = (await tasks.get(owner.id)).threadId!
           const estimate = await requests.estimate('member', threadId, { draft: '확인' })
           expect(estimate.srCodes, label).toEqual([code])
+          expect(estimate.srs, label).toEqual([{ code, title: '수입 라벨' }])
+          expect(estimate.inputs, label).toEqual([])
           const { id, info } = await completed(threadId, '확인')
           expect(info.srCodes, label).toEqual([code])
           const snapshot = await requests.snapshot(id) as { messages: Array<{ content: string }> }
-          expect(snapshot.messages[0]!.content, label).toContain('## 연결된 SR (1)')
-          expect(snapshot.messages[0]!.content, label).toContain('라벨 표기와 무관하게 들어가야 한다')
+          expect(snapshot.messages[0]!.content, label).not.toContain('라벨 표기와 무관하게 들어가야 한다')
+          await new SrInputsService(db, new EventsService()).select('member', owner.id, draft.id)
+          const selected = await requests.estimate('member', threadId, { draft: '본문 확인' })
+          expect(selected.inputs, label).toEqual([expect.objectContaining({ kind: 'sr', srId: draft.id, code })])
+          const sent = await completed(threadId, '본문 확인')
+          expect(sent.info.srCodes, label).toEqual(selected.srCodes)
+          expect(sent.info.inputs, label).toEqual(selected.inputs)
+          const selectedSnapshot = await requests.snapshot(sent.id) as { messages: Array<{ content: string }> }
+          expect(selectedSnapshot.messages[0]!.content, label).toContain('## 연결된 SR (1)')
+          expect(selectedSnapshot.messages[0]!.content, label).toContain('라벨 표기와 무관하게 들어가야 한다')
         }
       } finally { await db.update(tag).set({ label: code }).where(eq(tag.key, code.toLowerCase())) }
     })

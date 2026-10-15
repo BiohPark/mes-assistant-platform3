@@ -98,8 +98,8 @@ export function renderConversation(c: PromptConversation): string {
 export interface TaskPromptInput {
   assistant: Assistant
   task: Task
-  /** 대화 태그로 찾은 SR (태그 자체는 task.tags) */
-  linkedSrs: ServiceRequest[]
+  /** 이번 요청에 선택·확정한 SR 본문 (연결 메타 목록과 별개) */
+  linkedSrs: Pick<ServiceRequest, 'id' | 'code' | 'title' | 'body'>[]
   /** 사람이 선택한 입력만. 태그로 보이기만 하는 자료는 넣지 않는다 */
   inputs: PromptInput[]
   /** 사람이 선택한 참조 대화 (같은 태그 직접 공유, 선택 시점 스냅샷) */

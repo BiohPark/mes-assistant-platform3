@@ -8,8 +8,11 @@ export async function estimateRequest(threadId: string, body: { draft?: string; 
 }
 
 export interface RequestInputRecord {
-  kind: 'file' | 'conversation'
+  kind: 'file' | 'conversation' | 'sr'
   weight: 'main' | 'reference'
+  srId?: string | null
+  srCode?: string
+  srTitle?: string
   fileId?: string | null
   fileVersion?: number | null
   sourceLabel?: string | null

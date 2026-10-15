@@ -23,6 +23,8 @@ import { FileStorageService } from '../files/fileStorage.service.js'
 import { DbLlmPorts } from '../llm/dbLlmPorts.js'
 import { EventsService } from '../events/events.service.js'
 import { SrService } from '../sr/sr.service.js'
+import { SrInputsService } from '../tasks/sr-inputs.service.js'
+import { srInput, serviceRequest, taskAssignee } from '../db/schema.js'
 import { toLlmSettings } from '../llm/presets.js'
 
 describe('RequestService DB', () => {
@@ -51,6 +53,94 @@ describe('RequestService DB', () => {
     tasks = new DbTasksService(db, undefined, extras)
   })
   afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); await rm(root, { recursive: true, force: true }) })
+
+  it('SR 본문은 원자적으로 한 번 소비하고 재시도는 기록을 쓰며 다음 선택을 보존한다', async () => {
+    const sr = new SrService(db, tasks, new EventsService())
+    const draft = await sr.create('member')
+    await sr.submit('member', draft.id, { title: 'SR once', body: 'SR-ONCE-BODY' })
+    const owner = await sr.startTask('member', draft.id, { assistantId })
+    if ('candidates' in owner || !owner.threadId) throw new Error('새 업무가 필요합니다')
+    const inputs = new SrInputsService(db, new EventsService())
+    expect(await inputs.list('member', owner.id)).toEqual([expect.objectContaining({ srId: draft.id, selected: true, used: false })])
+    const estimate = await service.estimate('member', owner.threadId, { draft: '첫 질문' })
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root })
+    const failing = new RequestsService(db, config, { ...provider, async *stream() { yield { type: 'error', message: '모델 오류' } } })
+    const first = await failing.start('member', owner.threadId, { content: '첫 질문' }, 'sr-once-first')
+    await first.done
+    expect(await service.get(first.id)).toMatchObject({ bytes: estimate.bytes, inputs: [expect.objectContaining({ kind: 'sr', srId: draft.id })] })
+    expect(JSON.stringify(await service.snapshot(first.id))).toContain('SR-ONCE-BODY')
+    expect(await db.select().from(srInput).where(eq(srInput.taskId, owner.id))).toHaveLength(0)
+    expect(await inputs.list('member', owner.id)).toEqual([expect.objectContaining({ selected: false, used: true })])
+    await inputs.select('member', owner.id, draft.id)
+    const replay = await failing.start('member', owner.threadId, { content: '첫 질문' }, 'sr-once-first')
+    expect(replay.id).toBe(first.id)
+    expect(await db.select().from(srInput).where(eq(srInput.taskId, owner.id))).toHaveLength(1)
+    await db.update(serviceRequest).set({ body: 'CHANGED-SR-BODY' }).where(eq(serviceRequest.id, draft.id))
+    const retried = await service.retry('member', first.id, {}, 'sr-once-retry')
+    await retried.done
+    expect(JSON.stringify(await service.snapshot(retried.id))).toContain('SR-ONCE-BODY')
+    expect(JSON.stringify(await service.snapshot(retried.id))).not.toContain('CHANGED-SR-BODY')
+    expect(await db.select().from(srInput).where(eq(srInput.taskId, owner.id))).toHaveLength(1)
+    await inputs.remove('member', owner.id, draft.id)
+    const next = await service.start('member', owner.threadId, { content: '다음 질문' }, 'sr-once-next')
+    await next.done
+    expect((await service.get(next.id)).inputs).toEqual([])
+    expect(JSON.stringify(await service.snapshot(next.id))).not.toContain('SR-ONCE-BODY')
+    failing.onModuleDestroy()
+  })
+
+  it('SR 입력 목록은 태그·직접 연결을 합치고 권한·완료·삭제를 적용한다', async () => {
+    const sr = new SrService(db, tasks, new EventsService())
+    const mine = await sr.create('member')
+    const submitted = await sr.submit('member', mine.id, { title: '권한', body: 'MY-SR-BODY' })
+    const created = await tasks.create('member', { assistantId, tags: [`#${submitted.code.toLowerCase()}`] })
+    const inputs = new SrInputsService(db, new EventsService())
+    expect(await inputs.list('member', created.task.id)).toEqual([expect.objectContaining({ srId: mine.id, selected: false, used: false })])
+    await inputs.select('member', created.task.id, mine.id)
+    await inputs.select('member', created.task.id, mine.id)
+    expect(await db.select().from(srInput).where(eq(srInput.taskId, created.task.id))).toHaveLength(1)
+    await expect(inputs.select('member', created.task.id, 'unlinked')).rejects.toMatchObject({ status: 404 })
+    const outsider = `sr-outsider-${created.task.id}`
+    await db.insert(appUser).values({ id: outsider, name: 'BO', initials: 'B', color: '#123456', isBusinessOwner: true })
+    await db.insert(taskAssignee).values({ taskId: created.task.id, userId: outsider })
+    expect(await inputs.list(outsider, created.task.id)).toEqual([])
+    await expect(inputs.select(outsider, created.task.id, mine.id)).rejects.toMatchObject({ status: 404 })
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root })
+    expect(await new DbLlmPorts(db, config, outsider).loadTaskSrs(created.task.id)).toEqual({ linked: [], selected: [] })
+    await db.update(task).set({ status: 'done' }).where(eq(task.id, created.task.id))
+    await expect(inputs.remove('member', created.task.id, mine.id)).rejects.toMatchObject({ status: 409 })
+    await db.update(task).set({ deletedAt: new Date() }).where(eq(task.id, created.task.id))
+    await expect(inputs.list('member', created.task.id)).rejects.toMatchObject({ status: 404 })
+    const direct = await tasks.create('member', { assistantId }, undefined, mine.id)
+    expect(await inputs.list('member', direct.task.id)).toEqual([expect.objectContaining({ srId: mine.id, selected: true })])
+  })
+
+  it('조립 전 실패해도 SR 원문을 기록하고 한도 초과는 자르거나 전송하지 않는다', async () => {
+    const sr = new SrService(db, tasks, new EventsService())
+    const draft = await sr.create('member')
+    const body = '큰 SR 본문'.repeat(2000)
+    await sr.submit('member', draft.id, { title: 'SR build failure', body })
+    const { task: owner, thread } = await tasks.create('member', { assistantId, title: 'SR build failure' }, undefined, draft.id)
+    const fileId = `sr-build-missing-${owner.id}`
+    await db.insert(fileObject).values({ id: fileId, kind: 'task_file', originTaskId: owner.id, originalName: 'missing.txt', mime: 'text/plain', sizeBytes: 1,
+      sha256: 'a'.repeat(64), storageKey: `test/${fileId}.txt`, source: 'upload', version: 1, uploadedBy: 'member' })
+    await db.insert(taskInput).values({ taskId: owner.id, fileId, weight: 'reference', sortOrder: 0, selectedBy: 'member' })
+    const failed = await service.start('member', thread.id, { content: 'SR 조립' }, 'sr-build-failed')
+    await failed.done
+    expect(await service.get(failed.id)).toMatchObject({ code: 'BUILD_FAILED', inputs: [expect.objectContaining({ kind: 'file' }), expect.objectContaining({ kind: 'sr', srId: draft.id })] })
+    let calls = 0
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root, REQUEST_BUDGET_BYTES: '1000' })
+    const runner = new RequestsService(db, config, { ...provider, async *stream() { calls++; yield { type: 'done' } } })
+    const over = await runner.retry('member', failed.id, { excludeFileIds: [fileId] }, 'sr-over-limit')
+    await over.done
+    expect(await runner.get(over.id)).toMatchObject({ code: 'REQUEST_TOO_LARGE', inputs: [expect.objectContaining({ kind: 'sr', srId: draft.id })] })
+    expect(calls).toBe(0)
+    const recovered = await service.retry('member', over.id, {}, 'sr-build-recovered')
+    await recovered.done
+    expect(JSON.stringify(await service.snapshot(recovered.id))).toContain(body)
+    expect(await db.select().from(srInput).where(eq(srInput.taskId, owner.id))).toHaveLength(0)
+    runner.onModuleDestroy()
+  })
 
   it('publishes request updates only for status and phase changes, never for repeated chunks or flushes', async () => {
     let release!: () => void

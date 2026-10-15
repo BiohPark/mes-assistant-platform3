@@ -12,6 +12,7 @@ import type {
   Message,
   RequestInfo,
   ServiceRequest,
+  SrRequestInput,
   Settings,
   Task,
   Thread,
@@ -32,7 +33,7 @@ import { deliverFiles, usesFilesApi, type AttachedFile, type DeliverOptions } fr
 import type { ChatMessageInput, ChatMeta } from './provider.js'
 
 /**
- * 요청 조립: 사람이 고른 입력(파일·참조 대화)만 담고, 입력마다 실제 전달 방식을 기록한다.
+ * 요청 조립: 사람이 고른 입력(파일·참조 대화·SR 본문)만 담고, 입력마다 실제 전달 방식을 기록한다.
  * 화면의 "이번 요청에 사용" 트레이(dryRun)와 실제 전송이 같은 함수를 쓴다 — 미리 본 것이 곧 보내는 것.
  */
 
@@ -46,6 +47,8 @@ export interface BuildOptions {
   inputs?: Array<{ fileId: ID; weight: InputWeight }>
   /** 요청 시작 때 소비한 대화 스냅샷. 빈 배열도 현재 선택을 읽지 않는 확정값이다. */
   conversations?: Awaited<ReturnType<LlmPorts['loadConversationInputs']>>
+  /** 요청 시작 때 확정한 SR 본문. 빈 배열도 현재 스테이징을 읽지 않는 확정값이다. */
+  srs?: Pick<ServiceRequest, 'id' | 'code' | 'title' | 'body'>[]
   /** 첨부 실패 뒤 사용자가 "텍스트로 보내기"를 고른 파일 */
   forceInlineFileIds?: ID[]
   /** 크기 추정: OpenWebUI 업로드 없이 첨부 예정으로 계산 */
@@ -197,16 +200,19 @@ async function buildTaskRequest(scope: Extract<ChatScope, { kind: 'task' }>, set
   const task = (await ports.getTask(scope.task.id)) ?? scope.task
   // 태그 표기를 정규화해 SR 코드를 뽑는다(소문자·'#' 라벨도 인식) — SR 코드는 binary 정렬로 비교되므로 표기 그대로 쓰면 못 찾는다
   const srCodes = [...new Set(task.tags.map(normalizeTag).filter(isSrTag))]
-  const [entries, conversations, linkedSrs] = await Promise.all([
+  const [entries, conversations, srSources] = await Promise.all([
     loadFileEntries(task, opts.inputs ?? task.inputs, opts.oneShotFileIds ?? [], ports),
     loadConversations(task.id, users, ports, opts.conversations),
-    srCodes.length ? ports.getServiceRequestsByCodes(srCodes) : Promise.resolve([]),
+    ports.loadTaskSrs ? ports.loadTaskSrs(task.id) : ports.getServiceRequestsByCodes(srCodes).then(linked => ({ linked, selected: [] })),
   ])
+  const selectedSrs = opts.srs ?? srSources.selected
+  const srInfo: SrRequestInput[] = selectedSrs.map(sr => ({ kind: 'sr', srId: sr.id, code: sr.code, title: sr.title,
+    weight: 'reference', bytes: byteLength(`### ${sr.code} ${sr.title}\n${sr.body}`) }))
   const files = await deliver(settings, entries, opts, ports)
   const systemPrompt = await buildTaskSystemPrompt({
     assistant: scope.assistant,
     task,
-    linkedSrs,
+    linkedSrs: selectedSrs,
     inputs: files.prompt,
     conversations: conversations.prompt,
     participants: threadParticipants(history, users),
@@ -214,11 +220,11 @@ async function buildTaskRequest(scope: Extract<ChatScope, { kind: 'task' }>, set
   return {
     task,
     systemPrompt,
-    srCodes,
-    srs: linkedSrs.map((s) => ({ code: s.code, title: s.title })),
+    srCodes: [...new Set([...srCodes, ...srSources.linked.map(sr => sr.code).filter(Boolean)])],
+    srs: srSources.linked.map((s) => ({ code: s.code, title: s.title })),
     files,
-    inputs: [...files.info, ...conversations.info],
-    lines: [...files.lines, ...conversations.info.map(conversationLine)],
+    inputs: [...files.info, ...conversations.info, ...srInfo],
+    lines: [...files.lines, ...conversations.info.map(conversationLine), ...srInfo.map(sr => `☑ 참고 · SR ${sr.code} ${sr.title}`)],
   }
 }
 

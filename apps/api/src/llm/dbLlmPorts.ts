@@ -1,3 +1,4 @@
+import { linkedTaskSrs } from '../tasks/sr-inputs.service.js'
 import { createHash } from 'node:crypto'
 import { and, eq, inArray, isNull, or } from 'drizzle-orm'
 import type { Assistant, FileAsset, ServiceRequest, Settings, Task, User } from '@mes/domain'
@@ -5,7 +6,7 @@ import type { LlmPorts } from '@mes/llm'
 import { remoteKey } from '@mes/llm'
 import type { AppConfig } from '../config/config.js'
 import type { Db } from '../db/db.module.js'
-import { appSetting, appUser, checklistItem, fileObject, fileRemoteRef, serviceRequest, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { appSetting, appUser, checklistItem, fileObject, fileRemoteRef, serviceRequest, srInput, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { toLlmSettings } from './presets.js'
 import { effectiveDefaultModel, DEFAULT_MODEL_OVERRIDE_KEY } from './effectiveDefaultModel.js'
@@ -109,6 +110,15 @@ export class DbLlmPorts implements LlmPorts {
       ...(refs.find((ref) => ref.fileId === row.id && ref.scopeHash === currentHash) ? { remoteIds: { [currentKey]: refs.find((ref) => ref.fileId === row.id && ref.scopeHash === currentHash)!.remoteId } } : {}),
     }]))
     return ids.map((id) => byId.get(id))
+  }
+
+  async loadTaskSrs(taskId: string) {
+    const rows = await linkedTaskSrs(this.db, this.currentUserId, taskId)
+    const selected = await this.db.select().from(srInput).where(eq(srInput.taskId, taskId))
+    const linked: ServiceRequest[] = rows.map(row => ({ id: row.id, code: row.code ?? '', title: row.title, body: row.body,
+      requesterId: row.requesterId, titleSource: row.titleSource as ServiceRequest['titleSource'], status: row.status as ServiceRequest['status'],
+      attachmentIds: [], threadId: '', results: [], createdAt: iso(row.createdAt), updatedAt: iso(row.updatedAt) }))
+    return { linked, selected: linked.filter(sr => selected.some(row => row.srId === sr.id)) }
   }
 
   async getServiceRequestsByCodes(codes: string[]): Promise<ServiceRequest[]> {

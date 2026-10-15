@@ -1,3 +1,4 @@
+import { linkedTaskSrs } from '../tasks/sr-inputs.service.js'
 import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
 import { randomUUID } from 'node:crypto'
 import { resumeHeldTask } from '../tasks/resume-held-task.js'
@@ -8,7 +9,7 @@ import type { LlmSettings, Message, RequestInfo, RequestInput, ServiceRequest, T
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
 import { isDuplicateKey } from '../db/errors.js'
-import { activityLog, appSetting, assistant, chatRequest, chatRequestInput, conversationInput, dbLock, fileObject, message, messageAttachment, serviceRequest, task, taskInput, thread } from '../db/schema.js'
+import { activityLog, appSetting, assistant, chatRequest, chatRequestInput, conversationInput, dbLock, fileObject, message, messageAttachment, serviceRequest, srInput, task, taskInput, thread } from '../db/schema.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { EventsService } from '../events/events.service.js'
 import { DbLlmPorts } from '../llm/dbLlmPorts.js'
@@ -366,6 +367,18 @@ export class RequestsService implements OnModuleDestroy {
             await tx.delete(conversationInput).where(eq(conversationInput.taskId, owner.taskId))
           }
         }
+        if (owner.taskId) {
+          const selected = await tx.select().from(srInput).where(eq(srInput.taskId, owner.taskId))
+          if (selected.length) {
+            const linked = await linkedTaskSrs(tx as Db, actor, owner.taskId)
+            const captured = linked.filter(sr => selected.some(item => item.srId === sr.id))
+            const [last] = await tx.select({ seq: sql<number>`coalesce(max(${chatRequestInput.seq}), -1)` }).from(chatRequestInput).where(eq(chatRequestInput.requestId, requestId))
+            if (captured.length) await tx.insert(chatRequestInput).values(captured.map((sr, index) => ({ requestId, seq: Number(last?.seq ?? -1) + 1 + index,
+              kind: 'sr', weight: 'reference', srId: sr.id, sourceLabel: `${sr.code ?? ''} ${sr.title}`, oneShot: true,
+              srSnapshot: { id: sr.id, code: sr.code ?? '', title: sr.title, body: sr.body } })))
+            await tx.delete(srInput).where(eq(srInput.taskId, owner.taskId))
+          }
+        }
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'message.sent', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         const autoStarted = await resumeHeldTask(tx, currentTask, actor)
@@ -381,7 +394,7 @@ export class RequestsService implements OnModuleDestroy {
       this.appEvents?.publish('message.appended', { threadId, taskId: acquired.taskId, messageId: acquired.userMessageId })
       this.appEvents?.publish('message.appended', { threadId, taskId: acquired.taskId, messageId: acquired.replyMessageId })
       // 스테이징 소비·'쓴 적 있음' 표시가 바뀌었다
-      if (acquired.staged?.length) this.appEvents?.publish('input.updated', { taskId: acquired.taskId })
+      this.appEvents?.publish('input.updated', { taskId: acquired.taskId })
       this.appEvents?.publish('context.updated', { taskId: acquired.taskId })
     }
     this.appEvents?.publish('request.updated', { requestId: acquired.id, threadId, taskId: acquired.taskId ?? null, status: 'pending', phase: null })
@@ -437,6 +450,8 @@ export class RequestsService implements OnModuleDestroy {
       const conversations = await tx.select().from(chatRequestInput).where(and(eq(chatRequestInput.requestId, original.id), eq(chatRequestInput.kind, 'conversation'))).orderBy(chatRequestInput.seq)
       if (conversations.length) await tx.insert(chatRequestInput).values(conversations.map((item, index) => ({ requestId: id, seq: staged.length + index,
         kind: 'conversation', sourceTaskId: item.sourceTaskId, snapshotId: item.snapshotId, mode: item.mode, weight: item.weight })))
+      const srs = await tx.select().from(chatRequestInput).where(and(eq(chatRequestInput.requestId, original.id), eq(chatRequestInput.kind, 'sr'))).orderBy(chatRequestInput.seq)
+      if (srs.length) await tx.insert(chatRequestInput).values(srs.map((item, index) => ({ ...item, requestId: id, seq: staged.length + conversations.length + index })))
       await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId: id, retryOf: original.id } })
       const [currentTask] = owner.taskId ? await tx.select().from(task).where(eq(task.id, owner.taskId)) : []
       const autoStarted = await resumeHeldTask(tx, currentTask, actor)
@@ -469,7 +484,7 @@ export class RequestsService implements OnModuleDestroy {
     return { id: row.id, threadId: row.threadId, status: row.status, phase: row.phase, code: errorCode(row.status, row.error, row.bytes), provider: row.provider, transport: row.transport, owuiTools: row.owuiTools,
       model: row.model, bytes: row.status === 'pending' && row.bytes === 0 ? null : row.bytes, limitBytes: row.limitBytes, error: row.error, retryOf: row.retryOf, createdAt: row.createdAt.toISOString(),
       finishedAt: row.finishedAt?.toISOString(), hasSnapshot: row.snapshot !== null, inputs: inputs.map((item) => ({ kind: item.kind, weight: item.weight, fileId: item.fileId,
-        fileVersion: item.fileVersion, sourceLabel: item.sourceLabel, oneShot: item.oneShot, delivery: item.delivery, sourceTaskId: item.sourceTaskId,
+        fileVersion: item.fileVersion, srId: item.srId, srCode: item.srSnapshot?.code, srTitle: item.srSnapshot?.title, sourceLabel: item.sourceLabel, oneShot: item.oneShot, delivery: item.delivery, sourceTaskId: item.sourceTaskId,
         snapshotId: item.snapshotId, mode: item.mode, messageCount: item.messageCount, bytes: item.bytes, error: item.error })) }
   }
   async snapshot(id: string, actor?: string) {
@@ -487,10 +502,12 @@ export class RequestsService implements OnModuleDestroy {
         bytes: info.bytes, limitBytes: info.limitBytes, phase: null }).where(and(eq(chatRequest.id, id), eq(chatRequest.status, 'pending')))
       if (!updated[0].affectedRows) return false
       // 시작 때 남긴 자료 기록(recordStaged)을 실제 조립 결과로 바꾼다
+      const recordedSrs = await tx.select().from(chatRequestInput).where(and(eq(chatRequestInput.requestId, id), eq(chatRequestInput.kind, 'sr')))
       await tx.delete(chatRequestInput).where(eq(chatRequestInput.requestId, id))
       if (info.inputs.length) await tx.insert(chatRequestInput).values(info.inputs.map((item: RequestInput, seq) => ({ requestId: id, seq, kind: item.kind, weight: item.weight,
         fileId: item.kind === 'file' ? item.fileId : null, fileVersion: item.kind === 'file' ? item.version : null,
-        sourceLabel: item.kind === 'file' ? `${item.name}${item.source ? ` · ${item.source}` : ''}` : item.code, oneShot: item.kind === 'file' ? !!item.oneShot : false,
+        sourceLabel: item.kind === 'file' ? `${item.name}${item.source ? ` · ${item.source}` : ''}` : item.kind === 'sr' ? `${item.code} ${item.title}` : item.code, oneShot: item.kind === 'file' ? !!item.oneShot : item.kind === 'sr',
+        srId: item.kind === 'sr' ? item.srId : null, srSnapshot: item.kind === 'sr' ? recordedSrs.find(row => row.srId === item.srId)?.srSnapshot : null,
         delivery: item.kind === 'file' ? item.delivery : null, remoteId: item.kind === 'file' ? item.remoteId : null,
         sourceTaskId: item.kind === 'conversation' ? item.sourceTaskId : null, snapshotId: item.kind === 'conversation' ? item.snapshotId : null,
         mode: item.kind === 'conversation' ? item.mode : null, messageCount: item.kind === 'conversation' ? item.messageCount : null,
@@ -613,7 +630,9 @@ export class RequestsService implements OnModuleDestroy {
         if (!source) throw new Error('참조 대화 기록을 찾을 수 없습니다')
         return { input: item.input, snapshot: item.snapshot, messages: item.messages, source, assistant: assistants.find(agent => agent.id === source.assistantId) }
       })
-      const built = await Promise.race([buildChatRequest(scope, domainThread, history, { conversations, inputs: staged.filter((item) => !item.oneShot),
+      const srRecords = await this.db.select().from(chatRequestInput).where(and(eq(chatRequestInput.requestId, id), eq(chatRequestInput.kind, 'sr'))).orderBy(chatRequestInput.seq)
+      const srs = srRecords.map(item => { if (!item.srSnapshot) throw new Error('SR 본문 기록을 찾을 수 없습니다'); return item.srSnapshot })
+      const built = await Promise.race([buildChatRequest(scope, domainThread, history, { conversations, srs, inputs: staged.filter((item) => !item.oneShot),
         oneShotFileIds: staged.filter((item) => item.oneShot).map((item) => item.fileId), forceInlineFileIds: forceInline,
         deadlineAt,
         signal: controller.signal, onProgress: (progress) => { const phase = `${progress.phase === 'uploading' ? '파일 올리는 중' : '파일 처리 대기'} ${progress.index + 1}/${progress.total} · ${progress.name}`

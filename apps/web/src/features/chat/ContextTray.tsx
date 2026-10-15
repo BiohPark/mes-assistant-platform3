@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { budgetLevel, type RequestInput, type Task } from '@mes/domain'
 import { setInput, getCandidates, formatSize } from '@/api/files'
 import { listConversationInputs, removeConversationInput, setConversationWeight } from '@/api/conversationInputs'
+import { removeSrInput } from '@/api/srInputs'
 import { useActor } from '@/app/hooks'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -35,6 +36,7 @@ export function ContextTray({ task, estimate }: { task: Task; estimate: RequestE
   async function change(input: RequestInput, weight: 'main' | 'reference' | null) {
     try {
       if (input.kind === 'file') await setInput(actor, task.id, input.fileId, weight)
+      else if (input.kind === 'sr') { if (weight === null) await removeSrInput(task.id, input.srId) }
       else if (weight) await setConversationWeight(task.id, input.sourceTaskId, weight)
       else await removeConversationInput(task.id, input.sourceTaskId)
     } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
@@ -65,7 +67,11 @@ export function ContextTray({ task, estimate }: { task: Task; estimate: RequestE
       ['srs', t('chat.trayChipSr', { count: info.srs.length })],
     ] as const).map(([key, text]) => <li key={key} className="rounded-full border bg-background px-1.5 py-0.5">{text}</li>)}</ul>}
     {expanded && <p className="mt-1 text-xs text-muted-foreground">{t('chat.trayPersistHint')}</p>}
-    {expanded && <ul className={cn('mt-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto', revisionChanged && 'opacity-60')} aria-busy={revisionChanged}>{inputs.map((input) => <li key={input.kind === 'file' ? input.fileId : input.sourceTaskId}
+    {expanded && <ul className={cn('mt-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto', revisionChanged && 'opacity-60')} aria-busy={revisionChanged}>{inputs.map((input) => input.kind === 'sr' ? <li key={input.srId}
+      className="inline-flex max-w-full items-center gap-1 rounded-full border bg-background px-1.5 py-0.5 text-xs">
+      <ClipboardList className="size-3" /><span className="font-mono">{input.code}</span><span className="truncate text-muted-foreground">{input.title}</span>
+      {task.status !== 'done' && <button type="button" aria-label={t('chat.removeFromRequest', { name: label(input) })} onClick={() => void change(input, null)}><X className="size-3" /></button>}
+    </li> : <li key={input.kind === 'file' ? input.fileId : input.sourceTaskId}
       className="inline-flex max-w-full items-center gap-1 rounded-full border bg-background px-1.5 py-0.5 text-xs">
       <button type="button" disabled={task.status === 'done'} aria-label={t('chat.toggleMain', { name: label(input) })}
         onClick={() => void change(input, input.weight === 'main' ? 'reference' : 'main')}><Star className={cn('size-3', input.weight === 'main' && 'fill-tone-warning-fg text-tone-warning-fg')} /></button>

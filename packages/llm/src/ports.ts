@@ -17,6 +17,8 @@ export interface LlmPorts {
   getAssistants(): Promise<Assistant[]>
   getUsers(): Promise<User[]>
   getServiceRequestsByCodes(codes: string[]): Promise<ServiceRequest[]>
+  /** 권한을 적용한 연결 SR 메타 및 현재 스테이징. */
+  loadTaskSrs?(taskId: ID): Promise<{ linked: ServiceRequest[]; selected: ServiceRequest[] }>
   getFilesBySr(srId: ID): Promise<FileAsset[]>
   loadConversationInputs(taskId: ID): Promise<LoadedConversationInput[]>
   updateFileRemoteIds(fileId: ID, remoteIds: Record<string, string>): Promise<void>

@@ -4,6 +4,7 @@ import type { AuthedRequest } from '../auth/guards.js'
 import { DbTasksService } from './tasks.service.js'
 import { TaskExtrasService } from './task-extras.service.js'
 import { TaskBriefService } from './task-brief.service.js'
+import { SrInputsService } from './sr-inputs.service.js'
 import { z } from 'zod'
 import { CONFIG, type AppConfig } from '../config/config.js'
 
@@ -163,6 +164,19 @@ export class TasksController {
 
   @Get(':id/activity')
   activity(@Req() req: AuthedRequest, @Param('id') id: string) { return this.tasks.activity(id, req.user!.id) }
+}
+
+@Controller('tasks/:id/sr-inputs')
+export class SrInputsController {
+  constructor(@Inject(SrInputsService) private readonly inputs: SrInputsService) {}
+  @Get()
+  list(@Req() req: AuthedRequest, @Param('id') id: string) { return this.inputs.list(req.user!.id, id) }
+  @Put(':srId')
+  @HttpCode(204)
+  select(@Req() req: AuthedRequest, @Param('id') id: string, @Param('srId') srId: string) { return this.inputs.select(req.user!.id, id, srId) }
+  @Delete(':srId')
+  @HttpCode(204)
+  remove(@Req() req: AuthedRequest, @Param('id') id: string, @Param('srId') srId: string) { return this.inputs.remove(req.user!.id, id, srId) }
 }
 
 @Controller('tags')
