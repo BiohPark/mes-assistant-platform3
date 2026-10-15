@@ -131,7 +131,8 @@ test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유',
     await owner.getByRole('button', { name: new RegExp(srCode) }).click()
     const sheet = owner.getByRole('dialog')
     await expect(sheet.getByRole('region', { name: '접수 대화' })).toBeHidden()
-    await sheet.getByRole('button', { name: '접수 대화 보기 · 메시지 1개' }).click()
+    // 접수 대화는 기본 접힘. 메시지 수는 접수 발화 + 접수 제출 본문(saveContentAttachments)이라 1개가 아니며 접수 흐름에 따라 달라진다 — 개수는 고정하지 않는다.
+    await sheet.getByRole('button', { name: /^접수 대화 보기 · 메시지 \d+개$/ }).click()
     await expect(sheet.getByRole('region', { name: '접수 대화' })).toContainText('알람 필터 요청')
     // exact: 접수 대화의 AI 답(mock)이 사용한 자료로 같은 파일명을 언급해도 첨부 행만 가리킨다
     await expect(sheet.getByText('sr-e2e.txt v1', { exact: true })).toBeVisible()
