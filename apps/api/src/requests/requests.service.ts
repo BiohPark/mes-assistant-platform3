@@ -43,6 +43,9 @@ const errorCode = (status: string, error: string | null, bytes: number) => {
   return bytes === 0 ? 'BUILD_FAILED' : 'PROVIDER_ERROR'
 }
 class FencedTransition extends Error {}
+/** 요청 시작 때 확정(소비)한 파일 자료 — 스테이징(보낼 자료)과 이번 메시지 첨부. 조립·재시도의 기준이다 */
+type StagedFile = { fileId: string; weight: 'main' | 'reference'; oneShot: boolean }
+const mainFirst = <T extends { weight: string }>(items: T[]) => [...items.filter((item) => item.weight === 'main'), ...items.filter((item) => item.weight !== 'main')]
 const publicInfo = (info: RequestInfo | undefined) => info ? { ...info, inputs: info.inputs.map((item) => {
   if (item.kind !== 'file') return item
   const { remoteId: _remoteId, ...visible } = item
@@ -266,8 +269,8 @@ export class RequestsService implements OnModuleDestroy {
         owner.srId ? eq(fileObject.originSrId, owner.srId) : eq(fileObject.originTaskId, owner.taskId!), isNull(fileObject.deletedAt)))
       if (valid.length !== attachments.length) throw new BadRequestException('첨부 파일이 이 대화에 없습니다')
     }
-    const pinned = attachments.filter((id) => !oneShot.includes(id))
-    const ports = new DbLlmPorts(this.db, this.config, actor, this.storage, owner.taskId ? { taskId: owner.taskId, fileIds: pinned } : undefined)
+    // 대화에 올린 첨부는 모두 이번 요청에만 간다(D54 개정). 보낼 자료(스테이징)는 대화의 현재 선택 그대로
+    const ports = new DbLlmPorts(this.db, this.config, actor, this.storage)
     const scope = await this.scope(owner, ports)
     const rows = await this.db.select().from(message).where(eq(message.threadId, threadId)).orderBy(message.seq)
     const history: Message[] = rows.map((item) => ({ id: item.id, threadId, seq: item.seq, role: item.role as Message['role'],
@@ -277,7 +280,7 @@ export class RequestsService implements OnModuleDestroy {
       createdAt: new Date().toISOString(), attachmentIds: attachments, status: 'done' })
     const domainThread: Thread = { id: owner.id, ...(owner.taskId ? { taskId: owner.taskId } : { srId: owner.srId! }), title: owner.title,
       createdBy: owner.createdBy, createdAt: owner.createdAt.toISOString(), archived: false, ...(owner.modelId ? { modelId: owner.modelId } : {}) }
-    const { info } = await buildChatRequest(scope, domainThread, history, { dryRun: true, oneShotFileIds: oneShot }, ports)
+    const { info } = await buildChatRequest(scope, domainThread, history, { dryRun: true, oneShotFileIds: attachments }, ports)
     return { ...publicInfo(info)!, overLimit: info.bytes > info.limitBytes, attachmentLimit }
   }
 
@@ -312,7 +315,7 @@ export class RequestsService implements OnModuleDestroy {
     if ((!body.content?.trim() && !attachments.length) || oneShot.some((id) => !attachments.includes(id))) throw new BadRequestException('요청 내용 또는 첨부가 올바르지 않습니다')
     const existing = await this.db.select().from(chatRequest).where(and(eq(chatRequest.threadId, threadId), eq(chatRequest.idempotencyKey, key)))
     if (existing[0]) return this.replay(existing[0])
-    let acquired: { id: string; replyMessageId: string; userMessageId: string; taskId?: string | null; deadlineAt?: number; duplicate?: boolean; autoStarted?: boolean }
+    let acquired: { id: string; replyMessageId: string; userMessageId: string; taskId?: string | null; deadlineAt?: number; duplicate?: boolean; autoStarted?: boolean; staged?: StagedFile[] }
     try {
       acquired = await this.db.transaction(async (tx) => {
         await this.lockGlobalCapacity(tx)
@@ -334,17 +337,16 @@ export class RequestsService implements OnModuleDestroy {
         await tx.insert(message).values([{ id: userMessageId, threadId, seq: seq + 1, role: 'user', content: body.content.trim(), authorId: actor, status: 'done' },
           { id: replyMessageId, threadId, seq: seq + 2, role: 'assistant', content: '', status: 'streaming' }])
         if (attachments.length) await tx.insert(messageAttachment).values(attachments.map((fileId) => ({ messageId: userMessageId, fileId })))
+        // 보낼 자료(스테이징)는 이 요청이 소비한다 — 같은 트랜잭션에서 읽고 비운다. 첨부는 모두 이번 요청에만(oneShot)
+        let staged: StagedFile[] = []
         if (owner.taskId) {
-          const selected = attachments.filter((fileId) => !oneShot.includes(fileId))
-          const existing = await tx.select({ fileId: taskInput.fileId, sortOrder: taskInput.sortOrder }).from(taskInput).where(eq(taskInput.taskId, owner.taskId))
-          let sortOrder = Math.max(-1, ...existing.map((item) => item.sortOrder)) + 1
-          for (const fileId of selected.filter((id) => !existing.some((item) => item.fileId === id))) {
-            await tx.insert(taskInput).values({ taskId: owner.taskId, fileId, weight: 'reference', sortOrder: sortOrder++, selectedBy: actor }).onDuplicateKeyUpdate({ set: { taskId: owner.taskId } })
-          }
+          const selected = await tx.select({ fileId: taskInput.fileId, weight: taskInput.weight }).from(taskInput).where(eq(taskInput.taskId, owner.taskId)).orderBy(taskInput.sortOrder)
+          staged = [...mainFirst(selected).map((item) => ({ fileId: item.fileId, weight: item.weight as StagedFile['weight'], oneShot: false })),
+            ...attachments.filter((fileId) => !selected.some((item) => item.fileId === fileId)).map((fileId) => ({ fileId, weight: 'reference' as const, oneShot: true }))]
+          if (selected.length) await tx.delete(taskInput).where(eq(taskInput.taskId, owner.taskId))
           await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, owner.taskId))
         }
-        const hasSelectedFiles = owner.taskId ? !!(await tx.select({ fileId: taskInput.fileId }).from(taskInput).where(eq(taskInput.taskId, owner.taskId)).limit(1)).length : false
-        const deadlineAt = Date.now() + (attachments.length || hasSelectedFiles ? this.config.request.filesFirstTokenMs : this.config.request.firstTokenMs)
+        const deadlineAt = Date.now() + (attachments.length || staged.length ? this.config.request.filesFirstTokenMs : this.config.request.firstTokenMs)
         const [currentTask] = owner.taskId ? await tx.select().from(task).where(eq(task.id, owner.taskId)) : []
         const [currentAssistant] = currentTask ? await tx.select().from(assistant).where(eq(assistant.id, currentTask.assistantId)) : []
         const [budgetSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
@@ -354,10 +356,11 @@ export class RequestsService implements OnModuleDestroy {
           status: 'pending', provider: this.config.llm.mode, transport: this.config.llm.mode === 'live' && (deliverySetting?.value ?? (this.config.llm.preset === 'openwebui' ? 'openwebui' : 'inline')) === 'openwebui' ? 'openwebui' : 'inline',
           model: owner.modelId ?? currentTask?.modelId ?? currentAssistant?.modelId ?? await readEffectiveDefaultModel(tx as Db, this.config),
           bytes: 0, limitBytes, leaseUntil: dbLeaseUntil(this.config.request.leaseMs) })
+        await this.recordStaged(tx, requestId, staged)
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'message.sent', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         const autoStarted = await resumeHeldTask(tx, currentTask, actor)
-        return { id: requestId, replyMessageId, userMessageId, taskId: owner.taskId, deadlineAt, autoStarted }
+        return { id: requestId, replyMessageId, userMessageId, taskId: owner.taskId, deadlineAt, autoStarted, staged }
       })
     } catch (error) {
       if (isDuplicateKey(error) && await this.hasActiveOrKey(threadId, key)) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
@@ -368,11 +371,12 @@ export class RequestsService implements OnModuleDestroy {
       if (acquired.autoStarted) this.appEvents?.publish('task.updated', { taskId: acquired.taskId })
       this.appEvents?.publish('message.appended', { threadId, taskId: acquired.taskId, messageId: acquired.userMessageId })
       this.appEvents?.publish('message.appended', { threadId, taskId: acquired.taskId, messageId: acquired.replyMessageId })
-      if (attachments.some((id) => !oneShot.includes(id))) this.appEvents?.publish('input.updated', { taskId: acquired.taskId })
+      // 스테이징 소비·'쓴 적 있음' 표시가 바뀌었다
+      if (acquired.staged?.length) this.appEvents?.publish('input.updated', { taskId: acquired.taskId })
     }
     this.appEvents?.publish('request.updated', { requestId: acquired.id, threadId, taskId: acquired.taskId ?? null, status: 'pending', phase: null })
     this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString(), autoStarted: acquired.autoStarted ?? false } })
-    const done = this.run(acquired.id, oneShot, [], acquired.deadlineAt!)
+    const done = this.run(acquired.id, acquired.staged ?? [], [], acquired.deadlineAt!)
     return { ...acquired, done }
   }
 
@@ -390,23 +394,24 @@ export class RequestsService implements OnModuleDestroy {
       await this.lockGlobalCapacity(tx)
       const owner = await this.lockedOwner(tx, original.threadId)
       const [duplicate] = await tx.select().from(chatRequest).where(and(eq(chatRequest.threadId, original.threadId), eq(chatRequest.idempotencyKey, key)))
-      if (duplicate) return { id: duplicate.id, replyMessageId: duplicate.replyMessageId, userMessageId: duplicate.userMessageId, oneShot: [] as string[], duplicate: true }
+      if (duplicate) return { id: duplicate.id, replyMessageId: duplicate.replyMessageId, userMessageId: duplicate.userMessageId, staged: [] as StagedFile[], duplicate: true }
       const [latest] = await tx.select().from(message).where(and(eq(message.threadId, original.threadId), isNull(message.kind))).orderBy(desc(message.seq)).limit(1)
       if (latest?.id !== original.replyMessageId) throw new ConflictException({ code: 'NOT_LATEST' })
       const [active] = await tx.select().from(chatRequest).where(and(eq(chatRequest.threadId, original.threadId), inArray(chatRequest.status, ACTIVE)))
       if (active) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
       await this.assertGlobalCapacity(tx)
+      // 재시도는 원래 요청이 시작 때 기록한 자료(스테이징·첨부) 기준 — 지금 담아 둔 자료(다음 질문 몫)는 쓰지도 비우지도 않는다
       const files = await tx.select().from(messageAttachment).where(eq(messageAttachment.messageId, original.userMessageId))
-      const allowed = new Set(files.map((item) => item.fileId))
-      const selected = owner.taskId ? await tx.select().from(taskInput).where(eq(taskInput.taskId, owner.taskId)) : []
-      const deadlineAt = Date.now() + (files.length || selected.length ? this.config.request.filesFirstTokenMs : this.config.request.firstTokenMs)
-      const selectable = new Set([...allowed, ...selected.map((item) => item.fileId)])
+      const recorded = (await tx.select().from(chatRequestInput).where(and(eq(chatRequestInput.requestId, original.id), eq(chatRequestInput.kind, 'file'))).orderBy(chatRequestInput.seq))
+        .flatMap((item): StagedFile[] => item.fileId ? [{ fileId: item.fileId, weight: item.weight as StagedFile['weight'], oneShot: item.oneShot }] : [])
+      const snapshot = [...recorded, ...files.filter((item) => !recorded.some((input) => input.fileId === item.fileId)).map((item) => ({ fileId: item.fileId, weight: 'reference' as const, oneShot: true }))]
+      const deadlineAt = Date.now() + (snapshot.length ? this.config.request.filesFirstTokenMs : this.config.request.firstTokenMs)
+      const selectable = new Set(snapshot.map((item) => item.fileId))
       if (exclude.some((id) => !selectable.has(id)) || inline.some((id) => !selectable.has(id) || exclude.includes(id))) throw new BadRequestException('재시도 파일 ID가 올바르지 않습니다')
       if (inline.length) {
         const rows = await tx.select().from(fileObject).where(inArray(fileObject.id, inline))
         if (inline.some((id) => !selectable.has(id)) || rows.length !== inline.length || rows.some((row) => !/^(text\/|application\/(json|xml))/.test(row.mime))) throw new BadRequestException('텍스트 파일만 본문으로 보낼 수 있습니다')
       }
-      if (owner.taskId && exclude.length) await tx.delete(taskInput).where(and(eq(taskInput.taskId, owner.taskId), inArray(taskInput.fileId, exclude)))
       const [max] = await tx.select({ seq: sql<number>`coalesce(max(${message.seq}), 0)` }).from(message).where(eq(message.threadId, original.threadId))
       const replyMessageId = randomUUID(), id = randomUUID()
       const [budgetSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
@@ -417,12 +422,13 @@ export class RequestsService implements OnModuleDestroy {
         retryOf: original.id, idempotencyKey: key, status: 'pending', provider: this.config.llm.mode,
         transport: this.config.llm.mode === 'live' && (deliverySetting?.value ?? (this.config.llm.preset === 'openwebui' ? 'openwebui' : 'inline')) === 'openwebui' ? 'openwebui' : 'inline',
         model: original.model, bytes: 0, limitBytes, leaseUntil: dbLeaseUntil(this.config.request.leaseMs) })
+      const staged = snapshot.filter((item) => !exclude.includes(item.fileId))
+      await this.recordStaged(tx, id, staged)
       await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId: id, retryOf: original.id } })
       const [currentTask] = owner.taskId ? await tx.select().from(task).where(eq(task.id, owner.taskId)) : []
       const autoStarted = await resumeHeldTask(tx, currentTask, actor)
       if (owner.taskId) await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, owner.taskId))
-      return { id, replyMessageId, userMessageId: original.userMessageId, taskId: owner.taskId, deadlineAt, autoStarted,
-        oneShot: files.map((item) => item.fileId).filter((fileId) => !exclude.includes(fileId) && !selected.some((item) => item.fileId === fileId)) }
+      return { id, replyMessageId, userMessageId: original.userMessageId, taskId: owner.taskId, deadlineAt, autoStarted, staged }
     }).catch(async (error: unknown) => {
       if (isDuplicateKey(error) && await this.hasActiveOrKey(original.threadId, key)) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
       throw error
@@ -431,12 +437,11 @@ export class RequestsService implements OnModuleDestroy {
     if (acquired.taskId) {
       if (acquired.autoStarted) this.appEvents?.publish('task.updated', { taskId: acquired.taskId })
       this.appEvents?.publish('message.appended', { threadId: original.threadId, taskId: acquired.taskId, messageId: acquired.replyMessageId })
-      if (exclude.length) this.appEvents?.publish('input.updated', { taskId: acquired.taskId })
     }
     this.appEvents?.publish('request.updated', { requestId: acquired.id, threadId: original.threadId,
       taskId: acquired.taskId ?? null, status: 'pending', phase: null })
     this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString(), autoStarted: acquired.autoStarted ?? false } })
-    return { ...acquired, done: this.run(acquired.id, acquired.oneShot, inline, acquired.deadlineAt!) }
+    return { ...acquired, done: this.run(acquired.id, acquired.staged, inline, acquired.deadlineAt!) }
   }
 
   private async getRow(id: string) {
@@ -468,6 +473,8 @@ export class RequestsService implements OnModuleDestroy {
       const updated = await tx.update(chatRequest).set({ provider: info.provider, transport: info.transport, model: info.model,
         bytes: info.bytes, limitBytes: info.limitBytes, phase: null }).where(and(eq(chatRequest.id, id), eq(chatRequest.status, 'pending')))
       if (!updated[0].affectedRows) return false
+      // 시작 때 남긴 자료 기록(recordStaged)을 실제 조립 결과로 바꾼다
+      await tx.delete(chatRequestInput).where(eq(chatRequestInput.requestId, id))
       if (info.inputs.length) await tx.insert(chatRequestInput).values(info.inputs.map((item: RequestInput, seq) => ({ requestId: id, seq, kind: item.kind, weight: item.weight,
         fileId: item.kind === 'file' ? item.fileId : null, fileVersion: item.kind === 'file' ? item.version : null,
         sourceLabel: item.kind === 'file' ? `${item.name}${item.source ? ` · ${item.source}` : ''}` : item.code, oneShot: item.kind === 'file' ? !!item.oneShot : false,
@@ -477,6 +484,14 @@ export class RequestsService implements OnModuleDestroy {
         bytes: item.bytes, error: item.kind === 'file' ? item.error : null })))
       return true
     })
+  }
+
+  /** 요청 시작 때 소비한 파일 자료를 기록한다 — 조립 전에 실패·중단돼도 재시도가 이 기준으로 된다. 조립되면 saveBuilt가 실제 결과로 바꾼다 */
+  private async recordStaged(tx: Tx, requestId: string, staged: StagedFile[]) {
+    if (!staged.length) return
+    const rows = await tx.select({ id: fileObject.id, name: fileObject.originalName, version: fileObject.version }).from(fileObject).where(inArray(fileObject.id, staged.map((item) => item.fileId)))
+    await tx.insert(chatRequestInput).values(staged.map((item, seq) => ({ requestId, seq, kind: 'file', weight: item.weight, fileId: item.fileId, oneShot: item.oneShot,
+      fileVersion: rows.find((row) => row.id === item.fileId)?.version ?? null, sourceLabel: rows.find((row) => row.id === item.fileId)?.name ?? null })))
   }
 
   private async transition(id: string, status: 'succeeded' | 'failed' | 'cancelled' | 'interrupted', error?: string, content?: string,
@@ -531,7 +546,7 @@ export class RequestsService implements OnModuleDestroy {
     return count
   }
 
-  private async run(id: string, oneShot: string[], forceInline: string[], deadlineAt: number): Promise<void> {
+  private async run(id: string, staged: StagedFile[], forceInline: string[], deadlineAt: number): Promise<void> {
     const controller = new AbortController()
     this.runs.set(id, controller)
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -575,7 +590,8 @@ export class RequestsService implements OnModuleDestroy {
       const domainThread: Thread = { id: owner.id, ...(owner.taskId ? { taskId: owner.taskId } : { srId: owner.srId! }), title: owner.title,
         createdBy: owner.createdBy, createdAt: owner.createdAt.toISOString(), archived: false, ...(owner.modelId ? { modelId: owner.modelId } : {}) }
       if (controller.signal.aborted) throw new Error('요청 시간 초과')
-      const built = await Promise.race([buildChatRequest(scope, domainThread, history, { oneShotFileIds: oneShot, forceInlineFileIds: forceInline,
+      const built = await Promise.race([buildChatRequest(scope, domainThread, history, { inputs: staged.filter((item) => !item.oneShot),
+        oneShotFileIds: staged.filter((item) => item.oneShot).map((item) => item.fileId), forceInlineFileIds: forceInline,
         deadlineAt,
         signal: controller.signal, onProgress: (progress) => { const phase = `${progress.phase === 'uploading' ? '파일 올리는 중' : '파일 처리 대기'} ${progress.index + 1}/${progress.total} · ${progress.name}`
           void this.db.update(chatRequest).set({ phase }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))

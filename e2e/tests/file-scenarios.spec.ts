@@ -25,7 +25,6 @@ test('U-06/U-07 한글·공백·이모지 파일 이름이 업로드·목록·�
   const task = await createTask(page)
   await page.goto(`/c/${task.id}`)
   await openMaterials(page)
-  await page.getByRole('tab', { name: '이 대화 파일' }).click()
   const names = ['알람_이력_0901.csv', '설비 점검표.txt', '메모 🙂.md']
   // 브라우저 경로: 자료 탭 업로드 (multipart 파일 이름은 UTF-8 원시 바이트로 간다)
   await page.getByTestId('materials-own').locator('input[type="file"]').setInputFiles(names.map((name) => ({ name, mimeType: 'text/plain', buffer: Buffer.from(name) })))
@@ -53,7 +52,6 @@ test('T-01/T-03 공유 자료함은 출처를 대화 코드·제목으로 보여
   const consumer = await createTask(page)
   await page.goto(`/c/${consumer.id}`)
   await openMaterials(page)
-  await page.getByRole('tab', { name: '공유 자료함' }).click()
   await expect(page.getByTestId('materials-shared')).toContainText('같은 태그 대화의 파일이 없습니다.')
   // 공유 뒤 태그 추가(헤더의 태그 [+] → 입력 팝오버) → 그때부터 후보
   await page.getByRole('button', { name: '태그 추가' }).click()
@@ -64,10 +62,12 @@ test('T-01/T-03 공유 자료함은 출처를 대화 코드·제목으로 보여
   await expect(row).toContainText(`업로드 · ${source.code} · 알람 이력 분석 · ${tag}`)
   await expect(row).not.toContainText(source.id) // 내부 ID는 화면에 보이지 않는다
   await expect(row.getByRole('link', { name: source.code })).toHaveAttribute('href', `/c/${source.id}`)
-  // 조작 영역은 32px 이상(S8 A6 ⑩)
-  const star = await row.getByRole('button', { name: '알람_이력_0901.csv 주 입력으로 지정' }).boundingBox()
-  expect(Math.min(star!.width, star!.height)).toBeGreaterThanOrEqual(32)
   await row.getByRole('checkbox', { name: '알람_이력_0901.csv 참고 입력으로 선택' }).click()
-  await page.getByRole('tab', { name: 'AI 입력' }).click()
+  // 조작 영역은 32px 이상(S8 A6 ⑩) — ★·×는 아래 '다음 질문에 보낼 자료'에 있다
+  const staged = page.getByTestId('materials-staged')
+  for (const name of ['알람_이력_0901.csv 주 입력으로 지정', '알람_이력_0901.csv 보낼 자료에서 빼기']) {
+    const box = await staged.getByRole('button', { name }).boundingBox()
+    expect(Math.min(box!.width, box!.height)).toBeGreaterThanOrEqual(32)
+  }
   await expect(page.getByTestId('materials-inputs')).toContainText(`참고 · ${source.code} · 알람 이력 분석`)
 })

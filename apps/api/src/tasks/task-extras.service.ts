@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { buildTaskReport, type ChecklistReviewItem, type Message, type Note } from '@mes/domain'
 import { reviewChecklist, type ChatProvider } from '@mes/llm'
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, ne, or } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { classificationView } from '../db/classifications.js'
-import { activityLog, appUser, assistant, assistantClassification, chatRequest, checklistItem, checklistReview, checklistReviewItem, code, conversationInput, fileObject, message, note, noteAttachment, task, taskFeedback, taskInput, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, assistantClassification, chatRequest, chatRequestInput, checklistItem, checklistReview, checklistReviewItem, code, conversationInput, fileObject, message, note, noteAttachment, task, taskFeedback, taskInput, thread } from '../db/schema.js'
 import { EventsService } from '../events/events.service.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { FILE_STORAGE } from '../files/files.service.js'
@@ -191,9 +191,17 @@ export class TaskExtrasService {
     ])
     const classifications = classificationView(paths, new Map(codes.map(row => [row.id, row.name])))
     const files = await tx.select().from(fileObject).where(and(eq(fileObject.originTaskId, taskId), isNull(fileObject.deletedAt)))
-    const selectedFiles = await tx.select({ row: taskInput, file: fileObject, origin: task, originAssistant: assistant })
-      .from(taskInput).innerJoin(fileObject, eq(taskInput.fileId, fileObject.id)).leftJoin(task, eq(fileObject.originTaskId, task.id))
-      .leftJoin(assistant, eq(task.assistantId, assistant.id)).where(eq(taskInput.taskId, taskId))
+    // 입력 자료 = 요청에 실어 보낸 자료(보내면 스테이징에서 빠진다, D54 개정) + 지금 담아 둔 자료. 같은 파일은 한 번, ★가 있으면 ★
+    const sent = await tx.select({ fileId: chatRequestInput.fileId, weight: chatRequestInput.weight }).from(chatRequestInput)
+      .innerJoin(chatRequest, eq(chatRequest.id, chatRequestInput.requestId)).innerJoin(thread, eq(thread.id, chatRequest.threadId))
+      .where(and(eq(thread.taskId, taskId), eq(chatRequestInput.kind, 'file'), or(isNull(chatRequestInput.delivery), ne(chatRequestInput.delivery, 'failed'))))
+      .orderBy(chatRequest.createdAt, chatRequestInput.seq)
+    const staged = await tx.select({ fileId: taskInput.fileId, weight: taskInput.weight }).from(taskInput).where(eq(taskInput.taskId, taskId)).orderBy(taskInput.sortOrder)
+    const chosen = new Map<string, string>()
+    for (const item of [...sent, ...staged]) if (item.fileId) chosen.set(item.fileId, chosen.get(item.fileId) === 'main' ? 'main' : item.weight)
+    const fileRows = chosen.size ? await tx.select({ file: fileObject, originAssistant: assistant }).from(fileObject).leftJoin(task, eq(fileObject.originTaskId, task.id))
+      .leftJoin(assistant, eq(task.assistantId, assistant.id)).where(inArray(fileObject.id, [...chosen.keys()])) : []
+    const selectedFiles = [...chosen].flatMap(([fileId, weight]) => { const found = fileRows.find((item) => item.file.id === fileId); return found ? [{ row: { weight }, ...found }] : [] })
     const selectedConversations = await tx.select({ row: conversationInput, source: task, originAssistant: assistant })
       .from(conversationInput).innerJoin(task, eq(conversationInput.sourceTaskId, task.id)).innerJoin(assistant, eq(task.assistantId, assistant.id))
       .where(eq(conversationInput.taskId, taskId))

@@ -22,13 +22,13 @@ function mount(estimate: RequestEstimateState, locale: 'ko' | 'en' = 'ko') {
   return { rerender: (state: RequestEstimateState) => view.rerender(tree(state)) }
 }
 
-const tray = () => screen.getByLabelText('AI에 함께 보내는 자료')
+const tray = () => screen.getByLabelText('다음 질문에 보낼 자료')
 
 beforeEach(() => resetBubbles())
 
 it.each([
-  { locale: 'ko' as const, label: 'AI에 함께 보내는 자료', hint: '이 대화의 다음 질문에도 함께 갑니다 · ×로 빼기', remove: 'spec.txt 입력 선택 해제', estimate: '예상 400 B / 1000 B' },
-  { locale: 'en' as const, label: 'Materials sent to AI', hint: 'Included with your next questions in this conversation · Remove with ×', remove: 'Deselect spec.txt as input', estimate: 'Est. 400 B / 1000 B' },
+  { locale: 'ko' as const, label: '다음 질문에 보낼 자료', hint: '보내면 파일은 자동으로 빠집니다(참조 대화는 ×로 뺄 때까지 함께 감) · ×로 빼기', remove: 'spec.txt 입력 선택 해제', estimate: '예상 400 B / 1000 B' },
+  { locale: 'en' as const, label: 'Materials for the next question', hint: 'Files are removed automatically once sent (reference conversations stay until removed with ×) · Remove with ×', remove: 'Deselect spec.txt as input', estimate: 'Est. 400 B / 1000 B' },
 ])('shows the AI materials count and persist hint ($locale)', ({ locale, label, hint, remove, estimate }) => {
   mount({ data, pending: false, revisionChanged: false }, locale)
   expect(screen.getByRole('button', { name: `${label} · 1` })).toBeVisible()
@@ -71,7 +71,7 @@ it('dims the list but keeps ★/× active while a revision change is pending', (
 
 it('renders nothing before the first estimate arrives', () => {
   mount({ data: undefined, pending: true, revisionChanged: false })
-  expect(screen.queryByLabelText('AI에 함께 보내는 자료')).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('다음 질문에 보낼 자료')).not.toBeInTheDocument()
 })
 
 it('keeps the tray and meter mounted after the last input is removed', () => {
@@ -83,7 +83,7 @@ it('keeps the tray and meter mounted after the last input is removed', () => {
   rerender({ data: { ...data, inputs: [], bytes: 100 }, pending: false, revisionChanged: false })
   expect(tray()).toBe(root)
   expect(screen.getByRole('meter')).toBe(meter)
-  expect(screen.getByText('AI에 함께 보내는 자료 · 0')).toBeVisible()
+  expect(screen.getByText('다음 질문에 보낼 자료 · 0')).toBeVisible()
   expect(screen.getByText('예상 100 B / 1000 B')).toBeVisible()
   expect(screen.queryByText('spec.txt')).not.toBeInTheDocument()
   expect(root).toHaveAttribute('aria-busy', 'false')
@@ -104,19 +104,19 @@ it('lists the SR bodies that will actually be included, from the estimate (same 
 it('renders a normal empty estimate once data is available', () => {
   mount({ data: { ...data, inputs: [], bytes: 100 }, pending: false, revisionChanged: false })
   expect(tray()).toBeVisible()
-  expect(screen.getByText('AI에 함께 보내는 자료 · 0')).toBeVisible()
+  expect(screen.getByText('다음 질문에 보낼 자료 · 0')).toBeVisible()
 })
 
 it('collapses to summary chips (files · conversations · SR) and expands back to the full list', () => {
   const conversationInput = { kind: 'conversation' as const, sourceTaskId: 's', code: 'WK-2026-0002', title: '원본', assistantName: 'A', mode: 'full' as const, weight: 'reference' as const, snapshotId: 'snap', messageCount: 3, bytes: 50 }
   mount({ data: { ...data, inputs: [...data.inputs, conversationInput], srs: [{ code: 'SR-2026-0001', title: '알람 필터' }] }, pending: false, revisionChanged: false })
   expect(screen.queryByRole('list', { name: '담긴 자료 요약' })).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: /AI에 함께 보내는 자료 · 2/ }))
+  fireEvent.click(screen.getByRole('button', { name: /다음 질문에 보낼 자료 · 2/ }))
   expect(screen.queryByText('spec.txt')).not.toBeInTheDocument()
   const chips = screen.getByRole('list', { name: '담긴 자료 요약' })
   expect(within(chips).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['파일 1', '대화 1', 'SR 1'])
   expect(screen.getByRole('meter')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: /AI에 함께 보내는 자료 · 2/ }))
+  fireEvent.click(screen.getByRole('button', { name: /다음 질문에 보낼 자료 · 2/ }))
   expect(screen.getByText('spec.txt')).toBeVisible()
   expect(screen.queryByRole('list', { name: '담긴 자료 요약' })).not.toBeInTheDocument()
 })
@@ -124,14 +124,14 @@ it('collapses to summary chips (files · conversations · SR) and expands back t
 it('pushes an assistant bubble once when the budget level rises, and its click expands the tray and focuses the toggle', () => {
   const { rerender } = mount({ data: { ...data, bytes: 400 }, pending: false, revisionChanged: false })
   expect(useBubbleStore.getState().current).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: /AI에 함께 보내는 자료 · 1/ })) // 접어 둔다
-  expect(screen.getByRole('button', { name: /AI에 함께 보내는 자료 · 1/ })).toHaveAttribute('aria-expanded', 'false')
+  fireEvent.click(screen.getByRole('button', { name: /다음 질문에 보낼 자료 · 1/ })) // 접어 둔다
+  expect(screen.getByRole('button', { name: /다음 질문에 보낼 자료 · 1/ })).toHaveAttribute('aria-expanded', 'false')
   rerender({ data: { ...data, bytes: 850 }, pending: false, revisionChanged: false }) // > 80% → warn
   rerender({ data: { ...data, bytes: 900 }, pending: false, revisionChanged: false }) // 같은 레벨 — 추가 없음
   expect(useBubbleStore.getState().current).toMatchObject({ source: 'budget.warn' })
   expect(useBubbleStore.getState().queued).toBeNull()
   act(() => useBubbleStore.getState().current?.onOpen?.())
-  const toggle = screen.getByRole('button', { name: /AI에 함께 보내는 자료 · 1/ })
+  const toggle = screen.getByRole('button', { name: /다음 질문에 보낼 자료 · 1/ })
   expect(toggle).toHaveAttribute('aria-expanded', 'true')
   expect(toggle).toHaveFocus()
   rerender({ data: { ...data, bytes: 1200 }, pending: false, revisionChanged: false }) // over — 한 번 더

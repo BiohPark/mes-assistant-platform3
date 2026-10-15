@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common'
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, ne, or } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { EventsService } from '../events/events.service.js'
-import { activityLog, appUser, fileObject, tag, task, taskInput, taskTag } from '../db/schema.js'
+import { activityLog, appUser, chatRequest, chatRequestInput, fileObject, tag, task, taskInput, taskTag, thread } from '../db/schema.js'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { FileStorageService, createStorageKey, isWindowsReservedName, sha256 } from './fileStorage.service.js'
 import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
@@ -160,11 +160,13 @@ export class DbFilesService {
     this.events?.publish('file.updated', { taskId })
   }
 
+  /** 자료함에서 제거(soft delete) — 올린 사람 본인만(D54 개정). 요청 기록이 가리키는 행은 남는다 */
   async remove(fileId: string, actor?: string) {
     if (actor) {
       await assertFileAccess(this.db, actor, fileId)
       const source = await this.row(fileId)
       if (source.originTaskId) await assertTaskAccess(this.db, actor, source.originTaskId)
+      if (source.uploadedBy !== actor) throw new ForbiddenException('내가 올린 파일만 제거할 수 있습니다')
     }
     const taskId = await this.db.transaction(async (tx) => {
       const row = await this.row(fileId, tx)
@@ -237,7 +239,16 @@ export class DbFilesService {
       try { await assertFileAccess(this.db, actor, item.file.id); return item }
       catch (error) { if (error instanceof ForbiddenException) return null; throw error }
     }))).filter((item): item is (typeof files)[number] => item !== null) : files
-    return { files: visible, srFiles: await this.linkedSrFiles(taskId, selectedById), conversations: await new DbConversationInputsService(this.db).candidates(taskId, actor) }
+    return { files: visible, srFiles: await this.linkedSrFiles(taskId, selectedById), conversations: await new DbConversationInputsService(this.db).candidates(taskId, actor),
+      usedFileIds: await this.usedFileIds(taskId) }
+  }
+
+  /** 이 대화의 요청 기록에 실린 파일('쓴 적 있음') — 시작 때 기록한 자료 포함, 전달 실패는 제외 */
+  private async usedFileIds(taskId: string) {
+    const rows = await this.db.selectDistinct({ fileId: chatRequestInput.fileId }).from(chatRequestInput)
+      .innerJoin(chatRequest, eq(chatRequest.id, chatRequestInput.requestId)).innerJoin(thread, eq(thread.id, chatRequest.threadId))
+      .where(and(eq(thread.taskId, taskId), eq(chatRequestInput.kind, 'file'), or(isNull(chatRequestInput.delivery), ne(chatRequestInput.delivery, 'failed'))))
+    return rows.flatMap((row) => row.fileId ? [row.fileId] : [])
   }
 
   /** 연결 SR(task.srId — SR에서 시작한 업무)의 접수 첨부 정본. 태그 공유 후보와 따로, 같은 file_object를 그대로 보인다. */

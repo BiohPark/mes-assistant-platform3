@@ -9,9 +9,11 @@ import { FileVersionsDialog } from './FileVersionsDialog'
 
 const iconButton = 'inline-flex size-8 shrink-0 items-center justify-center rounded-lg hover:bg-muted'
 
-export function FileList({ files, taskId, onToggleOutput, onPreview, canDelete = true, canViewHistory = true, renderActions }: {
+export function FileList({ files, taskId, onToggleOutput, onPreview, canDelete = true, canViewHistory = true, renderActions, deletableBy }: {
   files: FileMeta[]; taskId?: string; onToggleOutput?: (fileId: string, isOutput: boolean) => void;
   onPreview?: (file: FileMeta) => void; canDelete?: boolean; canViewHistory?: boolean; renderActions?: (file: FileMeta) => ReactNode
+  /** 주면 이 사용자가 올린 파일에만 삭제 버튼을 보인다(서버도 같은 규칙) */
+  deletableBy?: string
 }) {
   const t = useT()
   const [deleting, setDeleting] = useState<FileMeta | null>(null)
@@ -31,7 +33,7 @@ export function FileList({ files, taskId, onToggleOutput, onPreview, canDelete =
     {taskId && onToggleOutput && <button type="button" className={iconButton} aria-label={file.isOutput ? t('task.files.unmarkOutput') : t('task.files.markOutput')} onClick={() => onToggleOutput(file.id, !file.isOutput)}><Sparkles className={`size-3.5 ${file.isOutput ? 'fill-tone-violet-fg text-tone-violet-fg' : ''}`} /></button>}
     {canViewHistory && <button type="button" className={iconButton} aria-label={t('task.files.versions')} onClick={() => setHistory(file)}><History className="size-3.5" /></button>}
     <button type="button" className={iconButton} aria-label={t('task.download')} onClick={() => void downloadBlob(file, t)}><Download className="size-3.5" /></button>
-    {canDelete && file.originTaskId === taskId && <button type="button" className={iconButton} aria-label={t('task.delete')} onClick={() => setDeleting(file)}><Trash2 className="size-3.5" /></button>}
+    {canDelete && file.originTaskId === taskId && (!deletableBy || file.uploadedBy === deletableBy) && <button type="button" className={iconButton} aria-label={t('task.delete')} onClick={() => setDeleting(file)}><Trash2 className="size-3.5" /></button>}
   </li>)}</ul>
     {history && <FileVersionsDialog file={history} onClose={() => setHistory(null)} onPreview={onPreview} />}
     <ConfirmDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)} title={t('task.files.deleteTitle')} description={t('task.files.deleteDescription')} confirmLabel={t('task.delete')} onConfirm={remove} />

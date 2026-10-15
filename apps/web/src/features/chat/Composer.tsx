@@ -10,7 +10,7 @@ import { getSettings } from '@/api/admin'
 import { useT } from '@/i18n'
 import { getDraft, setDraft, type ComposerDraft } from './drafts'
 
-/** 보낼 첨부 1건. AI 요청은 대화 입력으로 유지하고 팀 의견은 AI 입력에 추가하지 않는다 */
+/** 보낼 첨부 1건. 자료함에 남고 이 요청에만 함께 간다(D54 개정). 팀 의견 첨부는 AI에 보내지 않는다 */
 export interface PendingAttachment {
   file: File
   uploadedId?: string

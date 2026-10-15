@@ -40,8 +40,10 @@ import type { ChatMessageInput, ChatMeta } from './provider.js'
 export type ChatScope = { kind: 'task'; task: Task; assistant: Assistant } | { kind: 'sr'; sr: ServiceRequest; intake: Assistant; files: FileAsset[] }
 
 export interface BuildOptions {
-  /** 이번 메시지에만 붙인 첨부 (대화 입력으로 고정하지 않음) */
+  /** 이번 메시지에 붙인 첨부 — 그 요청에만 간다 */
   oneShotFileIds?: ID[]
+  /** 요청 시작 때 확정(소비)한 '보낼 자료'. 주면 대화의 현재 선택(task.inputs) 대신 이것만 쓴다 — 실제 전송·재시도용 */
+  inputs?: Array<{ fileId: ID; weight: InputWeight }>
   /** 첨부 실패 뒤 사용자가 "텍스트로 보내기"를 고른 파일 */
   forceInlineFileIds?: ID[]
   /** 크기 추정: OpenWebUI 업로드 없이 첨부 예정으로 계산 */
@@ -72,9 +74,9 @@ interface FileEntry {
 const WEIGHT_MARK: Record<InputWeight, string> = { main: '★ 주 입력', reference: '☑ 참고' }
 
 /** 선택한 입력(주 입력 먼저, 선택 순서 유지) + 이번 메시지 첨부. 출처 대화 표기를 붙인다. */
-async function loadFileEntries(task: Task, oneShotIds: ID[], ports: LlmPorts): Promise<FileEntry[]> {
-  const selected = [...task.inputs.filter((i) => i.weight === 'main'), ...task.inputs.filter((i) => i.weight !== 'main')]
-  const extra = oneShotIds.filter((id) => !task.inputs.some((i) => i.fileId === id))
+async function loadFileEntries(task: Task, chosen: Array<{ fileId: ID; weight: InputWeight }>, oneShotIds: ID[], ports: LlmPorts): Promise<FileEntry[]> {
+  const selected = [...chosen.filter((i) => i.weight === 'main'), ...chosen.filter((i) => i.weight !== 'main')]
+  const extra = oneShotIds.filter((id) => !chosen.some((i) => i.fileId === id))
   const refs = [
     ...selected.map((i) => ({ fileId: i.fileId, weight: i.weight, oneShot: false })),
     ...extra.map((fileId) => ({ fileId, weight: 'reference' as const, oneShot: true })),
@@ -194,7 +196,7 @@ async function buildTaskRequest(scope: Extract<ChatScope, { kind: 'task' }>, set
   // 태그 표기를 정규화해 SR 코드를 뽑는다(소문자·'#' 라벨도 인식) — SR 코드는 binary 정렬로 비교되므로 표기 그대로 쓰면 못 찾는다
   const srCodes = [...new Set(task.tags.map(normalizeTag).filter(isSrTag))]
   const [entries, conversations, linkedSrs] = await Promise.all([
-    loadFileEntries(task, opts.oneShotFileIds ?? [], ports),
+    loadFileEntries(task, opts.inputs ?? task.inputs, opts.oneShotFileIds ?? [], ports),
     loadConversations(task.id, users, ports),
     srCodes.length ? ports.getServiceRequestsByCodes(srCodes) : Promise.resolve([]),
   ])

@@ -128,7 +128,8 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
       await (await requests.start('staff', started.threadId!, { content: '분석해 줘' }, 'sr-files-send-1')).done
       expect(captured).toHaveLength(1)
       expect(JSON.stringify(captured[0]!.messages)).toContain('SR-ATTACHMENT-BODY 전송')
-      await files.setInput('staff', started.id, official.id, null)
+      // SR 시작 시 담긴 첨부는 첫 요청에 한 번 가고 스테이징에서 빠진다
+      expect((await tasks.get(started.id)).inputs).toEqual([])
       expect((await requests.estimate('staff', started.threadId!, { draft: '다시' })).inputs).toEqual([])
       await (await requests.start('staff', started.threadId!, { content: '다시' }, 'sr-files-send-2')).done
       expect(captured).toHaveLength(2)
@@ -145,9 +146,12 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
       const estimate = await requests.estimate('staff', started.threadId!, { draft: '분석' })
       expect(estimate.overLimit).toBe(true)
       expect(estimate.inputs).toHaveLength(1)
-      await (await requests.start('staff', started.threadId!, { content: '분석' }, 'sr-files-over')).done
+      const over = await requests.start('staff', started.threadId!, { content: '분석' }, 'sr-files-over')
+      await over.done
       expect(captured).toHaveLength(0)
-      expect((await tasks.get(started.id)).inputs).toHaveLength(1)
+      // 시작과 함께 스테이징은 비지만, 무엇을 담았는지는 요청 기록에 남아 재시도(빼고 다시)가 그 기준으로 된다
+      expect(await requests.get(over.id)).toMatchObject({ status: 'failed', code: 'REQUEST_TOO_LARGE', inputs: [{ fileId: expect.any(String) }] })
+      expect((await tasks.get(started.id)).inputs).toEqual([])
     } finally {
       await db.delete(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
       requests.onModuleDestroy()
@@ -181,6 +185,12 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
     const extras = new TaskExtrasService(db, { kind: 'mock' } as never, { runAuxiliary: async () => undefined } as never, new FileStorageService(root), { publish: () => undefined } as never)
     const { content } = await extras.preview('staff', started.id)
     expect(content).toContain(`[참고] ${official.name} v1 ← SR 첨부`)
+    // 보내서 스테이징에서 빠진 뒤에도 '쓴 자료'로 리포트에 남는다
+    const requests = new RequestsService(db, config, provider)
+    try { await (await requests.start('staff', started.threadId!, { content: '분석' }, 'sr-files-report')).done }
+    finally { requests.onModuleDestroy() }
+    expect((await tasks.get(started.id)).inputs).toEqual([])
+    expect((await extras.preview('staff', started.id)).content).toContain(`[참고] ${official.name} v1 ← SR 첨부`)
   })
 
   it('입력 선택 행은 SR 첨부 자체를 가리킨다(task_input.file_id = SR file_object.id)', async () => {
