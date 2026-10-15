@@ -10,7 +10,7 @@ import { loadConfig } from '../config/config.js'
 import { createPool } from '../db/connection.js'
 import type { Db } from '../db/db.module.js'
 import { runMigrations } from '../db/migrate.js'
-import { activityLog, appSetting, appUser, assistant, fileObject, task, taskInput } from '../db/schema.js'
+import { activityLog, appSetting, appUser, assistant, fileObject, tag, task, taskInput } from '../db/schema.js'
 import { seedCatalog } from '../db/seed.js'
 import { EventsService } from '../events/events.service.js'
 import { RequestsService } from '../requests/requests.service.js'
@@ -75,6 +75,87 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
     if ('candidates' in started) throw new Error('새 연결 업무가 만들어져야 합니다')
     return started
   }
+
+  it('sr_id와 SR 번호 태그의 합집합에서 접수 첨부를 중복 없이 찾고 삭제 파일·미접수 번호는 제외한다', async () => {
+    const a = await submittedSr('합집합A'), b = await submittedSr('합집합B')
+    await db.update(fileObject).set({ deletedAt: new Date() }).where(eq(fileObject.id, b.candidate.id))
+    const started = await startFrom(a.srId)
+    await tasks.addTag('staff', started.id, `#${b.code.toLowerCase()}`)
+    await tasks.addTag('staff', started.id, 'SR-2099-9999')
+    await db.update(tag).set({ label: `#${b.code.toLowerCase()}` }).where(eq(tag.key, b.code.toLowerCase()))
+    const shown = (await files.candidates(started.id, 'staff')).srFiles!
+    expect(shown.map(item => item.file.id).sort()).toEqual([a.official.id, a.candidate.id, b.official.id].sort())
+    expect(shown.find(item => item.file.id === b.official.id)).toMatchObject({ srId: b.srId, srCode: b.code, srTitle: '합집합B' })
+    expect(shown.find(item => item.file.id === b.official.id)).not.toHaveProperty('selected')
+    await files.setInput('staff', started.id, b.official.id, 'main')
+    await expect(files.setInput('staff', started.id, b.candidate.id, 'reference')).rejects.toMatchObject({ status: 404 })
+    // 시작한 SR 태그를 빼도 sr_id 연결과 그 선택은 유지한다.
+    await tasks.removeTag('staff', started.id, a.code)
+    expect((await files.candidates(started.id, 'staff')).srFiles!.map(item => item.file.id).sort()).toEqual(shown.map(item => item.file.id).sort())
+    expect((await tasks.get(started.id)).inputs.map(item => item.fileId).sort()).toEqual(shown.map(item => item.file.id).sort())
+  })
+
+  it.each(['creator', 'owner', 'assignee'] as const)('태그 연결 업무의 %s는 첨부를 읽고 담으며 연결 해제·업무 삭제 시 접근 근거가 사라진다', async role => {
+    const source = await submittedSr(`태그권한-${role}`)
+    const consumer = (await tasks.create(role === 'creator' ? 'bo-member' : 'staff', { assistantId,
+      ownerId: role === 'owner' ? 'bo-member' : 'staff', assigneeIds: role === 'assignee' ? ['bo-member'] : ['staff'] })).task
+    await expect(files.get(source.official.id, 'bo-member')).rejects.toMatchObject({ status: 403 })
+    await tasks.addTag('staff', consumer.id, source.code.toLowerCase())
+    expect((await files.candidates(consumer.id, 'bo-member')).srFiles!.map(item => item.file.id).sort()).toEqual([source.official.id, source.candidate.id].sort())
+    expect(await files.get(source.official.id, 'bo-member')).toMatchObject({ id: source.official.id })
+    expect(Buffer.from(await files.content(source.candidate.id, 'bo-member')).toString()).toContain('CANDIDATE-ONLY')
+    const stream = await files.contentStream(source.official.id, 'bo-member')
+    let content = ''
+    for await (const chunk of stream) content += chunk.toString()
+    expect(content).toContain('SR-ATTACHMENT-BODY')
+    await files.setInput('bo-member', consumer.id, source.candidate.id, 'reference')
+    await expect(files.get(source.official.id, 'other')).rejects.toMatchObject({ status: 403 })
+    await tasks.removeTag('staff', consumer.id, source.code)
+    expect((await files.candidates(consumer.id, 'bo-member')).srFiles).toEqual([])
+    expect((await tasks.get(consumer.id)).inputs).toEqual([])
+    await expect(files.content(source.official.id, 'bo-member')).rejects.toMatchObject({ status: 403 })
+    await expect(files.setInput('bo-member', consumer.id, source.candidate.id, 'reference')).rejects.toMatchObject({ status: 403 })
+    await tasks.addTag('staff', consumer.id, source.code)
+    await tasks.delete(consumer.id, 'staff')
+    await expect(files.get(source.official.id, 'bo-member')).rejects.toMatchObject({ status: 403 })
+    expect(await files.get(source.official.id, 'requester')).toMatchObject({ id: source.official.id })
+  })
+
+  it('태그로 담은 첨부는 추정=전송을 유지하고, 태그 제거는 대기 입력만 지우며 보낸 요청 기록은 보존한다', async () => {
+    const source = await submittedSr('태그전송')
+    const consumer = (await tasks.create('staff', { assistantId, tags: [source.code] })).task
+    await files.setInput('staff', consumer.id, source.official.id, 'main')
+    const requests = new RequestsService(db, config, provider)
+    try {
+      const estimate = await requests.estimate('staff', consumer.threadId!, { draft: '첨부 분석' })
+      expect(estimate.inputs).toEqual([expect.objectContaining({ kind: 'file', fileId: source.official.id, source: 'SR 첨부', weight: 'main' })])
+      const sent = await requests.start('staff', consumer.threadId!, { content: '첨부 분석' }, 'sr-tag-files-send')
+      const completed: Array<Record<string, unknown>> = []
+      const unsubscribe = requests.subscribe(sent.id, event => { if (event.event === 'completed') completed.push(event.data) })
+      await sent.done
+      unsubscribe()
+      expect(completed).toHaveLength(1)
+      expect(completed[0]!.requestInfo).toMatchObject({ bytes: estimate.bytes, inputs: estimate.inputs, srCodes: estimate.srCodes })
+      const record = await requests.get(sent.id)
+      const snapshot = await requests.snapshot(sent.id)
+      expect(record).toMatchObject({ status: 'succeeded', bytes: estimate.bytes })
+      expect(JSON.stringify(captured[0]!.messages)).toContain('SR-ATTACHMENT-BODY 태그전송')
+      // 기록에는 남고 스테이징에서는 한 번 소비된다.
+      expect(record.inputs).toHaveLength(estimate.inputs.length)
+      expect((await tasks.get(consumer.id)).inputs).toEqual([])
+      await files.setInput('staff', consumer.id, source.official.id, 'reference')
+      await tasks.removeTag('staff', consumer.id, source.code)
+      expect((await files.candidates(consumer.id, 'staff')).srFiles).toEqual([])
+      expect((await tasks.get(consumer.id)).inputs).toEqual([])
+      expect(await requests.get(sent.id)).toEqual(record)
+      expect(await requests.snapshot(sent.id)).toEqual(snapshot)
+      const after = await requests.estimate('staff', consumer.threadId!, { draft: '연결 해제 후' })
+      expect(after.inputs).toEqual([])
+      await (await requests.start('staff', consumer.threadId!, { content: '연결 해제 후' }, 'sr-tag-files-removed')).done
+      expect(JSON.stringify(captured[1]!.messages)).not.toContain('SR-ATTACHMENT-BODY')
+      await expect(files.setInput('staff', consumer.id, source.official.id, 'reference')).rejects.toMatchObject({ status: 400 })
+    } finally { requests.onModuleDestroy() }
+  })
 
   it('startTask는 접수 파일 전부를 참고 입력으로 기본 선택하고, 파일은 복사하지 않고 같은 file_object를 참조한다', async () => {
     const { srId, code, official, candidate } = await submittedSr('기본선택')

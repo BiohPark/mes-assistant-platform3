@@ -22,6 +22,7 @@ import { EventsService } from '../events/events.service.js'
 import { SrService } from './sr.service.js'
 import { firstQuestionsKey } from '../catalog/first-questions-key.js'
 import { assertFileAccess, assertSrAccess, assertTaskAccess, assertThreadAccess } from './access.js'
+import { assertFileReadable } from '../files/sr-attachments.js'
 import { EventsController } from '../events/events.controller.js'
 import { EventEmitter } from 'node:events'
 import type { Response } from 'express'
@@ -222,11 +223,16 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     expect(await sr.startTask('staff', draft.id, { assistantId })).toMatchObject({ candidates: [expect.objectContaining({ id: first.id })] })
   })
 
-  it('does not grant SR access through a forged tag on an ordinary task', async () => {
+  it('shares attachments through an SR tag without granting intake or SR processing access', async () => {
     const draft = await sr.create('requester')
+    const fileId = 'sr-tag-shared-attachment'
+    await db.insert(fileObject).values({ id: fileId, kind: 'sr_attachment', originSrId: draft.id, originalName: 'tag.txt',
+      mime: 'text/plain', sizeBytes: 1, sha256: 'a'.repeat(64), storageKey: fileId, source: 'upload', version: 1, uploadedBy: 'requester' })
     const submitted = await sr.submit('requester', draft.id, { title: '비공개', body: '', attachmentIds: [] })
     const forged = await new DbTasksService(db).create('other', { assistantId, tags: [submitted.code] })
     expect(forged.task.tags).toContain(submitted.code)
+    await expect(assertFileReadable(db, 'other', fileId)).resolves.toBeUndefined()
+    await expect(assertFileAccess(db, 'other', fileId)).rejects.toMatchObject({ status: 403 })
     await expect(assertSrAccess(db, 'other', draft.id)).rejects.toMatchObject({ status: 403 })
     await expect(new DbTasksService(db).messages(draft.threadId, 'other')).rejects.toMatchObject({ status: 403 })
     await expect(sr.status('other', draft.id, 'rejected', '위조')).rejects.toMatchObject({ status: 403 })

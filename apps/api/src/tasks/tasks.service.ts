@@ -351,9 +351,17 @@ export class DbTasksService {
   async removeTag(actor: string, taskId: string, raw: string): Promise<void> {
     await assertTaskAccess(this.db, actor, taskId)
     const removed = await this.db.transaction(async (tx) => {
-      await this.ensureEditable(tx, taskId)
+      const owner = await this.ensureEditable(tx, taskId)
       const removed = await tx.delete(taskTag).where(and(eq(taskTag.taskId, taskId), eq(taskTag.tagKey, tagKey(raw))))
       if (removed[0].affectedRows) {
+        const code = normalizeTag(raw)
+        if (isSrTag(code)) {
+          const [sr] = await tx.select({ id: serviceRequest.id }).from(serviceRequest).where(eq(serviceRequest.code, code))
+          // 연결을 뺀 첨부는 다음 전송에 남기지 않는다. 시작한 sr_id와 과거 요청 기록은 유지한다.
+          if (sr && owner.srId !== sr.id) await tx.delete(taskInput).where(and(eq(taskInput.taskId, taskId),
+            inArray(taskInput.fileId, tx.select({ id: fileObject.id }).from(fileObject)
+              .where(and(eq(fileObject.originSrId, sr.id), eq(fileObject.kind, 'sr_attachment'))))))
+        }
         await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, taskId))
         await tx.insert(activityLog).values({ id: id(), type: 'tag.removed', userId: actor, taskId, payload: { tag: normalizeTag(raw) } })
       }

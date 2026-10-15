@@ -9,7 +9,7 @@ import { FileStorageService, createStorageKey, isWindowsReservedName, sha256 } f
 import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
 import { assertFileAccess, assertSrAccess, assertTaskAccess } from '../sr/access.js'
 import { serviceRequest } from '../db/schema.js'
-import { assertFileReadable, srAttachments } from './sr-attachments.js'
+import { assertFileReadable, taskSrAttachments } from './sr-attachments.js'
 
 export const FILE_STORAGE = Symbol('FILE_STORAGE')
 type FileRow = typeof fileObject.$inferSelect
@@ -251,13 +251,10 @@ export class DbFilesService {
     return rows.flatMap((row) => row.fileId ? [row.fileId] : [])
   }
 
-  /** 연결 SR(task.srId — SR에서 시작한 업무)의 접수 첨부 정본. 태그 공유 후보와 따로, 같은 file_object를 그대로 보인다. */
+  /** 시작한 SR과 SR 번호 태그로 연결한 SR의 접수 첨부 정본을 같은 file_object로 보인다. */
   private async linkedSrFiles(taskId: string, selectedById: Map<string, string>) {
-    const [owner] = await this.db.select({ srId: task.srId, code: serviceRequest.code, title: serviceRequest.title }).from(task)
-      .innerJoin(serviceRequest, eq(serviceRequest.id, task.srId)).where(eq(task.id, taskId))
-    if (!owner?.srId) return []
-    return (await srAttachments(this.db, owner.srId)).map((row) => ({ file: fileMeta(row), srId: owner.srId!, srCode: owner.code ?? '', srTitle: owner.title,
-      ...(selectedById.has(row.id) && { selected: selectedById.get(row.id) }) }))
+    return (await taskSrAttachments(this.db, taskId)).map(({ file, srId, srCode, srTitle }) => ({ file: fileMeta(file), srId, srCode: srCode ?? '', srTitle,
+      ...(selectedById.has(file.id) && { selected: selectedById.get(file.id) }) }))
   }
 
   async filesForTask(taskId: string, actor?: string) {
@@ -278,11 +275,11 @@ export class DbFilesService {
       const fromSr = source.kind === 'sr_attachment'
       if (!fromSr && (source.kind !== 'task_file' || !source.originTaskId)) throw new BadRequestException('선택할 수 없는 파일입니다')
       await this.lockTasks(tx, fromSr ? [taskId] : [taskId, source.originTaskId!])
-      const owner = await this.editable(taskId, tx)
+      await this.editable(taskId, tx)
       const row = await this.row(fileId, tx)
       if (row.kind !== source.kind) throw new BadRequestException('선택할 수 없는 파일입니다')
       if (weight && fromSr) {
-        if (!owner.srId || !(await srAttachments(tx, owner.srId)).some((item) => item.id === fileId)) throw new BadRequestException('후보에 없는 파일입니다')
+        if (!(await taskSrAttachments(tx, taskId)).some((item) => item.file.id === fileId)) throw new BadRequestException('후보에 없는 파일입니다')
       } else if (weight) {
         const { rows } = await this.candidateRows(taskId, tx)
         if (!rows.some((item) => item.id === fileId)) throw new BadRequestException('후보에 없는 파일입니다')
