@@ -271,3 +271,26 @@ it('listens for brief.updated on the live event stream', () => {
     unmount()
   } finally { vi.unstubAllGlobals() }
 })
+
+it('updates AI phases in summary, board and infinite caches without treating them as arrays', () => {
+  const query = new QueryClient()
+  const task = { id: 't', aiRequest: { status: 'streaming', phase: 'old', updatedAt: 'same' } }
+  const page = { items: [task], nextCursor: 'next' }
+  query.setQueryData(['tasks', 'u', 'summary'], page)
+  query.setQueryData(['tasks', 'u', 'board'], { columns: [{ ...page, assistantId: 'a', total: 50 }] })
+  query.setQueryData(['tasks', 'u', 'infinite'], { pages: [page, { items: [task], nextCursor: null }], pageParams: [undefined, 'next'] })
+  expect(() => applyEvent(query, 'request.updated', { taskId: 't', requestId: 'r', status: 'streaming', phase: 'new' })).not.toThrow()
+  expect(query.getQueryData(['tasks', 'u', 'summary'])).toMatchObject({ items: [{ aiRequest: { phase: 'new' } }], nextCursor: 'next' })
+  expect(query.getQueryData(['tasks', 'u', 'board'])).toMatchObject({ columns: [{ total: 50, items: [{ aiRequest: { phase: 'new' } }] }] })
+  expect(query.getQueryData(['tasks', 'u', 'infinite'])).toMatchObject({ pages: [{ items: [{ aiRequest: { phase: 'new' } }] }], pageParams: [undefined] })
+  query.clear()
+})
+
+it('refreshes only the first infinite page on an event and retains its continuation cursor', () => {
+  const query = new QueryClient()
+  const first = { items: [], nextCursor: 'next' }
+  query.setQueryData(['tasks', 'u', 'summary', 'infinite'], { pages: [first, { items: [], nextCursor: null }], pageParams: [undefined, 'next'] })
+  applyEvent(query, 'task.updated', { taskId: 't' })
+  expect(query.getQueryData(['tasks', 'u', 'summary', 'infinite'])).toEqual({ pages: [first], pageParams: [undefined] })
+  query.clear()
+})

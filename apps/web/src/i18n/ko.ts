@@ -93,7 +93,8 @@ export const ko = {
     classification: '분류', filters: '필터', removeClassification: '{name} 해제', continueConversations: '이어하기', viewAllMine: '모두 보기',
   },
   myWork: {
-    description: '내가 담당하거나 참여하는 대화를 최근 활동 순으로 확인하세요.',
+    active: '진행·보류', completed: '완료', tabs: '작업 상태', search: '내 작업 검색', groupBy: '묶음', due: '기한', status: '상태', assistant: '에이전트', sr: 'SR', overdue: '지연', today: '오늘', week: '이번 주', later: '나중', none: '기한 없음', noSr: '연결 SR 없음', linkedSrs: '연결 SR {count}건', more: '더 보기', srHint: '여러 SR에 연결된 대화는 각 묶음에 표시됩니다.', loadedHint: '불러온 대화를 묶어 표시합니다. 더 보기를 눌러 이전 대화를 확인하세요.',
+    description: '내가 담당하거나 참여하는 대화를 기한별로 확인하세요.',
     includeCompleted: '완료 포함',
     list: '내 작업 대화',
     recentActivity: '최근 활동',

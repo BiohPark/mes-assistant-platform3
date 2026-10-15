@@ -115,7 +115,7 @@ it.each([['ko', '새 활동'], ['en', 'New activity']] as const)('renders cards 
 
 it('opens quick switch with zero messages requests', async () => {
   const tasks = Array.from({ length: 3 }, (_, index) => ({ ...task, id: `switch-${index}`, threadId: `thread-${index}` }))
-  const fetchMock = vi.fn(async (url: string) => Response.json(url === '/api/tasks' ? tasks : []))
+  const fetchMock = vi.fn(async (url: string) => Response.json(url.startsWith('/api/tasks?') ? tasks : []))
   vi.stubGlobal('fetch', fetchMock)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={client}><MeContext value={me}><MemoryRouter><QuickSwitch currentTaskId="switch-0" /></MemoryRouter></MeContext></QueryClientProvider>)

@@ -18,6 +18,8 @@ interface UiState {
   /** 칸반에서 대화 없는 열을 좁게 접기 */
   kanbanCollapseEmpty: boolean
   setKanbanCollapseEmpty: (v: boolean) => void
+  kanbanCompleted: Record<string, boolean>
+  setKanbanCompleted: (userId: string, value: boolean) => void
   assistantOpen: boolean
   setAssistantOpen: (open: boolean) => void
   pillPos: PillPos | null
@@ -31,6 +33,8 @@ export const useUiStore = create<UiState>()(
       setHomeFilters: (patch) => set((s) => ({ homeFilters: { ...s.homeFilters, ...patch } })),
       kanbanCollapseEmpty: false,
       setKanbanCollapseEmpty: (kanbanCollapseEmpty) => set({ kanbanCollapseEmpty }),
+      kanbanCompleted: {},
+      setKanbanCompleted: (userId, value) => set(s => ({ kanbanCompleted: { ...s.kanbanCompleted, [userId]: value } })),
       assistantOpen: false,
       setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
       pillPos: null,
@@ -45,6 +49,6 @@ export const useUiStore = create<UiState>()(
           level1CodeIds: old?.level1CodeIds ?? (old?.level1CodeId ? [old.level1CodeId] : []),
           level2CodeIds: old?.level2CodeIds ?? (old?.level2CodeId ? [old.level2CodeId] : []),
         } }
-      }, partialize: (s) => ({ homeFilters: s.homeFilters, kanbanCollapseEmpty: s.kanbanCollapseEmpty, pillPos: s.pillPos }) },
+      }, partialize: (s) => ({ homeFilters: s.homeFilters, kanbanCollapseEmpty: s.kanbanCollapseEmpty, pillPos: s.pillPos, kanbanCompleted: s.kanbanCompleted }) },
   ),
 )

@@ -1,4 +1,7 @@
-import { fireEvent, screen } from '@testing-library/react'
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { applyEvent } from '@/app/useEvents'
+import { taskApiFixture } from './taskApiFixture'
+import { act, fireEvent, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MeContext } from '@/app/auth'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -10,7 +13,7 @@ afterEach(() => { vi.unstubAllGlobals(); localStorage.removeItem('mes-locale') }
 it('opens a shared tag filter in the kanban and shows the matching conversation', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/assistants') return jsonResponse(200, [{ id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-28T00:00:00.000Z', updatedAt: '2026-09-28T00:00:00.000Z', revision: 0 }])
-    if (url === '/api/tasks') return jsonResponse(200, [{ id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '태그 대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: ['공유'], checklist: [], inputs: [], outputFileIds: [], threadId: 'h', createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z' }])
+    if (url.startsWith('/api/tasks?') || url.startsWith('/api/tasks/board?')) return taskApiFixture(url, [{ id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '태그 대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: ['공유'], checklist: [], inputs: [], outputFileIds: [], threadId: 'h', createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z' }] as import('@mes/domain').Task[])
     return jsonResponse(200, [])
   }))
   renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><HomePage /></TooltipProvider></MeContext>, { route: '/?view=kanban&tag=%EA%B3%B5%EC%9C%A0' })
@@ -23,7 +26,7 @@ it('opens a shared tag filter in the kanban and shows the matching conversation'
 it('keeps the conversation code on one line and shows the column count beside the avatar', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/assistants') return jsonResponse(200, [{ id: 'a', name: '도우미', level1: 'SDLC', level2: '분석', level1CodeId: 'l1', level2CodeId: 'l2', summary: '', order: 1, expectedInputs: [], expectedOutputs: [], ownerId: 'u', status: 'open', usageExample: '', color: '#123456', checklistTemplate: [], createdBy: 'u', createdAt: '2026-09-28T00:00:00.000Z', updatedAt: '2026-09-28T00:00:00.000Z', revision: 0 }])
-    if (url === '/api/tasks') return jsonResponse(200, [{ id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: [], checklist: [], inputs: [], outputFileIds: [], threadId: 'h', createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z' }])
+    if (url.startsWith('/api/tasks?') || url.startsWith('/api/tasks/board?')) return taskApiFixture(url, [{ id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: [], checklist: [], inputs: [], outputFileIds: [], threadId: 'h', createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z' }] as import('@mes/domain').Task[])
     return jsonResponse(200, [])
   }))
   localStorage.setItem('mes-locale', 'en')
@@ -45,12 +48,12 @@ const aiTask = (id: string, code: string, aiRequest: unknown) => ({ id, code, as
 function renderAiKanban(route = '/?view=kanban') {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/assistants') return jsonResponse(200, [aiAssistant])
-    if (url === '/api/tasks') return jsonResponse(200, [
+    if (url.startsWith('/api/tasks?') || url.startsWith('/api/tasks/board?')) return taskApiFixture(url, [
       aiTask('t1', 'WK-2026-0001', { status: 'streaming', phase: '파일 올리는 중 1/2', updatedAt: '2026-10-13T00:00:00.000Z' }),
       aiTask('t2', 'WK-2026-0002', { status: 'failed', updatedAt: '2026-10-13T00:00:00.000Z' }),
       aiTask('t3', 'WK-2026-0003', null),
       aiTask('t4', 'WK-2026-0004', { status: 'interrupted', updatedAt: '2026-10-13T00:00:00.000Z' }),
-    ])
+    ] as import('@mes/domain').Task[])
     return jsonResponse(200, [])
   }))
   return renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><HomePage /></TooltipProvider></MeContext>, { route })
@@ -91,4 +94,62 @@ it('filters the kanban by AI state through the URL and clears it with the other 
   expect(await screen.findByRole('link', { name: /WK-2026-0003/ })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'AI 실패·중단' })).toHaveAttribute('aria-pressed', 'false')
   expect(screen.queryByRole('button', { name: '초기화' })).not.toBeInTheDocument()
+})
+
+it('seeds 30 cards from the board, uses server totals, and continues only the selected column', async () => {
+  const items = Array.from({ length: 32 }, (_, index) => aiTask(`t${index}`, `WK-2026-${index}`, null))
+  items[0] = { ...items[0]!, aiRequest: { status: 'streaming', updatedAt: '2026-10-13T00:00:00.000Z', phase: 'old' } }
+  let client!: QueryClient
+  function Capture() { client = useQueryClient(); return null }
+  const calls: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    calls.push(url)
+    if (url === '/api/assistants') return Response.json([aiAssistant])
+    if (url.startsWith('/api/tasks/board?')) return Response.json({ columns: [{ assistantId: 'a', total: 32, items: items.slice(0, 30).map(item => ({ ...item, inputCount: 0, outputCount: 0, checklist: { checked: 0, total: 0 } })), nextCursor: 'next-a' }] })
+    if (url.startsWith('/api/tasks?') && url.includes('cursor=')) return Response.json([items[29], items[30], items[31]])
+    return Response.json([])
+  }))
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', roles: ['member'], locale: 'ko', theme: 'system', email: null, emailIsDefault: false }}><TooltipProvider><Capture /><HomePage /></TooltipProvider></MeContext>, { route: '/?view=kanban&done=0' })
+  await screen.findByRole('link', { name: /WK-2026-0 / })
+  expect(screen.getAllByRole('link', { name: /대화 WK-2026-/ })).toHaveLength(30)
+  expect(screen.getByTitle('도우미 (32)')).toBeInTheDocument()
+  expect(calls.filter(url => url.includes('cursor='))).toHaveLength(0)
+  expect(document.querySelectorAll('[data-tour="kanban-card"]')).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: '더 보기' }))
+  await screen.findByRole('link', { name: /WK-2026-31/ })
+  expect(screen.getAllByRole('link', { name: /대화 WK-2026-/ })).toHaveLength(32)
+  const continuation = calls.filter(url => url.includes('cursor='))
+  expect(continuation).toHaveLength(1)
+  const p = new URL(continuation[0]!, 'https://test').searchParams
+  expect(p.get('cursor')).toBe('next-a'); expect(p.get('assistantId')).toBe('a'); expect(p.get('view')).toBe('summary')
+  expect(calls.some(url => url.startsWith('/api/tasks/t'))).toBe(false)
+  client.setQueryData(['request', 'r'], { status: 'streaming' })
+  act(() => applyEvent(client, 'request.updated', { taskId: 't0', requestId: 'r', status: 'streaming', phase: 'new phase' }))
+  expect(await screen.findByTitle('new phase')).toBeInTheDocument()
+  expect(screen.getAllByRole('link', { name: /대화 WK-2026-/ })).toHaveLength(32)
+  expect(calls.filter(url => url.startsWith('/api/tasks/board?'))).toHaveLength(1)
+})
+
+it('defaults completed work off, remembers it per user and lets an explicit URL override memory', async () => {
+  const { useUiStore } = await import('@/app/uiStore')
+  useUiStore.setState({ kanbanCompleted: {} })
+  const items = [aiTask('active', 'WK-active', null), { ...aiTask('done', 'WK-done', null), status: 'done' }]
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/assistants' ? Response.json([aiAssistant]) : url.startsWith('/api/tasks') ? taskApiFixture(url, items as import('@mes/domain').Task[]) : Response.json([])))
+  const renderBoard = (route: string, id = 'u') => renderWithProviders(<MeContext value={{ id, name: '사용자', role: '', roles: ['member'], locale: 'ko', theme: 'system', email: null, emailIsDefault: false }}><TooltipProvider><HomePage /></TooltipProvider></MeContext>, { route })
+  let view = renderBoard('/?view=kanban')
+  await screen.findByRole('link', { name: /WK-active/ })
+  expect(screen.queryByRole('link', { name: /WK-done/ })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('switch', { name: '완료 포함' }))
+  await screen.findByRole('link', { name: /WK-done/ })
+  expect(useUiStore.getState().kanbanCompleted.u).toBe(true)
+  view.unmount(); view = renderBoard('/?view=kanban')
+  expect(screen.getByRole('switch', { name: '완료 포함' })).toBeChecked()
+  await screen.findByRole('link', { name: /WK-done/ })
+  view.unmount(); view = renderBoard('/?view=kanban&done=0')
+  expect(screen.getByRole('switch', { name: '완료 포함' })).not.toBeChecked()
+  await screen.findByRole('link', { name: /WK-active/ })
+  expect(screen.queryByRole('link', { name: /WK-done/ })).not.toBeInTheDocument()
+  view.unmount(); renderBoard('/?view=kanban', 'other-user')
+  expect(screen.getByRole('switch', { name: '완료 포함' })).not.toBeChecked()
+  useUiStore.setState({ kanbanCompleted: {} })
 })

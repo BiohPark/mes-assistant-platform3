@@ -1,13 +1,14 @@
-import type { ActivityLog, ChecklistItem, ChecklistReview, ChecklistReviewItem, Message, Note, Task, TaskStatus, Thread } from '@mes/domain'
+import type { ActivityLog, ChecklistItem, ChecklistReview, ChecklistReviewItem, Message, Note, Task, TaskSummary, TaskPage, TaskBoard, TaskStatus, Thread } from '@mes/domain'
 import type { TagSuggestion } from '@mes/domain'
-import { ChatBriefSchema, type ChatBrief } from '@mes/contracts'
+import { ChatBriefSchema, type TaskAiFilter, type ChatBrief } from '@mes/contracts'
 import { HttpError } from '@/app/auth'
 import { readSse } from './requests'
 import { queryClient } from './queryClient'
+import { resetTaskPages } from './tasks.cache'
 
 export interface Actor { userId: string }
 export interface StartConversationInput { assistantId: string; ownerId?: string; assigneeIds?: string[]; tags?: string[]; title?: string; referenceTaskId?: string; inputFileIds?: string[]; firstMessage?: string }
-export interface TaskFilter { assistantId?: string; status?: TaskStatus[]; tags?: string[]; mine?: boolean }
+export interface TaskFilter { assistantId?: string; status?: TaskStatus[]; tags?: string[]; mine?: boolean; q?: string; ai?: TaskAiFilter[]; limit?: number; cursor?: string; activeWithinDays?: number }
 
 async function request<T>(path: string, method = 'GET', body?: unknown, idempotencyKey?: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api${path}`, { method, credentials: 'same-origin', signal, ...(body !== undefined && { headers: { 'content-type': 'application/json', ...(idempotencyKey && { 'Idempotency-Key': idempotencyKey }) }, body: JSON.stringify(body) }) })
@@ -16,6 +17,7 @@ async function request<T>(path: string, method = 'GET', body?: unknown, idempote
 }
 
 function refresh(taskId?: string) {
+  resetTaskPages(queryClient)
   void queryClient.invalidateQueries({ queryKey: ['tasks'] })
   void queryClient.invalidateQueries({ queryKey: ['assistant-stats'] })
   void queryClient.invalidateQueries({ queryKey: ['tag-suggest'] })
@@ -34,14 +36,36 @@ export async function startConversation(_actor: Actor, input: StartConversationI
   return { task, thread: { id: task.threadId!, taskId: task.id, title: '대화', createdAt: task.createdAt, createdBy: task.createdBy, archived: false }, warnings: task.warnings ?? [] }
 }
 
-export async function listTasks(filter: TaskFilter = {}): Promise<Task[]> {
+function taskParams(filter: TaskFilter): URLSearchParams {
   const query = new URLSearchParams()
   if (filter.assistantId) query.set('assistantId', filter.assistantId)
   for (const status of filter.status ?? []) query.append('status[]', status)
   for (const tag of filter.tags ?? []) query.append('tag[]', tag)
   if (filter.mine) query.set('mine', 'true')
+  if (filter.q?.trim()) query.set('q', filter.q.trim())
+  for (const ai of filter.ai ?? []) query.append('ai[]', ai)
+  if (filter.limit !== undefined) query.set('limit', String(filter.limit))
+  if (filter.cursor) query.set('cursor', filter.cursor)
+  if (filter.activeWithinDays !== undefined) query.set('activeWithinDays', String(filter.activeWithinDays))
+  return query
+}
+export async function listTasks(filter: TaskFilter = {}): Promise<Task[]> {
+  const query = taskParams(filter)
   return request(`/tasks${query.size ? `?${query}` : ''}`)
 }
+/** The list body remains an array; continuation is carried by X-Next-Cursor. */
+export async function listTaskPage(filter: TaskFilter = {}, signal?: AbortSignal): Promise<TaskPage> {
+  const query = taskParams({ limit: 30, ...filter })
+  query.set('view', 'summary')
+  const response = await fetch(`/api/tasks?${query}`, { credentials: 'same-origin', signal })
+  if (!response.ok) throw new HttpError(response.status, (await response.json().catch(() => null))?.message ?? `HTTP ${response.status}`)
+  const items: unknown = await response.json()
+  if (!Array.isArray(items)) throw new Error('Invalid task summary response')
+  return { items: items as TaskSummary[], nextCursor: response.headers.get('X-Next-Cursor') || null }
+}
+export const getTaskBoard = (filter: TaskFilter = {}, signal?: AbortSignal) =>
+  request<TaskBoard>(`/tasks/board?${taskParams({ limit: 30, ...filter })}`, 'GET', undefined, undefined, signal)
+
 export const getTask = (taskId: string) => request<Task>(`/tasks/${encodeURIComponent(taskId)}`)
 export const getMessages = (threadId: string, signal?: AbortSignal) => request<Message[]>(`/threads/${encodeURIComponent(threadId)}/messages`, 'GET', undefined, undefined, signal)
 /** 대화 요약 카드(표시 전용). 응답 모양이 다르면 실패로 본다 — 카드만 숨고 화면은 그대로 */

@@ -42,3 +42,31 @@ it('passes the message query cancellation signal to fetch', async () => {
   await getMessages('thread', signal)
   expect(fetch).toHaveBeenCalledWith('/api/threads/thread/messages', expect.objectContaining({ signal }))
 })
+
+it('requests lightweight pages, reads the cursor header and forwards cancellation', async () => {
+  const { listTaskPage } = await import('./tasks')
+  const signal = new AbortController().signal
+  const fetcher = vi.fn(async () => new Response('[]', { headers: { 'X-Next-Cursor': 'next-page' } }))
+  vi.stubGlobal('fetch', fetcher)
+  expect(await listTaskPage({ mine: true, status: ['in_progress'], q: 'SR 2', ai: ['responding'], limit: 6, cursor: 'first' }, signal)).toEqual({ items: [], nextCursor: 'next-page' })
+  const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit]
+  const params = new URL(url, 'https://test').searchParams
+  expect(Object.fromEntries(params)).toMatchObject({ view: 'summary', limit: '6', cursor: 'first', mine: 'true', q: 'SR 2', 'ai[]': 'responding', 'status[]': 'in_progress' })
+  expect(init.signal).toBe(signal)
+})
+
+it('requests board counts and per-column continuation without task detail calls', async () => {
+  const { getTaskBoard } = await import('./tasks')
+  const board = { columns: [{ assistantId: 'a', total: 31, items: [], nextCursor: 'next' }] }
+  const fetcher = vi.fn(async () => Response.json(board))
+  vi.stubGlobal('fetch', fetcher)
+  expect(await getTaskBoard({ assistantId: 'a', cursor: 'next', status: ['todo', 'in_progress', 'on_hold'] })).toEqual(board)
+  expect(fetcher.mock.calls).toHaveLength(1)
+  expect(String((fetcher.mock.calls[0] as unknown[])[0])).toContain('/api/tasks/board?')
+})
+
+it('treats a malformed summary payload as a query error', async () => {
+  const { listTaskPage } = await import('./tasks')
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({})))
+  await expect(listTaskPage()).rejects.toThrow('Invalid task summary response')
+})

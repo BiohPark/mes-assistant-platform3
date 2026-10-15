@@ -142,3 +142,17 @@ it('summarizes and submits every path in order, including existing IDs', async (
   expect(await applyProposal({ userId: 'u' }, ids)).toMatchObject({ ok: true })
   expect(body).toMatchObject({ classifications: [{ level1CodeId: 'l1', level2CodeId: 'l2' }] })
 })
+
+it('looks up a conversation by code with a summary search before adding a tag', async () => {
+  const calls: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    calls.push(url)
+    if (url.startsWith('/api/tasks?')) return Response.json([{ id: 'target', code: 'WK-2026-5000', tags: [] }])
+    return new Response(null, { status: 204 })
+  }))
+  const result = await applyProposal({ userId: 'u' }, toProposal({ id: 'code-search', name: 'add_tag', arguments: JSON.stringify({ taskCode: 'WK-2026-5000', tag: 'release' }) }))
+  expect(result.ok).toBe(true)
+  const p = new URL(calls[0]!, 'https://test').searchParams
+  expect(p.get('q')).toBe('WK-2026-5000'); expect(p.get('view')).toBe('summary')
+  expect(calls[1]).toBe('/api/tasks/target/tags/release')
+})

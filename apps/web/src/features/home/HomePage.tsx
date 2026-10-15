@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigationType } from 'react-router'
 import { useMe } from '@/app/auth'
-import { listTasks } from '@/api/tasks'
+import { useMyActive } from '@/api/tasks.queries'
 import { emptyHomeFilters, type HomeFilters } from '@/app/uiStore'
 import { classificationOptions, homeFiltersFromParams, homeFiltersToParams, matchesAssistant, sameParams, validHomeFilters } from './filters'
 import { Bot, KanbanSquare, LayoutGrid } from 'lucide-react'
@@ -15,7 +15,6 @@ import { AssistantCard } from './AssistantCard'
 import { CardMapFilterBar } from './CardMapFilterBar'
 import { ConversationKanban } from './ConversationKanban'
 import { useAssistantRows } from './useAssistantStats'
-import { selectMyActive } from './myActive'
 import { useQuery } from '@tanstack/react-query'
 import { getSettings } from '@/api/admin'
 import { useT } from '@/i18n'
@@ -26,8 +25,8 @@ const views = ['cards', 'kanban'] as const
 export function HomePage() {
   const t = useT()
   const me = useMe()
-  const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => listTasks() })
-  const myActive = selectMyActive(tasks.data ?? [], me.id, 6)
+  const tasks = useMyActive(me.id, 6)
+  const myActive = tasks.items
   const link1Rule = useQuery({ queryKey: ['settings'], queryFn: getSettings }).data?.link1Rule
   const [params, setParams] = useSearchParams()
   const { key: navigationKey } = useLocation()
