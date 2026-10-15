@@ -180,6 +180,11 @@ describe('RequestService DB', () => {
     } finally { runner.onModuleDestroy(); await db.delete(appSetting).where(eq(appSetting.key, 'owuiTools')); await new Promise<void>(resolve => server.close(() => resolve())) }
   })
 
+  // 느린 Windows CI에서도 폴링·DB 처리 사이에 여유를 둔다. 상태 전용 구간은 제한보다 길어야 한다.
+  const sessionPollMs = 100
+  const sessionWaitMs = 2000
+  const sessionStatusMs = sessionWaitMs * 3
+
   /** OpenWebUI v0.12 세션 모드 대역 — 생성은 chat_id만 돌려주고, 채팅 GET이 진행 상태를 보여 준다(S12) */
   async function sessionUpstream(poll: (elapsedMs: number, count: number) => Record<string, unknown>, create?: (body: Record<string, unknown>) => { status: number; body: string; type?: string } | undefined) {
     const bodies: Record<string, unknown>[] = [], deleted: string[] = [], stopped: string[] = []
@@ -211,9 +216,9 @@ describe('RequestService DB', () => {
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
     const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
       LLM_MODE: 'live', LLM_PRESET: 'openwebui', LLM_API_KEY: 'test-key', LLM_BASE_URL: `http://127.0.0.1:${(server.address() as { port: number }).port}`, LLM_DEFAULT_MODEL: 'fake-general',
-      REQUEST_FIRST_TOKEN_MS: '400', REQUEST_IDLE_MS: '400' })
+      REQUEST_FIRST_TOKEN_MS: String(sessionWaitMs), REQUEST_IDLE_MS: String(sessionWaitMs) })
     const events = new EventsService()
-    const runner = new RequestsService(db, config, new OpenAICompatibleProvider(toLlmSettings(config.llm), undefined, { sessionPollMs: 20 }), events)
+    const runner = new RequestsService(db, config, new OpenAICompatibleProvider(toLlmSettings(config.llm), undefined, { sessionPollMs }), events)
     const { thread } = await tasks.create('member', { assistantId, title: 'Session test' })
     await db.update(threadTable).set({ modelId: 'fake-general' }).where(eq(threadTable.id, thread.id))
     const close = async () => { runner.onModuleDestroy(); await new Promise<void>(resolve => server.close(() => resolve())) }
@@ -264,11 +269,11 @@ describe('RequestService DB', () => {
   })
 
   it('OpenWebUI session mode: status is the phase and keeps the request alive; snapshot records mode/chat_id; chat is deleted', async () => {
-    // 1초 동안 상태만 늘어난다 — 첫 토큰·유휴 대기(400ms)를 상태가 살려 두지 않으면 시간 초과로 끝난다
+    // 제한의 3배 동안 상태만 늘어난다 — 첫 토큰·유휴 대기를 상태가 다시 걸지 않으면 시간 초과로 끝난다
     let reading = 0
     const upstream = await sessionUpstream((elapsed, count) => {
-      if (elapsed < 1000) return sessionMessage(Array.from({ length: reading = count }, () => 'URL 읽는 중'), '', '')
-      return sessionMessage([...Array.from({ length: reading }, () => 'URL 읽는 중'), 'URL 읽음'], '검토', '세션 답변', elapsed > 1100)
+      if (elapsed < sessionStatusMs) return sessionMessage(Array.from({ length: reading = count }, () => 'URL 읽는 중'), '', '')
+      return sessionMessage([...Array.from({ length: reading }, () => 'URL 읽는 중'), 'URL 읽음'], '검토', '세션 답변', elapsed > sessionStatusMs + sessionPollMs * 5)
     })
     const published = vi.spyOn(upstream.events, 'publish')
     try {
@@ -295,8 +300,20 @@ describe('RequestService DB', () => {
     } finally { await upstream.close() }
   })
 
+  it.each([false, true])('OpenWebUI session mode: polling without fresh status times out (initial status=%s)', async initialStatus => {
+    const upstream = await sessionUpstream(() => sessionMessage(initialStatus ? ['도구 실행 중'] : [], '', ''))
+    try {
+      const started = await upstream.runner.start('member', upstream.thread.id, { content: '생존 신호 없음' }, `owui-no-status-${initialStatus}`)
+      await started.done
+      expect(await upstream.runner.get(started.id)).toMatchObject({ status: 'failed', code: 'TIMEOUT', error: expect.stringMatching(/시간 초과/) })
+      await vi.waitFor(() => expect(upstream.stopped).toEqual(['/api/tasks/chat/owui-chat-1/stop']), { timeout: 5000 })
+      await vi.waitFor(() => expect(upstream.deleted).toEqual(['owui-chat-1']), { timeout: 5000 })
+    } finally { await upstream.close() }
+  })
+
   it('OpenWebUI session mode: replace swaps the streamed text; reconnect resumes from the replaced text', async () => {
-    const upstream = await sessionUpstream((elapsed) => elapsed < 300 ? sessionMessage([], '', '임시 답변') : sessionMessage([], '', '최종 답변', elapsed > 400))
+    // 경과 시간 대신 폴링 횟수로 중간 답변을 보장해, 느린 첫 조회에서도 replace를 검증한다.
+    const upstream = await sessionUpstream((_, count) => count < 3 ? sessionMessage([], '', '임시 답변') : sessionMessage([], '', '최종 답변', count >= 6))
     try {
       const started = await upstream.runner.start('member', upstream.thread.id, { content: '바꿔 줘' }, 'owui-replace')
       const seen: Array<{ event: string; data: Record<string, unknown> }> = []
@@ -309,7 +326,7 @@ describe('RequestService DB', () => {
       await started.done
       unsubscribe()
       expect(seen.find(event => event.event === 'replace')?.data).toEqual({ field: 'content', text: '최종 답변' })
-      expect(seen.find(event => event.event === 'resumed')?.data).toMatchObject({ resumedText: '최종 답변' })
+      await vi.waitFor(() => expect(seen.find(event => event.event === 'resumed')?.data).toMatchObject({ resumedText: '최종 답변' }), { timeout: 5000 })
       const [reply] = await db.select().from(message).where(eq(message.id, started.replyMessageId))
       expect(reply).toMatchObject({ content: '최종 답변', status: 'done' })
     } finally { await upstream.close() }
@@ -335,11 +352,11 @@ describe('RequestService DB', () => {
     const upstream = await sessionUpstream((_, count) => sessionMessage(Array.from({ length: count }, () => '도구 실행 중'), '', ''))
     try {
       const started = await upstream.runner.start('member', upstream.thread.id, { content: '오래 걸리는 일' }, 'owui-cancel')
-      await vi.waitFor(async () => expect((await upstream.runner.get(started.id)).phase).toBe('도구 실행 중'))
+      await vi.waitFor(async () => expect((await upstream.runner.get(started.id)).phase).toBe('도구 실행 중'), { timeout: 5000 })
       await upstream.runner.cancel(started.id)
       await started.done
-      await vi.waitFor(() => expect(upstream.stopped).toEqual(['/api/tasks/chat/owui-chat-1/stop']))
-      await vi.waitFor(() => expect(upstream.deleted).toEqual(['owui-chat-1']))
+      await vi.waitFor(() => expect(upstream.stopped).toEqual(['/api/tasks/chat/owui-chat-1/stop']), { timeout: 5000 })
+      await vi.waitFor(() => expect(upstream.deleted).toEqual(['owui-chat-1']), { timeout: 5000 })
       expect(await upstream.runner.get(started.id)).toMatchObject({ status: 'cancelled' })
     } finally { await upstream.close() }
   })
