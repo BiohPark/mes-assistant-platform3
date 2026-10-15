@@ -8,7 +8,8 @@ import { cn } from '@/lib/utils'
 import { useT } from '@/i18n'
 import { MessageBubble } from './MessageBubble'
 import type { ChatRun } from './useChat'
-import { requestPhaseDetail } from './requestLabels'
+import { isFileProgress, requestPhaseDetail } from './requestLabels'
+import { QUIET_AFTER_MS, RESPONSE_LIMIT_MS } from './streamProgress'
 
 type BubbleActions = Omit<ComponentProps<typeof MessageBubble>, 'message' | 'progress'>
 const nearBottomDistance = 24
@@ -50,8 +51,26 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
   const replyId = run?.replyId ?? remoteReply?.id ?? 'waiting-assistant'
   const currentReply = messages.find(item => item.id === replyId)
   const currentText = run?.text || currentReply?.content
-  const phase = currentText?.trim() ? t('chat.answering') : t('chat.thinking')
-  const phaseDetail = requestPhaseDetail(run?.phase, t)
+  const currentReasoning = run?.reasoning || currentReply?.reasoning
+  // 단계: 서버가 알린 진행(파일·도구 — 예: URL 읽는 중)이 있으면 그것, 아니면 답변 작성 중 > 생각 중 > 대기 중
+  const phase = requestPhaseDetail(run?.phase, t) ?? (currentText?.trim() ? t('chat.answering') : currentReasoning?.trim() ? t('chat.thinking') : t('chat.waiting'))
+  // 마지막 신호(본문·생각·단계 변화) 시각 — 요청마다(시작 시각) 새로 센다
+  const signature = `${currentText ?? ''}\u0000${currentReasoning ?? ''}\u0000${run?.phase ?? ''}`
+  // 서버는 본문·생각·도구 상태가 올 때만 무응답 제한을 다시 건다(파일 진행은 아님) — 그 전에는 요청 생성부터 첫 응답 제한
+  const armedSignature = `${currentText ?? ''}\u0000${currentReasoning ?? ''}\u0000${isFileProgress(run?.phase) ? '' : run?.phase ?? ''}`
+  const lastSignal = useRef<{ startedAt?: number; signature: string; armedSignature: string; at?: number; armedAt?: number }>({ startedAt, signature, armedSignature })
+  if (lastSignal.current.startedAt !== startedAt) lastSignal.current = { startedAt, signature, armedSignature }
+  else if (lastSignal.current.signature !== signature) {
+    const at = Date.now()
+    lastSignal.current = { ...lastSignal.current, signature, armedSignature, at, armedAt: lastSignal.current.armedSignature !== armedSignature ? at : lastSignal.current.armedAt }
+  }
+  const signalAt = lastSignal.current.at, armedAt = lastSignal.current.armedAt
+  const silentSince = Math.max(signalAt ?? 0, startedAt ?? now)
+  const quiet = now - silentSince >= QUIET_AFTER_MS
+  // 서버가 알린 이 요청의 제한을 쓰고, 없으면(옛 서버) 기본값으로 어림한다
+  const limitAt = armedAt !== undefined ? armedAt + (run?.idleMs ?? RESPONSE_LIMIT_MS) : (run?.startedAt ?? startedAt ?? now) + (run?.firstTokenMs ?? RESPONSE_LIMIT_MS)
+  const limitLeft = Math.max(0, Math.ceil((limitAt - now) / 1000))
+  const lastSignalSeconds = signalAt === undefined ? undefined : Math.max(0, Math.floor((now - signalAt) / 1000))
   // Show an assistant header before the reply is fetched, then reuse its key.
   const visibleMessages: Message[] = active && !currentReply ? [...messages, {
     id: replyId, threadId: messages.at(-1)?.threadId ?? '', role: 'assistant', status: 'streaming',
@@ -96,6 +115,14 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
     const element = scrollerRef.current
     if (element) setFarFromBottom(element.scrollHeight - element.scrollTop - element.clientHeight > jumpDistance)
   }, [messages, run?.text, run?.reasoning, run?.phase, waitingSince])
+  // 타자 표시처럼 상태 변화 없이 자라는 내용도 바닥에 있을 때만 따라간다(위로 올려 읽는 중이면 멈춘다)
+  useEffect(() => {
+    const element = root.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => { if (nearBottom.current) bottom.current?.scrollIntoView?.({ block: 'end', behavior: 'instant' }) })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   function messageElement(id: string) {
     return Array.from(root.current?.querySelectorAll<HTMLElement>('[data-message-id]') ?? []).find(element => element.dataset.messageId === id)
@@ -157,7 +184,7 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
     {visibleMessages.length ? visibleMessages.map(item => <MessageBubble key={item.id} assistantName={assistantName} searchMatch={item.id === selectedMatch}
       message={run?.replyId === item.id ? { ...item, status: 'streaming', content: run.text || item.content, reasoning: run.reasoning || item.reasoning } : item}
       {...(item === currentReply || item.id !== replyId ? actions?.(item) : undefined)}
-      progress={active && item.id === replyId ? { phase, elapsed, detail: phaseDetail } : undefined} />) : empty}
+      progress={active && item.id === replyId ? { phase, elapsed, lastSignal: lastSignalSeconds, quiet, limitLeft: quiet ? limitLeft : undefined } : undefined} />) : empty}
     {farFromBottom && <div className="sticky bottom-2 flex justify-center"><button type="button" onClick={jumpToEnd}
       className="inline-flex min-h-11 items-center gap-1 rounded-full border bg-card px-3 text-sm text-card-foreground shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowDown aria-hidden="true" className="size-4" />{t('chat.scrollToBottom')}</button></div>}
     <div ref={bottom} />

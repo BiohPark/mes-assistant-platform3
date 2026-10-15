@@ -1291,6 +1291,38 @@ describe('RequestService DB', () => {
     await expect(runner.start('member', thread.id, { content: '다시' }, 'after-done')).rejects.toMatchObject({ status: 409 })
   })
 
+  it('S14: started SSE·GET·재연결이 이 요청의 첫 응답 제한(첨부 반영)과 무응답 제한을 알린다', async () => {
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
+      REQUEST_FIRST_TOKEN_MS: '111000', REQUEST_FILES_FIRST_TOKEN_MS: '222000', REQUEST_IDLE_MS: '333000' })
+    const runner = new RequestsService(db, config, provider)
+    const started = (id: string) => {
+      const events: Array<Record<string, unknown>> = []
+      runner.subscribe(id, (event) => { if (event.event === 'started') events.push(event.data) })
+      return events[0]
+    }
+    const { task: owner, thread } = await tasks.create('member', { assistantId })
+    const plain = await runner.start('member', thread.id, { content: '제한 확인' }, 'limits-plain')
+    expect(started(plain.id)).toMatchObject({ firstTokenMs: 111000, idleMs: 333000 })
+    await plain.done
+    expect(await runner.get(plain.id)).toMatchObject({ firstTokenMs: 111000, idleMs: 333000 })
+    const fileId = crypto.randomUUID(), storageKey = `test/${fileId}.txt`
+    await new FileStorageService(root).write(storageKey, Buffer.from('file'))
+    await db.insert(fileObject).values({ id: fileId, kind: 'task_file', originTaskId: owner.id, originalName: 'limit.txt', mime: 'text/plain', sizeBytes: 4,
+      sha256: 'a'.repeat(64), storageKey, source: 'upload', version: 1, uploadedBy: 'member' })
+    const withFile = await runner.start('member', thread.id, { content: '첨부 제한', attachmentIds: [fileId] }, 'limits-file')
+    expect(started(withFile.id)).toMatchObject({ firstTokenMs: 222000, idleMs: 333000 })
+    await withFile.done
+    // 같은 키로 다시 붙으면(재연결) 같은 제한을 다시 받는다
+    const again = await runner.start('member', thread.id, { content: '첨부 제한', attachmentIds: [fileId] }, 'limits-file')
+    expect(again.id).toBe(withFile.id)
+    expect(started(again.id)).toMatchObject({ firstTokenMs: 222000, idleMs: 333000 })
+    // 메모리 기록이 없는 다른 인스턴스도 기록된 자료로 같은 값을 낸다
+    const other = new RequestsService(db, config, provider)
+    expect(await other.get(withFile.id)).toMatchObject({ firstTokenMs: 222000, idleMs: 333000 })
+    expect(await other.get(plain.id)).toMatchObject({ firstTokenMs: 111000, idleMs: 333000 })
+    other.onModuleDestroy(); runner.onModuleDestroy()
+  })
+
   it('times out before the first token and keeps a failed record', async () => {
     const hanging: ChatProvider = { ...provider, async *stream() { await new Promise((resolve) => setTimeout(resolve, 100)); yield { type: 'delta', text: '늦음' } } }
     const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root, REQUEST_FIRST_TOKEN_MS: '10', REQUEST_FILES_FIRST_TOKEN_MS: '10' }), hanging)

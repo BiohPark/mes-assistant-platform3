@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Message } from '@mes/domain'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { I18nProvider } from '@/i18n'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ChatMessages, failedQuestionIds } from './ChatMessages'
@@ -88,7 +88,7 @@ it.each([
   const view = (run: import('./useChat').ChatRun | null, waitingSince?: number) => <QueryClientProvider client={client}><TooltipProvider><ChatMessages messages={messages} run={run} waitingSince={waitingSince} /></TooltipProvider></QueryClientProvider>
   const { rerender } = render(view(null, startedAt))
   const header = screen.getByRole('status').parentElement!
-  expect(screen.getByRole('status')).toHaveTextContent('생각 중')
+  expect(screen.getByRole('status')).toHaveTextContent('대기 중')
   expect(header).toHaveTextContent('에이전트')
   expect(within(header).getByRole('timer')).toHaveTextContent('0초 경과')
   expect(screen.getAllByRole('timer')).toHaveLength(1)
@@ -98,11 +98,11 @@ it.each([
   rerender(view({ requestId: 'r', replyId: 'a', text: '', reasoning: '검토', phase: '생각 중', startedAt }))
   expect(screen.getByRole('status')).toHaveTextContent('생각 중')
   expect(screen.getByRole('status').parentElement).toContainElement(screen.getByRole('timer'))
-  expect(screen.getByText('검토')).toBeVisible()
+  expect(document.querySelector('[data-reasoning-preview]')).toHaveTextContent('검토')
   act(() => vi.advanceTimersByTime(1000))
   expect(screen.getByRole('timer')).toHaveTextContent('3초 경과')
   rerender(view({ requestId: 'r', replyId: 'a', text: '답', phase: '답변 중', startedAt }))
-  expect(screen.getByRole('status')).toHaveTextContent('답변 중')
+  expect(screen.getByRole('status')).toHaveTextContent('답변 작성 중')
   rerender(view(null))
   expect(screen.queryByRole('timer')).not.toBeInTheDocument()
   expect(document.querySelector('[data-message-id="waiting-assistant"]')).not.toBeInTheDocument()
@@ -122,8 +122,7 @@ it('translates progress and thinking statuses in English and counts a resumed re
   expect(container.querySelector('details')).toHaveClass('bg-muted', 'text-foreground')
   expect(container.querySelector('details')?.className).not.toMatch(/animate|transition/)
   rerender(view({ requestId: 'r', replyId: 'a', text: '', phase: '파일 처리 대기 1/2 · sample.txt', startedAt: Date.parse(pending.createdAt) }))
-  expect(screen.getByRole('status')).toHaveTextContent('Thinking')
-  expect(screen.getByText('Processing file 1/2 · sample.txt')).toBeInTheDocument()
+  expect(screen.getByRole('status')).toHaveTextContent('Processing file 1/2 · sample.txt')
   expect(container).not.toHaveTextContent('파일 처리 대기')
 })
 
@@ -135,10 +134,10 @@ it('places a single phase and timer in the active assistant header and preserves
     run={{ requestId: 'r', replyId: 'a', text, reasoning: '검토 중', phase, startedAt: Date.parse(pending.createdAt) }} /></TooltipProvider></QueryClientProvider>
   const { container, rerender } = render(view([question]))
   await userEvent.setup().click(screen.getByText('생각 과정'))
-  expect(container.querySelector('details')?.open).toBe(false)
+  expect(container.querySelector('details')?.open).toBe(true)
   rerender(view([question, pending]))
   expect(container.querySelectorAll('[data-message-id="a"]')).toHaveLength(1)
-  expect(container.querySelector('details')?.open).toBe(false)
+  expect(container.querySelector('details')?.open).toBe(true)
   const header = screen.getByRole('status').parentElement!
   expect(header).toContainElement(screen.getByRole('timer'))
   expect(header).toHaveTextContent('에이전트')
@@ -146,9 +145,9 @@ it('places a single phase and timer in the active assistant header and preserves
   expect(screen.queryByText('응답 중…')).not.toBeInTheDocument()
   expect(container.querySelectorAll('.md-body')).toHaveLength(1)
   rerender(view([question, pending], '실제 답변', '생각 중'))
-  expect(screen.getByRole('status')).toHaveTextContent('답변 중')
-  expect(screen.getByText('실제 답변')).toBeInTheDocument()
-  expect(container.querySelector('details')?.open).toBe(false)
+  expect(screen.getByRole('status')).toHaveTextContent('답변 작성 중')
+  expect(container.querySelectorAll('.md-body')).toHaveLength(2)
+  expect(container.querySelector('details')?.open).toBe(true)
 })
 
 it('shows scrollToBottom immediately above 200px and hides it at or below the threshold', () => {
@@ -204,5 +203,96 @@ it('keeps the submission clock when the server starts later', () => {
   render(<QueryClientProvider client={new QueryClient()}><ChatMessages messages={[]} waitingSince={Date.now() - 7000}
     run={{ requestId: 'r', replyId: 'a', text: '', phase: '준비 중', startedAt: Date.now() - 1000 }} /></QueryClientProvider>)
   expect(screen.getByRole('timer')).toHaveTextContent('7초 경과')
+  expect(screen.getByRole('status')).toHaveTextContent('준비 중')
+})
+
+it('S14: walks the stages, counts the last response, and switches to the limit countdown after a quiet spell', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+  const startedAt = Date.now()
+  const client = new QueryClient()
+  const view = (run: import('./useChat').ChatRun) => <QueryClientProvider client={client}><TooltipProvider><ChatMessages messages={[question]} run={run} /></TooltipProvider></QueryClientProvider>
+  const { container, rerender } = render(view({ requestId: 'r', replyId: 'a', text: '', startedAt }))
+  const header = () => screen.getByRole('status').parentElement!
+  expect(screen.getByRole('status')).toHaveTextContent('대기 중')
+  expect(header()).not.toHaveTextContent('마지막 응답')
+  expect(container.querySelector('[data-live-dot]')).toHaveClass('motion-safe:animate-pulse')
+  act(() => vi.advanceTimersByTime(2000))
+  rerender(view({ requestId: 'r', replyId: 'a', text: '', reasoning: '검토', phase: '생각 중', startedAt }))
   expect(screen.getByRole('status')).toHaveTextContent('생각 중')
+  expect(header()).toHaveTextContent('마지막 응답 0초 전')
+  act(() => vi.advanceTimersByTime(3000))
+  expect(header()).toHaveTextContent('마지막 응답 3초 전')
+  rerender(view({ requestId: 'r', replyId: 'a', text: '', reasoning: '검토', phase: 'URL 읽는 중: https://example.com', startedAt }))
+  expect(screen.getByRole('status')).toHaveTextContent('URL 읽는 중: https://example.com')
+  expect(header()).toHaveTextContent('마지막 응답 0초 전')
+  rerender(view({ requestId: 'r', replyId: 'a', text: '답', reasoning: '검토', phase: '답변 중', startedAt }))
+  expect(screen.getByRole('status')).toHaveTextContent('답변 작성 중')
+  act(() => vi.advanceTimersByTime(19_000))
+  expect(screen.getByRole('status')).toHaveTextContent('답변 작성 중')
+  act(() => vi.advanceTimersByTime(2000))
+  // 마지막 신호 5초 + 서버 무응답 제한 300초 - 지금 26초 = 279초
+  expect(screen.getByRole('status')).toHaveTextContent('응답 대기 중')
+  expect(header()).toHaveTextContent('제한까지 4분 39초')
+  expect(container.querySelector('[data-live-dot]')).not.toHaveClass('motion-safe:animate-pulse')
+  rerender(view({ requestId: 'r', replyId: 'a', text: '답이 이어진다', reasoning: '검토', phase: '답변 중', startedAt }))
+  expect(screen.getByRole('status')).toHaveTextContent('답변 작성 중')
+  expect(screen.getAllByRole('status')).toHaveLength(1)
+  expect(screen.getAllByRole('timer')).toHaveLength(1)
+})
+
+it('S14: counts down the server limits of this request — first-token limit from its creation until a response arrives, then the idle limit', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-01-01T00:00:30Z'))
+  const client = new QueryClient()
+  const createdAt = Date.parse('2026-01-01T00:00:10Z') // 업로드 뒤 서버가 요청을 만든 시각 — 제출(00:00)보다 늦다
+  const view = (run: import('./useChat').ChatRun) => <QueryClientProvider client={client}><TooltipProvider><ChatMessages messages={[question]} waitingSince={Date.parse('2026-01-01T00:00:00Z')} run={run} /></TooltipProvider></QueryClientProvider>
+  const base = { requestId: 'r', replyId: 'a', startedAt: createdAt, firstTokenMs: 600_000, idleMs: 120_000 }
+  const { rerender } = render(view({ ...base, text: '', phase: '파일 올리는 중 1/1 · a.pdf' }))
+  const header = () => screen.getByRole('status').parentElement!
+  // 파일 진행은 서버 제한을 다시 걸지 않는다 — 생성 10초 + 첫 응답 600초 - 지금 30초 = 580초
+  act(() => vi.advanceTimersByTime(1000))
+  expect(screen.getByRole('status')).toHaveTextContent('응답 대기 중')
+  expect(header()).toHaveTextContent('제한까지 9분 39초')
+  rerender(view({ ...base, text: '', reasoning: '검토', phase: '생각 중' }))
+  act(() => vi.advanceTimersByTime(25_000))
+  // 생각(00:31) + 무응답 120초 - 지금 00:56 = 95초
+  expect(header()).toHaveTextContent('제한까지 1분 35초')
+})
+
+it('S14: a new request starts its quiet clock from its own start, not from the previous answer', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+  const client = new QueryClient()
+  const view = (run: import('./useChat').ChatRun | null) => <QueryClientProvider client={client}><TooltipProvider><ChatMessages messages={[question]} run={run} /></TooltipProvider></QueryClientProvider>
+  const { rerender } = render(view({ requestId: 'r', replyId: 'a', text: '답', startedAt: Date.now() }))
+  rerender(view(null))
+  act(() => vi.advanceTimersByTime(60_000))
+  rerender(view({ requestId: 'r2', replyId: 'b', text: '', startedAt: Date.now() }))
+  expect(screen.getByRole('status')).toHaveTextContent('대기 중')
+  expect(screen.getByRole('status').parentElement).not.toHaveTextContent('마지막 응답')
+})
+
+it('S14: keeps following the bottom while typed-out text grows the conversation, unless the reader scrolled up', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  const observers: Array<() => void> = []
+  const original = globalThis.ResizeObserver
+  globalThis.ResizeObserver = class { constructor(callback: () => void) { observers.push(callback) } observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver
+  onTestFinished(() => { globalThis.ResizeObserver = original })
+  const scrollIntoView = vi.fn()
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
+  render(view([question, answer]))
+  expect(observers.length).toBeGreaterThan(0)
+  scrollIntoView.mockClear()
+  act(() => observers.forEach((callback) => callback()))
+  expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'end', behavior: 'instant' }))
+  const scroll = screen.getByTestId('scroll')
+  Object.defineProperties(scroll, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 200 }, scrollTop: { configurable: true, writable: true, value: 100 } })
+  fireEvent.scroll(scroll)
+  scrollIntoView.mockClear()
+  act(() => observers.forEach((callback) => callback()))
+  expect(scrollIntoView).not.toHaveBeenCalled()
 })

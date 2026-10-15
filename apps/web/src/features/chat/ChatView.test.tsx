@@ -723,7 +723,7 @@ it.each([409, 500])('clears Enter immediately, waits through upload and restores
   fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
   await waitFor(() => expect(input).toHaveValue(''))
   expect(screen.queryByText('restore.txt')).not.toBeInTheDocument()
-  expect(screen.getByRole('status')).toHaveTextContent('생각 중')
+  expect(screen.getByRole('status')).toHaveTextContent('대기 중')
   expect(screen.getByRole('timer')).toBeVisible()
   finishUpload(Response.json({ id: 'f', name: 'restore.txt' }))
   await waitFor(() => expect(input).toHaveValue('복원할 질문'))
