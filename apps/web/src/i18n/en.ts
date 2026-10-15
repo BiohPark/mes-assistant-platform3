@@ -468,6 +468,7 @@ export const en = {
       clearSearch: 'Clear search',
       inputUnavailable: 'Could not check the file information. Your selection is kept.',
       uploadShareHint: 'Available as a material in conversations with the same tags.',
+      srFiles: 'Linked SR attachments', srFilesHelp: 'The SR attachments themselves are referenced. Only checked attachments go to AI.', srAttachment: 'SR attachment',
     },
     notes: { title: 'Notes', loadFailed: 'Could not load notes.', body: 'Note text', placeholder: 'Write a note', attach: 'Attach shared files', add: 'Add note' },
     related: { linked: 'Same-tag conversations {count}', sameTag: 'Conversations with the same tags', more: '+{count}', loading: 'Finding same-tag conversations…', loadFailed: 'Could not load same-tag conversations', retry: 'Retry', none: 'No same-tag conversations',

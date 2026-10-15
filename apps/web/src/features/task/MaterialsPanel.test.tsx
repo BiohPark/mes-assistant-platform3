@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import type { Task } from '@mes/domain'
 import { MeContext } from '@/app/auth'
 import { jsonResponse, renderWithProviders } from '@/test/render'
@@ -9,6 +9,56 @@ import { MaterialsPanel } from './MaterialsPanel'
 const toastSuccess = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: toastSuccess, warning: vi.fn() } }))
 afterEach(() => { vi.unstubAllGlobals(); toastSuccess.mockClear() })
+// 실시간 이벤트(sr.updated) 구독을 테스트에서 직접 흘려 넣는다
+const liveListeners = vi.hoisted(() => new Set<(event: { event: string; data: Record<string, unknown> }) => void>())
+vi.mock('@/app/useEvents', async (original) => ({ ...await original<typeof import('@/app/useEvents')>(),
+  subscribeEvent: (listener: (event: { event: string; data: Record<string, unknown> }) => void) => { liveListeners.add(listener); return () => { liveListeners.delete(listener) } } }))
+
+it('S13: 연결된 SR 첨부 구역 — 같은 파일을 보이고 미리보기·내려받기·선택 해제를 하며 SR 변경을 실시간 반영한다', async () => {
+  const calls: Array<[string, RequestInit | undefined]> = []
+  const srFile = { id: 'sf', originSrId: 'sr1', name: 'spec.txt', mime: 'text/plain', size: 4, sha256: 'x', version: 1, source: 'upload', isOutput: false, uploadedBy: 'r', uploadedAt: '2026-01-01T00:00:00.000Z' }
+  let srFiles: Array<Record<string, unknown>> = [{ file: srFile, srId: 'sr1', srCode: 'SR-2026-0001', srTitle: '알람', selected: 'reference' }]
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push([url, init])
+    if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [], srFiles, conversations: [] })
+    if (url === '/api/files/sf/content') return new Response('본문', { status: 200 })
+    if (url === '/api/files/sf2/content') return new Response('추가', { status: 200 })
+    if (url === '/api/tasks/t/inputs/sf') return new Response(null, { status: 204 })
+    return jsonResponse(200, [])
+  }))
+  vi.stubGlobal('URL', Object.assign(Object.create(URL), { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() }))
+  const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+  onTestFinished(() => anchorClick.mockRestore())
+  const task = { ...baseTask, id: 't', tags: ['SR-2026-0001'], inputs: [{ fileId: 'sf', weight: 'reference' as const, selectedAt: '2026-01-01T00:00:00.000Z', selectedBy: 'u' }] } satisfies Task
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={task} /></MeContext>)
+  const section = await screen.findByTestId('materials-sr-files')
+  expect(section).toHaveTextContent('연결된 SR 첨부')
+  expect(section).toHaveTextContent('SR-2026-0001')
+  expect(within(section).getByTestId('sr-file-sf')).toHaveTextContent('spec.txt v1')
+  // 선택 목록에도 같은 파일이 SR 첨부 출처로 보인다(정보 없음으로 떨어지지 않는다)
+  expect(screen.getByTestId('selected-file-sf')).toHaveTextContent('SR 첨부 · SR-2026-0001')
+  // 내려받기
+  fireEvent.click(within(section).getByRole('button', { name: '다운로드' }))
+  await waitFor(() => expect(calls.some(([url]) => url === '/api/files/sf/content')).toBe(true))
+  // 미리보기
+  fireEvent.click(within(section).getByRole('button', { name: 'spec.txt v1' }))
+  expect(await screen.findByText('본문')).toBeInTheDocument()
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+  // 체크 해제 = 입력에서 뺀다(같은 setInput 경로)
+  fireEvent.click(within(section).getByLabelText('spec.txt 입력 해제'))
+  await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t/inputs/sf' && init?.method === 'DELETE')).toBe(true))
+  // SR이 바뀌면(sr.updated) 다시 읽는다
+  srFiles = [...srFiles, { file: { ...srFile, id: 'sf2', name: 'more.txt' }, srId: 'sr1', srCode: 'SR-2026-0001', srTitle: '알람' }]
+  act(() => { for (const listener of liveListeners) listener({ event: 'sr.updated', data: { srId: 'sr1' } }) })
+  expect(await screen.findByTestId('sr-file-sf2')).toHaveTextContent('more.txt v1')
+})
+
+it('S13: 연결 SR 첨부가 없으면 구역을 그리지 않는다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/tasks/t/candidates' ? jsonResponse(200, { files: [], srFiles: [], conversations: [] }) : jsonResponse(200, [])))
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={baseTask} /></MeContext>)
+  expect(await screen.findByText('선택한 파일이 없습니다.')).toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByTestId('materials-sr-files')).not.toBeInTheDocument())
+})
 
 it('shows a selected older version, offers an explicit switch, and keeps indirect files out of the pool', async () => {
   const calls: Array<[string, RequestInit | undefined]> = []
