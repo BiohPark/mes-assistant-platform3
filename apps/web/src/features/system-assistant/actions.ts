@@ -3,7 +3,7 @@ import { newId } from '@/lib/ids'
 import { normalizeTag } from '@mes/domain'
 import { SystemAssistantToolArgs, type ClassificationInput } from '@mes/contracts'
 import { createAssistant } from '@/api/admin'
-import { addTag, listTasks, startConversation, updateTask, type Actor } from '@/api/tasks'
+import { addTag, listTaskPage, startConversation, updateTask, type Actor } from '@/api/tasks'
 import { queryClient } from '@/api/queryClient'
 import { listAssistants, listUsers } from '@/lib/catalog'
 
@@ -72,8 +72,8 @@ export async function applyProposal(actor: Actor, proposal: ProposedAction, t: T
         return { ok: true, message: t('systemAssistant.assistantCreated', { name: created.name }), link: '/assistants/manage' }
       }
       case 'add_tag': {
-        const code = str(args.taskCode)
-        const task = (await listTasks()).find((row) => row.code === code)
+        const code = str(args.taskCode).trim()
+        const task = (await listTaskPage({ q: code, limit: 30 })).items.find((row) => row.code.toLowerCase() === code.toLowerCase())
         if (!task) return { ok: false, message: t('systemAssistant.conversationNotFound', { code }) }
         const tag = normalizeTag(str(args.tag))
         if (!tag) return { ok: false, message: t('systemAssistant.emptyTag') }

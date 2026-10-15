@@ -52,6 +52,8 @@ it('S14: 카드의 SR 칩(태그·시작 SR)은 SR 상세를 열고 일반 태�
     <ConversationCard task={{ ...oldTask, tags: ['SR-2026-0001', '일반'], linkedSrCodes: ['SR-2026-0002', 'SR-2026-0001'] }} onTagClick={onTagClick} /><Probe /></TooltipProvider></MeContext>)
   await userEvent.click(screen.getByRole('button', { name: '일반' }))
   expect(onTagClick).toHaveBeenCalledWith('일반')
+  expect(screen.getByRole('button', { name: '연결 SR 2건' })).toHaveTextContent('SR 2')
+  await userEvent.click(screen.getByRole('button', { name: '연결 SR 2건' }))
   await userEvent.click(screen.getByRole('button', { name: 'SR-2026-0002' }))
   await waitFor(() => expect(screen.getByLabelText('경로')).toHaveTextContent('/sr/manage?id=sr-2'))
   expect(onTagClick).toHaveBeenCalledTimes(1)

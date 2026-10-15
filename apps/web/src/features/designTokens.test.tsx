@@ -66,7 +66,7 @@ it('shows successfully applied system assistant proposals with a success tone', 
     if (url === '/api/system-assistant/messages') return jsonResponse(200, {
       text: '확인하세요', toolCalls: [{ id: 'tag', name: 'add_tag', arguments: '{"taskCode":"WK-2026-0001","tag":"release"}' }],
     })
-    if (url === '/api/tasks') return jsonResponse(200, [task])
+    if (url.startsWith('/api/tasks?')) return jsonResponse(200, [task])
     if (url === '/api/tasks/t/tags/release' && init?.method === 'PUT') { writes.push(url); return jsonResponse(204) }
     return jsonResponse(404)
   }))

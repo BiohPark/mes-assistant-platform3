@@ -53,7 +53,7 @@ it('예시 프리필 후 명시적으로 전송·적용하면 기존 성공 표�
   const writes: string[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/system-assistant/messages') return Response.json({ text: '확인하세요', toolCalls: [{ id: 'tag', name: 'add_tag', arguments: '{"taskCode":"WK-2026-0001","tag":"release"}' }] })
-    if (url === '/api/tasks') return Response.json([task])
+    if (url.startsWith('/api/tasks?')) return Response.json([task])
     if (url === '/api/tasks/t/tags/release' && init?.method === 'PUT') { writes.push(url); return new Response(null, { status: 204 }) }
     return Response.json({ mode: 'mock', model: 'mock' })
   }))

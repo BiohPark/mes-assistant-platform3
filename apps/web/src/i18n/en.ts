@@ -95,7 +95,8 @@ export const en = {
     classification: 'Category', filters: 'Filters', removeClassification: 'Remove {name}', continueConversations: 'Continue', viewAllMine: 'View all',
   },
   myWork: {
-    description: 'Conversations you own or participate in, ordered by recent activity.',
+    active: 'Active · On hold', completed: 'Completed', tabs: 'Work status', search: 'Search my work', groupBy: 'Group by', due: 'Due date', status: 'Status', assistant: 'Agent', sr: 'SR', overdue: 'Overdue', today: 'Today', week: 'This week', later: 'Later', none: 'No deadline', noSr: 'No linked SR', linkedSrs: '{count} linked SRs', more: 'More', srHint: 'Conversations linked to multiple SRs appear in each group.', loadedHint: 'Groups show loaded conversations. Select More to see older conversations.',
+    description: 'Conversations you own or participate in, grouped by deadline.',
     includeCompleted: 'Include completed',
     list: 'My work conversations',
     recentActivity: 'Recent activity',

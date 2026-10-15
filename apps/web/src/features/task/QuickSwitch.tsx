@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useShortcut } from '@/lib/useShortcut'
-import { useConversationUnread } from '@/lib/conversationRead'
-import type { Task } from '@mes/domain'
+import { useListUnread } from '@/components/TaskListIndicators'
+import type { TaskSummary } from '@mes/domain'
 import { ArrowLeftRight, Check } from 'lucide-react'
 import { useNavigate } from 'react-router'
-import { listTasks } from '@/api/tasks'
+import { listTaskPage } from '@/api/tasks'
+import { taskKeys, useMyActive } from '@/api/tasks.queries'
 import { listSr } from '@/api/sr'
 import { useMe } from '@/app/auth'
 import { srDetailPath } from '@/app/useOpenSr'
@@ -14,27 +15,31 @@ import { Input } from '@/components/ui/input'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { SrStatusBadge } from '@/components/StatusBadges'
 import { AiRequestChip } from '@/features/home/AiRequestChip'
-import { isAiResponding, selectMyActive } from '@/features/home/myActive'
+import { isAiResponding } from '@/features/home/myActive'
 import { useT } from '@/i18n'
 
 const LIMIT = 10
 
 /**
- * 대화 화면에서 내 진행 중 대화로 바로 옮긴다. 허브와 같은 ['tasks'] 쿼리·판정이고 SSE 무효화는 useEvents가 한다. 초안은 Composer가 taskId별로 보존한다.
+ * 대화 화면에서 내 진행 중 대화로 바로 옮긴다. 허브와 같은 요약 쿼리·판정이고 SSE 무효화는 useEvents가 한다. 초안은 Composer가 taskId별로 보존한다.
  * 검색어를 넣으면 보이는 대화(번호·제목·연결 SR)와 SR(번호·제목 — 열람 범위는 SR 목록 API가 적용)을 찾는다(S14). SR 목록은 검색할 때만 부른다.
  */
 export function QuickSwitch({ currentTaskId }: { currentTaskId: string }) {
   const t = useT()
   const me = useMe()
   const navigate = useNavigate()
-  const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => listTasks() })
-  const items = selectMyActive(tasks.data ?? [], me.id, LIMIT)
+  const tasks = useMyActive(me.id, LIMIT)
+  const items = tasks.items
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [debounced, setDebounced] = useState('')
+  useEffect(() => { const timer = setTimeout(() => setDebounced(query.trim()), 200); return () => clearTimeout(timer) }, [query])
   const needle = query.trim().toLocaleLowerCase()
+  const filter = { q: debounced, limit: LIMIT }
+  const found = useQuery({ queryKey: taskKeys.page(me.id, filter), queryFn: ({ signal }) => listTaskPage(filter, signal), enabled: open && !!debounced })
   const srs = useQuery({ queryKey: ['sr', 'inbox'], queryFn: () => listSr('inbox'), enabled: open && !!needle })
   const matches = (...values: Array<string | undefined>) => values.some((value) => value?.toLocaleLowerCase().includes(needle))
-  const foundTasks = needle ? (tasks.data ?? []).filter((task) => matches(task.code, task.title, ...(task.linkedSrCodes ?? []))).slice(0, LIMIT) : []
+  const foundTasks = needle && needle === debounced.toLocaleLowerCase() ? found.data?.items ?? [] : []
   const foundSrs = needle ? (srs.data ?? []).filter((sr) => sr.code && matches(sr.code, sr.title)).slice(0, LIMIT) : []
   const trigger = useRef<HTMLButtonElement>(null)
   const search = useRef<HTMLInputElement>(null)
@@ -47,7 +52,7 @@ export function QuickSwitch({ currentTaskId }: { currentTaskId: string }) {
     return () => cancelAnimationFrame(frame)
   }, [open])
   const responding = items.filter(isAiResponding).length
-  const taskItem = (task: Task) => {
+  const taskItem = (task: TaskSummary) => {
     const current = task.id === currentTaskId
     return <DropdownMenuItem key={task.id} disabled={current} aria-current={current ? 'page' : undefined} onSelect={() => void navigate(`/c/${encodeURIComponent(task.id)}`)} className="items-start text-xs">
       <div className="min-w-0 flex-1">
@@ -78,7 +83,8 @@ export function QuickSwitch({ currentTaskId }: { currentTaskId: string }) {
             <div className="truncate font-medium">{sr.title}</div>
           </div>
         </DropdownMenuItem>)}</>}
-        {srs.isPending ? !foundTasks.length && <DropdownMenuItem disabled className="text-xs">{t('common.loading')}</DropdownMenuItem>
+        {(needle !== debounced.toLocaleLowerCase() || found.isPending || srs.isPending) ? !foundTasks.length && <DropdownMenuItem disabled className="text-xs">{t('common.loading')}</DropdownMenuItem>
+          : found.isError ? <DropdownMenuItem className="text-xs" onSelect={(event) => { event.preventDefault(); void found.refetch() }}>{t('hub.listFailed')} {t('common.retry')}</DropdownMenuItem>
           : srs.isError ? <DropdownMenuItem className="text-xs" onSelect={(event) => { event.preventDefault(); void srs.refetch() }}>{t('sr.loadFailed')} {t('common.retry')}</DropdownMenuItem>
           : !foundTasks.length && !foundSrs.length && <DropdownMenuItem disabled className="text-xs">{t('task.header.quickSearchEmpty')}</DropdownMenuItem>}
       </> : <>
@@ -92,8 +98,8 @@ export function QuickSwitch({ currentTaskId }: { currentTaskId: string }) {
   </DropdownMenu>
 }
 
-function UnreadDot({ task, userId }: { task: Task; userId: string }) {
+function UnreadDot({ task, userId }: { task: TaskSummary; userId: string }) {
   const t = useT()
-  const unread = useConversationUnread(task, userId)
+  const unread = useListUnread(task, userId)
   return unread ? <span role="img" aria-label={t('chat.unread')} title={t('chat.unread')} className="size-2 shrink-0 rounded-full bg-primary" /> : null
 }

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
-import type { Task } from '@mes/domain'
+import { patchTaskPhase, resetTaskPages, type TaskListCache } from '@/api/tasks.cache'
 
 export type LiveEvent = { event: string; data: Record<string, unknown> }
 const listeners = new Set<(event: LiveEvent) => void>()
@@ -34,6 +34,7 @@ function invalidateTaskList(query: QueryClient) {
   const invalidate = () => {
     state.timer = undefined
     state.lastInvalidated = Date.now()
+    resetTaskPages(query)
     void query.invalidateQueries({ queryKey: ['tasks'] })
   }
   if (remaining <= 0) {
@@ -53,7 +54,7 @@ function requestStatusChanged(query: QueryClient, requestId: string | undefined,
 }
 
 export function applyEvent(query: QueryClient, event: string, data: Record<string, unknown>) {
-  if (event === 'resync') { clearEventState(query); void query.invalidateQueries(); return }
+  if (event === 'resync') { clearEventState(query); resetTaskPages(query); void query.invalidateQueries(); return }
   const taskId = typeof data.taskId === 'string' ? data.taskId : undefined
   const threadId = typeof data.threadId === 'string' ? data.threadId : undefined
   const requestId = typeof data.requestId === 'string' ? data.requestId : undefined
@@ -73,9 +74,7 @@ export function applyEvent(query: QueryClient, event: string, data: Record<strin
     if (event === 'request.updated' && taskId && (data.status === 'pending' || data.status === 'streaming') &&
       (typeof data.phase === 'string' || data.phase === null)) {
       const phase = data.phase ?? undefined
-      query.setQueriesData<Task[]>({ queryKey: ['tasks'] }, tasks => tasks?.map(task =>
-        task.id === taskId && task.aiRequest && task.aiRequest.status === data.status
-          ? { ...task, aiRequest: { ...task.aiRequest, phase } } : task))
+      query.setQueriesData<TaskListCache>({ queryKey: ['tasks'] }, tasks => patchTaskPhase(tasks, taskId, String(data.status), phase))
     }
     if (threadId) {
       void query.cancelQueries({ queryKey: ['messages', threadId] })

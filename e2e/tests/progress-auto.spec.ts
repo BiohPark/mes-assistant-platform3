@@ -60,11 +60,14 @@ for (const discussion of [false, true]) {
 test('7일 초과 무활동은 칸반·내 작업에 정체 표시만 추가한다', async ({ page }) => {
   const task = await setup(page)
   // 시간만 fixture로 바꾼다. 서버 상태가 변하지 않는지는 실제 API로 확인한다.
-  await page.route('**/api/tasks', async route => {
+  await page.route(/\/api\/tasks(?:\/board)?(?:\?.*)?$/, async route => {
     if (route.request().method() !== 'GET') return route.continue()
     const response = await route.fetch()
-    const tasks = await response.json() as Array<{ id: string; lastActivityAt: string }>
-    await route.fulfill({ response, json: tasks.map(item => item.id === task.id ? { ...item, lastActivityAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString() } : item) })
+    type Row = { id: string; lastActivityAt: string }
+    const body = await response.json() as Row[] | { columns: Array<{ items: Row[] }> }
+    const age = (item: Row) => item.id === task.id ? { ...item, lastActivityAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString() } : item
+    const json = Array.isArray(body) ? body.map(age) : { ...body, columns: body.columns.map(column => ({ ...column, items: column.items.map(age) })) }
+    await route.fulfill({ response, json })
   })
   await page.goto('/?view=kanban')
   const card = page.getByRole('link', { name: new RegExp(task.code) }).locator('..')

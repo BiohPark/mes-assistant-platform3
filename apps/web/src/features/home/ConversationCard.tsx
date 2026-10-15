@@ -1,6 +1,7 @@
 import { use } from 'react'
 import { MeContext } from '@/app/auth'
-import { useConversationUnread } from '@/lib/conversationRead'
+import { useListUnread, StalledIndicator } from '@/components/TaskListIndicators'
+import { LinkedSrChip } from '@/components/LinkedSrChip'
 import { useT } from '@/i18n'
 import { Link } from 'react-router'
 import { CalendarClock, FileInput, MoreHorizontal, Sparkles } from 'lucide-react'
@@ -11,17 +12,16 @@ import { TagChip } from '@/components/TagChip'
 import { AvatarGroup } from '@/components/UserAvatar'
 import { useUserMap } from '@/app/hooks'
 import { useOpenSr } from '@/app/useOpenSr'
-import { primarySrTag, srTagColor, tagKey, TASK_STATUSES, type Task, type TaskStatus } from '@mes/domain'
+import { primarySrTag, srTagColor, tagKey, TASK_STATUSES, type Task, type TaskSummary, type TaskStatus } from '@mes/domain'
 import { daysUntil, useDates } from '@/lib/dates'
 import { TASK_STATUS_KEY } from '@/lib/labels'
 import { cn } from '@/lib/utils'
-import { StalledBadge } from '@/features/task/StalledBadge'
 import { AiRequestChip } from './AiRequestChip'
 
 const MAX_TAGS = 3
 
 interface ConversationCardProps {
-  task: Task
+  task: Task | TaskSummary
   onTagClick: (tag: string) => void
   /** 완료로 바꾸는 것은 완료 절차(리포트·피드백)가 있어 대화 화면에서만 한다 */
   onStatusChange?: (status: TaskStatus) => void
@@ -37,14 +37,16 @@ export function ConversationCard({ task, onTagClick, onStatusChange, 'data-tour'
   const { formatRelative } = useDates()
   const t = useT()
   const users = useUserMap()
-  const unread = useConversationUnread(task, use(MeContext)?.id ?? '')
+  const unread = useListUnread(task, use(MeContext)?.id ?? '')
   const openSr = useOpenSr()
   // 칩 = 태그 + 태그로 보이지 않는 연결 SR(시작한 SR의 태그를 뗀 경우). 목록 응답의 linkedSrCodes만 쓴다 — 카드마다 조회하지 않는다
   const chips = [...task.tags, ...(task.linkedSrCodes ?? []).filter((code) => !task.tags.some((value) => tagKey(value) === tagKey(code)))]
   const sr = primarySrTag(chips)
   const daysLeft = daysUntil(task.dueDate)
   const overdue = task.status !== 'done' && daysLeft !== undefined && daysLeft < 0
-  const extraTags = chips.length - MAX_TAGS
+  const tags = task.tags.filter(tag => !(task.linkedSrCodes ?? []).some(code => tagKey(code) === tagKey(tag)))
+  const extraTags = tags.length - MAX_TAGS
+  const inputCount = 'inputCount' in task ? task.inputCount : task.inputs.length
 
   return (
     <div
@@ -58,14 +60,15 @@ export function ConversationCard({ task, onTagClick, onStatusChange, 'data-tour'
         {unread && <span role="img" aria-label={t('chat.unread')} title={t('chat.unread')} className="size-2 shrink-0 rounded-full bg-primary" />}
         <TaskStatusBadge status={task.status} className="h-5 shrink-0 px-1.5 text-[11px]" />
         {task.aiRequest && <AiRequestChip aiRequest={task.aiRequest} className="h-5 shrink-0 px-1.5 text-[11px]" />}
-        <StalledBadge task={task} className="h-5 shrink-0 px-1.5 text-[11px]" />
+        <StalledIndicator task={task} className="h-5 shrink-0 px-1.5 text-[11px]" />
         {task.titleSource === 'ai' && <Sparkles className="size-2.5 shrink-0 text-tone-violet-fg" aria-label={t('hub.aiTitle')} />}
         <span className="ml-auto min-w-0 truncate">{formatRelative(task.lastActivityAt)}</span>
       </div>
       <div className="pointer-events-none mt-1 line-clamp-2 text-[13px] leading-snug font-medium">{task.title}</div>
-      {chips.length > 0 && (
+      {(tags.length > 0 || !!task.linkedSrCodes?.length) && (
         <div className="relative z-10 mt-1.5 flex flex-wrap gap-1">
-          {chips.slice(0, MAX_TAGS).map((t) => (
+          <LinkedSrChip codes={task.linkedSrCodes} />
+          {tags.slice(0, MAX_TAGS).map((t) => (
             <TagChip key={t} tag={t} size="xs" onClick={onTagClick} onSrClick={(code) => void openSr(code)} />
           ))}
           {extraTags > 0 && <span className="text-[11px] text-muted-foreground">+{extraTags}</span>}
@@ -75,10 +78,10 @@ export function ConversationCard({ task, onTagClick, onStatusChange, 'data-tour'
         <span className="pointer-events-none">
           <AvatarGroup users={[task.ownerId, ...task.assigneeIds.filter((id) => id !== task.ownerId)].map((id) => users.get(id))} max={3} />
         </span>
-        {task.inputs.length > 0 && (
+        {inputCount > 0 && (
           <span className="pointer-events-none inline-flex items-center gap-0.5" title={t('hub.selectedInputs')}>
             <FileInput className="size-3" />
-            {task.inputs.length}
+            {inputCount}
           </span>
         )}
         {task.dueDate && task.status !== 'done' && (
