@@ -25,15 +25,39 @@ const scrollIntoView = vi.fn()
 let pill: HTMLButtonElement
 const dialog = () => screen.getByRole('dialog', { name: '페이지 가이드' })
 const spotlight = () => screen.getByTestId('tour-spotlight')
-const start = (route: Parameters<ReturnType<typeof useTourStore.getState>['start']>[0]) => act(() => { useTourStore.getState().start(route) })
+const start = (route: Parameters<ReturnType<typeof useTourStore.getState>['start']>[0]) => act(() => { useTourStore.getState().start(route); vi.advanceTimersByTime(1500) })
 
 beforeEach(() => {
+  vi.useFakeTimers()
   stubViewport(1280)
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
   localStorage.clear()
   pill = target('pill', box(16, 700, 48, 48), 'button') as HTMLButtonElement
 })
-afterEach(() => { act(() => useTourStore.getState().close()); document.querySelectorAll('[data-tour]').forEach(element => element.remove()); vi.clearAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => { act(() => useTourStore.getState().close()); document.querySelectorAll('[data-tour]').forEach(element => element.remove()); vi.clearAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
+
+it('renders no card or spotlight while waiting; Escape cancels and returns focus without a delayed tour', () => {
+  renderWithProviders(<GuideTour userId="u" pillRef={{ current: pill }} />)
+  act(() => useTourStore.getState().start('conversation'))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('tour-spotlight')).not.toBeInTheDocument()
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(pill).toHaveFocus()
+  target('composer')
+  target('task-tabs')
+  act(() => vi.advanceTimersByTime(1500))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(useTourStore.getState().route).toBeNull()
+})
+
+it('navigating away during the wait cancels the pending tour', () => {
+  renderWithProviders(<><GuideTour userId="u" pillRef={{ current: pill }} /><Link to="/sr">go</Link></>)
+  act(() => useTourStore.getState().start('conversation'))
+  fireEvent.click(screen.getByRole('link', { name: 'go' }))
+  act(() => vi.advanceTimersByTime(1500))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(useTourStore.getState().route).toBeNull()
+})
 
 it('spotlights the current target with a primary border, moves with Enter·Space·buttons, finishes on the last step and returns focus to the pill', () => {
   const search = target('hub-search')

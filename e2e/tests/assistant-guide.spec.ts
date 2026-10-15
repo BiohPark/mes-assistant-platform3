@@ -61,6 +61,7 @@ test('창의 "가이드해 주세요"는 창을 닫고 투어를 시작한다; �
   await signUp(page)
   const task = await createTask(page) // 태그 없음 → 같은 태그 패널 없음
   await page.goto(`/c/${task.id}`)
+  await expect(page.getByRole('textbox', { name: 'AI 요청 입력' })).toBeVisible()
   await offer(page).getByRole('button', { name: '괜찮아요' }).click()
   await page.getByRole('button', { name: 'AI 도우미 열기' }).click()
   const window = page.getByRole('dialog', { name: '시스템 assistant' })

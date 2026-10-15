@@ -58,32 +58,60 @@ export function tourTarget(id: string): HTMLElement | undefined {
 }
 
 interface TourState {
+  /** 대상 대기 중에도 route를 두어 Esc·페이지 이동으로 취소할 수 있다 */
   route: PageRoute | null
-  /** 시작 시점에 대상이 있던 단계만 — n/total이 투어 중 흔들리지 않는다 */
+  /** 대상 대기가 끝난 뒤 확정한 단계 — 대기 중에는 비워 깜빡임을 막는다 */
   steps: readonly TourStep[]
   index: number
-  /** 보이는 대상이 하나도 없으면 시작하지 않고 false */
-  start: (route: PageRoute) => boolean
+  /** 최대 1.5초 기다린 뒤 보이는 대상만 확정한다. 하나도 없으면 닫는다 */
+  start: (route: PageRoute) => void
   next: () => void
   prev: () => void
   close: () => void
 }
 
-export const useTourStore = create<TourState>()((set, get) => ({
-  route: null,
-  steps: [],
-  index: 0,
-  start: (route) => {
-    const steps = TOUR_STEPS[route].filter((step) => tourTarget(step.target))
-    if (steps.length === 0) return false
-    set({ route, steps, index: 0 })
-    return true
-  },
-  next: () => {
-    const { index, steps } = get()
-    if (index + 1 >= steps.length) get().close()
-    else set({ index: index + 1 })
-  },
-  prev: () => set((state) => ({ index: Math.max(0, state.index - 1) })),
-  close: () => set({ route: null, steps: [], index: 0 }),
-}))
+export const useTourStore = create<TourState>()((set, get) => {
+  let cancelPending: (() => void) | undefined
+  return {
+    route: null,
+    steps: [],
+    index: 0,
+    start: (route) => {
+      cancelPending?.()
+      const candidates = TOUR_STEPS[route]
+      const shownSteps = () => candidates.filter((step) => tourTarget(step.target))
+      const ready = shownSteps()
+      if (ready.length === candidates.length) {
+        set({ route, steps: ready, index: 0 })
+        return
+      }
+      // 도우미 창 닫기·페이지 렌더·CSS 전환을 다음 프레임마다 확인한다.
+      // 타이머는 백그라운드 탭처럼 rAF가 멈춘 경우에도 대기를 끝낸다.
+      let frame = 0
+      const finish = () => {
+        cancelPending?.()
+        const steps = shownSteps()
+        set({ route: steps.length ? route : null, steps, index: 0 })
+      }
+      const timer = setTimeout(finish, 1500)
+      cancelPending = () => {
+        cancelAnimationFrame(frame)
+        clearTimeout(timer)
+        cancelPending = undefined
+      }
+      const poll = () => {
+        if (shownSteps().length === candidates.length) finish()
+        else frame = requestAnimationFrame(poll)
+      }
+      frame = requestAnimationFrame(poll)
+      set({ route, steps: [], index: 0 })
+    },
+    next: () => {
+      const { index, steps } = get()
+      if (index + 1 >= steps.length) get().close()
+      else set({ index: index + 1 })
+    },
+    prev: () => set((state) => ({ index: Math.max(0, state.index - 1) })),
+    close: () => { cancelPending?.(); set({ route: null, steps: [], index: 0 }) },
+  }
+})
