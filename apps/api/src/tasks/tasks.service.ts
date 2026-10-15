@@ -8,6 +8,7 @@ import { DB, type Db } from '../db/db.module.js'
 import { activityLog, appUser, assistant, assistantChecklistTemplate, chatRequest, chatRequestInput, checklistItem, checklistReview, checklistReviewItem, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, serviceRequest, tag, task, taskAssignee, taskFeedback, taskInput, taskTag, thread } from '../db/schema.js'
 import { EventsService } from '../events/events.service.js'
 import { assertTaskAccess, assertThreadAccess } from '../sr/access.js'
+import { srAttachments } from '../files/sr-attachments.js'
 import type { TaskExtrasService } from './task-extras.service.js'
 import { NotificationsService } from '../notifications/notifications.service.js'
 
@@ -213,6 +214,14 @@ export class DbTasksService {
         }
       }
       await tx.insert(activityLog).values({ id: id(), type: 'task.created', userId: actor, taskId, assistantId: selected.id, payload: { assistantName: selected.name } })
+      if (srId) {
+        // SR에서 시작한 업무: 접수 첨부 정본을 참고 입력으로 기본 선택한다. 파일은 복사하지 않고 같은 file_object를 가리키며, 사람이 ×로 뺀다.
+        const attachments = await srAttachments(tx, srId)
+        if (attachments.length) {
+          await tx.insert(taskInput).values(attachments.map((file, sortOrder) => ({ taskId, fileId: file.id, weight: 'reference', sortOrder, selectedBy: actor })))
+          await tx.insert(activityLog).values(attachments.map((file) => ({ id: id(), type: 'input.selected', userId: actor, taskId, payload: { name: file.originalName, version: file.version, weight: 'reference' } })))
+        }
+      }
       return taskId
     })
     const created = await this.get(createdId)

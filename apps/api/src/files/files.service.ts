@@ -9,6 +9,7 @@ import { FileStorageService, createStorageKey, isWindowsReservedName, sha256 } f
 import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
 import { assertFileAccess, assertSrAccess, assertTaskAccess } from '../sr/access.js'
 import { serviceRequest } from '../db/schema.js'
+import { assertFileReadable, srAttachments } from './sr-attachments.js'
 
 export const FILE_STORAGE = Symbol('FILE_STORAGE')
 type FileRow = typeof fileObject.$inferSelect
@@ -55,9 +56,9 @@ export class DbFilesService {
     }
   }
 
-  async get(fileId: string, actor?: string) { if (actor) await assertFileAccess(this.db, actor, fileId); return fileMeta(await this.row(fileId)) }
-  async content(fileId: string, actor?: string) { if (actor) await assertFileAccess(this.db, actor, fileId); return this.storage.read((await this.row(fileId)).storageKey) }
-  async contentStream(fileId: string, actor?: string) { if (actor) await assertFileAccess(this.db, actor, fileId); return this.storage.createReadStream((await this.row(fileId)).storageKey) }
+  async get(fileId: string, actor?: string) { if (actor) await assertFileReadable(this.db, actor, fileId); return fileMeta(await this.row(fileId)) }
+  async content(fileId: string, actor?: string) { if (actor) await assertFileReadable(this.db, actor, fileId); return this.storage.read((await this.row(fileId)).storageKey) }
+  async contentStream(fileId: string, actor?: string) { if (actor) await assertFileReadable(this.db, actor, fileId); return this.storage.createReadStream((await this.row(fileId)).storageKey) }
 
   async uploadSr(actor: string, srId: string, name: string, mime: string, bytes: Uint8Array) {
     validName(name)
@@ -236,7 +237,16 @@ export class DbFilesService {
       try { await assertFileAccess(this.db, actor, item.file.id); return item }
       catch (error) { if (error instanceof ForbiddenException) return null; throw error }
     }))).filter((item): item is (typeof files)[number] => item !== null) : files
-    return { files: visible, conversations: await new DbConversationInputsService(this.db).candidates(taskId, actor) }
+    return { files: visible, srFiles: await this.linkedSrFiles(taskId, selectedById), conversations: await new DbConversationInputsService(this.db).candidates(taskId, actor) }
+  }
+
+  /** 연결 SR(task.srId — SR에서 시작한 업무)의 접수 첨부 정본. 태그 공유 후보와 따로, 같은 file_object를 그대로 보인다. */
+  private async linkedSrFiles(taskId: string, selectedById: Map<string, string>) {
+    const [owner] = await this.db.select({ srId: task.srId, code: serviceRequest.code, title: serviceRequest.title }).from(task)
+      .innerJoin(serviceRequest, eq(serviceRequest.id, task.srId)).where(eq(task.id, taskId))
+    if (!owner?.srId) return []
+    return (await srAttachments(this.db, owner.srId)).map((row) => ({ file: fileMeta(row), srId: owner.srId!, srCode: owner.code ?? '', srTitle: owner.title,
+      ...(selectedById.has(row.id) && { selected: selectedById.get(row.id) }) }))
   }
 
   async filesForTask(taskId: string, actor?: string) {
@@ -250,17 +260,23 @@ export class DbFilesService {
 
   async setInput(actor: string, taskId: string, fileId: string, weight: 'main' | 'reference' | null) {
     await assertTaskAccess(this.db, actor, taskId)
-    await assertFileAccess(this.db, actor, fileId)
+    await assertFileReadable(this.db, actor, fileId)
     await this.db.transaction(async (tx) => {
       const source = await this.row(fileId, tx)
-      if (source.kind !== 'task_file' || !source.originTaskId) throw new BadRequestException('선택할 수 없는 파일입니다')
-      await this.lockTasks(tx, [taskId, source.originTaskId])
-      await this.editable(taskId, tx)
+      // 연결 SR 첨부(sr_attachment)는 업무가 아닌 SR에 속하므로 이 업무 행만 잠근다
+      const fromSr = source.kind === 'sr_attachment'
+      if (!fromSr && (source.kind !== 'task_file' || !source.originTaskId)) throw new BadRequestException('선택할 수 없는 파일입니다')
+      await this.lockTasks(tx, fromSr ? [taskId] : [taskId, source.originTaskId!])
+      const owner = await this.editable(taskId, tx)
       const row = await this.row(fileId, tx)
-      if (row.kind !== 'task_file') throw new BadRequestException('선택할 수 없는 파일입니다')
-      if (weight) {
+      if (row.kind !== source.kind) throw new BadRequestException('선택할 수 없는 파일입니다')
+      if (weight && fromSr) {
+        if (!owner.srId || !(await srAttachments(tx, owner.srId)).some((item) => item.id === fileId)) throw new BadRequestException('후보에 없는 파일입니다')
+      } else if (weight) {
         const { rows } = await this.candidateRows(taskId, tx)
         if (!rows.some((item) => item.id === fileId)) throw new BadRequestException('후보에 없는 파일입니다')
+      }
+      if (weight) {
         const [max] = await tx.select({ sortOrder: taskInput.sortOrder }).from(taskInput).where(eq(taskInput.taskId, taskId)).orderBy(desc(taskInput.sortOrder)).limit(1)
         await tx.insert(taskInput).values({ taskId, fileId, weight, sortOrder: (max?.sortOrder ?? -1) + 1, selectedBy: actor }).onDuplicateKeyUpdate({ set: { weight, selectedBy: actor, selectedAt: new Date() } })
       } else await tx.delete(taskInput).where(and(eq(taskInput.taskId, taskId), eq(taskInput.fileId, fileId)))

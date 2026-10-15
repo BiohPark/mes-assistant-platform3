@@ -1,10 +1,11 @@
-import { useId, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowUpCircle, Upload } from 'lucide-react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowUpCircle, Download, Upload } from 'lucide-react'
 import type { Task } from '@mes/domain'
 import { toast } from 'sonner'
-import { getCandidates, filesForTask, fileVersions, setInput, setOutputTag, switchInputVersion, uploadFile, type FileCandidate, type FileMeta } from '@/api/files'
+import { downloadBlob, getCandidates, filesForTask, fileVersions, setInput, setOutputTag, switchInputVersion, uploadFile, type FileCandidate, type FileMeta } from '@/api/files'
 import { useActor } from '@/app/hooks'
+import { subscribeEvent } from '@/app/useEvents'
 import { Badge } from '@/components/ui/badge'
 import { listAssistants } from '@/lib/catalog'
 import { useT } from '@/i18n'
@@ -29,9 +30,13 @@ export function MaterialsPanel({ task }: { task: Task }) {
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const candidates = useQuery({ queryKey: ['candidates', task.id], queryFn: () => getCandidates(task.id) })
+  const query = useQueryClient()
+  // 연결 SR 첨부는 SR 쪽에서 바뀐다 — sr.updated(연결 업무 참여자에게도 전달됨)에 후보를 다시 읽는다
+  useEffect(() => subscribeEvent(({ event }) => { if (event === 'sr.updated') void query.invalidateQueries({ queryKey: ['candidates', task.id] }) }), [query, task.id])
   const assistants = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
   const own = useQuery({ queryKey: ['files', task.id], queryFn: () => filesForTask(task.id) })
-  const byId = new Map([...(candidates.data?.files ?? []).map((item) => [item.file.id, item.file] as const), ...(own.data ?? []).map((file) => [file.id, file] as const)])
+  const srFiles = candidates.data?.srFiles ?? []
+  const byId = new Map([...(candidates.data?.files ?? []).map((item) => [item.file.id, item.file] as const), ...srFiles.map((item) => [item.file.id, item.file] as const), ...(own.data ?? []).map((file) => [file.id, file] as const)])
   const selection = [...task.inputs].sort((a, b) => a.weight === b.weight ? 0 : a.weight === 'main' ? -1 : 1)
   const shared = (candidates.data?.files ?? []).filter((item) => item.sourceTaskId !== task.id && item.viaTags.length && !item.newerVersionId && item.file.name.toLowerCase().includes(search.toLowerCase()))
   const assistantById = new Map(assistants.data?.map((item) => [item.id, item]) ?? [])
@@ -66,11 +71,20 @@ export function MaterialsPanel({ task }: { task: Task }) {
         const newerVersionId = candidate?.newerVersionId
         return <div key={file.id} className="rounded-xl border p-2" data-testid={`selected-file-${file.id}`}>
           <div className="flex items-center gap-2"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(file)}>{file.name} v{file.version}</button><InputToggle weight={input.weight} label={file.name} disabled={disabled} onChange={(weight) => void change(file.id, weight)} /></div>
-          <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground"><span>{input.weight === 'main' ? t('task.mainInput') : t('task.reference')} · {file.originTaskId === task.id ? t('task.thisConversation') : <SourceLink taskId={file.originTaskId} code={candidate?.sourceCode} title={candidate?.sourceTitle} />}</span>
+          <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground"><span>{input.weight === 'main' ? t('task.mainInput') : t('task.reference')} · {file.originTaskId === task.id ? t('task.thisConversation') : file.originSrId ? <>{t('task.materials.srAttachment')} · <span className="font-mono">{srFiles.find((item) => item.file.id === file.id)?.srCode}</span></> : <SourceLink taskId={file.originTaskId} code={candidate?.sourceCode} title={candidate?.sourceTitle} />}</span>
             {newerVersionId && !disabled && <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-tone-info-fg/40 px-1 text-tone-info-fg" onClick={() => void switchInputVersion(actor, task.id, file.id, newerVersionId).catch((error: unknown) => toast.error(String(error)))}><ArrowUpCircle className="size-3" />{t('task.materials.newVersion')}</button>}
           </div>
         </div>
       })}
+    </div>}
+    {tab === 'inputs' && srFiles.length > 0 && <div data-testid="materials-sr-files" className="space-y-2 border-t pt-2">
+      <div className="text-xs font-medium">{t('task.materials.srFiles')} · <span className="font-mono">{srFiles[0]!.srCode}</span> <span className="font-normal text-muted-foreground">{srFiles[0]!.srTitle}</span></div>
+      <p className="text-muted-foreground">{t('task.materials.srFilesHelp')}</p>
+      {srFiles.map((item) => <div key={item.file.id} className="flex items-center gap-1 rounded-xl border p-2" data-testid={`sr-file-${item.file.id}`}>
+        <button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(item.file)}>{item.file.name} v{item.file.version}</button>
+        <button type="button" className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg hover:bg-muted" aria-label={t('task.download')} onClick={() => void downloadBlob(item.file, t)}><Download className="size-3.5" /></button>
+        <InputToggle weight={task.inputs.find((input) => input.fileId === item.file.id)?.weight} label={item.file.name} disabled={disabled} onChange={(weight) => void change(item.file.id, weight)} />
+      </div>)}
     </div>}
     {tab === 'inputs' && <><div className="border-t pt-2 text-xs font-medium">{t('task.materials.referenceConversations')}</div><ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} selectedOnly /></>}
     {tab === 'conversations' && <ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} />}

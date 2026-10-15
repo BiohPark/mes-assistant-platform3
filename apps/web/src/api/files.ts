@@ -8,6 +8,8 @@ import { queryClient } from './queryClient'
 export interface FileMeta {
   id: string
   originTaskId?: string
+  /** SR 첨부면 그 SR — 업무가 아니라 SR에 속한 같은 file_object */
+  originSrId?: string
   name: string
   mime: string
   size: number
@@ -32,10 +34,12 @@ export interface FileCandidate {
   newerVersionId?: string
   olderVersionIds?: string[]
 }
+/** 연결 SR(SR에서 시작한 업무)의 접수 첨부 정본 — 복사본이 아니라 같은 파일 */
+export interface SrFileCandidate { file: FileMeta; srId: string; srCode: string; srTitle: string; selected?: TaskInput['weight'] }
 export interface ConversationCandidate { taskId: string; code: string; title: string; status: string; assistant: { id: string; name: string; color: string };
   sharedTags: string[]; messageCount: number; bytes: number; lastActivityAt: string;
   selected?: { weight: 'main' | 'reference'; mode: 'full' | 'messages' | 'summary'; snapshotId: string; newMessages: number; detached: boolean } }
-export interface Candidates { files: FileCandidate[]; conversations: ConversationCandidate[] }
+export interface Candidates { files: FileCandidate[]; srFiles?: SrFileCandidate[]; conversations: ConversationCandidate[] }
 
 async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const response = await fetch(`/api${path}`, { method, credentials: 'same-origin', ...(body !== undefined && { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) })

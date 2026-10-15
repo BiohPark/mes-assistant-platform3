@@ -460,6 +460,7 @@ export const ko = {
       clearSearch: '검색 지우기',
       inputUnavailable: '파일 정보를 확인할 수 없습니다. 선택은 유지됩니다.',
       uploadShareHint: '같은 태그 대화에서 자료 후보로 보입니다.',
+      srFiles: '연결된 SR 첨부', srFilesHelp: 'SR 접수 첨부를 그대로 참조합니다. 체크한 첨부만 AI 입력에 들어갑니다.', srAttachment: 'SR 첨부',
     },
     notes: { title: '노트', loadFailed: '노트를 불러오지 못했습니다.', body: '노트 본문', placeholder: '노트 작성', attach: '자료함 파일 첨부', add: '노트 추가' },
     related: { linked: '같은 태그 대화 {count}', sameTag: '같은 태그를 가진 대화', more: '+{count}', loading: '같은 태그 대화 찾는 중…', loadFailed: '같은 태그 대화를 불러오지 못했습니다', retry: '다시 시도', none: '같은 태그 대화 없음',

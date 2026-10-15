@@ -192,8 +192,8 @@ export class TaskExtrasService {
     const classifications = classificationView(paths, new Map(codes.map(row => [row.id, row.name])))
     const files = await tx.select().from(fileObject).where(and(eq(fileObject.originTaskId, taskId), isNull(fileObject.deletedAt)))
     const selectedFiles = await tx.select({ row: taskInput, file: fileObject, origin: task, originAssistant: assistant })
-      .from(taskInput).innerJoin(fileObject, eq(taskInput.fileId, fileObject.id)).innerJoin(task, eq(fileObject.originTaskId, task.id))
-      .innerJoin(assistant, eq(task.assistantId, assistant.id)).where(eq(taskInput.taskId, taskId))
+      .from(taskInput).innerJoin(fileObject, eq(taskInput.fileId, fileObject.id)).leftJoin(task, eq(fileObject.originTaskId, task.id))
+      .leftJoin(assistant, eq(task.assistantId, assistant.id)).where(eq(taskInput.taskId, taskId))
     const selectedConversations = await tx.select({ row: conversationInput, source: task, originAssistant: assistant })
       .from(conversationInput).innerJoin(task, eq(conversationInput.sourceTaskId, task.id)).innerJoin(assistant, eq(task.assistantId, assistant.id))
       .where(eq(conversationInput.taskId, taskId))
@@ -201,7 +201,7 @@ export class TaskExtrasService {
     return buildTaskReport({ task: detail, assistant: { name: agent.name, classifications, ...classifications[0]! },
       files: files.map((file) => ({ id: file.id, name: file.originalName })),
       inputs: [
-        ...selectedFiles.map(({ row, file, originAssistant }) => ({ name: file.originalName, version: file.version, weight: row.weight as 'main' | 'reference', fromAssistantName: file.originTaskId === taskId ? '이 대화' : originAssistant.name })),
+        ...selectedFiles.map(({ row, file, originAssistant }) => ({ name: file.originalName, version: file.version, weight: row.weight as 'main' | 'reference', fromAssistantName: file.originTaskId === taskId ? '이 대화' : file.originSrId ? 'SR 첨부' : originAssistant?.name ?? '' })),
         ...selectedConversations.map(({ row, source, originAssistant }) => ({ name: `${source.code} ${source.title}`, version: 1, weight: row.weight as 'main' | 'reference', fromAssistantName: originAssistant.name })),
       ], users: new Map(users.map((user) => [user.id, { name: user.name }])), now, completionReason })
   }
