@@ -607,6 +607,18 @@ export const en = {
   pill: {
     menu: { title: 'What you can do', search: 'Search agents', exampleStart: 'Conversation example', exampleTag: 'Tag example', related: 'Conversations with the same tags', materials: 'Open materials tab', mySr: 'My SR requests', manageAgents: 'Manage agents', settings: 'System settings', users: 'Manage users', diagnostics: 'Diagnostics', exampleCreate: 'Agent registration example', unavailable: 'This item is not available on the current page.', hub: 'Agent hub', myWork: 'My work' },
     open: 'Open AI assistant', close: 'Close AI assistant', characterAlt: 'AI assistant character', moveHint: 'Drag or use the arrow keys to move; Home resets the position',
+
+    greet: {
+      hub: 'Hi! This is the agent hub. Shall we pick an agent together? 🙂',
+      conversation: 'You\'re in a conversation! Call me if you wonder about attaching materials or same-tag conversations 🙂',
+      sr: 'This is the SR request page. Want to look at a new request or the progress together?',
+      myWork: 'This is My work — all your conversations in one place 🙂',
+      admin: 'This is the admin area. I\'ll help with agents and settings.',
+      other: 'Hi! How can I help? 🙂',
+    },
+    logLabel: 'Assistant chat history',
+    history: { tabsLabel: 'Assistant window view', notices: 'Notifications', chat: 'Chat', empty: 'No notifications yet. Anything I tell you in a bubble shows up here 🙂' },
+    log: { askGuide: 'Show me how to use this page', guideStart: 'Sure! Follow the sparkle ✨', guideDone: 'Well done! 🎉 Call me any time', guideStop: 'Ask me again any time 🙂' },
   },
   bubble: {
     region: 'AI assistant bubble', close: 'Close bubble',
@@ -618,7 +630,7 @@ export const en = {
     guideRegion: 'AI assistant guide offer', guideOffer: 'Want a quick tour of this screen?', guideYes: 'Show me around', guideNo: "Don't ask again",
     guideDone: 'All done, nicely done! 🎉 Tap me any time you have a question',
   },
-  tutorial: { replay: 'Replay tutorial', guide: 'Guide me' },
+  tutorial: { replay: 'Replay tutorial', guide: 'How to use this page' },
   tour: {
     title: 'Page guide', progress: '{current}/{total}', prev: 'Back', next: 'Next', finish: 'Got it', close: 'Close guide',
     sectionList: 'Sections', sectionListLabel: 'Guide sections', skipSection: 'Skip this section', doneReplay: '{title} done — replay',
@@ -647,7 +659,7 @@ export const en = {
       kanbanColumns: 'One column per agent. Use + in a column header to start a conversation.',
       kanbanCard: 'A conversation card. Select it to jump in.',
       nav: 'Use the left menu to get to the hub, My work, SR and admin.',
-      pill: 'That\'s me! Tap to open the assistant window, or drag me around. Replay this guide any time with "Guide me" in the window.',
+      pill: 'That\'s me! Tap to open the assistant window, or drag me around. Replay this guide any time with "🧭 How to use this page" in the window.',
       hubView: 'Switch between agent cards and the all-conversations kanban here.',
       hubSearch: 'Find agents by name, summary or work category.',
       hubCards: 'Select a card to start a conversation with that agent.',

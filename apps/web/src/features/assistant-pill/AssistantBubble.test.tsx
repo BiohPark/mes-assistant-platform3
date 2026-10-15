@@ -4,9 +4,11 @@ import { useLocation } from 'react-router'
 import { renderWithProviders } from '@/test/render'
 import { AssistantBubble } from './AssistantBubble'
 import { BUBBLE_TTL_MS, resetBubbles, useBubbleStore } from './bubbles'
+import { resetHistory, useAssistantHistory } from './history'
+import { useTourStore } from './tour'
 
-beforeEach(() => { resetBubbles(); vi.useFakeTimers() })
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+beforeEach(() => { resetBubbles(); resetHistory(); vi.useFakeTimers() })
+afterEach(() => { useTourStore.setState({ route: null }); vi.useRealTimers(); vi.unstubAllGlobals() })
 
 const push = (bubble: Parameters<ReturnType<typeof useBubbleStore.getState>['push']>[0]) => act(() => useBubbleStore.getState().push(bubble))
 const advance = (ms: number) => act(() => { vi.advanceTimersByTime(ms) })
@@ -97,4 +99,21 @@ it('S14-DD: 태그 공유 말풍선은 들어오고 빠진 같은 태그 대화�
   expect(onOpen).toHaveBeenCalledOnce()
   push({ source: 'share.out', key: 't', counts: { conversations: 0, files: 2 } })
   expect(screen.getByText('같은 태그 대화 0개·파일 2개가 자료함에서 빠졌어요')).toBeVisible()
+})
+
+it('S14-HH: 가이드가 진행되는 동안 말풍선은 미뤄 두고(시간도 멈춤), 가이드가 끝나면 그때 보인다 — 실제로 보인 것만 알림 이력에 남는다', () => {
+  renderWithProviders(<AssistantBubble pillRef={{ current: null }} pos={null} />)
+  act(() => useTourStore.setState({ route: 'hub' }))
+  push({ source: 'reply.done', taskId: 't1', title: '검사 절차' })
+  expect(bubble()).toBeNull()
+  advance(BUBBLE_TTL_MS * 2)
+  expect(useAssistantHistory.getState().notices).toEqual([])
+  act(() => useTourStore.setState({ route: null }))
+  expect(screen.getByText('"검사 절차" 답변이 끝났어요')).toBeVisible()
+  expect(useAssistantHistory.getState().notices).toMatchObject([{ source: 'reply.done', taskId: 't1', title: '검사 절차' }])
+  advance(BUBBLE_TTL_MS - 1)
+  expect(bubble()).toBeVisible()
+  advance(1)
+  expect(bubble()).toBeNull()
+  expect(useAssistantHistory.getState().notices).toHaveLength(1)
 })

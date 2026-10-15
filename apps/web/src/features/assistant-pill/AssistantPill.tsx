@@ -12,6 +12,7 @@ import { useActor } from '@/app/hooks'
 import { AssistantBubble } from './AssistantBubble'
 import { GuideOffer } from './GuideOffer'
 import { GuideTour } from './GuideTour'
+import { bindHistory, mirrorChat } from './history'
 import { useReplyBubble } from './replyBubble'
 import { useSearchAgents } from './useSearchAgents'
 
@@ -80,6 +81,8 @@ export function AssistantPill() {
   const suppressClick = useRef(false)
   const close = useCallback(() => { setOpen(false); pillRef.current?.focus() }, [setOpen])
   useReplyBubble() // 내 요청의 끝을 다른 화면에서 말풍선으로 — 알약이 있는 창(본창)에서만
+  useEffect(() => bindHistory(userId), [userId]) // 도우미 이력(sessionStorage)은 사용자별
+  useEffect(() => mirrorChat(chat.messages), [chat.messages]) // 도우미와 직접 나눈 대화를 세션 이력에 — 창을 닫거나 새로고침해도 남는다
 
   useEffect(() => {
     const reclamp = () => { const current = useUiStore.getState().pillPos; if (current) setPos(clampPos(current)) }

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { PAGE_ACTIONS } from './pageActions'
-import { TOUR_SECTIONS, cardSide, scrollPlan, tourTarget, useTourStore } from './tour'
+import { TOUR_SECTIONS, clampScroll, clearScroll, dockPlace, nudgeTop, scrollPlan, tourTarget, useTourStore } from './tour'
 import { newId } from '@/lib/ids'
 import { guideOfferKey, readTourProgress, tourProgressKey } from './tutorial'
 
@@ -206,14 +206,52 @@ it('S14 코치: 마지막 단계를 지나 끝까지 보면 그 페이지 제안
 })
 
 const rect = (top: number, height: number, left = 100, width = 50) => ({ top, bottom: top + height, left, right: left + width })
-it('S14 코치: 말풍선은 아래가 기본이고, 대상이 아래 자리를 가리면 위로 — 위도 그만큼 가리면(화면 가득) 아래에 둔다', () => {
-  // 화면 800, 말풍선 150 → 아래 자리 642–792, 위 자리 8–158
-  expect(cardSide(null, 150, 800)).toBe('bottom')
-  expect(cardSide(rect(200, 40), 150, 800)).toBe('bottom')
-  expect(cardSide(rect(700, 48), 150, 800)).toBe('top')
-  expect(cardSide(rect(610, 30), 150, 800)).toBe('top') // 여백(8px)까지 닿으면 가린 것으로 본다
-  expect(cardSide(rect(0, 800), 150, 800)).toBe('bottom')
-  expect(cardSide(rect(100, 650), 150, 800)).toBe('top') // 위를 덜 가린다
+const at = (left: number, top: number, width: number, height: number) => ({ left, top, right: left + width, bottom: top + height })
+it('S14-HH 도킹: 말풍선은 도우미 창 자리(알약 왼쪽, 자리가 없으면 오른쪽 · 알약 아래끝 맞춤)에 둔다. 양옆에 자리가 없으면(좁은 화면) 알약 위 전체 폭, 위가 모자라면 아래. 늘 화면 안', () => {
+  const wide = { width: 1280, height: 800 }
+  const card = { width: 340, height: 150 }
+  expect(dockPlace(at(16, 736, 48, 48), card, wide)).toEqual({ left: 72, top: 634, width: 340 }) // 기본 자리(사이드바 하단) — 오른쪽
+  expect(dockPlace(at(1200, 400, 48, 48), card, wide)).toEqual({ left: 852, top: 298, width: 340 }) // 왼쪽에 자리가 있으면 왼쪽(창과 같다)
+  expect(dockPlace(at(1200, 8, 48, 48), card, wide)).toEqual({ left: 852, top: 8, width: 340 }) // 위로 넘치면 화면 안으로
+  expect(dockPlace(null, card, wide)).toEqual({ left: 932, top: 642, width: 340 }) // 알약이 없으면 우하단
+  const phone = { width: 390, height: 844 }
+  expect(dockPlace(at(4, 780, 48, 48), card, phone)).toEqual({ left: 8, top: 622, width: 374 }) // 알약 바로 위, 좌우 8px
+  expect(dockPlace(at(4, 20, 48, 48), card, phone)).toEqual({ left: 8, top: 76, width: 374 }) // 위가 모자라면 알약 아래
+})
+
+it('S14-HH 비키기: 대상이 말풍선(+8px)에 가리면 대상을 말풍선 위(모자라면 아래)로 옮길 스크롤량. 안 가리거나 들어갈 자리가 없으면 0', () => {
+  const card = at(72, 634, 340, 150) // 634–784
+  expect(clearScroll(rect(200, 40), card, 800)).toBe(0)
+  expect(clearScroll(rect(700, 40, 500), card, 800)).toBe(0) // 가로로 비켜 있다
+  expect(clearScroll(rect(700, 40), card, 800)).toBe(114) // 아래로 스크롤 → 대상 아래끝 = 626
+  expect(clearScroll(rect(600, 30), card, 800)).toBe(4) // 여백(8px)까지 닿으면 가린 것
+  expect(clearScroll(rect(100, 40), at(72, 8, 340, 150), 800)).toBe(-66) // 위에 붙은 말풍선 — 위가 모자라 아래로(대상 위끝 = 166)
+  expect(clearScroll(rect(0, 800), card, 800)).toBe(0) // 화면 가득 — 들어갈 자리가 없다
+})
+
+it('S14-HH 마지막 수단: 스크롤로 비킬 수 없는 대상(fixed·sticky·스크롤 끝)은 말풍선을 같은 쪽에서 세로로만 대상 위(모자라면 아래)로 옮긴다. 자리가 없거나 화면 반대쪽 절반으로 건너가야 하면 제자리', () => {
+  const card = at(72, 634, 340, 150)
+  expect(nudgeTop(rect(200, 40), card, 800)).toBe(634)
+  expect(nudgeTop(rect(600, 120, 0, 1280), card, 800)).toBe(442) // 입력창처럼 화면 아래에 붙은 대상
+  expect(nudgeTop(rect(0, 40), at(72, 8, 340, 150), 800)).toBe(48)
+  expect(nudgeTop(rect(100, 600), card, 800)).toBe(634)
+  expect(nudgeTop(rect(200, 500), card, 800)).toBe(634) // 큰 대상 — 위로 비키면 화면 위 절반으로 건너간다 → 제자리
+})
+
+it('S14-HH 스크롤 그릇: 가장 가까운 스크롤 조상을 찾아 실제로 움직일 수 있는 만큼만 돌려준다. 움직일 수 없으면 null', () => {
+  const box = document.createElement('div')
+  box.style.overflowY = 'auto'
+  Object.defineProperties(box, { scrollHeight: { value: 1000 }, clientHeight: { value: 500 }, scrollTop: { value: 100, writable: true } })
+  const inner = document.createElement('div')
+  box.append(inner)
+  document.body.append(box)
+  expect(clampScroll(inner, 114)).toEqual({ node: box, delta: 114 })
+  expect(clampScroll(inner, 600)).toEqual({ node: box, delta: 400 })
+  expect(clampScroll(inner, -200)).toEqual({ node: box, delta: -100 })
+  const loose = document.createElement('div')
+  document.body.append(loose)
+  expect(clampScroll(loose, 50)).toBeNull() // 문서도 스크롤할 수 없다(jsdom 0 높이)
+  box.remove(); loose.remove()
 })
 
 it('S14 코치: 스크롤 계획 — fixed·sticky(조상 포함)는 움직이지 않고, 화면 밖이면 가운데로, 화면 안이면 nearest(이미 보이면 제자리)', () => {

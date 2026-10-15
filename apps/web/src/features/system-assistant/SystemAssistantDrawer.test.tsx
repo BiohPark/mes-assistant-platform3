@@ -9,9 +9,11 @@ import { HomePage } from '@/features/home/HomePage'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { emptyHomeFilters } from '@/app/uiStore'
 import { useLocation } from 'react-router'
+import userEvent from '@testing-library/user-event'
+import { recordNotice, resetHistory } from '@/features/assistant-pill/history'
 
 vi.mock('@/app/hooks', async importOriginal => ({ ...await importOriginal<typeof import('@/app/hooks')>(), useActor: () => ({ userId: 'u' }) }))
-afterEach(() => { act(() => useUiStore.getState().setAssistantOpen(false)); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+afterEach(() => { act(() => useUiStore.getState().setAssistantOpen(false)); resetHistory(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 function Location() {
   const { search } = useLocation()
@@ -144,4 +146,62 @@ it('대화 이력은 창을 닫았다 열어도 남는다', async () => {
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   fireEvent.click(screen.getByRole('button', { name: 'AI 도우미 열기' }))
   expect(await screen.findByText('남는 답변')).toBeInTheDocument()
+})
+
+const mockModel = () => vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/system-assistant/messages'
+  ? Response.json({ text: '남는 답변', toolCalls: [] })
+  : Response.json({ mode: 'mock', model: 'mock' })))
+
+it('S14-HH: 창은 "알림 이력 | 대화" 탭 — 대화 탭은 참조처럼 기록이 먼저, 선택 칩은 그 아래, 입력창은 맨 아래. 화면 인사는 세션에 한 번', async () => {
+  mockModel()
+  useUiStore.getState().setAssistantOpen(true)
+  renderWithProviders(<AssistantPill />)
+  const tabs = screen.getAllByRole('tab').map(tab => tab.textContent)
+  expect(tabs).toEqual(['알림 이력', '대화'])
+  expect(screen.getByRole('tab', { name: '대화' })).toHaveAttribute('aria-selected', 'true')
+  const log = screen.getByRole('log', { name: '도우미 대화 기록' })
+  const chips = screen.getByRole('region', { name: '할 수 있는 것' })
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  expect(log.compareDocumentPosition(chips) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(chips.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  const greeting = '안녕하세요! 여기는 에이전트 허브예요. 함께할 에이전트를 같이 골라 볼까요? 🙂'
+  expect(screen.getAllByText(greeting)).toHaveLength(1)
+  fireEvent.click(screen.getByTestId('assistant-pill'))
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  fireEvent.click(screen.getByRole('button', { name: 'AI 도우미 열기' }))
+  expect(await screen.findAllByText(greeting)).toHaveLength(1) // 다시 열어도 인사는 한 번
+})
+
+it('S14-HH: 알림 이력 탭은 말풍선으로 보인 것을 모아 두고, 답변 알림은 [바로 가기]로 그 대화를 연다', async () => {
+  mockModel()
+  recordNotice({ key: 'k1', source: 'reply.done', taskId: 't9', title: '검사 절차' })
+  recordNotice({ key: 'k2', source: 'guide.done' })
+  useUiStore.getState().setAssistantOpen(true)
+  renderWithProviders(<AssistantPill />)
+  await userEvent.click(screen.getByRole('tab', { name: '알림 이력' }))
+  const items = screen.getAllByRole('listitem').map(item => item.textContent)
+  expect(items[0]).toContain('다 봤어요! 잘하셨어요') // 최근 것이 위
+  expect(items[1]).toContain('"검사 절차" 답변이 끝났어요')
+  expect(screen.queryByRole('textbox', { name: 'AI 요청 입력' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '바로 가기' }))
+  await waitFor(() => expect(useUiStore.getState().assistantOpen).toBe(false))
+})
+
+it('S14-HH: 도우미와 직접 나눈 대화는 세션 이력에 남아 화면을 새로 그려도(새로고침) 보이고, 대화 지우기는 대화 탭만 비운다', async () => {
+  mockModel()
+  recordNotice({ key: 'k3', source: 'guide.done' })
+  useUiStore.getState().setAssistantOpen(true)
+  const first = renderWithProviders(<AssistantPill />)
+  fireEvent.click(screen.getByText(/FDS 작성 도우미로/))
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await screen.findByText('남는 답변')
+  first.unmount() // 새로고침 — 대화 훅 상태는 사라지고 세션 이력만 남는다
+  renderWithProviders(<AssistantPill />)
+  const log = screen.getByRole('log', { name: '도우미 대화 기록' })
+  expect(log).toHaveTextContent('남는 답변')
+  expect(log).toHaveTextContent(/FDS 작성 도우미로/)
+  fireEvent.click(screen.getByRole('button', { name: '대화 지우기' }))
+  expect(screen.getByRole('log', { name: '도우미 대화 기록' })).not.toHaveTextContent('남는 답변')
+  await userEvent.click(screen.getByRole('tab', { name: '알림 이력' }))
+  expect(screen.getAllByRole('listitem')).toHaveLength(1)
 })

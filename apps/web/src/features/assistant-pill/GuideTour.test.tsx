@@ -6,6 +6,7 @@ import { GuideTour } from './GuideTour'
 import { useTourStore } from './tour'
 import { guideOfferKey, markSectionDone, readTourProgress, requestTutorial } from './tutorial'
 import { resetBubbles, useBubbleStore } from './bubbles'
+import { resetHistory, useAssistantHistory } from './history'
 
 const box = (left: number, top: number, width: number, height: number) => ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON() { return {} } })
 function target(id: string, rect = box(100, 200, 50, 20), tag = 'div') {
@@ -23,6 +24,17 @@ function stubViewport(width: number, reducedMotion = false) {
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('reduced-motion') ? reducedMotion : width >= Number(/min-width:\s*(\d+)px/.exec(query)?.[1] ?? 0), media: query, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }))
 }
 const scrollIntoView = vi.fn()
+/** 스크롤 그릇 — 3000px 내용, 화면 800px. scrollBy는 기록만 한다 */
+function scroller() {
+  const box = document.createElement('div')
+  box.style.overflowY = 'auto'
+  box.dataset.scroller = ''
+  const scrollBy = vi.fn()
+  Object.defineProperties(box, { scrollHeight: { value: 3000 }, clientHeight: { value: 800 }, scrollTop: { value: 0, writable: true }, scrollBy: { value: scrollBy } })
+  document.body.append(box)
+  return { box, scrollBy }
+}
+const lastLog = () => useAssistantHistory.getState().log.at(-1)
 let pill: HTMLButtonElement
 const dialog = () => screen.getByRole('dialog', { name: '페이지 가이드' })
 const spotlight = () => screen.getByTestId('tour-spotlight')
@@ -35,9 +47,10 @@ beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
   localStorage.clear()
   resetBubbles()
+  resetHistory()
   pill = target('pill', box(16, 700, 48, 48), 'button') as HTMLButtonElement
 })
-afterEach(() => { act(() => useTourStore.getState().close()); document.querySelectorAll('[data-tour]').forEach(element => element.remove()); vi.clearAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
+afterEach(() => { act(() => useTourStore.getState().close()); document.querySelectorAll('[data-tour], [data-scroller]').forEach(element => element.remove()); vi.clearAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
 
 it('renders no card or spotlight while waiting; Escape cancels and returns focus without a delayed tour', () => {
   renderWithProviders(<GuideTour userId="u" pillRef={{ current: pill }} />)
@@ -62,7 +75,7 @@ it('navigating away during the wait cancels the pending tour', () => {
   expect(useTourStore.getState().route).toBeNull()
 })
 
-it('S14 코치: 말풍선은 화면 하단 중앙에 고정되고 대상은 제자리에서 딤+펄스로 짚는다. 🧭 n/N, ←/→·Enter·Space·버튼으로 움직이고 [다 봤어요]로 끝내면 진행·done·칭찬 말풍선, 포커스는 알약으로', () => {
+it('S14-HH 도킹: 말풍선은 대상과 무관하게 도우미 창 자리(알약 바로 옆)에 고정되고 대상은 제자리에서 딤+펄스로 짚는다. 🧭 n/N, ←/→·Enter·Space·버튼으로 움직이고 [다 봤어요]로 끝내면 진행·done·칭찬 말풍선·대화 기록, 포커스는 알약으로', () => {
   const search = target('hub-search')
   target('hub-cards').style.display = 'none' // 보이지 않는 대상은 단계에서 빠진다
   renderWithProviders(<GuideTour userId="u" pillRef={{ current: pill }} />)
@@ -78,20 +91,18 @@ it('S14 코치: 말풍선은 화면 하단 중앙에 고정되고 대상은 제�
   expect(spotlight()).toHaveClass('border-primary', 'pointer-events-none', 'animate-tour-pulse', 'motion-reduce:animate-none')
   expect(spotlight()).toHaveStyle({ left: '96px', top: '196px', width: '58px', height: '28px' }) // 대상 rect + 4px 여백
   expect(spotlight()).toHaveAttribute('aria-hidden', 'true')
-  expect(dialog()).toHaveClass('fixed', 'inset-x-2', 'mx-auto', 'max-w-md') // 하단 중앙, 좁은 화면은 8px 여백
-  expect(dialog()).toHaveStyle({ bottom: '8px' })
-  expect(dialog().style.top).toBe('')
-  expect(dialog().style.left).toBe('') // 대상을 따라다니지 않는다
+  const docked = { left: '72px', top: '588px', width: '340px' } // 알약(16,700 48×48) 오른쪽 8px, 알약 아래끝(748)에 맞춤(측정 전 높이 160)
+  expect(dialog()).toHaveStyle(docked)
+  expect(dialog()).not.toHaveClass('inset-x-2')
   expect(screen.getByRole('button', { name: '이전' })).toBeDisabled()
   fireEvent.keyDown(dialog(), { key: 'ArrowRight' })
   expect(within(dialog()).getByText('2/2')).toBeInTheDocument()
   expect(within(dialog()).getByRole('heading', { name: 'AI 도우미' })).toBeInTheDocument()
   expect(spotlight()).toHaveStyle({ left: '12px', top: '696px' })
-  expect(dialog()).toHaveStyle({ top: '8px' }) // 대상(알약)이 아래 자리를 가리면 위로
-  expect(dialog().style.bottom).toBe('')
+  expect(dialog()).toHaveStyle(docked) // 대상이 바뀌어도 같은 자리
   fireEvent.keyDown(dialog(), { key: 'ArrowLeft' })
   expect(within(dialog()).getByText('1/2')).toBeInTheDocument()
-  expect(dialog()).toHaveStyle({ bottom: '8px' })
+  expect(dialog()).toHaveStyle(docked)
   fireEvent.keyDown(dialog(), { key: ' ' })
   expect(within(dialog()).getByText('2/2')).toBeInTheDocument()
   fireEvent.keyDown(dialog(), { key: 'ArrowRight' }) // 마지막에서 →는 끝내지 않는다
@@ -103,41 +114,56 @@ it('S14 코치: 말풍선은 화면 하단 중앙에 고정되고 대상은 제�
   expect(readTourProgress('u', 'hub')).toEqual(['hub', 'assistant'])
   expect(localStorage.getItem(guideOfferKey('u', 'hub'))).toBe('done')
   expect(useBubbleStore.getState().current?.source).toBe('guide.done')
+  expect(lastLog()).toMatchObject({ who: 'helper', text: 'pill.log.guideDone' }) // 창을 다시 열면 대화 기록에 남아 있다
   expect(pill).toHaveFocus()
 })
 
-it('S14 코치: 화면 밖 대상은 가운데로 부드럽게 스크롤하고, 스크롤이 멈춘 뒤에만 말풍선 자리를 다시 정한다(스크롤 중에는 스포트라이트만 따라간다)', () => {
+it('S14-HH 비키기: 화면 밖 대상은 가운데로 부드럽게 스크롤하고, 멈춘 뒤에도 말풍선에 가리면 대상을 한 번 더 스크롤해 비킨다 — 말풍선은 그 자리 그대로', () => {
   target('hub-search', box(100, 40, 50, 20))
-  const far = box(16, 1200, 48, 48)
-  pill.remove()
-  pill = target('pill', far, 'button') as HTMLButtonElement
+  const far = box(100, 1200, 300, 40)
+  const { box: list, scrollBy } = scroller()
+  list.append(target('hub-cards', far))
   renderWithProviders(<GuideTour userId="u" pillRef={{ current: pill }} />)
   start('hub')
-  expect(dialog()).toHaveStyle({ bottom: '8px' })
+  const docked = { left: '72px', top: '588px' }
+  expect(dialog()).toHaveStyle(docked)
   fireEvent.keyDown(dialog(), { key: 'Enter' })
   expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'center', behavior: 'smooth' })
-  expect(scrollIntoView.mock.contexts.at(-1)).toBe(pill)
-  Object.assign(far, { top: 700, y: 700, bottom: 748 }) // 스크롤 중 — 대상이 아래 자리로 들어왔다
+  expect(scrollIntoView.mock.contexts.at(-1)).toBe(list.firstChild)
+  Object.assign(far, { top: 700, y: 700, bottom: 740 }) // 스크롤 중 — 대상이 말풍선 자리로 들어왔다
   fireEvent.scroll(document)
   act(() => vi.advanceTimersByTime(16))
   expect(spotlight()).toHaveStyle({ top: '696px' })
-  expect(dialog()).toHaveStyle({ bottom: '8px' }) // 아직 스크롤 중 — 말풍선은 그대로
+  expect(scrollBy).not.toHaveBeenCalled() // 아직 스크롤 중
   act(() => vi.advanceTimersByTime(300))
-  expect(dialog()).toHaveStyle({ top: '8px' })
+  expect(scrollBy).toHaveBeenCalledExactlyOnceWith({ top: 160, behavior: 'smooth' }) // 대상 아래끝 740 → 말풍선 위 8px(580)
+  expect(dialog()).toHaveStyle(docked)
+  Object.assign(far, { top: 540, y: 540, bottom: 580 })
+  fireEvent.scroll(document)
+  act(() => vi.advanceTimersByTime(300))
+  expect(spotlight()).toHaveStyle({ top: '536px' })
+  expect(scrollBy).toHaveBeenCalledOnce() // 한 단계에 한 번만
+  expect(dialog()).toHaveStyle(docked)
 })
 
-it('S14 코치: fixed·sticky 대상은 스크롤하지 않는다; reduced motion은 즉시 스크롤하고 바로 자리를 정한다', () => {
+it('S14-HH: reduced motion은 즉시 스크롤한다; fixed·sticky처럼 비킬 수 없는 대상만 말풍선이 같은 쪽에서 세로로 비킨다', () => {
   stubViewport(1280, true)
-  target('hub-search', box(100, 900, 50, 20))
-  pill.style.position = 'fixed'
+  const { box: list, scrollBy } = scroller()
+  list.append(target('hub-search', box(100, 700, 50, 20)))
+  const bar = target('hub-cards', box(0, 640, 1280, 100))
+  bar.style.position = 'fixed'
   renderWithProviders(<GuideTour userId="u" pillRef={{ current: pill }} />)
   start('hub')
-  expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'auto' })
+  expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
+  expect(scrollBy).toHaveBeenCalledWith({ top: 140, behavior: 'auto' }) // 720 → 580
+  expect(dialog()).toHaveStyle({ left: '72px', top: '588px' })
   scrollIntoView.mockClear()
   fireEvent.keyDown(dialog(), { key: 'Enter' })
-  expect(within(dialog()).getByText('2/2')).toBeInTheDocument()
+  expect(within(dialog()).getByText('2/3')).toBeInTheDocument()
   expect(scrollIntoView).not.toHaveBeenCalled()
-  expect(dialog()).toHaveStyle({ top: '8px' })
+  expect(dialog()).toHaveStyle({ left: '72px', top: '472px' }) // 대상 위 8px — 가로 자리는 그대로
+  fireEvent.keyDown(dialog(), { key: 'Escape' })
+  expect(lastLog()).toMatchObject({ who: 'helper', text: 'pill.log.guideStop' })
 })
 
 it('S14 코치: 버튼 위의 ←/→도 단계를 옮긴다(목록·버튼을 오가도 키가 같다)', () => {
