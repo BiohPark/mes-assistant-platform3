@@ -152,6 +152,22 @@ describe('buildChatRequest — linked SR by tag', () => {
 })
 
 describe('buildChatRequest — conversations', () => {
+  it('uses explicit captured conversations instead of current staging, including an empty capture', async () => {
+    const src = await startConversation(dev, { assistantId: 'urs', tags: ['capture'] })
+    await appendMessage(dev, src.thread.id, 'user', 'CAPTURED-QUESTION')
+    const me = await startConversation(dev, { assistantId: 'fds', tags: ['capture'] })
+    await selectConversation(dev, me.task.id, src.task.id, { weight: 'main' })
+    const captured = await ports.loadConversationInputs(me.task.id)
+    const { scope, thread } = await scopeOf(me.task.id)
+    const empty = await buildChatRequest(scope, thread, [], { conversations: [] })
+    expect(empty.info.inputs).toEqual([])
+    const dry = await buildChatRequest(scope, thread, [], { conversations: captured, dryRun: true })
+    const actual = await buildChatRequest(scope, thread, [], { conversations: captured })
+    expect(actual.messages).toEqual(dry.messages)
+    expect(actual.info.bytes).toBe(dry.info.bytes)
+    expect(actual.messages[0].content).toContain('CAPTURED-QUESTION')
+  })
+
   it('includes selected conversation snapshots and records them', async () => {
     const src = await startConversation(dev, { assistantId: 'urs', tags: ['t'] })
     await appendMessage(dev, src.thread.id, 'user', '보관 기간은?')
@@ -168,15 +184,21 @@ describe('buildChatRequest — conversations', () => {
 })
 
 describe('buildChatRequest — SR intake', () => {
-  it('reads SR attachments at send time (a file uploaded after the scope was captured is included)', async () => {
+  it('sends only this turn SR attachments and keeps estimates equal to transmission)', async () => {
     await createAssistant(dev, input('intake'))
     await db.settings.update('app', { srIntakeAssistantId: 'intake' })
     const sr = await startSrConversation(dev)
     const intake = (await db.assistants.get('intake')) as Assistant
     const scope: ChatScope = { kind: 'sr', sr, intake, files: [] }
-    await uploadFile(dev, { srId: sr.id }, text('req.txt', 'SR-ATTACHMENT', 'text/plain'))
+    const file = await uploadFile(dev, { srId: sr.id }, text('req.txt', 'SR-ATTACHMENT', 'text/plain'))
+    await uploadFile(dev, { srId: sr.id }, text('old.txt', 'OLD-SR-FILE', 'text/plain'))
     const thread = (await db.threads.get(sr.threadId)) as Thread
-    const built = await buildChatRequest(scope, thread, [])
+    const built = await buildChatRequest(scope, thread, [], { oneShotFileIds: [file.id] })
+    const dry = await buildChatRequest(scope, thread, [], { oneShotFileIds: [file.id], dryRun: true })
+    expect(dry.messages).toEqual(built.messages)
+    expect(dry.info.bytes).toBe(built.info.bytes)
+    expect(built.messages[0].content).not.toContain('OLD-SR-FILE')
+    expect((await buildChatRequest(scope, thread, [])).info.inputs).toEqual([])
     expect(built.messages[0].content).toContain('SR-ATTACHMENT')
     expect(built.info.inputs[0]).toMatchObject({ kind: 'file', name: 'req.txt', source: 'SR 첨부' })
   })

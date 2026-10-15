@@ -4,7 +4,7 @@ import { byteLength, eligibleMessages, newMessagesSince, type ContextSnapshot, t
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { EventsService } from '../events/events.service.js'
-import { activityLog, appUser, assistant, contextSnapshot, contextSnapshotMessage, conversationInput, message, tag, task, taskTag, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, chatRequest, chatRequestInput, contextSnapshot, contextSnapshotMessage, conversationInput, message, tag, task, taskTag, thread } from '../db/schema.js'
 import { assertTaskAccess } from '../sr/access.js'
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
@@ -70,23 +70,28 @@ export class DbConversationInputsService {
       .where(and(inArray(thread.taskId, visibleSources.map((item) => item.source.id)), inArray(message.role, ['user', 'assistant']),
         eq(message.status, 'done'), isNull(message.kind), sql`trim(${message.content}) <> ''`)).groupBy(thread.taskId) : []
     const countsByTask = new Map(counts.map((row) => [row.taskId, row]))
+    const used = await this.db.select({ sourceTaskId: chatRequestInput.sourceTaskId }).from(chatRequestInput)
+      .innerJoin(chatRequest, eq(chatRequestInput.requestId, chatRequest.id)).innerJoin(thread, eq(chatRequest.threadId, thread.id))
+      .where(and(eq(thread.taskId, taskId), eq(chatRequestInput.kind, 'conversation')))
+    const usedSources = new Set(used.map(item => item.sourceTaskId))
     const selected = await this.db.select().from(conversationInput).where(eq(conversationInput.taskId, taskId))
     const loaded = await this.list(taskId)
     return visibleSources.map(({ source, assistant: agent }) => {
       const count = countsByTask.get(source.id)
       const choice = selected.find((row) => row.sourceTaskId === source.id)
       const detail = choice && loaded.find((row) => row.input.sourceTaskId === source.id)
-      return { taskId: source.id, code: source.code, title: source.title, status: source.status,
+      return { taskId: source.id, used: usedSources.has(source.id), code: source.code, title: source.title, status: source.status,
         assistant: { id: agent.id, name: agent.name, color: agent.color }, sharedTags: tags.get(source.id)!,
         messageCount: Number(count?.count ?? 0), bytes: Number(count?.bytes ?? 0), lastActivityAt: source.lastActivityAt.toISOString(),
         ...(detail && { selected: { weight: detail.input.weight, mode: detail.input.mode, snapshotId: detail.snapshot.id, newMessages: detail.newMessages, detached: detail.detached } }) }
     })
   }
 
-  async load(taskId: string, actor?: string) {
+  async load(taskId: string, actor?: string, captured?: Array<{ sourceTaskId: string; snapshotId: string; weight: Weight }>) {
     if (actor) await assertTaskAccess(this.db, actor, taskId)
     await this.taskRow(taskId)
-    const rows = await this.db.select().from(conversationInput).where(eq(conversationInput.taskId, taskId)).orderBy(conversationInput.selectedAt, conversationInput.id)
+    const rows = captured?.map(row => ({ ...row, id: row.snapshotId, taskId, mode: '', selectedBy: '', selectedAt: new Date(0) }))
+      ?? await this.db.select().from(conversationInput).where(eq(conversationInput.taskId, taskId)).orderBy(conversationInput.selectedAt, conversationInput.id)
     return Promise.all(rows.map(async (row) => {
       if (actor) await assertTaskAccess(this.db, actor, row.sourceTaskId)
       const [snapshot] = await this.db.select().from(contextSnapshot).where(eq(contextSnapshot.id, row.snapshotId))
@@ -97,7 +102,7 @@ export class DbConversationInputsService {
       const boundary = all.find((item) => item.id === snapshot.upToMessageId)
       const selectedMessages = snapshot.mode === 'summary' ? [] : pinned.flatMap(({ messageId }) => all.find((item) => item.id === messageId) ?? [])
       const input: ConversationInput = { id: row.id, taskId: row.taskId, sourceTaskId: row.sourceTaskId, weight: row.weight as Weight,
-        mode: row.mode as Mode, snapshotId: row.snapshotId, selectedBy: row.selectedBy, selectedAt: row.selectedAt.toISOString() }
+        mode: snapshot.mode as Mode, snapshotId: row.snapshotId, selectedBy: row.selectedBy, selectedAt: row.selectedAt.toISOString() }
       const view: ContextSnapshot = { id: snapshot.id, sourceTaskId: snapshot.sourceTaskId, mode: snapshot.mode as Mode,
         messageIds: pinned.map((item) => item.messageId), ...(snapshot.upToMessageId && { upToMessageId: snapshot.upToMessageId }),
         ...(boundary && { upToCreatedAt: boundary.createdAt }), ...(snapshot.summaryText !== null && { summaryText: snapshot.summaryText }),

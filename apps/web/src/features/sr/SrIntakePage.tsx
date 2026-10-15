@@ -48,6 +48,9 @@ export function SrIntakePage() {
   const first = useRef<{ key: string; sr?: SrDetail } | null>(null)
   const sending = useRef(false)
   const composer = useRef<ComposerHandle>(null)
+  const [staging, setStaging] = useState<{ srId: string; fileIds: string[] }>({ srId: '', fileIds: [] })
+  const stagedIds = staging.srId === selectedId ? staging.fileIds : []
+  const sentMaterials = useRef<{ srId: string; fileIds: string[] } | null>(null)
   const [filter, setFilter] = useState<'active' | 'complete'>('active')
   const [busy, setBusy] = useState(false)
   const [convert, setConvert] = useState(false)
@@ -56,7 +59,12 @@ export function SrIntakePage() {
   const selectedQuery = useQuery({ queryKey: ['sr', selectedId], queryFn: () => getSr(selectedId), enabled: !!selectedId })
   const selected = selectedQuery.data
   const { data: messages = [] } = useQuery({ queryKey: ['messages', selected?.threadId], queryFn: ({ signal }) => getMessages(selected!.threadId, signal), enabled: !!selected?.threadId })
-  const chat = useChat(selected?.threadId)
+  const chat = useChat(selected?.threadId, undefined, undefined, () => {
+    const sent = sentMaterials.current
+    if (!sent) return
+    sentMaterials.current = null
+    setStaging(current => current.srId === sent.srId ? { ...current, fileIds: current.fileIds.filter(id => !sent.fileIds.includes(id)) } : current)
+  })
   // 첫 응답이 시작되기 전(생성·업로드·스트림 대기)에도 요청 전환을 막아 후속 입력이 다른 요청으로 새지 않게 한다.
   const locked = busy || chat.sending
   // started 전에는 입력도 닫는다(ChatView와 같은 규칙) — 열려 있으면 대기 중 attempt가 재사용되어 새 입력이 버려진다.
@@ -66,7 +74,7 @@ export function SrIntakePage() {
   const setSelectedId = (id: string) => { if (locked) return; first.current = null; setConvert(false); setParams(id ? { id } : {}) }
   const newRequest = () => { if (locked) return; first.current = { key: newId() }; setConvert(false); setParams({ new: '1' }) }
   async function send(text: string, attachments: PendingAttachment[]) {
-    if (sending.current || (!text.trim() && !attachments.length) || !settings?.srIntakeAssistantId) return
+    if (sending.current || (!text.trim() && !attachments.length && !stagedIds.length) || !settings?.srIntakeAssistantId) return
     sending.current = true; setBusy(true)
     try {
       if (selected && chat.hasPendingAttempt()) { await chat.send(text.trim()); return }
@@ -74,7 +82,8 @@ export function SrIntakePage() {
       if (!selected) first.current = attempt
       const sr = selected ?? attempt.sr ?? await createSr(attempt.key)
       if (!selected) attempt.sr = sr
-      const ids: string[] = []
+      const captured = [...stagedIds]
+      const ids: string[] = [...captured]
       for (const attachment of attachments) {
         if (!attachment.uploadedId || attachment.uploadedTaskId !== sr.id) {
           attachment.uploadedId = (await uploadSrFile(sr.id, attachment.file)).id
@@ -82,13 +91,17 @@ export function SrIntakePage() {
         }
         ids.push(attachment.uploadedId)
       }
-      if (selected) await chat.send(text.trim(), ids)
+      if (selected) {
+        sentMaterials.current = { srId: sr.id, fileIds: captured }
+        await chat.send(text.trim(), [...new Set(ids)])
+      }
       else {
         queueFirstRequest(sr.threadId, { content: text.trim(), attachmentIds: ids, oneShotFileIds: [] })
         client.setQueryData(['sr', sr.id], sr)
         setParams({ id: sr.id })
         first.current = null
       }
+      setStaging(current => current.srId === sr.id ? { ...current, fileIds: current.fileIds.filter(id => !captured.includes(id)) } : current)
       refresh()
     } finally { sending.current = false; setBusy(false) }
   }
@@ -128,13 +141,22 @@ export function SrIntakePage() {
             {historyOpen && <SrStatusHistory history={selected.statusHistory ?? []} />}
           </header>
           <SharedResults results={selected.results} />
+          <section data-testid="sr-materials-library" className="space-y-2 rounded-lg border p-3">
+            <h2 className="text-sm font-medium">{t('task.materials.library')} · {selected.candidateAttachmentIds.length}</h2>
+            <p className="text-xs text-muted-foreground">{t('sr.materialsHelp')}</p>
+            <SrAttachments ids={selected.candidateAttachmentIds} renderActions={file => <button type="button" className="shrink-0 rounded-lg border px-2 py-1 text-xs" disabled={closed || locked || stagedIds.includes(file.id) || stagedIds.length >= (settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST)} aria-label={t('sr.addFile', { name: file.name })} onClick={() => setStaging({ srId: selected.id, fileIds: [...stagedIds, file.id] })}>{stagedIds.includes(file.id) ? t('task.materials.added') : t('task.materials.add')}</button>} />
+          </section>
           {selected.status !== 'draft' && <section className="space-y-2 rounded-lg border p-3"><h2 className="font-medium">{t('sr.content')}</h2><p className="whitespace-pre-wrap text-sm">{selected.body}</p>{selected.attachmentIds.length > 0 && <SrAttachments ids={selected.attachmentIds} />}</section>}
         </> : selectedQuery.isError ? <p role="alert">{String(selectedQuery.error)}</p> : !isNew && <p className="text-sm text-muted-foreground">{t('sr.selectRequest')}</p>}
         {(selected || isNew) && <FileDropZone data-testid="sr-dropzone" className="flex min-h-0 flex-1 flex-col gap-4" label={t('dropzone.toAttach')} disabled={!settings?.srIntakeAssistantId || closed || locked} onFiles={files => composer.current?.dropFiles(files)}>
           <section className="min-h-40 flex-1 space-y-4 overflow-y-auto rounded-lg border p-3" aria-label={t('sr.conversation')}>
             <ChatMessages messages={messages} run={chat.run} empty={empty} actions={message => ({ intake: true, assistantName: settings?.name || t('sr.intakeAgent'), onRetry: message.requestId && message.status === 'error' ? () => { void chat.retry(message.requestId!).catch(error => toast.error(String(error))) } : undefined })} />
           </section>
-          {closed ? <p role="status" className="text-sm text-muted-foreground">{t('sr.closed')}</p> : <Composer ref={composer} key={selectedId || 'new'} maxAttachments={settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST} inputLabel={t('sr.message')} placeholder={t('sr.messagePlaceholder')} disabled={busy || awaitingStart || !settings?.srIntakeAssistantId} streaming={!!chat.run} allowAttachments onSend={send} onStop={() => { void chat.stop() }} suggestions={!messages.length && examples.length > 0 ? examples : undefined} />}
+          {selected && stagedIds.length > 0 && <section data-testid="sr-materials-staged" className="space-y-2 rounded-lg border p-3">
+            <h2 className="text-sm font-medium">{t('task.materials.staged', { count: stagedIds.length })}</h2>
+            <SrAttachments ids={stagedIds} renderActions={file => <button type="button" disabled={locked} aria-label={t('task.materials.unstage', { label: file.name })} onClick={() => setStaging(current => ({ ...current, fileIds: current.fileIds.filter(id => id !== file.id) }))}>×</button>} />
+          </section>}
+          {closed ? <p role="status" className="text-sm text-muted-foreground">{t('sr.closed')}</p> : <Composer ref={composer} key={selectedId || 'new'} maxAttachments={settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST} stagedAttachmentCount={stagedIds.length} inputLabel={t('sr.message')} placeholder={t('sr.messagePlaceholder')} disabled={busy || awaitingStart || !settings?.srIntakeAssistantId} streaming={!!chat.run} allowAttachments onSend={send} onStop={() => { void chat.stop() }} suggestions={!messages.length && examples.length > 0 ? examples : undefined} />}
           {selected?.status === 'draft' && canEdit && !selected.hasRequests && <Button variant="ghost" className="self-start" onClick={() => setDeleting(true)}>{t('sr.deleteDraft')}</Button>}
         </FileDropZone>}
         {selected && <><SrConvertSheet sr={selected} open={convert} onOpenChange={setConvert} onSaved={refresh} /><ConfirmDialog open={deleting} onOpenChange={setDeleting} title={t('sr.deleteConfirm')} description={t('sr.deleteDescription')} confirmLabel={t('sr.deleteDraft')} onConfirm={async () => { try { await deleteSr(selected.id); setSelectedId(''); refresh() } catch (error) { toast.error(String(error)); throw error } }} /></>}

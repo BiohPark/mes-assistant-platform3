@@ -34,6 +34,8 @@ interface ComposerProps {
   placeholder?: string
   inputLabel?: string
   maxAttachments?: number
+  /** SR 자료함에서 담은 파일도 글 없이 보낼 수 있다 */
+  stagedAttachmentCount?: number
   /** discussion=true 이면 팀 의견(AI 미전송) */
   onSend: (text: string, attachments: PendingAttachment[], discussion: boolean) => Promise<void | boolean>
   /** Ask for confirmation before marking the draft as sent; false preserves it without an error. */
@@ -55,7 +57,7 @@ interface ComposerProps {
   tools?: ReactNode
 }
 
-export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, onSend, beforeSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey, tools }: ComposerProps) {
+export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, stagedAttachmentCount = 0, onSend, beforeSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey, tools }: ComposerProps) {
   const t = useT()
   const [saved] = useState(() => (draftKey ? getDraft(draftKey) : undefined))
   const [discussion, setDiscussionState] = useState(saved?.discussion ?? false)
@@ -85,7 +87,7 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const submitting = useRef(false)
   const blocked = !discussion && !!blockedReason
-  const canSend = !disabled && !blocked && (discussion || !streaming) && (text.trim().length > 0 || pending.length > 0)
+  const canSend = !disabled && !blocked && (discussion || !streaming) && (text.trim().length > 0 || pending.length > 0 || (!discussion && stagedAttachmentCount > 0))
 
   const setText = (v: string) => {
     writeText(v)
@@ -94,7 +96,7 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
 
   function addFiles(files: File[]): boolean {
     const picked = files.map((file) => ({ file }))
-    if (pending.length + picked.length > attachmentLimit) { setAttachmentError(t('chat.attachmentLimit', { limit: String(attachmentLimit) })); return false }
+    if (pending.length + picked.length + stagedAttachmentCount > attachmentLimit) { setAttachmentError(t('chat.attachmentLimit', { limit: String(attachmentLimit) })); return false }
     setPending((p) => [...p, ...picked])
     setAttachmentError('')
     return true

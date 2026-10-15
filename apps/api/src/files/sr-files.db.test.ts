@@ -21,7 +21,7 @@ import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { DbFilesService } from './files.service.js'
 import { FileStorageService } from './fileStorage.service.js'
 
-/** S13: SR에서 시작한 업무의 자료함에 연결 SR 첨부(접수 첨부 정본)를 보이고 AI 입력으로 기본 선택한다. */
+/** S13: SR에서 시작한 업무의 자료함에 연결 SR의 접수 파일 전체를 보이고 AI 입력으로 기본 선택한다. */
 describe('연결 SR 첨부 → 업무 자료함', () => {
   let temp: Awaited<ReturnType<typeof createTempDb>>
   let client: Pool
@@ -61,7 +61,7 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
   afterAll(async () => { await client?.end(); await temp?.drop(); if (root) await rm(root, { recursive: true, force: true }) })
   beforeEach(() => { captured.length = 0 })
 
-  /** 접수 첨부 정본 A(본문에 첨부)와 채팅 후보 B(업로드만)를 가진 접수된 SR */
+  /** 본문에 첨부한 A와 접수 대화에 올린 B를 가진 SR — 둘 다 자료함에 보인다 */
   async function submittedSr(title: string) {
     const draft = await sr.create('requester')
     const official = await files.uploadSr('requester', draft.id, `${title}-spec.txt`, 'text/plain', Buffer.from(`SR-ATTACHMENT-BODY ${title}`))
@@ -75,29 +75,31 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
     return started
   }
 
-  it('startTask는 접수 첨부 정본만 참고 입력으로 기본 선택하고, 파일은 복사하지 않고 같은 file_object를 참조한다', async () => {
+  it('startTask는 접수 파일 전부를 참고 입력으로 기본 선택하고, 파일은 복사하지 않고 같은 file_object를 참조한다', async () => {
     const { srId, code, official, candidate } = await submittedSr('기본선택')
     const started = await startFrom(srId)
-    expect(started.inputs).toEqual([expect.objectContaining({ fileId: official.id, weight: 'reference', selectedBy: 'staff' })])
+    expect(started.inputs.map(item => item.fileId).sort()).toEqual([official.id, candidate.id].sort())
+    expect(started.inputs.every(item => item.weight === 'reference' && item.selectedBy === 'staff')).toBe(true)
     expect(await db.select().from(fileObject).where(eq(fileObject.originTaskId, started.id))).toEqual([])
     expect((await db.select().from(fileObject).where(eq(fileObject.originSrId, srId))).map((row) => row.id).sort()).toEqual([official.id, candidate.id].sort())
     const shown = await files.candidates(started.id, 'staff')
-    expect(shown.srFiles).toEqual([expect.objectContaining({ file: expect.objectContaining({ id: official.id, originSrId: srId, name: official.name }), srId, srCode: code, srTitle: '기본선택', selected: 'reference' })])
+    expect(shown.srFiles?.map(item => item.file.id).sort()).toEqual([official.id, candidate.id].sort())
+    expect(shown.srFiles?.[0]).toMatchObject({ srId, srCode: code, srTitle: '기본선택', selected: 'reference' })
     // 태그 공유 후보(task_file)와 섞지 않는다
     expect(shown.files.map((item) => item.file.id)).not.toContain(official.id)
     const logged = await db.select().from(activityLog).where(and(eq(activityLog.taskId, started.id), eq(activityLog.type, 'input.selected')))
-    expect(logged.map((row) => row.payload)).toEqual([expect.objectContaining({ name: official.name, weight: 'reference' })])
+    expect(logged.map(row => (row.payload as { name: string }).name).sort()).toEqual([official.name, candidate.name].sort())
     // 같은 SR에서 새 업무를 하나 더 시작해도 같은 파일을 참조한다
     const again = await startFrom(srId, true)
-    expect(again.inputs.map((item) => item.fileId)).toEqual([official.id])
+    expect(again.inputs.map((item) => item.fileId).sort()).toEqual([official.id, candidate.id].sort())
   })
 
   it('이미 시작된 업무는 구역에 보이기만 하고 체크는 사람이 한다', async () => {
-    const { srId, official } = await submittedSr('기존업무')
+    const { srId, official, candidate } = await submittedSr('기존업무')
     const existing = await tasks.create('staff', { assistantId })
     await db.update(task).set({ srId }).where(eq(task.id, existing.task.id))
     expect((await tasks.get(existing.task.id)).inputs).toEqual([])
-    expect((await files.candidates(existing.task.id, 'staff')).srFiles).toEqual([expect.objectContaining({ file: expect.objectContaining({ id: official.id }) })])
+    expect((await files.candidates(existing.task.id, 'staff')).srFiles?.map(item => item.file.id).sort()).toEqual([official.id, candidate.id].sort())
     expect((await files.candidates(existing.task.id, 'staff')).srFiles?.[0]).not.toHaveProperty('selected')
     await files.setInput('staff', existing.task.id, official.id, 'main')
     expect((await tasks.get(existing.task.id)).inputs).toEqual([expect.objectContaining({ fileId: official.id, weight: 'main' })])
@@ -105,13 +107,14 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
     expect((await files.candidates((await tasks.create('staff', { assistantId })).task.id, 'staff')).srFiles).toEqual([])
   })
 
-  it('연결 SR 첨부 정본만 고를 수 있다 — 채팅 후보·다른 SR 첨부는 400, ×(제거)는 언제나 된다', async () => {
+  it('연결 SR 접수 파일은 다시 담을 수 있고 다른 SR 첨부는 400, ×(제거)는 언제나 된다', async () => {
     const { srId, official, candidate } = await submittedSr('선택범위')
     const foreign = await submittedSr('다른SR')
     const started = await startFrom(srId)
-    await expect(files.setInput('staff', started.id, candidate.id, 'reference')).rejects.toMatchObject({ status: 400 })
+    await files.setInput('staff', started.id, candidate.id, 'reference')
     await expect(files.setInput('staff', started.id, foreign.official.id, 'reference')).rejects.toMatchObject({ status: 400 })
     await files.setInput('staff', started.id, official.id, null)
+    await files.setInput('staff', started.id, candidate.id, null)
     expect((await tasks.get(started.id)).inputs).toEqual([])
     expect((await files.candidates(started.id, 'staff')).srFiles?.[0]).not.toHaveProperty('selected')
     await files.setInput('staff', started.id, official.id, 'reference')
@@ -124,7 +127,8 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
     const requests = new RequestsService(db, config, provider)
     try {
       const estimate = await requests.estimate('staff', started.threadId!, { draft: '분석해 줘' })
-      expect(estimate.inputs).toEqual([expect.objectContaining({ kind: 'file', fileId: official.id, name: official.name, source: 'SR 첨부', weight: 'reference' })])
+      expect(estimate.inputs).toHaveLength(2)
+      expect(estimate.inputs[0]).toMatchObject({ kind: 'file', fileId: official.id, name: official.name, source: 'SR 첨부', weight: 'reference' })
       await (await requests.start('staff', started.threadId!, { content: '분석해 줘' }, 'sr-files-send-1')).done
       expect(captured).toHaveLength(1)
       expect(JSON.stringify(captured[0]!.messages)).toContain('SR-ATTACHMENT-BODY 전송')
@@ -137,6 +141,52 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
     } finally { requests.onModuleDestroy() }
   })
 
+  it('SR intake sends attachments only for their turn and supports reusing them', async () => {
+    const draft = await sr.create('requester')
+    const file = await files.uploadSr('requester', draft.id, 'intake.txt', 'text/plain', Buffer.from('INTAKE-ONE-TURN'))
+    const requests = new RequestsService(db, config, provider)
+    try {
+      const estimate = await requests.estimate('requester', draft.threadId, { draft: 'first', attachmentIds: [file.id] })
+      const first = await requests.start('requester', draft.threadId, { content: 'first', attachmentIds: [file.id] }, 'intake-once')
+      await first.done
+      expect((await requests.get(first.id)).bytes).toBe(estimate.bytes)
+      expect(JSON.stringify(captured[0]!.messages)).toContain('INTAKE-ONE-TURN')
+      await (await requests.start('requester', draft.threadId, { content: 'second' }, 'intake-next')).done
+      expect(JSON.stringify(captured[1]!.messages)).not.toContain('INTAKE-ONE-TURN')
+      await (await requests.start('requester', draft.threadId, { content: 'reuse', attachmentIds: [file.id] }, 'intake-reuse')).done
+      expect(JSON.stringify(captured[2]!.messages)).toContain('INTAKE-ONE-TURN')
+    } finally { requests.onModuleDestroy() }
+  })
+
+  it('SR retries reconstruct recorded attachments, omit later uploads, and retain exclusions across retries', async () => {
+    const draft = await sr.create('requester')
+    const file = await files.uploadSr('requester', draft.id, 'retry.txt', 'text/plain', Buffer.from('ORIGINAL-INTAKE-FILE'))
+    const requests = new RequestsService(db, config, { ...provider, async *stream() { yield { type: 'error', message: 'failed' } } })
+    try {
+      const first = await requests.start('requester', draft.threadId, { content: 'first', attachmentIds: [file.id] }, 'intake-retry-first')
+      await first.done
+      await files.uploadSr('requester', draft.id, 'later.txt', 'text/plain', Buffer.from('LATER-INTAKE-FILE'))
+      const retry = await requests.retry('requester', first.id, {}, 'intake-retry-again')
+      await retry.done
+      expect((await requests.get(retry.id)).inputs).toMatchObject([{ fileId: file.id }])
+      expect(JSON.stringify(await requests.snapshot(retry.id))).not.toContain('LATER-INTAKE-FILE')
+      const excluded = await requests.retry('requester', retry.id, { excludeFileIds: [file.id] }, 'intake-retry-excluded')
+      await excluded.done
+      expect((await requests.get(excluded.id)).inputs).toEqual([])
+      const stillExcluded = await requests.retry('requester', excluded.id, {}, 'intake-retry-still-excluded')
+      await stillExcluded.done
+      expect((await requests.get(stillExcluded.id)).inputs).toEqual([])
+    } finally { requests.onModuleDestroy() }
+  })
+
+  it('excludes deleted intake uploads from the linked task library and initial selection', async () => {
+    const { srId, official, candidate } = await submittedSr('삭제제외')
+    await db.update(fileObject).set({ deletedAt: new Date() }).where(eq(fileObject.id, candidate.id))
+    const started = await startFrom(srId)
+    expect(started.inputs.map(item => item.fileId)).toEqual([official.id])
+    expect((await files.candidates(started.id, 'staff')).srFiles?.map(item => item.file.id)).toEqual([official.id])
+  })
+
   it('한도를 넘으면 자르지 않고 전송을 막는다', async () => {
     const { srId } = await submittedSr('한도')
     const started = await startFrom(srId)
@@ -145,12 +195,12 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
     try {
       const estimate = await requests.estimate('staff', started.threadId!, { draft: '분석' })
       expect(estimate.overLimit).toBe(true)
-      expect(estimate.inputs).toHaveLength(1)
+      expect(estimate.inputs).toHaveLength(2)
       const over = await requests.start('staff', started.threadId!, { content: '분석' }, 'sr-files-over')
       await over.done
       expect(captured).toHaveLength(0)
       // 시작과 함께 스테이징은 비지만, 무엇을 담았는지는 요청 기록에 남아 재시도(빼고 다시)가 그 기준으로 된다
-      expect(await requests.get(over.id)).toMatchObject({ status: 'failed', code: 'REQUEST_TOO_LARGE', inputs: [{ fileId: expect.any(String) }] })
+      expect(await requests.get(over.id)).toMatchObject({ status: 'failed', code: 'REQUEST_TOO_LARGE', inputs: [{ fileId: expect.any(String) }, { fileId: expect.any(String) }] })
       expect((await tasks.get(started.id)).inputs).toEqual([])
     } finally {
       await db.delete(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
@@ -165,8 +215,8 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
     await tasks.update('staff', started.id, { assigneeIds: ['staff', 'bo-member'] })
     expect(await files.get(official.id, 'bo-member')).toMatchObject({ id: official.id })
     expect(new TextDecoder().decode(await files.content(official.id, 'bo-member'))).toBe('SR-ATTACHMENT-BODY 권한')
-    // 정본이 아닌 채팅 후보, 무관한 BO는 그대로 403
-    await expect(files.get(candidate.id, 'bo-member')).rejects.toMatchObject({ status: 403 })
+    // 본문에서 고르지 않은 접수 파일도 참여자에게 허용하고, 무관한 BO는 403
+    expect(await files.get(candidate.id, 'bo-member')).toMatchObject({ id: candidate.id })
     await expect(files.get(official.id, 'other')).rejects.toMatchObject({ status: 403 })
     // 요청자 본인은 기존대로
     expect(await files.get(official.id, 'requester')).toMatchObject({ id: official.id })
@@ -194,8 +244,8 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
   })
 
   it('입력 선택 행은 SR 첨부 자체를 가리킨다(task_input.file_id = SR file_object.id)', async () => {
-    const { srId, official } = await submittedSr('행')
+    const { srId, official, candidate } = await submittedSr('행')
     const started = await startFrom(srId)
-    expect(await db.select({ fileId: taskInput.fileId }).from(taskInput).where(eq(taskInput.taskId, started.id))).toEqual([{ fileId: official.id }])
+    expect((await db.select({ fileId: taskInput.fileId }).from(taskInput).where(eq(taskInput.taskId, started.id))).map(row => row.fileId).sort()).toEqual([official.id, candidate.id].sort())
   })
 })

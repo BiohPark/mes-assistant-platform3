@@ -44,6 +44,8 @@ export interface BuildOptions {
   oneShotFileIds?: ID[]
   /** 요청 시작 때 확정(소비)한 '보낼 자료'. 주면 대화의 현재 선택(task.inputs) 대신 이것만 쓴다 — 실제 전송·재시도용 */
   inputs?: Array<{ fileId: ID; weight: InputWeight }>
+  /** 요청 시작 때 소비한 대화 스냅샷. 빈 배열도 현재 선택을 읽지 않는 확정값이다. */
+  conversations?: Awaited<ReturnType<LlmPorts['loadConversationInputs']>>
   /** 첨부 실패 뒤 사용자가 "텍스트로 보내기"를 고른 파일 */
   forceInlineFileIds?: ID[]
   /** 크기 추정: OpenWebUI 업로드 없이 첨부 예정으로 계산 */
@@ -154,11 +156,11 @@ async function deliver(settings: Settings, entries: FileEntry[], opts: BuildOpti
   return { prompt, info, attached: attached?.length ? attached : undefined, lines }
 }
 
-async function loadConversations(taskId: ID, users: UserMap, ports: LlmPorts): Promise<{ prompt: PromptConversation[]; info: ConversationRequestInput[] }> {
-  const loaded = await ports.loadConversationInputs(taskId)
+async function loadConversations(taskId: ID, users: UserMap, ports: LlmPorts, captured?: BuildOptions['conversations']): Promise<{ prompt: PromptConversation[]; info: ConversationRequestInput[] }> {
+  const loaded = captured ?? await ports.loadConversationInputs(taskId)
   const prompt: PromptConversation[] = []
   const info: ConversationRequestInput[] = []
-  for (const l of loaded) {
+  for (const l of [...loaded.filter(item => item.input.weight === 'main'), ...loaded.filter(item => item.input.weight !== 'main')]) {
     const pc: PromptConversation = {
       weight: l.input.weight,
       code: l.source.code,
@@ -197,7 +199,7 @@ async function buildTaskRequest(scope: Extract<ChatScope, { kind: 'task' }>, set
   const srCodes = [...new Set(task.tags.map(normalizeTag).filter(isSrTag))]
   const [entries, conversations, linkedSrs] = await Promise.all([
     loadFileEntries(task, opts.inputs ?? task.inputs, opts.oneShotFileIds ?? [], ports),
-    loadConversations(task.id, users, ports),
+    loadConversations(task.id, users, ports, opts.conversations),
     srCodes.length ? ports.getServiceRequestsByCodes(srCodes) : Promise.resolve([]),
   ])
   const files = await deliver(settings, entries, opts, ports)
@@ -220,9 +222,9 @@ async function buildTaskRequest(scope: Extract<ChatScope, { kind: 'task' }>, set
   }
 }
 
-async function buildSrRequest(scope: Extract<ChatScope, { kind: 'sr' }>, ports: LlmPorts) {
-  // 첨부는 보내는 시점에 다시 읽는다 (화면이 가진 목록은 방금 올린 파일을 모를 수 있다)
-  const files = await ports.getFilesBySr(scope.sr.id)
+async function buildSrRequest(scope: Extract<ChatScope, { kind: 'sr' }>, opts: BuildOptions, ports: LlmPorts) {
+  const ids = [...new Set([...(opts.inputs ?? []).map(item => item.fileId), ...(opts.oneShotFileIds ?? [])])]
+  const files = (await ports.getFiles(ids)).filter((file): file is FileAsset => !!file && file.originSrId === scope.sr.id)
   const info: FileRequestInput[] = []
   const lines: string[] = []
   for (const f of files) {
@@ -234,6 +236,7 @@ async function buildSrRequest(scope: Extract<ChatScope, { kind: 'sr' }>, ports: 
       version: f.version,
       weight: 'reference',
       source: 'SR 첨부',
+      oneShot: true,
       delivery: text !== undefined ? 'inline' : 'metadata_only',
       text: text !== undefined,
       bytes: text !== undefined ? byteLength(text) : 0,
@@ -255,7 +258,7 @@ export async function buildChatRequest(scope: ChatScope, thread: Thread, history
   const transport = usesFilesApi(settings.llm) && scope.kind === 'task' ? 'openwebui' : 'inline'
 
   if (scope.kind === 'sr') {
-    const sr = await buildSrRequest(scope, ports)
+    const sr = await buildSrRequest(scope, opts, ports)
     const model = resolveModel({ thread, assistant: scope.intake, settings: settings.llm }).modelId
     const messages = toChatMessages(sr.systemPrompt, history, users)
     return {

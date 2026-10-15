@@ -25,6 +25,7 @@ export function ConversationPickerDialog({ taskId, candidate, current, initialMo
   const [mode, setMode] = useState<'full' | 'messages' | 'summary'>(initialMode ?? current?.snapshot.mode ?? 'full')
   const modeKeys = useTablistKeys(modes, mode, setMode)
   const [picked, setPicked] = useState<string[] | null>(current?.snapshot.mode === 'messages' ? current.snapshot.messageIds : null)
+  const [recentTurns, setRecentTurns] = useState(3)
   const [anchor, setAnchor] = useState<number | null>(null)
   const [weight, setWeight] = useState<'main' | 'reference'>(current?.input.weight ?? 'reference')
   const [summary, setSummary] = useState(current?.snapshot.summaryText ?? '')
@@ -78,7 +79,12 @@ export function ConversationPickerDialog({ taskId, candidate, current, initialMo
       <button key={value} type="button" {...modeKeys.tabProps(value)} onClick={() => setMode(value)} className={`flex-1 rounded-lg px-2 py-1 ${mode === value ? 'bg-background font-medium shadow-sm' : ''}`}>{t(`task.picker.${value}`)}</button>)}</div>
     {history.isError && <div role="alert">{t('task.picker.historyFailed')}</div>}
     {mode === 'full' && <><p className="text-xs text-muted-foreground">{t('task.picker.fullHelp', { count: messages.length })}</p><Preview messages={messages} /></>}
-    {mode === 'messages' && <div className="space-y-2"><div className="flex items-center gap-2 text-xs"><span>{t('task.picker.selection', { chosen: chosen.length, total: messages.length })}</span>
+    {mode === 'messages' && <div className="space-y-2"><div className="flex items-center gap-2 text-xs">
+      <label>{t('task.picker.recentTurns')} <input type="number" min={1} max={1000} className="w-16 rounded-lg border px-1" value={recentTurns} onChange={event => setRecentTurns(Math.max(1, Math.min(1000, Number(event.target.value) || 1)))} /></label>
+      <button type="button" className="underline" onClick={() => {
+        const starts = messages.flatMap((item, index) => item.role === 'user' ? [index] : [])
+        setPicked(messages.slice(starts.at(-recentTurns) ?? 0).map(item => item.id))
+      }}>{t('task.picker.selectRecent')}</button></div><div className="flex items-center gap-2 text-xs"><span>{t('task.picker.selection', { chosen: chosen.length, total: messages.length })}</span>
       <button type="button" className="ml-auto underline" onClick={() => setPicked(messages.map((item) => item.id))}>{t('common.all')}</button><button type="button" className="underline" onClick={() => setPicked([])}>{t('task.picker.clear')}</button></div>
       <ul className="max-h-72 overflow-y-auto rounded-xl border p-2">{messages.map((item, index) => <li key={item.id} className="flex gap-2 border-b py-1 last:border-0">
         <Checkbox className="mt-0.5" aria-label={t('task.picker.selectMessage', { number: index + 1 })} checked={selected.includes(item.id)} onClick={(event) => toggle(index, event.shiftKey)} />

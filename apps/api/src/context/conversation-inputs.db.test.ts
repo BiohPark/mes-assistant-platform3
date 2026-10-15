@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { drizzle } from 'drizzle-orm/mysql2'
 import { eq } from 'drizzle-orm'
 import type { Pool } from 'mysql2/promise'
@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadConfig } from '../config/config.js'
 import { RequestsService } from '../requests/requests.service.js'
+import { DbLlmPorts } from '../llm/dbLlmPorts.js'
 import { MockProvider } from '@mes/llm'
 import { conversationCandidates } from '@mes/domain'
 import { DbConversationInputsService } from './conversation-inputs.service.js'
@@ -198,6 +199,42 @@ describe('conversation inputs DB', () => {
       await service.remove(actor, mine.task.id, source.task.id)
       await expect(tasks.delete(source.task.id)).rejects.toMatchObject({ status: 409 })
     } finally { runner.onModuleDestroy() }
+  })
+
+  it('consumes and records conversations before building; retries use original snapshots and preserve later staging', async () => {
+    const source = await make(['context-consume'], ['ORIGINAL-SOURCE', 'original answer'])
+    const mine = await make(['context-consume'])
+    const chosen = await service.select(actor, mine.task.id, source.task.id, { mode: 'full', weight: 'main' })
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' })
+    const provider = new MockProvider()
+    const runner = new RequestsService(db, config, { ...provider, kind: 'mock', ping: () => provider.ping(), listModels: () => provider.listModels(),
+      async *stream() { yield { type: 'error' as const, message: 'provider failed' } } })
+    try {
+      const estimate = await runner.estimate(actor, mine.thread.id, { draft: 'question' })
+      const buildFailure = vi.spyOn(DbLlmPorts.prototype, 'getSettings').mockRejectedValueOnce(new Error('build failed'))
+      const started = await runner.start(actor, mine.thread.id, { content: 'question' }, id())
+      expect(await service.list(mine.task.id)).toEqual([])
+      expect(await db.select().from(chatRequestInput).where(eq(chatRequestInput.requestId, started.id))).toMatchObject([
+        { kind: 'conversation', snapshotId: chosen.snapshot.id, weight: 'main' },
+      ])
+      await started.done
+      expect(await runner.get(started.id)).toMatchObject({ status: 'failed', bytes: 0 })
+      buildFailure.mockRestore()
+      await db.insert(message).values({ id: id(), threadId: source.thread.id, seq: 3, role: 'user', content: 'LATER-SOURCE', status: 'done', authorId: actor })
+      const later = await service.select(actor, mine.task.id, source.task.id, { mode: 'full', weight: 'reference' })
+      const retried = await runner.retry(actor, started.id, {}, id())
+      await retried.done
+      expect(await runner.get(retried.id)).toMatchObject({ bytes: estimate.bytes })
+      const snapshot = JSON.stringify(await runner.snapshot(retried.id))
+      expect(snapshot).toContain('ORIGINAL-SOURCE')
+      expect(snapshot).not.toContain('LATER-SOURCE')
+      expect(await service.list(mine.task.id)).toMatchObject([{ snapshot: { id: later.snapshot.id } }])
+      expect((await service.candidates(mine.task.id)).find(item => item.taskId === source.task.id)).toMatchObject({ used: true })
+      await service.remove(actor, mine.task.id, source.task.id)
+      const next = await runner.start(actor, mine.thread.id, { content: 'next' }, id())
+      await next.done
+      expect((await runner.get(next.id)).inputs).toEqual([])
+    } finally { vi.restoreAllMocks(); runner.onModuleDestroy() }
   })
 
   it('places only pinned source messages in the reference section of the request', async () => {

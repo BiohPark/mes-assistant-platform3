@@ -13,6 +13,7 @@ import { FileDropZone } from '@/components/FileDropZone'
 import { FileList } from './FileList'
 import { FilePreviewDialog } from './FilePreviewDialog'
 import { InputToggle, StagedToggle } from './InputToggle'
+import { listConversationInputs } from '@/api/conversationInputs'
 import { ConversationInputs } from './ConversationInputs'
 
 /**
@@ -34,6 +35,7 @@ export function MaterialsPanel({ task }: { task: Task }) {
   useEffect(() => subscribeEvent(({ event }) => { if (event === 'sr.updated') void query.invalidateQueries({ queryKey: ['candidates', task.id] }) }), [query, task.id])
   const assistants = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
   const own = useQuery({ queryKey: ['files', task.id], queryFn: () => filesForTask(task.id) })
+  const conversations = useQuery({ queryKey: ['conversation-inputs', task.id], queryFn: () => listConversationInputs(task.id) })
   const srFiles = candidates.data?.srFiles ?? []
   const used = new Set(candidates.data?.usedFileIds ?? [])
   const byId = new Map([...(candidates.data?.files ?? []).map((item) => [item.file.id, item.file] as const), ...srFiles.map((item) => [item.file.id, item.file] as const), ...(own.data ?? []).map((file) => [file.id, file] as const)])
@@ -91,12 +93,12 @@ export function MaterialsPanel({ task }: { task: Task }) {
           {stage(item.file)}
         </div>)}
       </div>}
-      <div className="space-y-2 border-t pt-2"><div className="font-medium">{t('task.materials.referenceConversations')}</div><ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} /></div>
+      <div data-tour="materials-conversations" className="space-y-2 border-t pt-2"><div className="text-sm font-semibold">{t('task.materials.sameTagConversations', { count: candidates.data?.conversations.length ?? 0 })}</div><ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} /></div>
     </section>
     <section data-tour="materials-staged" data-testid="materials-staged" aria-labelledby={stagedId} className="max-h-[45%] shrink-0 space-y-2 overflow-y-auto border-t pt-2">
-      <div><h3 id={stagedId} className="text-sm font-medium">{t('task.materials.staged', { count: selection.length })}</h3><p className="text-muted-foreground">{t('task.materials.stagedHelp')}</p></div>
+      <div><h3 id={stagedId} className="text-sm font-medium">{t('task.materials.staged', { count: selection.length + (conversations.data?.length ?? 0) })}</h3><p className="text-muted-foreground">{t('task.materials.stagedHelp')}</p></div>
       <div data-testid="materials-inputs" className="space-y-2">
-        {!selection.length && <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">{t('task.materials.noSelection')}</div>}
+        {!selection.length && !conversations.data?.length && <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">{t('task.materials.noSelection')}</div>}
         {selection.map((input) => {
           const file = byId.get(input.fileId)
           if (!file) return candidates.isPending || own.isPending ? null : <div key={input.fileId} className="rounded-xl border p-2 text-muted-foreground" data-testid={`selected-file-${input.fileId}`}>{t('task.materials.inputUnavailable')}</div>

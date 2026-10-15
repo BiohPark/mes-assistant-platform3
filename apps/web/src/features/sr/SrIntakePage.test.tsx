@@ -192,8 +192,9 @@ it('요청자(BO) 화면의 접수 첨부는 내려받기만 보이고 버전 �
     return jsonResponse(200, [])
   }))
   renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['requester'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=sr' })
-  expect(await screen.findByText('알람.txt v1')).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '다운로드' })).toBeInTheDocument()
+  const library = await screen.findByTestId('sr-materials-library')
+  expect(await within(library).findByText('알람.txt v1')).toBeInTheDocument()
+  expect(within(library).getByRole('button', { name: '다운로드' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '버전 기록' })).not.toBeInTheDocument()
 })
 
@@ -446,4 +447,35 @@ it.each([
   if (count) expect(addEventListener).toHaveBeenCalledWith('sr.updated', expect.any(Function))
   unmount()
   expect(close).toHaveBeenCalledTimes(count)
+})
+
+
+it.each(['completed', 'failed'])('lists every intake file and consumes staging once when the request starts (%s)', async terminal => {
+  const requests: Array<{ content: string; attachmentIds: string[] }> = []
+  const sr = { ...row('library', 'draft'), requesterId: 'u', candidateAttachmentIds: ['file-old'], attachmentIds: [] }
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/service-requests?scope=mine') return jsonResponse(200, [sr])
+    if (url === '/api/service-requests/library') return jsonResponse(200, sr)
+    if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, { srIntakeAssistantId: 'a' })
+    if (url === '/api/files/file-old') return jsonResponse(200, { id: 'file-old', name: 'intake.txt', version: 1, size: 10, source: 'upload' })
+    if (url === '/api/threads/thread-library/requests') {
+      requests.push(JSON.parse(String(init?.body)))
+      return new Response(`event: started\ndata: {"requestId":"r","replyMessageId":"reply"}\n\nevent: ${terminal}\ndata: ${terminal === 'failed' ? '{"error":"provider failed"}' : '{}'}\n\n`, { headers: { 'content-type': 'text/event-stream' } })
+    }
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=library' })
+  const library = await screen.findByTestId('sr-materials-library')
+  expect(await within(library).findByText('intake.txt v1')).toBeInTheDocument()
+  await userEvent.click(within(library).getByRole('button', { name: 'intake.txt 담기' }))
+  expect(screen.getByTestId('sr-materials-staged')).toHaveTextContent('intake.txt')
+  expect(screen.getByRole('button', { name: '전송' })).toBeEnabled()
+  await userEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(requests).toHaveLength(1))
+  expect(requests[0]).toMatchObject({ content: '', attachmentIds: ['file-old'] })
+  await waitFor(() => expect(screen.queryByTestId('sr-materials-staged')).not.toBeInTheDocument())
+  await userEvent.type(screen.getByRole('textbox', { name: '접수 메시지' }), '다음')
+  await userEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(requests).toHaveLength(2))
+  expect(requests[1]).toMatchObject({ attachmentIds: [] })
 })
