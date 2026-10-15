@@ -143,7 +143,7 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
   }
 
   return (
-    <div className="border-t bg-card p-2.5">
+    <div className="border-t bg-card p-2.5" data-tour="composer">
       {suggestions && suggestions.length > 0 && text === '' && !streaming && (
         <div className="mb-2 flex flex-wrap gap-1">
           {suggestions.map((s) => (

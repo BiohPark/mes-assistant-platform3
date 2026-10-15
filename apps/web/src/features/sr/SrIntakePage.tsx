@@ -104,7 +104,7 @@ export function SrIntakePage() {
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[18rem_1fr]">
       <aside className={`${hasDetail ? 'hidden lg:block' : ''} space-y-3 overflow-y-auto`}>
         {failed ? <SrLoadError error={list.error ?? intake.error} retrying={list.isFetching || intake.isFetching} onRetry={retry} /> : !loaded ? <SrSkeleton /> : <>
-          {settings.srIntakeAssistantId ? <Button onClick={newRequest} disabled={locked}>{t('sr.newRequest')}</Button> : <p role="status" className="text-sm">{t('sr.noIntake')}{me.roles.includes('system_owner') && <> · <Link to="/settings" className="underline">{t('sr.settingsLink')}</Link></>}</p>}
+          {settings.srIntakeAssistantId ? <Button data-tour="sr-new" onClick={newRequest} disabled={locked}>{t('sr.newRequest')}</Button> : <p role="status" className="text-sm">{t('sr.noIntake')}{me.roles.includes('system_owner') && <> · <Link to="/settings" className="underline">{t('sr.settingsLink')}</Link></>}</p>}
           {rows.length === 0 ? (settings.srIntakeAssistantId ? <EmptyState icon={Bot} title={settings.name ?? ''} description={settings.summary || undefined}>
             {examples.length > 0 && <ul aria-label={t('sr.exampleQuestions')} className="flex flex-wrap justify-center gap-1">{examples.map(example => <li key={example}><Chip label={example} /></li>)}</ul>}
           </EmptyState> : <EmptyState icon={Inbox} title={t('sr.noRequests')} />) : <>

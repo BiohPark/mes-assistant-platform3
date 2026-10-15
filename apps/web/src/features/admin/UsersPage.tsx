@@ -44,7 +44,7 @@ function UsersSection() {
   const change = (id: string, field: 'system-owner' | 'business-owner' | 'active', enabled: boolean) => {
     return setUserFlag(id, field, enabled).then(() => void query.refetch(), (error: unknown) => toast.error(error instanceof Error ? error.message : t('admin.changeFailed')))
   }
-  return <section className="space-y-3 rounded-xl border bg-card p-4 text-sm"><h2 className="font-semibold">{t('admin.settings.usersRoles')}</h2>
+  return <section data-tour="admin-users" className="space-y-3 rounded-xl border bg-card p-4 text-sm"><h2 className="font-semibold">{t('admin.settings.usersRoles')}</h2>
     <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/50"><tr>
       {header('name', t('admin.name'))}{header('loginId', t('admin.settings.loginId'))}{header('email', t('admin.email'))}{header('so', 'SO')}{header('bo', 'BO')}{header('active', t('admin.active'))}<th className="p-2">{t('admin.manage.actions')}</th>
     </tr></thead><tbody>{sorted.rows.map((user) => <tr key={user.id} className="border-b last:border-0">

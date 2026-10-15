@@ -39,6 +39,35 @@ it('6px 넘게 끌면 위치만 바뀌고 열리지 않는다 — 끌기 뒤의 
   expect(useUiStore.getState().assistantOpen).toBe(true)
 })
 
+it('끌기 중에는 pointer capture 아래 transform만 바뀌고(스토어·left/top 그대로, 가장자리 clamp), 놓을 때 한 번만 저장한다', () => {
+  vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] })
+  renderWithProviders(<AssistantPill />)
+  const setPointerCapture = vi.fn()
+  pill().setPointerCapture = setPointerCapture
+  let writes = 0
+  const unsubscribe = useUiStore.subscribe((state, previous) => { if (state.pillPos !== previous.pillPos) writes++ })
+  fireEvent.pointerDown(pill(), { pointerId: 1, button: 0, clientX: 100, clientY: 100 })
+  expect(setPointerCapture).toHaveBeenCalledWith(1)
+  fireEvent.pointerMove(pill(), { pointerId: 1, clientX: 120, clientY: 110 })
+  fireEvent.pointerMove(pill(), { pointerId: 1, clientX: 140, clientY: 130 })
+  expect(pill().style.transform).toBe('') // 프레임 전에는 그리지 않는다
+  vi.advanceTimersToNextFrame()
+  expect(pill().style.transform).toBe('translate3d(40px, 30px, 0)') // 한 프레임에 마지막 위치만. 원점 = 고정 자리의 rect(jsdom 0,0)
+  fireEvent.pointerMove(pill(), { pointerId: 1, clientX: -500, clientY: 130 })
+  vi.advanceTimersToNextFrame()
+  expect(pill().style.transform).toBe('translate3d(8px, 30px, 0)') // 화면 왼쪽 밖 → MARGIN
+  expect(writes).toBe(0)
+  expect(useUiStore.getState().pillPos).toBeNull()
+  expect(pill().style.left).toBe('16px')
+  fireEvent.pointerUp(pill(), { pointerId: 1, clientX: -500, clientY: 130 })
+  expect(writes).toBe(1)
+  expect(useUiStore.getState().pillPos).toEqual({ x: 8, y: 30 })
+  expect(pill().style.transform).toBe('')
+  expect(pill()).toHaveStyle({ left: '8px', top: '30px' })
+  unsubscribe()
+  vi.useRealTimers()
+})
+
 it('≥1024에서는 비모달 창이 열리고 첫 요소에 포커스, Esc·재클릭으로 닫히면 포커스가 알약으로 돌아간다', async () => {
   renderWithProviders(<AssistantPill />)
   fireEvent.click(pill())

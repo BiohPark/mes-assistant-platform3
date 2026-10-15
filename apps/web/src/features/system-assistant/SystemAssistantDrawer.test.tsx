@@ -9,10 +9,6 @@ import { HomePage } from '@/features/home/HomePage'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { emptyHomeFilters } from '@/app/uiStore'
 import { useLocation } from 'react-router'
-import { SystemAssistantBody, SystemAssistantSheet } from './SystemAssistantDrawer'
-import type { SystemAssistantChat } from './useSystemAssistantChat'
-import { requestTutorial, saveTutorialState } from '@/features/assistant-pill/tutorial'
-import { useState } from 'react'
 
 vi.mock('@/app/hooks', async importOriginal => ({ ...await importOriginal<typeof import('@/app/hooks')>(), useActor: () => ({ userId: 'u' }) }))
 afterEach(() => { act(() => useUiStore.getState().setAssistantOpen(false)); vi.unstubAllGlobals(); vi.restoreAllMocks() })
@@ -39,42 +35,6 @@ it.each([false, true])('칸반에서 검색하면 도우미가 닫힌 뒤 카드
   expect(params.get('tag')).toBe('keep')
   expect(params.get('aq')).toBe('agent')
   expect(fetchMock.mock.calls.some(([url]) => url === '/api/system-assistant/messages')).toBe(false)
-})
-
-it.each([false, true])('긴 이력에서 튜토리얼 재실행은 안내에 스크롤·포커스하고 완료 뒤 자동 스크롤을 재개한다 (sheet=%s)', async sheet => {
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ mode: 'mock', model: 'mock' })))
-  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(3000)
-  saveTutorialState('u', 'skipped')
-  const chat: SystemAssistantChat = { messages: Array.from({ length: 30 }, (_, i) => ({ id: String(i), role: 'assistant', content: `이전 답변 ${i}` })), waiting: false, applying: null, send: vi.fn(), apply: vi.fn(), ignore: vi.fn(), clear: vi.fn(), stop: vi.fn() }
-  let show: (open: boolean) => void
-  function Harness() {
-    const [state, setState] = useState({ open: true, chat })
-    show = open => setState({ open, chat: { ...chat } })
-    return sheet
-      ? <SystemAssistantSheet open={state.open} chat={state.chat} onClose={vi.fn()} returnFocus={vi.fn()} />
-      : state.open ? <SystemAssistantBody chat={state.chat} onClose={vi.fn()} searchAgents={vi.fn()} /> : null
-  }
-  renderWithProviders(<Harness />, { route: '/my-info' })
-  let scroll = screen.getByText('이전 답변 0').closest('.overflow-y-auto')!
-  expect(scroll.scrollTop).toBe(3000)
-  act(() => show(false))
-  act(() => requestTutorial('u'))
-  act(() => show(true))
-  const tutorial = await screen.findByRole('region', { name: '페이지 둘러보기' })
-  scroll = tutorial.closest('.overflow-y-auto')!
-  expect(scroll.scrollTop).toBe(0)
-  expect(tutorial).toHaveFocus()
-  chat.messages = [...chat.messages, { id: 'new', role: 'assistant', content: '추가 답변' }]
-  act(() => show(true))
-  expect(scroll.scrollTop).toBe(0)
-  scroll.scrollTop = 1200
-  act(() => requestTutorial('u'))
-  expect(scroll.scrollTop).toBe(0)
-  expect(tutorial).toHaveFocus()
-  fireEvent.click(screen.getByRole('button', { name: '마치기' }))
-  chat.messages = [...chat.messages, { id: 'next', role: 'assistant', content: '다음 답변' }]
-  act(() => show(true))
-  expect(scroll.scrollTop).toBe(3000)
 })
 
 it('메뉴 이동은 시트를 닫고 기존 검색 입력에 포커스하며 AI를 호출하지 않는다', async () => {

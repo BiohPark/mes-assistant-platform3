@@ -58,7 +58,7 @@ function AppContent() {
                 <div className="text-xs text-muted-foreground">{t('common.tagline')}</div>
               </div>
             </div>
-            <nav className="flex flex-col gap-1">
+            <nav className="flex flex-col gap-1" data-tour="nav">
               {items.map((item, index) => (
                 <Fragment key={item.to}>
                   {sectioned && items[index - 1]?.section !== item.section && <p className={cn('hidden px-2 text-xs text-muted-foreground lg:block', index > 0 && 'mt-3')}>{t(item.section)}</p>}

@@ -49,7 +49,7 @@ export function SrManagePage() {
   const myRequests = <Link to="/sr" className="text-sm text-primary underline">{t('sr.myRequestsLink')}</Link>
   return <><TopBar title={t('nav.srManage')} /><div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
     <p className="text-sm text-muted-foreground">{t('sr.manageDescription')}</p>
-    <Input aria-label={t('sr.search')} placeholder={t('sr.searchPlaceholder')} value={search} onChange={event => setSearch(event.target.value)} />
+    <Input data-tour="sr-search" aria-label={t('sr.search')} placeholder={t('sr.searchPlaceholder')} value={search} onChange={event => setSearch(event.target.value)} />
     <div className="flex flex-wrap gap-2"><Chip variant="filter" label={t('sr.all')} selected={!status && !queue} onClick={() => { setStatus(''); setQueue('') }} />
       <Chip variant="filter" label={t('sr.unstarted')} selected={queue === 'unstarted'} onClick={() => setQueue(queue === 'unstarted' ? '' : 'unstarted')} />
       <Chip variant="filter" label={t('sr.myLinked')} selected={queue === 'mine'} onClick={() => setQueue(queue === 'mine' ? '' : 'mine')} />{SR_STAGES.map(value => <Chip key={value} variant="filter" label={t(`status.sr.${value}`)} selected={status === value} onClick={() => setStatus(status === value ? '' : value)} />)}</div>
@@ -60,7 +60,7 @@ export function SrManagePage() {
       {(status || queue) && <Button size="sm" variant="outline" onClick={() => { setStatus(''); setQueue('') }}>{t('sr.resetStatus')}</Button>}
       {myRequests}
     </div>} />}
-    {visible.length > 0 && <div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-muted/50"><tr>
+    {visible.length > 0 && <div className="overflow-x-auto rounded-lg border" data-tour="sr-table"><table className="w-full text-left text-sm"><thead className="bg-muted/50"><tr>
       {header('title', t('sr.title'))}{header('status', t('sr.status'))}{header('requester', t('sr.requester'))}{header('submittedAt', t('sr.submittedAt'))}{header('elapsed', t('sr.elapsedDays'))}{header('linked', t('sr.linkedCount'))}<th className="p-3">{t('sr.linkedConversations')}</th>
     </tr></thead><tbody>{sorted.rows.map(row => <tr key={row.id} className="border-t hover:bg-muted/30" onClick={() => setSelectedId(row.id)}>
       <td className="p-3"><button type="button" className="text-left hover:underline" onClick={() => setSelectedId(row.id)}><span className="block text-xs text-muted-foreground">{row.code}</span>{row.title}</button></td>

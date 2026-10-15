@@ -1,7 +1,13 @@
 import { render, screen } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { createT } from '@/i18n'
-import { focusPageTarget, pageTarget } from './pageActions'
+import { focusPageTarget, PAGE_ACTIONS, pageRoute, pageTarget } from './pageActions'
+
+it('every page, including other, starts with the guide action and My work has its own page', () => {
+  for (const actions of Object.values(PAGE_ACTIONS)) expect(actions[0]).toEqual({ kind: 'tutorial', label: 'tutorial.guide' })
+  expect(pageRoute('/my-work')).toBe('myWork')
+  expect(pageRoute('/my-info')).toBe('other')
+})
 
 it.each(['ko', 'en'] as const)('focuses existing %s search and opens the same-tag panel without toggling it closed', locale => {
   const t = createT(locale)

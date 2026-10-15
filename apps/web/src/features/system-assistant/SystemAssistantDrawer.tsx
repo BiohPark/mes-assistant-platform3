@@ -1,5 +1,5 @@
 import { useT } from '@/i18n'
-import { useCallback, useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
 import { ArrowRight, Bot, Check, Sparkles, Trash2, Wrench, X } from 'lucide-react'
@@ -25,14 +25,9 @@ export function SystemAssistantBody({ chat, onClose, searchAgents, performPageAc
   const navigate = useNavigate()
   const model = useQuery({ queryKey: ['system-assistant', 'model'], queryFn: getSystemModel })
   const scrollRef = useRef<HTMLDivElement>(null)
-  const tutorialActive = useRef(false)
-  const onTutorialChange = useCallback((active: boolean) => {
-    tutorialActive.current = active
-    if (active && scrollRef.current) scrollRef.current.scrollTop = 0
-  }, [])
   const { messages, waiting, applying } = chat
 
-  useEffect(() => { if (!tutorialActive.current && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight }, [messages])
+  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight }, [messages])
 
   return <>
     <div className="border-b px-4 py-3">
@@ -43,7 +38,7 @@ export function SystemAssistantBody({ chat, onClose, searchAgents, performPageAc
       <p className="mt-1 text-xs text-muted-foreground">{t('systemAssistant.intro')}</p>
     </div>
     <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
-      <AssistantMenu userId={userId} searchAgents={searchAgents} onTutorialChange={onTutorialChange} prefill={(text) => composer.current?.setText(text)} perform={performPageAction ?? ((action) => { onClose(); requestAnimationFrame(action) })} />
+      <AssistantMenu userId={userId} searchAgents={searchAgents} prefill={(text) => composer.current?.setText(text)} perform={performPageAction ?? ((action) => { onClose(); requestAnimationFrame(action) })} />
       {messages.map((message) => <div key={message.id} className={cn('flex gap-2', message.role === 'user' && 'flex-row-reverse')}>
         {message.role === 'assistant' && <span className="mt-1 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><Bot className="size-3.5" /></span>}
         <div className={cn('max-w-[88%] space-y-2', message.role === 'user' && 'text-right')}>

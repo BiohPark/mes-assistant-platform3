@@ -106,7 +106,7 @@ export function HomePage() {
     <TopBar title={t('nav.hub')} actions={me.roles.includes('system_owner') && <Button size="sm" variant="outline" asChild><Link to="/assistants/manage">{t('hub.manageAgents')}</Link></Button>} />
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 lg:p-6">
       <div className="flex flex-wrap items-center gap-2">
-        <div role="tablist" aria-label={t('hub.viewSwitch')} className="inline-flex rounded-xl border bg-muted p-1 shadow-xs" {...viewKeys.tablistProps}>
+        <div role="tablist" aria-label={t('hub.viewSwitch')} data-tour="hub-view" className="inline-flex rounded-xl border bg-muted p-1 shadow-xs" {...viewKeys.tablistProps}>
           <button type="button" {...viewKeys.tabProps('cards')} onClick={() => switchView('cards')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><LayoutGrid className="size-4" />{t('hub.assistantCards')}</button>
           <button type="button" {...viewKeys.tabProps('kanban')} onClick={() => switchView('kanban')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${view === 'kanban' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}><KanbanSquare className="size-4" />{t('hub.conversationKanban')}</button>
         </div>
@@ -135,7 +135,7 @@ export function HomePage() {
           {filterCount > 0 && <Button size="sm" variant="outline" onClick={() => update({ level1CodeIds: [], level2CodeIds: [], showRetired: false })}>{t('hub.clearFilters', { count: filterCount })}</Button>}
         </div>}
       />}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div data-tour="hub-cards" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filtered.map((row) => <AssistantCard key={row.assistant.id} row={row} owner={users.get(row.assistant.ownerId)} baseUrl="" link1Rule={link1Rule} />)}
       </div>
       </>}

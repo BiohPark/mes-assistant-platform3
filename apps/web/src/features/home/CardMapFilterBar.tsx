@@ -31,7 +31,7 @@ export function CardMapFilterBar({ level1Options, level2Options, filters, onChan
   return <>
     <div className="relative w-full sm:w-64">
       <Search aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-      <Input {...search} aria-label={t('hub.searchAssistants')} placeholder={t('hub.searchAssistants')} className="h-8 pl-8" />
+      <Input {...search} data-tour="hub-search" aria-label={t('hub.searchAssistants')} placeholder={t('hub.searchAssistants')} className="h-8 pl-8" />
     </div>
     <Popover>
       <PopoverTrigger asChild><Button size="sm" variant="outline" disabled={!level1Options.length && !level2Options.length}>{t('hub.classification')}<ChevronDown data-icon="inline-end" className="opacity-60" /></Button></PopoverTrigger>
