@@ -22,7 +22,7 @@ export interface Bubble {
   key?: string
   /** request.slow — 클릭 시 이 요청의 정보를 연다 */
   requestId?: string
-  /** budget.* — 클릭 시 트레이를 펼친다(ContextTray가 등록) */
+  /** budget.* — 클릭 시 입력창 위 요청 크기 안내로 포커스한다(RequestSizeNotice가 등록) */
   onOpen?: () => void
   /** reply.* — [바로 가기] 대상 대화와 그 제목, 답 첫 문장(done만) */
   taskId?: string
@@ -67,7 +67,7 @@ export function resetBubbles() {
 /**
  * budgetLevel이 올라갈 때(ok→warn·warn→over·ok→over) 대화당 한 번 말풍선.
  * level이 없으면(추정 로딩 중) 기록·비교를 건너뛴다 — 돌아온 대화에서 'ok'가 끼어들어 같은 warn이 다시 뜨지 않게.
- * 대화를 떠나면(key 변경·언마운트) 그 대화의 말풍선은 제거한다 — 클릭해도 열 트레이가 없다
+ * 대화를 떠나면(key 변경·언마운트) 그 대화의 말풍선은 제거한다 — 클릭해도 짚을 크기 안내가 없다
  */
 export function useBudgetBubble(key: string, level: BudgetLevel | undefined, onOpen: () => void) {
   const open = useRef(onOpen)

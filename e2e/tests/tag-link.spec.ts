@@ -51,13 +51,13 @@ test('Enter는 후보를 고르지 않으면 입력값 그대로 붙이고, ↑�
   await page.keyboard.press('Escape') // 태그 입력 팝오버 닫기
 
   // 같은 태그 대화 — 태그별 묶음 안에 상대 대화 링크
-  await page.getByText('같은 태그 대화 1').click()
+  await page.locator('[data-tour="related"] > summary').click() // 자료함의 '같은 태그 대화 1개' 제목과 구분
   const popup = page.getByText('같은 태그를 가진 대화').locator('..')
   await expect(popup.getByRole('link', { name: new RegExp(other.code) })).toHaveAttribute('href', `/c/${other.id}`)
   await expect(popup.getByText(popular, { exact: true })).toBeVisible()
 })
 
-test('접수되지 않은 SR 번호 태그는 SR 미접수로 구분되고 트레이의 SR 본문 목록에 없다', async ({ page }) => {
+test('접수되지 않은 SR 번호 태그는 SR 미접수로 구분되고 입력창 첨부 칩에 없다', async ({ page }) => {
   await signup(page, 'sr')
   const task = await createTask(page)
   // 실행마다 다른 번호 — 지속 DB에 남은 이전 실행의 태그와 겹치지 않게
@@ -69,8 +69,8 @@ test('접수되지 않은 SR 번호 태그는 SR 미접수로 구분되고 트�
   await tagInput(page).press('Enter')
   const chip = page.locator('[data-slot="chip"]', { hasText: srTag })
   await expect(chip).toContainText('SR 미접수')
-  await expect(page.getByLabel('다음 질문에 보낼 자료')).toBeVisible()
-  await expect(page.getByText(/^SR 본문 포함/)).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: 'AI 요청 입력' })).toBeVisible()
+  await expect(page.getByRole('list', { name: '첨부', exact: true })).toHaveCount(0)
   // 이 번호를 쓰는 다른 대화가 없으니 0건 표시
   await expect(page.getByText('같은 태그 대화 없음')).toBeVisible()
 })
@@ -90,7 +90,7 @@ test('초안에서 입력한 태그를 쓰는 대화 수를 미리 보여 주되
   await page.goto(`/new/${await activeAssistantId(page)}`)
   await tagInput(page).fill(tag)
   await tagInput(page).press('Enter')
-  await page.getByText('같은 태그 대화 1').click()
+  await page.locator('[data-tour="related"] > summary').click() // 자료함의 '같은 태그 대화 1개' 제목과 구분
   await expect(page.getByRole('link', { name: new RegExp(existing.code) })).toBeVisible()
   expect(await countTasks()).toBe(before)
 })

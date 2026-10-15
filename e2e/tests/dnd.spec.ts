@@ -44,7 +44,7 @@ test('SR 접수에 끌어 놓은 파일은 전송 후에도 SR 첨부로 남는�
   })
   await page.goto('/sr')
   await page.getByRole('button', { name: '새 요청' }).click()
-  await expect(page.getByText('📎 또는 끌어 놓기로 파일을 첨부할 수 있습니다')).toBeVisible()
+  await expect(page.getByText('📎나 끌어 놓기로 파일을 첨부할 수 있어요.')).toBeVisible()
   const zone = page.getByTestId('sr-dropzone')
   const data = await dataTransfer(page, [{ name: 'sr-dnd.txt', content: '현장 알람 첨부' }])
   await zone.dispatchEvent('dragenter', { dataTransfer: data })
@@ -88,14 +88,14 @@ test('초안 화면에 끌어다 놓으면 첨부 대기 칩이 되고 첫 전�
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page).toHaveURL(/\/c\/[^/]+$/)
   await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
-  // 첨부는 자료함에 남고 첫 요청에만 갔다(D54 개정) — '쓴 적 있음', 보낼 자료에는 없다
+  // 첨부는 자료함에 남고 첫 요청에만 갔다(D54 개정) — '사용됨', 입력창 첨부 칩은 비었다
   await expect(page.getByTestId('materials-own')).toContainText('dnd-one.txt v1')
   await expect(page.getByTestId('materials-own')).toContainText('dnd-two.txt v1')
-  await expect(page.getByTestId('materials-own').getByText('쓴 적 있음')).toHaveCount(2)
-  await expect(page.getByTestId('materials-inputs')).not.toContainText('dnd-one.txt')
+  await expect(page.getByTestId('materials-own').getByText('사용됨')).toHaveCount(2)
+  await expect(page.getByRole('list', { name: '첨부', exact: true })).toHaveCount(0)
 })
 
-test('대화 화면: 자료 패널에 놓으면 저장, 팀 의견 첨부는 보낼 자료에서 제외, 빈 파일은 거부', async ({ page }) => {
+test('대화 화면: 자료 패널에 놓으면 저장, 팀 의견 첨부는 AI 첨부에서 제외, 빈 파일은 거부', async ({ page }) => {
   await signUp(page)
   const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
   const task = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id } })).json() as { id: string }
@@ -123,5 +123,5 @@ test('대화 화면: 자료 패널에 놓으면 저장, 팀 의견 첨부는 보
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByText('끌어다 놓은 파일 공유')).toBeVisible()
   await expect(own).toContainText('dnd-note.txt v1')
-  await expect(page.getByTestId('materials-inputs')).not.toContainText('dnd-note.txt')
+  await expect(page.getByRole('list', { name: '첨부', exact: true })).toHaveCount(0)
 })

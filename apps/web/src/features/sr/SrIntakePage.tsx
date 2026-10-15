@@ -9,7 +9,7 @@ import { createSr, deleteSr, getSr, getSrIntakeAssistant, listSr, uploadSrFile, 
 import { getMessages } from '@/api/tasks'
 import { queueFirstRequest, useChat } from '@/features/chat/useChat'
 import { ChatMessages } from '@/features/chat/ChatMessages'
-import { Composer, type ComposerHandle, type PendingAttachment } from '@/features/chat/Composer'
+import { Composer, type AttachmentChip, type ComposerHandle, type PendingAttachment } from '@/features/chat/Composer'
 import { TopBar } from '@/app/TopBar'
 import { Bot, Inbox, SearchX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ import { Chip } from '@/components/Chip'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { EmptyState } from '@/components/EmptyState'
 import { FileDropZone } from '@/components/FileDropZone'
+import { HelpTip } from '@/components/HelpTip'
 import { SrStatusBadge } from '@/components/StatusBadges'
 import { newId } from '@/lib/ids'
 import { SrList } from './SrList'
@@ -26,7 +27,8 @@ import { SrTitleEditor } from './SrTitleEditor'
 import { SrConvertSheet } from './SrConvertSheet'
 import { SrStatusHistory } from './SrStatusHistory'
 import { SharedResults } from './SharedResults'
-import { SrAttachments } from './SrAttachments'
+import { SrAttachments, useSrFiles } from './SrAttachments'
+import { AttachToggle } from '@/features/task/AttachToggle'
 import { useEvents } from '@/app/useEvents'
 import { useMe } from '@/app/auth'
 
@@ -71,8 +73,13 @@ export function SrIntakePage() {
   const awaitingStart = chat.sending && !chat.run
   useEffect(() => { if (messages.length) void client.invalidateQueries({ queryKey: ['sr'] }) }, [client, messages.length, selectedId])
   const refresh = () => { void client.invalidateQueries({ queryKey: ['sr'] }); void client.invalidateQueries({ queryKey: ['messages', selected?.threadId] }) }
-  const setSelectedId = (id: string) => { if (locked) return; first.current = null; setConvert(false); setParams(id ? { id } : {}) }
-  const newRequest = () => { if (locked) return; first.current = { key: newId() }; setConvert(false); setParams({ new: '1' }) }
+  // 접히는 것은 기본 접힘 — 다른 요청으로 바꾸면 상태 이력도 다시 접는다
+  const setSelectedId = (id: string) => { if (locked) return; first.current = null; setConvert(false); setHistoryOpen(false); setParams(id ? { id } : {}) }
+  const newRequest = () => { if (locked) return; first.current = { key: newId() }; setConvert(false); setHistoryOpen(false); setParams({ new: '1' }) }
+  const stagedFiles = new Map(useSrFiles(stagedIds).map(file => [file.id, file]))
+  const unstage = (fileId: string) => setStaging(current => ({ ...current, fileIds: current.fileIds.filter(id => id !== fileId) }))
+  // SR 자료함에서 첨부한 파일은 입력창 위 칩으로 — 직접 올린 파일 칩과 같은 줄
+  const attachments: AttachmentChip[] = stagedIds.map(id => ({ key: id, kind: 'file', label: stagedFiles.get(id)?.name ?? t('chat.checkingFile'), disabled: locked, onRemove: () => unstage(id) }))
   async function send(text: string, attachments: PendingAttachment[]) {
     if (sending.current || (!text.trim() && !attachments.length && !stagedIds.length) || !settings?.srIntakeAssistantId) return
     sending.current = true; setBusy(true)
@@ -112,12 +119,14 @@ export function SrIntakePage() {
   // 첫 질문 예시는 SO가 에이전트 usageExample에 인용한 목록 항목, 없으면 접수 에이전트 모델이 만든 추천 질문 — 플랫폼이 지은 예시는 없다. 카드 칩과 Composer 제안이 같은 결과를 쓴다.
   const examples = exampleQuestionsFrom(settings?.usageExample, settings?.suggestedQuestions)
   const loaded = !!list.data && !!settings
+  // 요청이 하나도 없으면 목록 칸 없이 소개 카드·새 요청 대화가 남는 폭을 쓴다
+  const intro = loaded && rows.length === 0 && !!settings.srIntakeAssistantId
   const failed = list.isError || intake.isError
   const retry = () => { if (list.isError) void list.refetch(); if (intake.isError) void intake.refetch() }
   const empty = <div className="mx-auto max-w-md space-y-2 py-8 text-center"><h2 className="font-semibold">{settings?.name || t('sr.intakeAgent')}</h2><p className="text-sm text-muted-foreground">{settings?.summary || t('sr.intakeSummary')}</p><p className="text-sm text-muted-foreground">{t('sr.attachmentHint')}</p></div>
   return <><TopBar title={t('nav.sr')} /><p className="px-4 pt-3 text-sm text-muted-foreground">{t('sr.intakeDescription')}</p>
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[18rem_1fr]">
-      <aside className={`${hasDetail ? 'hidden lg:block' : ''} space-y-3 overflow-y-auto`}>
+    <div className={`grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-4 ${intro ? '' : 'lg:grid-cols-[18rem_1fr]'}`}>
+      <aside className={`${hasDetail ? intro ? 'hidden' : 'hidden lg:block' : ''} space-y-3 overflow-y-auto`}>
         {failed ? <SrLoadError error={list.error ?? intake.error} retrying={list.isFetching || intake.isFetching} onRetry={retry} /> : !loaded ? <SrSkeleton /> : <>
           {settings.srIntakeAssistantId ? <Button data-tour="sr-new" onClick={newRequest} disabled={locked}>{t('sr.newRequest')}</Button> : <p role="status" className="text-sm">{t('sr.noIntake')}{me.roles.includes('system_owner') && <> · <Link to="/settings" className="underline">{t('sr.settingsLink')}</Link></>}</p>}
           {rows.length === 0 ? (settings.srIntakeAssistantId ? <EmptyState icon={Bot} title={settings.name ?? ''} description={settings.summary || undefined}>
@@ -129,7 +138,7 @@ export function SrIntakePage() {
           </>}
         </>}
       </aside>
-      <div className={`${hasDetail ? 'flex' : 'hidden lg:flex'} min-h-0 flex-col gap-4 overflow-y-auto`}>
+      <div className={`${hasDetail ? 'flex' : intro ? 'hidden' : 'hidden lg:flex'} min-h-0 flex-col gap-4 overflow-y-auto`}>
         {hasDetail && <Button variant="ghost" className="self-start lg:hidden" disabled={locked} onClick={() => setSelectedId('')}>{t('sr.back')}</Button>}
         {selected ? <>
           <header className="space-y-2"><div className="flex flex-wrap items-center gap-2"><SrStatusBadge status={selected.status} /><span>{selected.code || t('status.sr.draft')}</span>
@@ -141,22 +150,21 @@ export function SrIntakePage() {
             {historyOpen && <SrStatusHistory history={selected.statusHistory ?? []} />}
           </header>
           <SharedResults results={selected.results} />
-          <section data-testid="sr-materials-library" className="space-y-2 rounded-lg border p-3">
-            <h2 className="text-sm font-medium">{t('task.materials.library')} · {selected.candidateAttachmentIds.length}</h2>
-            <p className="text-xs text-muted-foreground">{t('sr.materialsHelp')}</p>
-            <SrAttachments ids={selected.candidateAttachmentIds} renderActions={file => <button type="button" className="shrink-0 rounded-lg border px-2 py-1 text-xs" disabled={closed || locked || stagedIds.includes(file.id) || stagedIds.length >= (settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST)} aria-label={t('sr.addFile', { name: file.name })} onClick={() => setStaging({ srId: selected.id, fileIds: [...stagedIds, file.id] })}>{stagedIds.includes(file.id) ? t('task.materials.added') : t('task.materials.add')}</button>} />
-          </section>
+          {selected.candidateAttachmentIds.length > 0 && <section data-testid="sr-materials-library" className="space-y-2 rounded-lg border p-2">
+            <h2 className="flex items-center gap-1 text-sm font-medium">{t('task.materials.library')} · {selected.candidateAttachmentIds.length}<HelpTip text={t('sr.materialsHelp')} /></h2>
+            <SrAttachments ids={selected.candidateAttachmentIds} renderActions={file => {
+              const attached = stagedIds.includes(file.id)
+              return <AttachToggle attached={attached} label={file.name} disabled={closed || locked || (!attached && stagedIds.length >= (settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST))}
+                onToggle={() => attached ? unstage(file.id) : setStaging({ srId: selected.id, fileIds: [...stagedIds, file.id] })} />
+            }} />
+          </section>}
           {selected.status !== 'draft' && <section className="space-y-2 rounded-lg border p-3"><h2 className="font-medium">{t('sr.content')}</h2><p className="whitespace-pre-wrap text-sm">{selected.body}</p>{selected.attachmentIds.length > 0 && <SrAttachments ids={selected.attachmentIds} />}</section>}
-        </> : selectedQuery.isError ? <p role="alert">{String(selectedQuery.error)}</p> : !isNew && <p className="text-sm text-muted-foreground">{t('sr.selectRequest')}</p>}
+        </> : selectedQuery.isError ? <p role="alert">{String(selectedQuery.error)}</p> : !isNew && !intro && <p className="text-sm text-muted-foreground">{t('sr.selectRequest')}</p>}
         {(selected || isNew) && <FileDropZone data-testid="sr-dropzone" className="flex min-h-0 flex-1 flex-col gap-4" label={t('dropzone.toAttach')} disabled={!settings?.srIntakeAssistantId || closed || locked} onFiles={files => composer.current?.dropFiles(files)}>
-          <section className="min-h-40 flex-1 space-y-4 overflow-y-auto rounded-lg border p-3" aria-label={t('sr.conversation')}>
+          <section className="min-h-72 flex-1 space-y-4 overflow-y-auto rounded-lg border p-3" aria-label={t('sr.conversation')}>
             <ChatMessages messages={messages} run={chat.run} empty={empty} actions={message => ({ intake: true, assistantName: settings?.name || t('sr.intakeAgent'), onRetry: message.requestId && message.status === 'error' ? () => { void chat.retry(message.requestId!).catch(error => toast.error(String(error))) } : undefined })} />
           </section>
-          {selected && stagedIds.length > 0 && <section data-testid="sr-materials-staged" className="space-y-2 rounded-lg border p-3">
-            <h2 className="text-sm font-medium">{t('task.materials.staged', { count: stagedIds.length })}</h2>
-            <SrAttachments ids={stagedIds} renderActions={file => <button type="button" disabled={locked} aria-label={t('task.materials.unstage', { label: file.name })} onClick={() => setStaging(current => ({ ...current, fileIds: current.fileIds.filter(id => id !== file.id) }))}>×</button>} />
-          </section>}
-          {closed ? <p role="status" className="text-sm text-muted-foreground">{t('sr.closed')}</p> : <Composer ref={composer} key={selectedId || 'new'} maxAttachments={settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST} stagedAttachmentCount={stagedIds.length} inputLabel={t('sr.message')} placeholder={t('sr.messagePlaceholder')} disabled={busy || awaitingStart || !settings?.srIntakeAssistantId} streaming={!!chat.run} allowAttachments onSend={send} onStop={() => { void chat.stop() }} suggestions={!messages.length && examples.length > 0 ? examples : undefined} />}
+          {closed ? <p role="status" className="text-sm text-muted-foreground">{t('sr.closed')}</p> : <Composer ref={composer} key={selectedId || 'new'} attachments={attachments} maxAttachments={settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST} stagedAttachmentCount={stagedIds.length} inputLabel={t('sr.message')} placeholder={t('sr.messagePlaceholder')} disabled={busy || awaitingStart || !settings?.srIntakeAssistantId} streaming={!!chat.run} allowAttachments onSend={send} onStop={() => { void chat.stop() }} suggestions={!messages.length && examples.length > 0 ? examples : undefined} />}
           {selected?.status === 'draft' && canEdit && !selected.hasRequests && <Button variant="ghost" className="self-start" onClick={() => setDeleting(true)}>{t('sr.deleteDraft')}</Button>}
         </FileDropZone>}
         {selected && <><SrConvertSheet sr={selected} open={convert} onOpenChange={setConvert} onSaved={refresh} /><ConfirmDialog open={deleting} onOpenChange={setDeleting} title={t('sr.deleteConfirm')} description={t('sr.deleteDescription')} confirmLabel={t('sr.deleteDraft')} onConfirm={async () => { try { await deleteSr(selected.id); setSelectedId(''); refresh() } catch (error) { toast.error(String(error)); throw error } }} /></>}

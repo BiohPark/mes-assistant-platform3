@@ -227,3 +227,23 @@ it('<768 pins the card to the bottom gutter and scrolls the target to the top; r
   expect(dialog()).toHaveStyle({ left: '8px', right: '8px', top: '8px' })
   expect(dialog().style.bottom).toBe('')
 })
+
+it('S14: 좁은 화면에서 자료 탭이 열린 채 첨부 단계가 오면 대화 탭으로 돌아가 입력창의 첨부 칩 줄·📎을 짚는다', () => {
+  const tabs = target('task-tabs')
+  tabs.setAttribute('role', 'tablist')
+  const chatTab = document.createElement('button')
+  chatTab.setAttribute('role', 'tab'); chatTab.textContent = '대화'
+  // 대화 탭을 누르면 입력창(📎 앵커)이 다시 보인다 — React처럼 다음 커밋에서
+  chatTab.addEventListener('click', () => { requestAnimationFrame(() => { target('materials-staged', box(240, 720, 32, 32), 'button') }) })
+  tabs.append(chatTab)
+  target('composer')
+  renderWithProviders(<GuideTour userId="staged-user" pillRef={{ current: pill }} />)
+  act(() => { useTourStore.getState().start('conversation', 'staged-user'); vi.advanceTimersByTime(1500) })
+  act(() => useTourStore.getState().goToSection(1)) // 자료함 섹션
+  for (let step = 0; step < 3; step++) fireEvent.keyDown(dialog(), { key: 'Enter' }) // task-tabs → library → conversations → staged
+  expect(within(dialog()).getByText(/첨부는 입력창 위 칩으로 보여요/)).toBeInTheDocument()
+  expect(document.querySelector('[data-tour="materials-staged"]')).toBeNull()
+  act(() => { vi.advanceTimersByTime(32) })
+  expect(document.querySelector('[data-tour="materials-staged"]')).not.toBeNull()
+  expect(spotlight()).toHaveStyle({ left: '236px', top: '716px', width: '40px', height: '40px' })
+})

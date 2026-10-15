@@ -268,3 +268,45 @@ it('puts the sent draft back when the send fails, so switching away keeps it', a
   view.unmount()
   clearDrafts()
 })
+
+it('S14: 자료함 첨부와 직접 올린 파일이 입력창 위 한 줄의 칩으로 보이고 ×로 뺀다(투어 앵커는 칩 줄, 없으면 📎)', () => {
+  const removeFile = vi.fn(), toggleMain = vi.fn(), removeConversation = vi.fn(), removeSr = vi.fn()
+  const props = { streaming: false, onSend: vi.fn(async () => undefined), onStop: () => undefined, allowAttachments: true }
+  const view = renderComposer({ ...props, attachments: [] })
+  expect(screen.queryByRole('list', { name: '첨부' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '파일 첨부' })).toHaveAttribute('data-tour', 'materials-staged')
+  view.unmount()
+  const { container } = renderComposer({ ...props, notice: <p>한도 근처</p>, attachments: [
+    { key: 'f', kind: 'file', label: 'spec.txt', title: 'spec.txt v1 · 첨부', main: false, onToggleMain: toggleMain, onRemove: removeFile },
+    { key: 'c', kind: 'conversation', label: 'WK-2026-0002', title: '원본 대화', onRemove: removeConversation },
+    { key: 's', kind: 'sr', label: 'SR-2026-0001', title: '알람 필터', onRemove: removeSr },
+  ] })
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'direct.txt')] } })
+  const row = screen.getByRole('list', { name: '첨부' })
+  expect(row).toHaveAttribute('data-tour', 'materials-staged')
+  expect(screen.getByRole('button', { name: '파일 첨부' })).not.toHaveAttribute('data-tour')
+  expect(Array.from(row.children).map(item => item.textContent)).toEqual(['spec.txt', 'WK-2026-0002', 'SR-2026-0001', 'direct.txt'])
+  expect(row.children[0]).toHaveAttribute('title', 'spec.txt v1 · 첨부')
+  // 직접 올린 파일의 ×는 '첨부 제거', 자료함 첨부의 ×는 '{이름} 첨부 빼기'
+  expect(screen.getAllByRole('button', { name: '첨부 제거' })).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: 'spec.txt 첨부 빼기' }))
+  fireEvent.click(screen.getByRole('button', { name: 'WK-2026-0002 첨부 빼기' }))
+  fireEvent.click(screen.getByRole('button', { name: 'SR-2026-0001 첨부 빼기' }))
+  expect([removeFile, removeConversation, removeSr].map(fn => fn.mock.calls.length)).toEqual([1, 1, 1])
+  fireEvent.click(screen.getByRole('button', { name: 'spec.txt 주 입력 전환' }))
+  expect(toggleMain).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('button', { name: 'SR-2026-0001 주 입력 전환' })).not.toBeInTheDocument()
+  // 안내(요청 크기)는 칩 아래·입력창 위
+  expect(row.compareDocumentPosition(screen.getByText('한도 근처')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(screen.getByText('한도 근처').compareDocumentPosition(screen.getByRole('textbox')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+it('S14: 비활성 칩은 ★·×를 막고 실패 칩은 경고색이다', () => {
+  renderComposer({ streaming: false, onSend: vi.fn(async () => undefined), onStop: () => undefined, attachments: [
+    { key: 'f', kind: 'file', label: 'bad.bin', main: true, onToggleMain: vi.fn(), onRemove: vi.fn(), disabled: true, danger: true },
+  ] })
+  expect(screen.getByRole('button', { name: 'bad.bin 주 입력 전환' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'bad.bin 주 입력 전환' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: 'bad.bin 첨부 빼기' })).toBeDisabled()
+  expect(screen.getByRole('listitem')).toHaveClass('text-destructive')
+})

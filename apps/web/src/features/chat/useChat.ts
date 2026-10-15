@@ -100,6 +100,8 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
         await query.cancelQueries({ queryKey: ['messages', attempt.threadId] })
         await query.invalidateQueries({ queryKey: ['messages', attempt.threadId] })
         await query.invalidateQueries({ queryKey: ['activity'] })
+        // 사용 기록(chat_request_input)은 전달 단계에서 쌓인다 — 끝난 뒤 자료함의 사용됨·첨부됨을 다시 읽는다(완료 SSE는 이 목록을 건드리지 않는다)
+        for (const key of ['candidates', 'sr-inputs', 'conversation-inputs']) void query.invalidateQueries({ queryKey: [key] })
       }
     })()
     active.current = work

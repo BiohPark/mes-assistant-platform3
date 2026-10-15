@@ -16,7 +16,7 @@ test('S5 파일 처리 완료 뒤 첨부하여 답변한다', async ({ page, con
   const main = await (await page.request.post('/api/files', { multipart: { originTaskId: task.id, file: { name: 'main-e2e.txt', mimeType: 'text/plain', buffer: Buffer.from('main') } } })).json() as { id: string }
   expect((await page.request.put(`/api/tasks/${task.id}/inputs/${main.id}`, { data: { weight: 'main' } })).ok()).toBe(true)
   await page.goto(`/c/${task.id}`)
-  await page.locator('input[type="file"]').setInputFiles({ name: 'good-e2e.txt', mimeType: 'text/plain', buffer: Buffer.from('input') })
+  await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: 'good-e2e.txt', mimeType: 'text/plain', buffer: Buffer.from('input') })
   await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('첨부 확인')
   const kanban = await context.newPage()
   await kanban.goto('/?view=kanban&mine=1')
@@ -50,7 +50,7 @@ test('E2 파일 전달 실패 후 텍스트로 보내기를 선택해 복구한�
   const task = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id } })).json() as { id: string; code: string }
   await page.goto(`/c/${task.id}`)
   const beforeCalls = (await fakeRequests(page)).length
-  await page.locator('input[type="file"]').setInputFiles({ name: 'fail-e2e.txt', mimeType: 'text/plain', buffer: Buffer.from('inline retry') })
+  await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: 'fail-e2e.txt', mimeType: 'text/plain', buffer: Buffer.from('inline retry') })
   await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('파일을 확인해 줘')
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByText(/OpenWebUI에 전달하지 못해/).first()).toBeVisible({ timeout: 15_000 })

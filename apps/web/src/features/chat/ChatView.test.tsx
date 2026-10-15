@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
@@ -273,7 +273,7 @@ it.each([false, true])('allows send after a smaller draft estimate fails and ret
   expect(previews).toEqual([{ draft: '짧음', attachmentIds: [], oneShotFileIds: [] }])
 })
 
-it.each(['star', 'remove'] as const)('shows calculating and dims references during a %s refetch without a revision change', async (action) => {
+it.each(['star', 'remove'] as const)('keeps the reference chip mounted and dimmed but usable during a %s refetch', async (action) => {
   queryClient.setQueryData(['messages', 'h'], [])
   const info = { at: '2026-09-28T00:00:00.000Z', provider: 'mock', transport: 'inline', model: 'mock',
     bytes: 400, limitBytes: 1000, srCodes: [], srs: [], overLimit: false, attachmentLimit: 10,
@@ -292,29 +292,24 @@ it.each(['star', 'remove'] as const)('shows calculating and dims references duri
   const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
   render(<QueryClientProvider client={queryClient}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '질문' } })
-  await screen.findByText('예상 400 B / 1000 B')
-  const root = screen.getByLabelText('다음 질문에 보낼 자료')
-  const meter = screen.getByRole('meter')
-  fireEvent.click(screen.getByRole('button', { name: action === 'star' ? 'C-1 주 입력 전환' : 'C-1 입력 선택 해제' }))
-  await screen.findByText('계산 중')
-  expect(root).toHaveAttribute('aria-busy', 'true')
-  expect(screen.getByRole('list')).toHaveAttribute('aria-busy', 'true')
-  expect(screen.getByRole('list')).toHaveClass('opacity-60')
-  expect(screen.getByText('C-1')).toBeVisible()
+  const chip = (await screen.findByText('C-1')).closest('li')!
+  // 한도에서 먼 크기는 보이지 않는다
+  expect(screen.queryByRole('meter')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: action === 'star' ? 'C-1 주 입력 전환' : 'C-1 첨부 빼기' }))
+  await waitFor(() => expect(chip).toHaveClass('opacity-60'))
+  expect(screen.getByText('C-1').closest('li')).toBe(chip)
   expect(screen.getByRole('button', { name: 'C-1 주 입력 전환' })).toBeEnabled()
-  expect(screen.getByRole('button', { name: 'C-1 입력 선택 해제' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'C-1 첨부 빼기' })).toBeEnabled()
   expect(screen.getByRole('button', { name: '전송' })).toBeEnabled()
-  expect(screen.getByRole('meter')).toBe(meter)
-  expect(meter.firstElementChild).toHaveStyle({ width: '40%' })
   await act(async () => finishRefetch(Response.json({ ...info, bytes: 100,
     inputs: action === 'star' ? [{ ...info.inputs[0], weight: 'main' }] : [] })))
-  await screen.findByText('예상 100 B / 1000 B')
-  expect(screen.getByLabelText('다음 질문에 보낼 자료')).toBe(root)
-  expect(root).toHaveAttribute('aria-busy', 'false')
-  expect(screen.getByRole('list')).not.toHaveClass('opacity-60')
+  if (action === 'star') {
+    await waitFor(() => expect(screen.getByRole('button', { name: 'C-1 주 입력 전환' })).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.getByText('C-1').closest('li')).not.toHaveClass('opacity-60')
+  } else await waitFor(() => expect(screen.queryByText('C-1')).not.toBeInTheDocument())
 })
 
-const emptyHint = '자료 패널의 자료함에서 파일·대화를 담으면 다음 질문에 함께 보냅니다.'
+const emptyHint = '📎나 자료함에서 파일·대화를 첨부할 수 있어요.'
 
 it('offers materials only after messages load empty and opening adds no requests or selections', async () => {
   let finish!: (response: Response) => void
@@ -746,7 +741,38 @@ it('shows the AI summary card above the messages without blocking the conversati
   const task = { id: 'brief-task', threadId: 'brief-thread', status: 'in_progress', inputs: [], tags: [], lastActivityAt: '2026-10-13T00:00:00Z' } as unknown as Task
   render(<QueryClientProvider client={client}><MeContext value={{ id: 'brief-user', name: 'User', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ChatView task={task} /></TooltipProvider></MeContext></QueryClientProvider>)
   const card = await screen.findByTestId('chat-brief')
+  // 기본 접힘(S14) — 펼치면 주제가 보인다
+  expect(card).not.toHaveTextContent('요약 카드 주제')
+  fireEvent.click(within(card).getByRole('button', { name: /AI 요약·제안/ }))
   expect(card).toHaveTextContent('요약 카드 주제')
   expect(card.compareDocumentPosition(screen.getByTestId('chat-message-scroll')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(screen.getByRole('textbox')).toBeEnabled()
+})
+
+it('S14: 메시지와 입력창은 같은 가운데 열(최대 폭)을 쓰고 모바일 여백은 좁다', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  const scroll = screen.getByTestId('chat-message-scroll')
+  expect(scroll).toHaveClass('px-3', 'sm:px-6')
+  expect(scroll.firstElementChild).toHaveClass('mx-auto', 'max-w-5xl')
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' }).closest('.max-w-5xl')).not.toBeNull()
+})
+
+it('S14: 요청이 끝나면 자료함의 사용됨·첨부됨을 SSE와 무관하게 다시 읽는다', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client.setQueryData(['messages', 'h'], [])
+  for (const key of [['candidates', 't'], ['sr-inputs', 't'], ['conversation-inputs', 't']]) client.setQueryData(key, [])
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/threads/h/requests/estimate') return Response.json({ at: '2026-09-28T00:00:00.000Z', provider: 'mock', transport: 'inline', model: 'mock', bytes: 10, limitBytes: 1000, inputs: [], srCodes: [], srs: [], overLimit: false, attachmentLimit: 10 })
+    if (url === '/api/threads/h/requests') return new Response('event: started\ndata: {"requestId":"r","replyMessageId":"a","userMessageId":"u"}\n\nevent: completed\ndata: {}\n\n', { status: 201 })
+    return Response.json([])
+  }))
+  const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
+  render(<QueryClientProvider client={client}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '질문' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(client.getQueryState(['candidates', 't'])?.isInvalidated).toBe(true))
+  expect(client.getQueryState(['sr-inputs', 't'])?.isInvalidated).toBe(true)
+  expect(client.getQueryState(['conversation-inputs', 't'])?.isInvalidated).toBe(true)
 })

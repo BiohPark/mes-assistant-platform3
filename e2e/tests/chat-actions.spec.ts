@@ -21,7 +21,7 @@ async function setup(page: Page) {
   expect(created.ok()).toBe(true)
   const task = await created.json() as { id: string; threadId: string }
   await page.goto(`/c/${task.id}`)
-  await page.locator('input[type="file"]').setInputFiles({ name: `${id}-original.txt`, mimeType: 'text/plain', buffer: Buffer.from('원래 첨부') })
+  await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: `${id}-original.txt`, mimeType: 'text/plain', buffer: Buffer.from('원래 첨부') })
   await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill(question)
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByRole('button', { name: '사용한 자료' })).toHaveCount(1)
@@ -35,15 +35,15 @@ async function prefill(page: Page, id: string) {
   await bubble(page, id).getByRole('button', { name: '다시 묻기', exact: true }).click()
 }
 
-test('프리필은 일반 입력과 트레이 추정·전송 경로가 같고 원래 문답을 유지한다', async ({ page }) => {
+test('프리필은 일반 입력과 추정·전송 경로가 같고 원래 문답을 유지한다', async ({ page }) => {
   const { task, history, original } = await setup(page)
   const input = page.getByRole('textbox', { name: 'AI 요청 입력' })
-  await page.locator('input[type="file"]').setInputFiles({ name: 'current.txt', mimeType: 'text/plain', buffer: Buffer.from('현재 첨부') })
+  await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: 'current.txt', mimeType: 'text/plain', buffer: Buffer.from('현재 첨부') })
   await input.fill(question)
-  const tray = page.getByLabel('다음 질문에 보낼 자료')
-  await expect(tray.getByText('계산 중')).toBeHidden()
-  const manualEstimate = await tray.getByRole('meter').getAttribute('aria-valuenow')
-  const manualInputs = await tray.getByRole('list').innerText()
+  // S14: 첨부는 입력창 칩 한 줄(크기는 한도 근처에서만 보인다)
+  const chips = page.getByRole('list', { name: '첨부', exact: true })
+  await expect(chips).toContainText('current.txt')
+  const manualChips = await chips.innerText()
   await input.fill('보호할 초안')
   await prefill(page, original.id)
   await expect(page.getByRole('dialog')).toContainText('텍스트만 바꿉니다')
@@ -54,9 +54,7 @@ test('프리필은 일반 입력과 트레이 추정·전송 경로가 같고 �
   await expect(input).toHaveValue(question)
   await expect(input).toBeFocused()
   await expect(page.getByText('현재 자료·모델로 새 요청, 이전 문답 포함')).toBeVisible()
-  await expect(tray.getByText('계산 중')).toBeHidden()
-  await expect(tray.getByRole('meter')).toHaveAttribute('aria-valuenow', manualEstimate!)
-  expect(await tray.getByRole('list').innerText()).toBe(manualInputs)
+  expect(await chips.innerText()).toBe(manualChips)
   await expect(page.getByRole('button', { name: '첨부 제거' })).toHaveCount(1) // 현재 첨부 대기 유지
   const sentPromise = page.waitForRequest(request => request.url().endsWith(`/threads/${task.threadId}/requests`) && request.method() === 'POST')
   const estimatePromise = page.waitForRequest(request => request.url().endsWith('/requests/estimate') && !!request.postDataJSON()?.attachmentIds)
@@ -81,7 +79,7 @@ test('팀 의견 모드·현재 첨부는 프리필 뒤에도 유지되며 AI �
   let aiPosts = 0
   page.on('request', request => { if (request.url().endsWith(`/threads/${task.threadId}/requests`) && request.method() === 'POST') aiPosts++ })
   await page.getByRole('button', { name: '팀 의견 (AI 미전송)' }).click()
-  await page.locator('input[type="file"]').setInputFiles({ name: 'team-current.txt', mimeType: 'text/plain', buffer: Buffer.from('팀 첨부') })
+  await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: 'team-current.txt', mimeType: 'text/plain', buffer: Buffer.from('팀 첨부') })
   await prefill(page, original.id)
   await expect(page.getByRole('textbox', { name: '팀 의견 입력' })).toHaveValue(question)
   await expect(page.getByText('team-current.txt', { exact: true })).toBeVisible()

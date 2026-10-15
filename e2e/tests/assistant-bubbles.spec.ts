@@ -17,15 +17,16 @@ async function createTask(page: Page) {
 }
 
 // E2E 요청 한도 64 KiB(playwright.config) → warn 은 80% = 52,429 B 초과, over 는 65,536 B 초과
-test('U6 도우미 말풍선 — 한도 경고는 레벨이 오를 때 한 번만, hover 중에는 머물고, 클릭하면 자료 트레이를 펼친다', async ({ page }) => {
+test('U6 도우미 말풍선 — 한도 경고는 레벨이 오를 때 한 번만, hover 중에는 머물고, 클릭하면 요청 크기 안내로 포커스한다', async ({ page }) => {
   await signup(page)
   const task = await createTask(page)
   await page.goto(`/c/${task.id}`)
   const composer = page.getByRole('textbox', { name: 'AI 요청 입력' })
   const region = page.getByRole('status', { name: 'AI 도우미 말풍선' })
   const bubble = page.getByTestId('assistant-bubble')
-  const trayToggle = page.getByRole('button', { name: /^다음 질문에 보낼 자료 · / })
-  await expect(trayToggle).toBeVisible()
+  // S14: 크기는 한도 근처에서만 보인다(트레이 없음)
+  await expect(composer).toBeVisible()
+  await expect(page.getByRole('meter', { name: '요청 크기' })).toHaveCount(0)
   await expect(region).toHaveAttribute('aria-live', 'polite')
   await expect(bubble).toHaveCount(0)
 
@@ -41,8 +42,6 @@ test('U6 도우미 말풍선 — 한도 경고는 레벨이 오를 때 한 번�
   await page.waitForTimeout(1_500) // 디바운스 400 ms + 추정 왕복 뒤에도 없음
   await expect(bubble).toHaveCount(0)
 
-  await trayToggle.click() // 접어 둔다 — 말풍선 클릭이 펼치는지 보려고
-  await expect(trayToggle).toHaveAttribute('aria-expanded', 'false')
   await composer.fill('x'.repeat(70_000)) // over — 레벨 상승이므로 한 번 더
   await expect(bubble).toContainText('한도를 넘어')
   await bubble.hover()
@@ -50,7 +49,7 @@ test('U6 도우미 말풍선 — 한도 경고는 레벨이 오를 때 한 번�
   await expect(bubble).toBeVisible()
   await bubble.getByRole('button', { name: /한도를 넘어/ }).click()
   await expect(bubble).toHaveCount(0)
-  await expect(trayToggle).toHaveAttribute('aria-expanded', 'true')
-  await expect(trayToggle).toBeFocused()
-  await expect(page.getByRole('alert').filter({ hasText: '요청 크기 한도' })).toBeVisible()
+  const sizeNotice = page.getByRole('alert').filter({ hasText: '요청 크기 한도' })
+  await expect(sizeNotice).toBeVisible()
+  await expect(sizeNotice).toBeFocused()
 })

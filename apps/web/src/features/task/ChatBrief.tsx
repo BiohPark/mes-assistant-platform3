@@ -7,11 +7,12 @@ import { cn } from '@/lib/utils'
 import { useT } from '@/i18n'
 
 const COLLAPSED_KEY = 'mes-chat-brief-collapsed'
-const readCollapsed = () => { try { return localStorage.getItem(COLLAPSED_KEY) === '1' } catch { return false } }
+// 접히는 것은 기본 접힘(S14) — 사용자가 펼친 적이 있을 때만('0') 펼쳐서 시작한다
+const readCollapsed = () => { try { return localStorage.getItem(COLLAPSED_KEY) !== '0' } catch { return true } }
 
 /**
  * 대화 요약 카드(표시 전용) — 1줄(무슨 대화)·3줄(다음 제안)은 AI가, 2줄(질문 수·참여자·시작)은 서버가 센다.
- * 생성 중·실패·불러오기 실패여도 대화 화면은 그대로다. 접힘 상태는 이 브라우저에 기억한다(모든 대화 공통).
+ * 생성 중·실패·불러오기 실패여도 대화 화면은 그대로다. 기본은 접힘, 펼침/접힘 선택은 이 브라우저에 기억한다(모든 대화 공통).
  */
 export function ChatBrief({ taskId }: { taskId: string }) {
   const t = useT()

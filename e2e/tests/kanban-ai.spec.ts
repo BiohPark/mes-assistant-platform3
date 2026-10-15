@@ -35,7 +35,7 @@ test('칸반 카드의 AI 응답 중 칩은 응답하는 동안 보이고 성공
   await expect(card(kanban, task).locator('[data-ai-status]')).toHaveCount(0)
   await page.goto(`/c/${task.id}`)
   // live: 가짜 OpenWebUI는 'slow-' 파일 처리를 8초 붙들어 요청이 '파일 처리 대기'(pending)에 머문다. mock: 첨부는 즉시 인라인, 스트리밍(수 초) 동안 보인다
-  await page.locator('input[type="file"]').setInputFiles({ name: 'slow-kanban.txt', mimeType: 'text/plain', buffer: Buffer.from('느린 처리') })
+  await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: 'slow-kanban.txt', mimeType: 'text/plain', buffer: Buffer.from('느린 처리') })
   await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('칸반 칩 확인')
   await page.getByRole('button', { name: '전송', exact: true }).click()
   // SSE(request.updated → ['tasks'] 무효화)로 다른 탭의 칸반이 갱신된다
@@ -78,7 +78,7 @@ test.describe('빠른 전환 (390px)', () => {
     await page.goto(`/c/${first.id}`)
     const input = page.getByRole('textbox', { name: 'AI 요청 입력' })
     await input.fill('첫 대화 초안')
-    await page.locator('input[type="file"]').setInputFiles({ name: 'draft-keep.txt', mimeType: 'text/plain', buffer: Buffer.from('초안 첨부') })
+    await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: 'draft-keep.txt', mimeType: 'text/plain', buffer: Buffer.from('초안 첨부') })
     await expect(page.getByText('draft-keep.txt')).toBeVisible()
     // 키보드로 열고 고른다
     await page.getByRole('button', { name: /빠른 전환/ }).focus()
@@ -112,7 +112,7 @@ test.describe('빠른 전환 (390px)', () => {
     page.on('request', (request) => { if (request.url().endsWith(`/threads/${first.threadId}/requests`) && request.method() === 'POST') keys.push(request.headers()['idempotency-key'] ?? '?') })
     await page.goto(`/c/${first.id}`)
     const input = page.getByRole('textbox', { name: 'AI 요청 입력' })
-    await page.locator('input[type="file"]').setInputFiles({ name: 'slow-sent-q1.txt', mimeType: 'text/plain', buffer: Buffer.from('보낸 첨부') }) // live: 8초 보류, mock: 스트리밍 창
+    await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: 'slow-sent-q1.txt', mimeType: 'text/plain', buffer: Buffer.from('보낸 첨부') }) // live: 8초 보류, mock: 스트리밍 창
     await input.fill('첫 질문')
     await page.getByRole('button', { name: '전송', exact: true }).click()
     await expect(page.getByRole('button', { name: '중지' })).toBeVisible() // 응답 중

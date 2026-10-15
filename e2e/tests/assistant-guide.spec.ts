@@ -86,16 +86,17 @@ test('창의 "가이드해 주세요"는 창을 닫고 섹션 투어를 시작�
   await dialog.getByRole('button', { name: '이 섹션 건너뛰기' }).click()
   await expect(dialog.getByRole('heading', { name: '자료함' })).toBeVisible()
   await expectSpotlightAround(page, page.getByRole('tablist', { name: '보조 패널' }))
-  await page.keyboard.press('Enter') // 자료 탭을 열고 자료함을 짚는다(기본 패널은 이력)
+  await page.keyboard.press('Enter') // 자료함을 짚는다(S14: 기본 패널이 자료)
   await expect(page.getByRole('tab', { name: '자료', exact: true })).toHaveAttribute('aria-selected', 'true')
-  await expect(dialog.getByText(/☑ 체크하면 아래/)).toBeVisible()
+  await expect(dialog.getByText(/\[첨부\]를 누르면 입력창에 칩으로 붙어요/)).toBeVisible()
   await expectSpotlightAround(page, page.getByTestId('materials-library'))
   await page.keyboard.press('Enter')
-  await expect(dialog.getByText(/같은 태그 대화도 파일처럼 \[\+ 담기\]/)).toBeVisible() // 대화 담기 장면
+  await expect(dialog.getByText(/같은 태그 대화도 파일처럼 \[첨부\]/)).toBeVisible() // 대화 첨부 장면
   await expectSpotlightAround(page, page.locator('[data-tour="materials-conversations"]'))
   await page.keyboard.press('Enter')
-  await expect(dialog.getByText(/다음 질문과 한 번만 함께 가고, 보내면 비워져요/)).toBeVisible()
-  await expectSpotlightAround(page, page.getByTestId('materials-staged'))
+  await expect(dialog.getByText(/첨부는 입력창 위 칩으로 보여요/)).toBeVisible()
+  // 첨부 칩 줄 — 아직 칩이 없는 새 대화라 앵커는 📎 버튼
+  await expectSpotlightAround(page, page.getByRole('button', { name: '파일 첨부', exact: true }))
   await list.getByRole('button', { name: 'AI 도우미', exact: true }).click()
   await expectSpotlightAround(page, page.getByRole('button', { name: 'AI 도우미 열기' }))
   await expect(dialog.getByRole('button', { name: '다음' })).toHaveCount(0)

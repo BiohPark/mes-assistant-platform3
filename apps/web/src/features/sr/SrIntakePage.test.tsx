@@ -318,7 +318,7 @@ it('업로드·응답 대기·스트리밍 동안 SR 드롭을 막고 완료 후
 })
 
 it.each([
-  { locale: 'ko' as const, hint: '📎 또는 끌어 놓기로 파일을 첨부할 수 있습니다' },
+  { locale: 'ko' as const, hint: '📎나 끌어 놓기로 파일을 첨부할 수 있어요.' },
   { locale: 'en' as const, hint: 'Attach files with 📎 or drag and drop.' },
 ])('빈 SR 대화에 첨부 방법을 안내한다: $locale', async ({ locale, hint }) => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/intake-assistant' ? jsonResponse(200, intake) : jsonResponse(200, [])))
@@ -467,15 +467,81 @@ it.each(['completed', 'failed'])('lists every intake file and consumes staging o
   renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=library' })
   const library = await screen.findByTestId('sr-materials-library')
   expect(await within(library).findByText('intake.txt v1')).toBeInTheDocument()
-  await userEvent.click(within(library).getByRole('button', { name: 'intake.txt 담기' }))
-  expect(screen.getByTestId('sr-materials-staged')).toHaveTextContent('intake.txt')
+  await userEvent.click(within(library).getByRole('button', { name: 'intake.txt 첨부' }))
+  // 첨부는 입력창 위 칩 하나로 보인다(별도 '보낼 자료' 구역 없음)
+  expect(screen.queryByTestId('sr-materials-staged')).not.toBeInTheDocument()
+  expect(screen.getByRole('list', { name: '첨부' })).toHaveTextContent('intake.txt')
   expect(screen.getByRole('button', { name: '전송' })).toBeEnabled()
   await userEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(requests).toHaveLength(1))
   expect(requests[0]).toMatchObject({ content: '', attachmentIds: ['file-old'] })
-  await waitFor(() => expect(screen.queryByTestId('sr-materials-staged')).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByRole('list', { name: '첨부' })).not.toBeInTheDocument())
+  expect(within(library).getByRole('button', { name: 'intake.txt 첨부' })).toHaveAttribute('aria-pressed', 'false')
   await userEvent.type(screen.getByRole('textbox', { name: '접수 메시지' }), '다음')
   await userEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(requests).toHaveLength(2))
   expect(requests[1]).toMatchObject({ attachmentIds: [] })
+})
+
+
+it('S14: SR 자료함은 파일이 있을 때만 작게 보이고, [첨부]·첨부됨·칩 ×로 붙이고 뺀다', async () => {
+  const sr = { ...row('lib', 'draft'), requesterId: 'u', candidateAttachmentIds: ['f1'] }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/service-requests?scope=mine') return jsonResponse(200, [sr])
+    if (url === '/api/service-requests/lib') return jsonResponse(200, sr)
+    if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, intake)
+    if (url === '/api/files/f1') return jsonResponse(200, { id: 'f1', name: '도면.pdf', version: 1, size: 10, source: 'upload' })
+    return jsonResponse(200, [])
+  }))
+  const view = renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=lib' })
+  const library = await screen.findByTestId('sr-materials-library')
+  // 긴 설명은 툴팁으로
+  expect(within(library).getByRole('button', { name: '첨부는 그 질문에 한 번만 갑니다. 다시 보내려면 [첨부]를 누르세요.' })).toBeInTheDocument()
+  expect(library).not.toHaveTextContent('한 번만')
+  const attach = await within(library).findByRole('button', { name: '도면.pdf 첨부' })
+  await userEvent.click(attach)
+  expect(attach).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('list', { name: '첨부' })).toHaveTextContent('도면.pdf')
+  await userEvent.click(attach) // '첨부됨'을 다시 누르면 뺀다
+  expect(screen.queryByRole('list', { name: '첨부' })).not.toBeInTheDocument()
+  await userEvent.click(attach)
+  await userEvent.click(screen.getByRole('button', { name: '도면.pdf 첨부 빼기' })) // 칩 ×
+  expect(attach).toHaveAttribute('aria-pressed', 'false')
+  view.unmount()
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/lib' ? jsonResponse(200, { ...sr, candidateAttachmentIds: [] }) : url === '/api/service-requests/intake-assistant' ? jsonResponse(200, intake) : jsonResponse(200, [])))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=lib' })
+  await screen.findByRole('textbox', { name: '접수 메시지' })
+  expect(screen.queryByTestId('sr-materials-library')).not.toBeInTheDocument()
+})
+
+it('S14: 요청이 하나도 없으면 소개 카드가 남는 폭을 쓰고, 새 요청 대화는 목록 칸 없이 전체 폭이다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/service-requests/intake-assistant' ? jsonResponse(200, intake) : jsonResponse(200, [])))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr' })
+  const card = await screen.findByText('접수 도우미')
+  const grid = card.closest('.grid')!
+  expect(grid).not.toHaveClass('lg:grid-cols-[18rem_1fr]')
+  expect(screen.queryByText('내 요청을 선택하거나 새 요청을 시작하세요.')).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '새 요청' }))
+  const conversation = await screen.findByRole('region', { name: '접수 대화' })
+  expect(conversation.closest('.grid')).not.toHaveClass('lg:grid-cols-[18rem_1fr]')
+  expect(grid.querySelector('aside')).toHaveClass('hidden')
+  expect(grid.querySelector('aside')).not.toHaveClass('lg:block')
+})
+
+it('S14: 펼친 상태 이력은 다른 요청으로 바꾸면 다시 접힌다', async () => {
+  const a = { ...row('a', 'submitted'), statusHistory: [{ id: 'h1', at: '2026-10-01T01:00:00.000Z', by: 'u', byName: '사용자', from: 'draft', to: 'submitted' }] }
+  const b = { ...row('b', 'submitted'), statusHistory: [] }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/service-requests?scope=mine') return jsonResponse(200, [a, b])
+    if (url === '/api/service-requests/a') return jsonResponse(200, a)
+    if (url === '/api/service-requests/b') return jsonResponse(200, b)
+    if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, intake)
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=a' })
+  const toggle = await screen.findByRole('button', { name: '상태 이력' })
+  await userEvent.click(toggle)
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await userEvent.click(await screen.findByRole('button', { name: /요청 b/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '상태 이력' })).toHaveAttribute('aria-expanded', 'false'))
 })
