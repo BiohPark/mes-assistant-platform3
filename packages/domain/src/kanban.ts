@@ -108,7 +108,9 @@ export function kanbanColumns(assistants: Assistant[], tasks: Task[], f: KanbanF
   const byAssistant = new Map<ID, Task[]>()
   for (const t of tasks) {
     if (!matchesTask(t, f, userId)) continue
-    byAssistant.set(t.assistantId, [...(byAssistant.get(t.assistantId) ?? []), t])
+    let group = byAssistant.get(t.assistantId)
+    if (!group) { group = []; byAssistant.set(t.assistantId, group) }
+    group.push(t)
   }
   const hasAny = new Set(tasks.map((t) => t.assistantId))
   return [...assistants]

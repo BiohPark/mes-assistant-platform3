@@ -8,6 +8,42 @@ const task = (id: string, assistantId: string, extra: Partial<Task> = {}) =>
   ({ id, code: id, assistantId, title: id, summary: '', status: 'in_progress', ownerId: 'u1', assigneeIds: [], tags: [], lastActivityAt: '2026-09-01', ...extra }) as Task
 
 describe('kanbanColumns', () => {
+  it('keeps equal activity timestamps in input order without mutating inputs or cards', () => {
+    const tasks = [
+      task('first', 'fds', { lastActivityAt: '2026-09-05' }),
+      task('older', 'fds', { lastActivityAt: '2026-09-01' }),
+      task('second', 'fds', { lastActivityAt: '2026-09-05' }),
+      task('other', 'urs'),
+    ]
+    const catalog = [...assistants]
+    Object.freeze(catalog)
+    Object.freeze(tasks)
+    tasks.forEach(Object.freeze)
+    const cols = kanbanColumns(catalog, tasks, EMPTY_FILTER)
+    expect(cols.map(c => c.assistant.id)).toEqual(['urs', 'fds', 'cca'])
+    expect(cols[1].tasks).toEqual([tasks[0], tasks[2], tasks[1]])
+    expect(cols[1].tasks[0]).toBe(tasks[0])
+    expect(tasks.map(t => t.id)).toEqual(['first', 'older', 'second', 'other'])
+  })
+
+  it('preserves grouping, ordering and filtered results with 4,000 cards in one column', () => {
+    const tasks = Array.from({ length: 4_000 }, (_, i) => task(`card-${i}`, 'fds', {
+      lastActivityAt: `2026-09-${String(i % 28 + 1).padStart(2, '0')}`,
+      status: i % 2 ? 'done' : 'in_progress', tags: i % 2 ? [] : ['SR-1'],
+    }))
+    tasks.splice(10, 0, task('other', 'urs'), task('retired', 'old'), task('unknown', 'missing'))
+    const expected = tasks.filter(t => t.assistantId === 'fds')
+      .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
+    const cols = kanbanColumns(assistants, tasks, EMPTY_FILTER)
+    expect(cols.map(c => [c.assistant.id, c.tasks.map(t => t.id)])).toEqual([
+      ['urs', ['other']], ['fds', expected.map(t => t.id)], ['cca', []], ['old', ['retired']],
+    ])
+    const filtered = kanbanColumns(assistants, tasks, {
+      ...EMPTY_FILTER, stages: ['SDLC/설계'], statuses: ['in_progress'], tags: ['sr-1'], mine: true, q: 'card',
+    }, 'u1')
+    expect(filtered).toEqual([{ assistant: assistants[2], tasks: expected.filter(t => t.status === 'in_progress') }])
+  })
+
   it('orders columns by assistant order and cards by recent activity', () => {
     const tasks = [task('a', 'fds', { lastActivityAt: '2026-09-01' }), task('b', 'fds', { lastActivityAt: '2026-09-05' })]
     const cols = kanbanColumns(assistants, tasks, EMPTY_FILTER)

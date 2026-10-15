@@ -1,8 +1,164 @@
 import { createElement } from 'react'
 import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query'
 import { renderHook } from '@testing-library/react'
-import { expect, it, vi } from 'vitest'
-import { applyEvent, useEvents } from './useEvents'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { applyEvent, subscribeEvent, useEvents } from './useEvents'
+
+describe('task list event throttling', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0) })
+  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals() })
+  const setup = () => {
+    const query = new QueryClient()
+    const invalidate = vi.spyOn(query, 'invalidateQueries').mockResolvedValue()
+    const lists = () => invalidate.mock.calls.filter(([filters]) => filters?.queryKey?.[0] === 'tasks').length
+    return { query, invalidate, lists }
+  }
+
+  it('invalidates on the leading edge and once on the trailing edge across event types', () => {
+    const { query, lists } = setup()
+    applyEvent(query, 'message.appended', {})
+    expect(lists()).toBe(1)
+    vi.advanceTimersByTime(100)
+    for (const event of ['message.appended', 'task.created', 'task.updated', 'file.updated', 'input.updated']) {
+      applyEvent(query, event, {})
+    }
+    vi.advanceTimersByTime(1_899)
+    expect(lists()).toBe(1)
+    vi.advanceTimersByTime(1)
+    expect(lists()).toBe(2)
+    vi.advanceTimersByTime(5_000)
+    expect(lists()).toBe(2)
+    applyEvent(query, 'message.appended', {})
+    expect(lists()).toBe(3)
+  })
+
+  it('keeps a two-second cadence under continuous traffic and delivers the last event', () => {
+    const { query, lists } = setup()
+    applyEvent(query, 'message.appended', {})
+    for (let i = 0; i < 9; i++) {
+      vi.advanceTimersByTime(500)
+      applyEvent(query, 'message.appended', {})
+    }
+    expect(lists()).toBe(3)
+    vi.advanceTimersByTime(1_500)
+    expect(lists()).toBe(4)
+    vi.advanceTimersByTime(4_000)
+    expect(lists()).toBe(4)
+  })
+
+  it('does not schedule a duplicate trailing invalidation for an isolated event', () => {
+    const { query, lists } = setup()
+    applyEvent(query, 'task.updated', {})
+    vi.advanceTimersByTime(10_000)
+    expect(lists()).toBe(1)
+  })
+
+  it('only invalidates request status changes while refreshing conversation queries on every phase', () => {
+    const { query, invalidate, lists } = setup()
+    const data = { requestId: 'r', threadId: 'h', taskId: 't', status: 'pending' }
+    applyEvent(query, 'request.updated', data)
+    vi.advanceTimersByTime(2_000)
+    invalidate.mockClear()
+    applyEvent(query, 'request.updated', { ...data, phase: '파일 처리 대기' })
+    applyEvent(query, 'request.updated', { ...data, phase: '파일 올리는 중' })
+    expect(lists()).toBe(0)
+    for (const key of [['messages', 'h'], ['task', 't'], ['activity', 't'], ['request', 'r'], ['estimate']]) {
+      expect(invalidate.mock.calls.filter(([filters]) => JSON.stringify(filters?.queryKey) === JSON.stringify(key))).toHaveLength(2)
+    }
+    applyEvent(query, 'request.updated', { ...data, status: 'streaming' })
+    expect(lists()).toBe(1)
+    applyEvent(query, 'request.updated', { ...data, status: 'succeeded' })
+    expect(lists()).toBe(1)
+    vi.advanceTimersByTime(2_000)
+    expect(lists()).toBe(2)
+    applyEvent(query, 'request.updated', { ...data, status: 'succeeded' })
+    vi.advanceTimersByTime(2_000)
+    expect(lists()).toBe(2)
+  })
+
+  it('compares requests independently and uses a cached status for the first event', () => {
+    const { query, lists } = setup()
+    query.setQueryData(['request', 'r'], { status: 'streaming' })
+    applyEvent(query, 'request.updated', { requestId: 'r', status: 'streaming', phase: '생각 중' })
+    applyEvent(query, 'request.updated', { requestId: 'missing-status' })
+    expect(lists()).toBe(0)
+    applyEvent(query, 'request.updated', { requestId: 'other', status: 'streaming' })
+    expect(lists()).toBe(1)
+    vi.advanceTimersByTime(2_000)
+    applyEvent(query, 'request.updated', { requestId: 'r', status: 'streaming', phase: '답변 중' })
+    expect(lists()).toBe(1)
+  })
+
+  it('updates the kanban AI chip phase in cached lists without refetching the list', () => {
+    const { query, lists } = setup()
+    const task = { id: 't', aiRequest: { status: 'streaming', phase: '생각 중', updatedAt: '2026-10-15' } }
+    query.setQueryData(['tasks'], [task, { id: 'other', aiRequest: null }])
+    query.setQueryData(['tasks', 'related', ['tag']], [task])
+    query.setQueryData(['request', 'r'], { status: 'streaming' })
+    applyEvent(query, 'request.updated', { requestId: 'r', taskId: 't', status: 'streaming', phase: '답변 중' })
+    expect(lists()).toBe(0)
+    expect(query.getQueryData(['tasks'])).toEqual([
+      { ...task, aiRequest: { ...task.aiRequest, phase: '답변 중' } }, { id: 'other', aiRequest: null },
+    ])
+    expect(query.getQueryData(['tasks', 'related', ['tag']])).toEqual([{ ...task, aiRequest: { ...task.aiRequest, phase: '답변 중' } }])
+    applyEvent(query, 'request.updated', { requestId: 'r', taskId: 't', status: 'streaming', phase: null })
+    expect(query.getQueryData<Array<typeof task>>(['tasks'])?.[0].aiRequest.phase).toBeUndefined()
+    expect(lists()).toBe(0)
+  })
+
+  it('keeps throttles independent for different query clients', () => {
+    const first = setup(), second = setup()
+    applyEvent(first.query, 'message.appended', {})
+    applyEvent(first.query, 'message.appended', {})
+    applyEvent(second.query, 'message.appended', {})
+    expect(first.lists()).toBe(1)
+    expect(second.lists()).toBe(1)
+    vi.advanceTimersByTime(2_000)
+    expect(first.lists()).toBe(2)
+    expect(second.lists()).toBe(1)
+  })
+
+  it('resyncs immediately and drops a queued list invalidation', () => {
+    const { query, invalidate, lists } = setup()
+    applyEvent(query, 'message.appended', {})
+    applyEvent(query, 'message.appended', {})
+    applyEvent(query, 'resync', {})
+    expect(invalidate).toHaveBeenCalledWith()
+    vi.advanceTimersByTime(2_000)
+    expect(lists()).toBe(1)
+  })
+
+  it('clears pending work on stream cleanup and still emits phase and completion events', () => {
+    const handlers = new Map<string, (event: Event) => void>()
+    const close = vi.fn()
+    class FakeSource {
+      addEventListener(name: string, handler: (event: Event) => void) { handlers.set(name, handler) }
+      removeEventListener(name: string) { handlers.delete(name) }
+      close = close
+    }
+    vi.stubGlobal('EventSource', FakeSource)
+    const { query, lists } = setup()
+    const listener = vi.fn()
+    const unsubscribe = subscribeEvent(listener)
+    const { unmount } = renderHook(() => useEvents(), { wrapper: ({ children }) => createElement(QueryClientProvider, { client: query }, children) })
+    const send = (status: string, phase: string | null) => handlers.get('request.updated')!(new MessageEvent('request.updated', {
+      data: JSON.stringify({ requestId: 'r', taskId: 't', threadId: 'h', status, phase }),
+    }))
+    try {
+      send('streaming', '생각 중')
+      send('streaming', '답변 중')
+      send('succeeded', null)
+      expect(listener.mock.calls.map(([event]) => [event.data.status, event.data.phase])).toEqual([
+        ['streaming', '생각 중'], ['streaming', '답변 중'], ['succeeded', null],
+      ])
+      expect(lists()).toBe(1)
+      unmount()
+      expect(close).toHaveBeenCalledOnce()
+      vi.advanceTimersByTime(2_000)
+      expect(lists()).toBe(1)
+    } finally { unsubscribe(); unmount() }
+  })
+})
 
 it.each(['reassigned', 'deleted'] as const)('task.updated refetches SR list and detail after a linked conversation is %s', async (change) => {
   const query = new QueryClient({ defaultOptions: { queries: { retry: false } } })
