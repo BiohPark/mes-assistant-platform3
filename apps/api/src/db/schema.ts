@@ -183,7 +183,7 @@ export const task = mysqlTable(
     title: text('title').notNull(),
     titleSource: text('title_source').notNull(),
     summary: longtext('summary').notNull().default(''),
-    status: text('status').notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
     ownerId: varchar('owner_id', { length: 191 }).notNull().references((): AnyMySqlColumn => appUser.id),
     priority: text('priority').notNull(),
     dueDate: date('due_date'),
@@ -203,6 +203,7 @@ export const task = mysqlTable(
     check('task_priority_check', inList(t.priority, ['low', 'normal', 'high', 'urgent'])),
     index('task_assistant').on(t.assistantId),
     index('task_last_activity').on(t.lastActivityAt),
+    index('task_status_last_activity').on(t.status, t.lastActivityAt),
     unique('task_idempotency_key_key').on(t.idempotencyKey),
   ],
 )
