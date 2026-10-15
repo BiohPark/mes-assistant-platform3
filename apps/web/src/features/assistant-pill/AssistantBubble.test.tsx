@@ -1,5 +1,6 @@
 import { act, fireEvent, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { useLocation } from 'react-router'
 import { renderWithProviders } from '@/test/render'
 import { AssistantBubble } from './AssistantBubble'
 import { BUBBLE_TTL_MS, resetBubbles, useBubbleStore } from './bubbles'
@@ -57,6 +58,24 @@ it('click runs the bubble action (tray) and dismisses; the close button dismisse
   fireEvent.click(screen.getByRole('button', { name: '말풍선 닫기' }))
   expect(onOpen).toHaveBeenCalledTimes(1)
   expect(bubble()).toBeNull()
+})
+
+it('완료 알림 말풍선 — 제목·답 첫 문장과 [바로 가기] 버튼; 누르면 그 대화로 이동하고 닫힌다. 실패·중단은 다른 문구, 발췌 없음', () => {
+  function Where() { return <output aria-label="위치">{useLocation().pathname}</output> }
+  renderWithProviders(<><AssistantBubble pillRef={{ current: null }} pos={null} /><Where /></>, { route: '/my-work' })
+  push({ source: 'reply.done', taskId: 't1', title: '검사 절차', excerpt: '선택된 입력이 없어 진행합니다.' })
+  expect(screen.getByText('"검사 절차" 답변이 끝났어요')).toBeVisible()
+  expect(screen.getByTestId('bubble-excerpt')).toHaveTextContent('선택된 입력이 없어 진행합니다.')
+  fireEvent.click(screen.getByRole('button', { name: '바로 가기' }))
+  expect(screen.getByRole('status', { name: '위치' })).toHaveTextContent('/c/t1')
+  expect(bubble()).toBeNull()
+  push({ source: 'reply.failed', taskId: 't2', title: '실패한 대화' })
+  expect(screen.getByText('"실패한 대화" 답변이 실패했어요')).toBeVisible()
+  expect(screen.queryByTestId('bubble-excerpt')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '말풍선 닫기' }))
+  push({ source: 'reply.cancelled', taskId: 't3', title: '중단' })
+  expect(screen.getByText('"중단" 답변이 중단됐어요')).toBeVisible()
+  expect(screen.getByRole('button', { name: '바로 가기' })).toBeVisible()
 })
 
 it('a slow-request bubble opens the request info dialog for that request', async () => {

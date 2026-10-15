@@ -2,9 +2,20 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
+import { claimMyRequest } from '@/features/assistant-pill/replyBubble'
 import { useChat } from './useChat'
 
-afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear() })
+afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); localStorage.clear() })
+
+it('started 의 requestId 를 "내가 보낸 요청"으로 기록한다 — 다른 창·탭의 도우미가 완료를 알릴 대상', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('event: started\ndata: {"requestId":"r-mine","replyMessageId":"m"}\n\nevent: completed\ndata: {}\n\n', { status: 201 })))
+  const client = new QueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useChat('mine-thread'), { wrapper })
+  await act(async () => { await result.current.send('hello') })
+  expect(claimMyRequest('r-mine')).toBe(true)
+  expect(claimMyRequest('r-mine')).toBe(false)
+})
 
 it('retries a failed fetch with the same key and POST body', async () => {
   const calls: Array<{ key: string | null; body: string | null }> = []

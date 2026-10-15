@@ -486,6 +486,7 @@ export const ko = {
       reopenDescription: '재개 사유를 이력에 기록합니다.', reopenConfirm: '재개 확인', deleteTitle: '대화를 삭제할까요?',
       deleteDescription: '메시지와 이 대화에서 만든 자료가 삭제됩니다.',
       quickSwitch: '빠른 전환', quickSwitchResponding: '응답 중 {count}', more: '더 보기',
+      popout: '새 창으로 띄우기', popoutBlocked: '팝업이 차단되어 새 창을 열지 못했어요. 브라우저에서 이 사이트의 팝업을 허용해 주세요',
     },
   },
   systemAssistant: {
@@ -569,6 +570,7 @@ export const ko = {
     budgetWarn: '요청 크기가 한도의 80%를 넘었어요. 눌러서 자료 트레이를 확인하세요',
     budgetOver: '요청 크기가 한도를 넘어 전송이 막혀요. 눌러서 자료 트레이에서 조정하세요',
     requestSlow: '응답이 30초 넘게 오지 않아요. 눌러서 요청 정보를 확인하세요',
+    replyDone: '"{title}" 답변이 끝났어요', replyFailed: '"{title}" 답변이 실패했어요', replyCancelled: '"{title}" 답변이 중단됐어요', goToConversation: '바로 가기',
     guideRegion: 'AI 도우미 가이드 제안', guideOffer: '이 화면에서 도와드릴까요?', guideYes: '네, 가이드해 주세요', guideNo: '괜찮아요',
   },
   tutorial: { replay: '튜토리얼 다시 보기', guide: '가이드해 주세요' },

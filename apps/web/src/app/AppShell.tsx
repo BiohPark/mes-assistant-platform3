@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AuthGate } from './AuthGate'
+import { isPopout } from './popout'
 import { useEvents } from './useEvents'
 import { useMe } from './auth'
 import { PasswordPage } from '@/features/admin/PasswordPage'
@@ -43,12 +44,13 @@ function AppContent() {
   const requesterOnly = me.roles.includes('requester') && !me.roles.includes('system_owner')
   const items = NAV.filter((item) => !('show' in item) || item.show(me.roles))
   const sectioned = new Set(items.map((item) => item.section)).size > 1
+  const popout = isPopout() // 대화 팝업 창 — 사이드바·도우미 알약(말풍선·가이드 포함) 없이 본문만
   if (me.mustChangePassword) return <PasswordPage />
   return (
     <>
       {!requesterOnly && <LiveEvents />}
         <div className="flex h-full bg-muted/30">
-          <aside className="flex w-14 shrink-0 flex-col items-center border-r border-sidebar-border bg-sidebar pt-3 pb-16 text-sidebar-foreground lg:w-52 lg:items-stretch lg:px-3"> {/* 하단 64px은 AI 도우미 알약 기본 자리 */}
+          {!popout && <aside className="flex w-14 shrink-0 flex-col items-center border-r border-sidebar-border bg-sidebar pt-3 pb-16 text-sidebar-foreground lg:w-52 lg:items-stretch lg:px-3"> {/* 하단 64px은 AI 도우미 알약 기본 자리 */}
             <div className="mb-4 flex items-center gap-2 px-1 lg:px-1">
               <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <Boxes className="size-4" />
@@ -79,12 +81,12 @@ function AppContent() {
                 </Fragment>
               ))}
             </nav>
-          </aside>
+          </aside>}
           <main className="flex min-w-0 flex-1 flex-col">
             <Outlet />
           </main>
         </div>
-        {!requesterOnly && <AssistantPill />}
+        {!requesterOnly && !popout && <AssistantPill />}
         <Toaster position="bottom-right" richColors closeButton />
     </>
   )

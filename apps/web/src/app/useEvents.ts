@@ -7,6 +7,8 @@ export function subscribeEvent(listener: (event: LiveEvent) => void) {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
 }
+/** 구독자에게 전달 — SSE 핸들러와 테스트가 쓴다 */
+export function emitEvent(event: LiveEvent) { for (const listener of listeners) listener(event) }
 
 export function applyEvent(query: QueryClient, event: string, data: Record<string, unknown>) {
   if (event === 'resync') { void query.invalidateQueries(); return }
@@ -55,7 +57,7 @@ export function useEvents(enabled = true) {
       const handler = (message: Event) => {
         const data = JSON.parse((message as MessageEvent<string>).data || '{}') as Record<string, unknown>
         applyEvent(query, event, data)
-        for (const listener of listeners) listener({ event, data })
+        emitEvent({ event, data })
       }
       source.addEventListener(event, handler)
       return [event, handler] as const

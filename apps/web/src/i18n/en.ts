@@ -488,6 +488,7 @@ export const en = {
       reopenDescription: 'The reason is recorded in the history.', reopenConfirm: 'Reopen', deleteTitle: 'Delete this conversation?',
       deleteDescription: 'Messages and materials created in this conversation will be deleted.',
       quickSwitch: 'Quick switch', quickSwitchResponding: 'Responding {count}', more: 'More',
+      popout: 'Open in new window', popoutBlocked: 'The browser blocked the popup, so the window could not open. Allow popups for this site and try again',
     },
   },
   systemAssistant: {
@@ -571,6 +572,7 @@ export const en = {
     budgetWarn: 'The request is over 80% of the size limit. Tap to check the inputs tray',
     budgetOver: 'The request exceeds the size limit, so it cannot be sent. Tap to adjust it in the inputs tray',
     requestSlow: 'No reply for over 30 seconds. Tap to see the request details',
+    replyDone: 'The reply to "{title}" is ready', replyFailed: 'The reply to "{title}" failed', replyCancelled: 'The reply to "{title}" was stopped', goToConversation: 'Open conversation',
     guideRegion: 'AI assistant guide offer', guideOffer: 'Need help on this screen?', guideYes: 'Yes, guide me', guideNo: 'No thanks',
   },
   tutorial: { replay: 'Replay tutorial', guide: 'Guide me' },

@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { toast } from 'sonner'
-import { CheckCircle2, ExternalLink, MoreHorizontal, PauseCircle, PlayCircle, Trash2 } from 'lucide-react'
+import { AppWindow, CheckCircle2, ExternalLink, MoreHorizontal, PauseCircle, PlayCircle, Trash2 } from 'lucide-react'
 import type { Task, TaskStatus } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSettings } from '@/api/admin'
 import { addTag, deleteTask, removeTag, setTaskStatus } from '@/api/tasks'
 import { useActor } from '@/app/hooks'
+import { isPopout, openPopout } from '@/app/popout'
 import { useSrStatus, useTagSuggest } from '@/app/useTagSuggest'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { TagInput } from '@/components/TagInput'
@@ -62,6 +63,8 @@ export function TaskHeader({ task, assistant, toolsRef }: { task: Task; assistan
         <div ref={toolsRef} className="flex items-center gap-1 empty:hidden data-[chat-hidden=true]:max-lg:hidden" />
         <QuickSwitch currentTaskId={task.id} />
         {link1 && <Button variant="ghost" size="icon" asChild className="relative text-muted-foreground after:absolute after:-inset-1.5"><a href={link1} target="_blank" rel="noreferrer" aria-label={t('chat.openWebUi')} title={t('chat.openWebUi')}><ExternalLink aria-hidden /></a></Button>}
+        {/* 새 창으로 띄우기 — 메뉴(onSelect)가 아니라 버튼 onClick 이어야 사용자 제스처로 인정돼 팝업이 덜 막힌다. 막히면 같은 탭으로 가지 않고 토스트. 팝업 안에서는 없다 */}
+        {!isPopout() && <Button variant="ghost" size="icon" className="relative text-muted-foreground after:absolute after:-inset-1.5" aria-label={t('task.header.popout')} title={t('task.header.popout')} onClick={() => { if (!openPopout(task.id)) toast.error(t('task.header.popoutBlocked')) }}><AppWindow aria-hidden /></Button>}
         {task.status === 'done' ? <Button size="sm" variant="outline" onClick={() => setReopen(true)}><PlayCircle data-icon="inline-start" />{t('task.header.reopen')}</Button> : <>
           {task.status === 'on_hold' ? <Button size="sm" variant="outline" onClick={() => void changeStatus('in_progress')}><PlayCircle data-icon="inline-start" />{t('task.header.resume')}</Button> : <Button size="sm" variant="outline" onClick={() => void changeStatus('on_hold')}><PauseCircle data-icon="inline-start" />{t('task.header.hold')}</Button>}
           <Button size="sm" onClick={() => setComplete(true)}><CheckCircle2 data-icon="inline-start" />{t('task.header.complete')}</Button>

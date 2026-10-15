@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cancelRequest, streamRequest } from '@/api/requests'
 import { useSlowRequestBubble } from '@/features/assistant-pill/bubbles'
+import { rememberMyRequest } from '@/features/assistant-pill/replyBubble'
 import { getDraft, setDraft, type ComposerDraft } from './drafts'
 import { useT } from '@/i18n'
 
@@ -62,6 +63,7 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
                 if (notify) attempt.autoStartNotified = true
                 attempt.requestId = String(data.requestId)
                 save(attempt)
+                rememberMyRequest(attempt.requestId) // 다른 창·탭의 도우미가 이 요청의 끝을 알린다(replyBubble)
                 if (notify) autoStarted.current?.()
                 setRun({ requestId: attempt.requestId, replyId: String(data.replyMessageId), text: String(data.resumedText ?? ''), reasoning: String(data.resumedReasoning ?? ''),
                   startedAt: typeof data.createdAt === 'string' ? Date.parse(data.createdAt) : attempt.startedAt })
