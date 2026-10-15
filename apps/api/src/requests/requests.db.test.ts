@@ -136,7 +136,7 @@ describe('RequestService DB', () => {
   it.each([false, true])('live OpenWebUI dispatch persists final tools/body and one request (reject=%s)', async reject => {
     const bodies: Record<string, unknown>[] = []
     const server = createServer((req, res) => {
-      if (req.url === '/api/models') { res.end(JSON.stringify({ data: [{ id: 'fake-general', info: { meta: { toolIds: ['lookup'], defaultFeatureIds: ['web_search'] } } }] })); return }
+      if (req.url === '/api/models') { res.end(JSON.stringify({ data: [{ id: 'fake-general', info: { meta: { toolIds: ['lookup'], skillIds: ['skill_a'], defaultFilterIds: ['filter_a'], defaultFeatureIds: ['web_search'], capabilities: { web_search: true }, terminalId: 'term-1' } } }] })); return }
       if (req.method !== 'POST' || req.url !== '/api/chat/completions') { res.writeHead(404); res.end(); return }
       const chunks: Buffer[] = []
       req.on('data', chunk => chunks.push(chunk))
@@ -168,8 +168,9 @@ describe('RequestService DB', () => {
       expect(events.find(event => event.event === 'completed')?.data.requestInfo).toMatchObject({ owuiTools: expected })
       const snapshot = await runner.snapshot(started.id) as Record<string, unknown>
       expect(snapshot.messages).toEqual(bodies.at(-1)!.messages)
-      if (reject) { expect(snapshot).not.toHaveProperty('tool_ids'); expect(snapshot).not.toHaveProperty('features'); expect(bodies).toHaveLength(2) }
-      else { expect(snapshot).toMatchObject({ tool_ids: ['lookup'], features: { web_search: true }, params: { function_calling: 'legacy' } }); expect(bodies).toHaveLength(1) }
+      // 모델 기본 터미널(S13-J)은 본문과 snapshot에 terminal_id로 남고, 전달 기록(owuiTools)에는 없다
+      if (reject) { for (const key of ['tool_ids', 'skill_ids', 'filter_ids', 'features', 'terminal_id']) expect(snapshot).not.toHaveProperty(key); expect(bodies).toHaveLength(2); expect(bodies[0]).toMatchObject({ terminal_id: 'term-1' }) }
+      else { expect(snapshot).toMatchObject({ tool_ids: ['lookup'], skill_ids: ['skill_a'], filter_ids: ['filter_a'], features: { web_search: true }, terminal_id: 'term-1', params: { function_calling: 'legacy' } }); expect(bodies).toHaveLength(1) }
       expect((await db.select().from(chatRequest).where(eq(chatRequest.threadId, thread.id)))).toHaveLength(1)
       await db.insert(appSetting).values({ key: 'owuiTools', value: 'off' }).onDuplicateKeyUpdate({ set: { value: 'off' } })
       const disabled = await runner.start('member', thread.id, { content: 'disabled' }, `owui-disabled-${reject}`)
@@ -184,7 +185,10 @@ describe('RequestService DB', () => {
     const bodies: Record<string, unknown>[] = [], deleted: string[] = [], stopped: string[] = []
     let messageId = '', createdAt = 0, polls = 0
     const server = createServer((req, res) => {
-      if (req.url === '/api/models') { res.end(JSON.stringify({ data: [{ id: 'fake-general', info: { meta: { toolIds: ['lookup'], defaultFeatureIds: ['web_search'] } } }] })); return }
+      if (req.url === '/api/models') { res.end(JSON.stringify({ data: [{ id: 'fake-general', info: { meta: { toolIds: ['lookup'], skillIds: ['skill_a'], defaultFilterIds: ['filter_a'], defaultFeatureIds: ['web_search'], capabilities: { web_search: true }, terminalId: 'term-1' } } },
+        // SR 접수 에이전트용 모델(S13-J) — 대화 요청과 다른 meta
+        { id: 'intake-model', info: { meta: { toolIds: ['intake_tool'], skillIds: ['intake_skill'], defaultFilterIds: ['intake_filter'], defaultFeatureIds: ['web_search', 'code_interpreter'],
+          capabilities: { web_search: true }, terminalId: 'intake-term', knowledge: [{ id: 'kb' }] } } }] })); return }
       if (req.method === 'GET' && req.url === '/api/v1/chats/owui-chat-1') {
         res.end(JSON.stringify({ id: 'owui-chat-1', chat: { history: { messages: { [messageId]: { id: messageId, role: 'assistant', ...poll(Date.now() - createdAt, ++polls) } } } } }))
         return
@@ -219,6 +223,46 @@ describe('RequestService DB', () => {
     statusHistory: statuses.map(description => ({ description, done: false })),
     output: [...(reasoning ? [{ type: 'reasoning', content: [{ type: 'output_text', text: reasoning }] }] : []), ...(content ? [{ type: 'message', content: [{ type: 'output_text', text: content }] }] : [])] })
 
+  it('보낸 것=본 것: 제목이 바뀌면(배경 AI 제목 등) 추정을 다시 하면 새 값이고, 실제 전송은 그 마지막 추정과 같다', async () => {
+    const { thread } = await tasks.create('member', { assistantId })
+    const [owner] = await db.select({ taskId: threadTable.taskId }).from(threadTable).where(eq(threadTable.id, thread.id))
+    const before = await service.estimate('member', thread.id, { draft: '후속 질문' })
+    // maybeTitle과 같은 배경 이름 바꾸기 — 시스템 프롬프트의 대화 제목이 바뀐다
+    await db.update(task).set({ title: '배경에서 바뀐 아주 긴 AI 제목', titleSource: 'ai' }).where(eq(task.id, owner!.taskId!))
+    const after = await service.estimate('member', thread.id, { draft: '후속 질문' })
+    expect(after.bytes).not.toBe(before.bytes)
+    const started = await service.start('member', thread.id, { content: '후속 질문' }, 'estimate-after-rename')
+    await started.done
+    expect((await service.get(started.id)).bytes).toBe(after.bytes)
+    expect(JSON.stringify(await service.snapshot(started.id))).toContain('배경에서 바뀐 아주 긴 AI 제목')
+  })
+
+  it('SR 접수 대화도 같은 세션 방식·모델 기본값(접수 에이전트 모델 meta)으로 보낸다 (S13-J)', async () => {
+    const upstream = await sessionUpstream(() => sessionMessage([], '', '접수 답변', true))
+    const [previous] = await db.select().from(appSetting).where(eq(appSetting.key, 'srIntakeAssistantId'))
+    const [intake] = await db.select({ modelId: assistant.modelId }).from(assistant).where(eq(assistant.id, assistantId))
+    await db.insert(appSetting).values({ key: 'srIntakeAssistantId', value: assistantId }).onDuplicateKeyUpdate({ set: { value: assistantId } })
+    await db.update(assistant).set({ modelId: 'intake-model' }).where(eq(assistant.id, assistantId))
+    try {
+      const sr = await new SrService(db, tasks, new EventsService()).create('member')
+      const started = await upstream.runner.start('member', sr.threadId, { content: '접수 문의' }, 'sr-owui-session')
+      await started.done
+      expect(await upstream.runner.get(started.id)).toMatchObject({ status: 'succeeded', owuiTools: { mode: 'tools', tool_ids: ['intake_tool'], features: { web_search: true } } })
+      expect(upstream.bodies).toHaveLength(1)
+      const defaults = { tool_ids: ['intake_tool'], skill_ids: ['intake_skill'], filter_ids: ['intake_filter'], features: { web_search: true }, terminal_id: 'intake-term' }
+      expect(upstream.bodies[0]).toMatchObject({ model: 'intake-model', session_id: expect.any(String), parent_id: null, params: { tool_approval_mode: 'full' }, ...defaults })
+      // 지식은 OpenWebUI가 모델 meta로 붙인다 — 파일로 흉내 내지 않는다
+      expect(upstream.bodies[0]).not.toHaveProperty('files')
+      expect(await upstream.runner.snapshot(started.id)).toMatchObject({ mode: 'session', chat_id: 'owui-chat-1', ...defaults })
+      expect(upstream.deleted).toEqual(['owui-chat-1'])
+    } finally {
+      await db.update(assistant).set({ modelId: intake?.modelId ?? null }).where(eq(assistant.id, assistantId))
+      if (previous) await db.update(appSetting).set({ value: previous.value }).where(eq(appSetting.key, 'srIntakeAssistantId'))
+      else await db.delete(appSetting).where(eq(appSetting.key, 'srIntakeAssistantId'))
+      await upstream.close()
+    }
+  })
+
   it('OpenWebUI session mode: status is the phase and keeps the request alive; snapshot records mode/chat_id; chat is deleted', async () => {
     // 1초 동안 상태만 늘어난다 — 첫 토큰·유휴 대기(400ms)를 상태가 살려 두지 않으면 시간 초과로 끝난다
     let reading = 0
@@ -240,9 +284,10 @@ describe('RequestService DB', () => {
       const [reply] = await db.select().from(message).where(eq(message.id, started.replyMessageId))
       expect(reply).toMatchObject({ content: '세션 답변', reasoning: '검토', status: 'done' })
       const snapshot = await upstream.runner.snapshot(started.id) as Record<string, unknown>
-      expect(snapshot).toMatchObject({ mode: 'session', chat_id: 'owui-chat-1', tool_ids: ['lookup'], features: { web_search: true }, params: { tool_approval_mode: 'full' } })
+      expect(snapshot).toMatchObject({ mode: 'session', chat_id: 'owui-chat-1', tool_ids: ['lookup'], skill_ids: ['skill_a'], filter_ids: ['filter_a'], features: { web_search: true }, terminal_id: 'term-1', params: { tool_approval_mode: 'full' } })
       expect(snapshot.messages).toEqual(upstream.bodies[0]!.messages)
       expect(upstream.bodies).toHaveLength(1)
+      expect(upstream.bodies[0]).toMatchObject({ terminal_id: 'term-1' })
       expect(upstream.bodies[0]).toMatchObject({ parent_id: null, session_id: expect.any(String) })
       expect(upstream.bodies[0]).not.toHaveProperty('user_message')
       expect(upstream.deleted).toEqual(['owui-chat-1'])

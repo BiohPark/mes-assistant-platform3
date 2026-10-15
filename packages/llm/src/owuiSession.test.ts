@@ -3,7 +3,7 @@ import type { ChatRequest } from './provider.js'
 import { OpenAICompatibleProvider } from './openaiProvider.js'
 
 const settings = { mode: 'live' as const, preset: 'openwebui' as const, baseUrl: 'https://owui.example/api', apiKey: 'top-secret', model: 'm' }
-const models = { data: [{ id: 'm', info: { meta: { toolIds: ['lookup'], defaultFeatureIds: ['web_search'] } } }] }
+const models = { data: [{ id: 'm', info: { meta: { toolIds: ['lookup'], defaultFeatureIds: ['web_search'], capabilities: { web_search: true } } } }] }
 const req: ChatRequest = { model: 'm', messages: [{ role: 'user', content: 'hello' }], files: [{ type: 'file', id: 'f1' }], owuiMode: 'auto' }
 const sse = () => new Response('data: {"choices":[{"delta":{"content":"OK"}}]}\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } })
 const created = (chatId = 'chat-1') => new Response(JSON.stringify({ status: true, task_ids: ['t1'], chat_id: chatId }), { headers: { 'content-type': 'application/json' } })
@@ -63,6 +63,12 @@ describe('OpenWebUI session mode', () => {
     expect(calls(fetcher, 'GET', /\/v1\/chats\/chat-1$/).length).toBeGreaterThanOrEqual(4)
     expect(calls(fetcher, 'DELETE', /\/v1\/chats\/chat-1$/)).toHaveLength(1)
     expect(calls(fetcher, 'POST', /\/stop$/)).toHaveLength(0)
+  })
+  it('includes the model default terminal (terminal_id) in the session body (S13-J)', async () => {
+    const fetcher = upstream([{ content: 'OK', done: true }])
+    fetcher.mockImplementationOnce(async () => new Response(JSON.stringify({ data: [{ id: 'm', info: { meta: { toolIds: ['lookup'], skillIds: ['skill_a'], defaultFilterIds: ['filter_a'], terminalId: 'term-1' } } }] })))
+    await collect()
+    expect(bodies(fetcher)[0]).toMatchObject({ tool_ids: ['lookup'], skill_ids: ['skill_a'], filter_ids: ['filter_a'], terminal_id: 'term-1', session_id: expect.stringMatching(/^mes-/), params: { tool_approval_mode: 'full' } })
   })
   it('emits replace when the accumulated text is not an extension of what was sent', async () => {
     upstream([{ content: '임시 답변', reasoning: '처음' }, { content: '최종 답변', reasoning: '다시', done: true }])

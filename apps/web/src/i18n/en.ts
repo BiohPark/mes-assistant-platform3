@@ -140,6 +140,8 @@ export const en = {
     name: 'Name', nameRequired: 'Enter a name', save: 'Save', saveFailed: 'Save failed', changeFailed: 'Update failed', nameSaved: 'Name saved',
     defaultModel: 'Default model', fileMaxPerRequest: 'Max attachments per request',
     manage: {
+      owuiCheck: { title: 'OpenWebUI connection check', refresh: 'Check again', checking: 'Checking…', noModel: 'Checked once a connected model is set. Only tool/skill access and permissions are read; the model is not called.',
+        failed: 'Could not check: {error}' },
       settingsTab: 'Settings', testTab: 'Test chat', paths: 'Classification paths', primaryPath: 'Primary', addPath: 'Add path',
       pathLabel: 'Path {number}', pathUp: 'Move path {number} up', pathDown: 'Move path {number} down', removePath: 'Remove path {number}',
       duplicatePaths: 'Duplicate classification paths are not allowed',
@@ -170,12 +172,16 @@ export const en = {
       envGuide: 'Change the address, mode and key in the server .env (LLM_MODE · LLM_PRESET · LLM_BASE_URL · LLM_API_KEY · LLM_DEFAULT_MODEL) and restart the service. This screen only shows the values and runs the test.',
       open: 'Open connection diagnostics', badge: '{mode} · Open connection diagnostics', testChat: 'Test chat',
       probe: {
-        title: 'OpenWebUI diagnostics', hint: 'Sends a short test question twice — ① the current way ② with tool_ids · features · function_calling legacy. Only models in the OpenWebUI model list can be diagnosed. The result holds no question, answer, file, key or address and is not stored. Tool, feature and model IDs and the version are shown only in the expected format; anything shaped like an address, path, file name, common secret prefix (sk-, ghp_ …) or random string of 24+ characters is masked. A secret that looks like a short identifier cannot be told apart.',
+        title: 'OpenWebUI diagnostics', hint: 'Sends a short test question three times — ① the current way ② with tool_ids · features · function_calling legacy ③ the session way (the chat it creates is deleted afterwards). It also checks whether the agent\'s tools and skills are visible to the service account, the account role and feature permissions, and the fetch_url injection conditions (names and on/off only). Items missing from builtinTools are on by OpenWebUI default. Only models in the OpenWebUI model list can be diagnosed. The result holds no question, answer, file, key or address and is not stored. Tool, feature and model IDs and the version are shown only in the expected format; anything shaped like an address, path, file name, common secret prefix (sk-, ghp_ …) or random string of 24+ characters is masked. A secret that looks like a short identifier cannot be told apart.',
         modelLabel: 'Model to diagnose', run: 'OpenWebUI diagnostics', running: 'Diagnosing… (up to 3 min)', liveOnly: 'Available only in Live mode.',
         failed: 'Could not run the diagnostics: {error}', copy: 'Copy diagnostics result', version: 'OpenWebUI version', unknown: 'Unknown', model: 'Model',
         meta: 'Model meta', metaFound: 'Found', metaMissing: 'Not found', none: 'None', on: 'on', off: 'off', knowledge: 'Knowledge', notSet: 'Not set',
         current: '① Current', legacy: '② Legacy (tool_ids · features · function_calling legacy)', framesCurrent: '① Frame order', framesLegacy: '② Frame order',
         masked: '(masked)', other: 'other', noResponse: 'No response', firstByte: 'first byte {ms} ms', firstContent: 'first content {ms} ms', total: 'total {ms} ms', elapsed: 'Total time',
+        toolAccess: 'Tool access (service account)', skillAccess: 'Skill access (service account)', inactive: 'inactive', visible: '{count} visible', builtinDefault: 'Not set (all on by default)',
+        terminal: 'Default terminal', terminalSet: 'Set', appliedByOwui: '(applied by OpenWebUI)', account: 'Service account', fetchUrl: 'fetch_url conditions',
+        session: '③ Session', framesSession: '③ Status order', firstStatus: 'first status {ms} ms', done: 'done {ms} ms',
+        cleanupOk: 'Chat cleaned up', cleanupFailed: 'Chat cleanup failed', cleanupNone: 'No chat to clean up',
       },
     },
     test: {

@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
-import { OwuiProbeResultSchema } from '@mes/contracts'
+import { OwuiAccessCheckSchema, OwuiProbeResultSchema } from '@mes/contracts'
 import { MockProvider, OWUI_PROBE_PROMPT } from '@mes/llm'
 import request from 'supertest'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -42,8 +42,13 @@ beforeAll(async () => {
     const send = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
     if (req.url === '/api/version') return send(200, { version: '0.12.0' })
     // 허용 목록 밖 값을 심는다 — capabilities 키의 키, IP·파일명 도구 ID, 임의 프레임 키, 오류 본문의 쿠키·경로 (리뷰 P1 ×4)
-    if (req.url === '/api/models') return send(200, { data: [{ id: 'agent-a', info: { meta: { toolIds: ['t1', '10.20.30.40', 'private-report.pdf'], defaultFeatureIds: ['web_search'],
-      capabilities: { vision: true, 'top-secret': true }, knowledge: [{ name: 'kb' }] }, params: { function_calling: 'native' } } }] })
+    if (req.url === '/api/models') return send(200, { data: [{ id: 'agent-a', info: { meta: { toolIds: ['t1', '10.20.30.40', 'private-report.pdf'], skillIds: ['skill_a'], defaultFeatureIds: ['web_search'],
+      capabilities: { vision: true, 'top-secret': true }, knowledge: [{ name: 'kb' }], terminalId: 'term-corp-1' }, params: { function_calling: 'native' } } }] })
+    // 서비스 계정이 보는 목록·권한 — 이름·이메일·설명은 결과에 없어야 한다 (S13-J)
+    if (req.url === '/api/v1/tools/') return send(200, [{ id: 't1', name: '사내 도구 비밀' }])
+    if (req.url === '/api/v1/skills/') return send(200, [{ id: 'skill_a', is_active: false, description: 'top-secret 설명' }])
+    if (req.url === '/api/v1/users/permissions') return send(200, { email: 'svc@corp.example', features: { web_search: true } })
+    if (req.url === '/api/v1/users/default/permissions') return send(401, { detail: 'Access prohibited' })
     if (req.url === '/api/chat/completions') {
       chatCalls++
       if (hang) return
@@ -95,8 +100,35 @@ describe('OpenWebUI 진단 API', () => {
       meta: { found: true, toolIds: ['t1', '(가림)', '(가림)'], defaultFeatureIds: ['web_search'], capabilities: { vision: true }, knowledgeCount: 1, functionCalling: 'native' } })
     expect(result.attempts[0]).toMatchObject({ mode: 'current', status: 200, frames: ['기타', 'choices.delta.content', '[DONE]'] })
     expect(result.attempts[1]).toMatchObject({ mode: 'legacy', status: 400, error: 'HTTP 400 · 형식 거부' })
+    expect(result.meta).toMatchObject({ terminal: true })
+    expect(result.access).toEqual({ tools: { visible: 1, items: [{ id: 't1', state: 'ok' }, { id: '(가림)', state: 'denied' }, { id: '(가림)', state: 'denied' }] },
+      skills: { visible: 0, items: [{ id: 'skill_a', state: 'inactive' }] } })
+    expect(result.account).toEqual({ role: 'user', features: { web_search: true, image_generation: null, code_interpreter: null } })
+    // ③ 세션 시험 — 도구를 싣는 생성 요청은 이 대역이 400으로 거부한다
+    expect(result.session).toMatchObject({ status: 400, error: 'HTTP 400 · 형식 거부', cleanup: null })
     const text = JSON.stringify(res.body)
-    for (const leaked of [ANSWER, OWUI_PROBE_PROMPT, 'top-secret', '127.0.0.1', String(owuiPort), 'http', 'confidential', '10.20.30.40', 'private', 'cookie-secret', 'tool_ids not allowed']) expect(text).not.toContain(leaked)
+    for (const leaked of [ANSWER, OWUI_PROBE_PROMPT, 'top-secret', '127.0.0.1', String(owuiPort), 'http', 'confidential', '10.20.30.40', 'private', 'cookie-secret', 'tool_ids not allowed',
+      'term-corp', 'svc@', '사내 도구', '설명']) expect(text).not.toContain(leaked)
+    expect(writes).not.toHaveBeenCalled()
+  })
+
+  it('에이전트 편집 연결 확인(S13-J): SO만, 모델 호출 없이 접근·권한·조건만 돌려준다', async () => {
+    const ACCESS = '/api/admin/diagnostics/openwebui/access'
+    const server = (await boot()).getHttpServer()
+    await request(server).post(ACCESS).send({ model: 'agent-a' }).expect(401)
+    await request(server).post(ACCESS).set('Cookie', 'mes_session=member').send({ model: 'agent-a' }).expect(403)
+    for (const body of [{}, { model: 'agent-a', prompt: 'x' }]) await request(server).post(ACCESS).set('Cookie', 'mes_session=owner').send(body).expect(400)
+    chatCalls = 0
+    const res = await request(server).post(ACCESS).set('Cookie', 'mes_session=owner').send({ model: 'agent-a' }).expect(200)
+    const result = OwuiAccessCheckSchema.strict().parse(res.body)
+    expect(result).toMatchObject({ model: 'agent-a', meta: { found: true, terminal: true, knowledgeCount: 1 }, account: { role: 'user' },
+      access: { tools: { visible: 1 }, skills: { items: [{ id: 'skill_a', state: 'inactive' }] } } })
+    expect(result.fetchUrl.map((c) => c.name)).not.toContain('session_id')
+    expect(chatCalls).toBe(0)
+    expect(JSON.stringify(res.body)).not.toMatch(/top-secret|127\.0\.0\.1|term-corp|svc@|사내 도구|http/)
+    await request(server).post(ACCESS).set('Cookie', 'mes_session=owner').send({ model: 'no-such-model' }).expect(400)
+    await app!.close()
+    await request((await boot({ LLM_MODE: 'mock' })).getHttpServer()).post(ACCESS).set('Cookie', 'mes_session=owner').send({ model: 'agent-a' }).expect(400)
     expect(writes).not.toHaveBeenCalled()
   })
 

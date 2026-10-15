@@ -3,14 +3,20 @@ import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 
 const port = Number(process.env.PORT ?? 8080)
-// fake-general은 OpenWebUI의 모델 편집 기록(info.meta·info.params)을 흉내 낸다 — OpenWebUI 진단(S10-5)용
+// fake-general은 OpenWebUI의 모델 편집 기록(info.meta·info.params)을 흉내 낸다 — OpenWebUI 진단(S10-5)·화면 기본값(S13-J)용
+// fake_private_skill은 서비스 계정 스킬 목록에 없다 — 접근 거부(❌) 시나리오
 const MODELS = [
   { id: 'fake-general', name: '가짜 범용 에이전트', info: {
-    meta: { toolIds: ['fake_tool'], defaultFeatureIds: ['web_search'], capabilities: { vision: false, file_upload: true, citations: true }, knowledge: [{ id: 'fake-kb', name: '가짜 지식' }] },
+    meta: { toolIds: ['fake_tool'], skillIds: ['fake_skill', 'fake_private_skill'], defaultFilterIds: ['fake_filter'], defaultFeatureIds: ['web_search'], terminalId: 'fake-terminal',
+      capabilities: { vision: false, file_upload: true, citations: true, web_search: true }, builtinTools: { skills: true }, knowledge: [{ id: 'fake-kb', name: '가짜 지식' }] },
     params: { function_calling: 'native' } } },
   { id: 'fake-writer', name: '가짜 문서 작성 에이전트' },
 ]
 let rejectToolIds = process.env.FAKE_OWUI_REJECT_TOOL_IDS === '1'
+/** 서비스 계정 접근(S13-J) — ok: 일반 계정(user), deny: 도구·스킬·기능 권한 없음, missing: 목록·권한 엔드포인트 없음(404) */
+const ACCESS_MODES = ['ok', 'deny', 'missing']
+let accessMode = ACCESS_MODES.includes(process.env.FAKE_OWUI_ACCESS) ? process.env.FAKE_OWUI_ACCESS : 'ok'
+const ACCOUNT_PATHS = new Set(['/api/v1/tools/', '/api/v1/skills/', '/api/v1/users/permissions', '/api/v1/users/default/permissions'])
 const uploads = new Map()
 const requests = []
 const captureRequests = process.env.FAKE_OWUI_E2E === '1'
@@ -142,6 +148,25 @@ const server = createServer(async (req, res) => {
       rejectToolIds = body.reject
       return json(res, 200, { reject: rejectToolIds })
     }
+  }
+  if (captureRequests && url.pathname === '/__e2e/owui-access') {
+    if (req.method === 'GET') return json(res, 200, { mode: accessMode })
+    if (req.method === 'POST') {
+      let body
+      try { body = JSON.parse((await readBody(req)).toString('utf8')) } catch { return json(res, 400, { detail: 'Invalid control' }) }
+      if (!ACCESS_MODES.includes(body?.mode)) return json(res, 400, { detail: 'Invalid control' })
+      accessMode = body.mode
+      return json(res, 200, { mode: accessMode })
+    }
+  }
+  if (req.method === 'GET' && ACCOUNT_PATHS.has(url.pathname)) {
+    const deny = accessMode === 'deny'
+    if (accessMode === 'missing') return json(res, 404, { detail: 'Not Found' })
+    if (url.pathname === '/api/v1/tools/') return json(res, 200, deny ? [] : [{ id: 'fake_tool', name: '가짜 도구', meta: { description: '' } }])
+    if (url.pathname === '/api/v1/skills/') return json(res, 200, deny ? [] : [{ id: 'fake_skill', name: '가짜 스킬', is_active: true }])
+    // 관리자 전용 — 일반 계정은 401(get_admin_user)
+    if (url.pathname === '/api/v1/users/default/permissions') return json(res, 401, { detail: 'Access prohibited' })
+    return json(res, 200, { features: { web_search: !deny, image_generation: false, code_interpreter: false } })
   }
   if (req.method === 'GET' && url.pathname === '/api/version') return json(res, 200, { version: '0.0.0-fake' })
   if (req.method === 'GET' && url.pathname === '/api/models') {

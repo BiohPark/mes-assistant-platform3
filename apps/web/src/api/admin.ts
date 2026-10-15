@@ -1,4 +1,4 @@
-import { AssistantSchema, CodeSchema, OwuiProbeResultSchema, ProfileSchema, type Assistant, type ClassificationInput, type ProfilePatch } from '@mes/contracts'
+import { AssistantSchema, CodeSchema, OwuiAccessCheckSchema, OwuiProbeResultSchema, ProfileSchema, type Assistant, type ClassificationInput, type ProfilePatch } from '@mes/contracts'
 
 export async function adminRequest(path: string, method: string, body?: unknown) {
   const response = await fetch(`/api/${path}`, { method, credentials: 'same-origin',
@@ -59,6 +59,12 @@ export const temporaryPassword = async (id: string) => await adminRequest(`users
 /** SO 전용 OpenWebUI 진단(S10-5) — 허용 목록(계약) 밖 값이 있으면 보여 주지 않는다. 검증 오류 문구는 값을 인용할 수 있어 고정 문구로 바꾼다 */
 export async function probeOpenWebUi(model: string) {
   const parsed = OwuiProbeResultSchema.safeParse(await adminRequest('admin/diagnostics/openwebui', 'POST', { model }))
+  if (!parsed.success) throw new Error('응답 형식 오류')
+  return parsed.data
+}
+/** SO 전용 에이전트 편집 연결 확인(S13-J) — 모델 호출 없이 접근·권한만. 같은 허용 목록 검사 */
+export async function checkOpenWebUiAccess(model: string) {
+  const parsed = OwuiAccessCheckSchema.safeParse(await adminRequest('admin/diagnostics/openwebui/access', 'POST', { model }))
   if (!parsed.success) throw new Error('응답 형식 오류')
   return parsed.data
 }

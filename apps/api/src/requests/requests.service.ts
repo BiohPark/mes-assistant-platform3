@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { resumeHeldTask } from '../tasks/resume-held-task.js'
 import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common'
 import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
-import { buildChatRequest, createProvider, refineSrDraft, suggestTitle, summarizeConversation, SummaryBudgetError, type ChatProvider, type ChatScope, type SrDraftText } from '@mes/llm'
+import { buildChatRequest, createProvider, OWUI_DEFAULT_KEYS, refineSrDraft, suggestTitle, summarizeConversation, SummaryBudgetError, type ChatProvider, type ChatScope, type SrDraftText } from '@mes/llm'
 import type { LlmSettings, Message, RequestInfo, RequestInput, ServiceRequest, Thread } from '@mes/domain'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
@@ -597,8 +597,9 @@ export class RequestsService implements OnModuleDestroy {
             if (!updated[0].affectedRows) { controller.abort('lost'); throw new Error('요청 중지') }
           }
           const session = typeof body.session_id === 'string'
-          sent = { ...(delivery.mode === 'tools' ? { tool_ids: body.tool_ids, features: body.features, params: body.params } : session ? { params: body.params } : {}),
-            ...(owuiLive ? { mode: session ? 'session' : 'direct' } : {}) }
+          // 모델 기본값(owuiDefaults — 도구·스킬·필터·기능·터미널)은 실제 본문에 실린 것만 남긴다
+          const defaults = Object.fromEntries(OWUI_DEFAULT_KEYS.filter((key) => body[key] !== undefined).map((key) => [key, body[key]]))
+          sent = { ...defaults, ...(delivery.mode === 'tools' || session ? { params: body.params } : {}), ...(owuiLive ? { mode: session ? 'session' : 'direct' } : {}) }
           recordSnapshot(sent)
         },
         onSession: (chatId) => { sent = { ...sent, chat_id: chatId }; recordSnapshot(sent) } })[Symbol.asyncIterator]()

@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { LlmSettings } from '@mes/domain'
-import { OWUI_PROBE_MASKED, OWUI_PROBE_OTHER, OWUI_PROBE_PROMPT, OwuiProbeUnknownModelError, frameKeyPaths, looksLikeSecret, probeOpenWebUi } from './owuiProbe.js'
+import { OWUI_PROBE_MASKED, OWUI_PROBE_OTHER, OWUI_PROBE_PROMPT, OwuiProbeUnknownModelError, checkOpenWebUiAccess, frameKeyPaths, looksLikeSecret, probeOpenWebUi } from './owuiProbe.js'
 
 type Handler = (req: IncomingMessage, res: ServerResponse, body: Record<string, unknown>) => void | Promise<void>
 let server: Server | undefined
@@ -37,7 +37,7 @@ function sse(frames: unknown[]): Handler {
   }
 }
 const MODELS = { data: [{ id: 'agent-a', name: 'A', info: {
-  meta: { toolIds: ['web_tool', 'server:mcp:docs'], defaultFeatureIds: ['web_search'], capabilities: { vision: true, file_upload: false, citations: 'yes' },
+  meta: { toolIds: ['web_tool', 'server:mcp:docs'], defaultFeatureIds: ['web_search'], capabilities: { vision: true, file_upload: false, citations: 'yes', web_search: true },
     knowledge: [{ id: 'kb1', name: '사내 지식 비밀' }, { id: 'kb2', name: 'x' }] },
   params: { function_calling: 'native', system: '비밀 시스템 프롬프트' } } }, { id: 'plain' }] }
 const ANSWER = '이것은 모델의 비밀 답변 본문입니다'
@@ -59,7 +59,7 @@ describe('probeOpenWebUi', () => {
     expect(result.version).toBe('0.12.0')
     expect(result.model).toBe('agent-a')
     expect(result.meta).toEqual({ found: true, toolIds: ['web_tool', 'server:mcp:docs'], defaultFeatureIds: ['web_search'],
-      capabilities: { vision: true, file_upload: false }, knowledgeCount: 2, functionCalling: 'native' })
+      capabilities: { vision: true, file_upload: false, web_search: true }, builtinTools: {}, terminal: false, knowledgeCount: 2, functionCalling: 'native' })
     expect(result.attempts.map((a) => a.mode)).toEqual(['current', 'legacy'])
     for (const attempt of result.attempts) {
       expect(attempt.status).toBe(200)
@@ -69,7 +69,8 @@ describe('probeOpenWebUi', () => {
       expect(attempt.frames).toEqual(['sources', 'choices.delta.role', 'choices.delta.reasoning_content ×2', 'choices.delta.content ×2', 'choices.finish_reason+usage', '[DONE]'])
     }
     const chats = seen.filter((s) => s.path === '/api/chat/completions')
-    expect(chats).toHaveLength(2)
+    expect(chats).toHaveLength(3) // ③ 세션 시험 — 스트리밍으로 답하면 세션 미지원
+    expect(result.session).toMatchObject({ status: 200, error: '세션 미지원', cleanup: null, statuses: [] })
     expect(chats[0]!.body).toEqual({ model: 'agent-a', messages: [{ role: 'user', content: OWUI_PROBE_PROMPT }], stream: true })
     expect(chats[1]!.body).toEqual({ model: 'agent-a', messages: [{ role: 'user', content: OWUI_PROBE_PROMPT }], stream: true,
       tool_ids: ['web_tool', 'server:mcp:docs'], features: { web_search: true }, params: { function_calling: 'legacy' } })
@@ -83,13 +84,14 @@ describe('probeOpenWebUi', () => {
       'GET /api/version': json(500, { detail: 'boom' }),
       'GET /api/models': json(200, { data: [{ id: 'plain' }] }),
       'POST /api/chat/completions': async (req, res, body) => {
-        if ('tool_ids' in body) return json(400, { detail: `tool_ids rejected by http://owui.corp.example:8080/api for key probe-secret-key and ${OWUI_PROBE_PROMPT} at 10.1.2.3 ${'x'.repeat(300)}` })(req, res, body)
+        if ((body.params as { function_calling?: string } | undefined)?.function_calling === 'legacy') return json(400, { detail: `tool_ids rejected by http://owui.corp.example:8080/api for key probe-secret-key and ${OWUI_PROBE_PROMPT} at 10.1.2.3 ${'x'.repeat(300)}` })(req, res, body)
         return sse(STREAM)(req, res, body)
       },
     })
     const result = await probeOpenWebUi(settings, 'plain')
     expect(result.version).toBeNull()
-    expect(result.meta).toEqual({ found: false, toolIds: [], defaultFeatureIds: [], capabilities: {}, knowledgeCount: 0, functionCalling: null })
+    expect(result.meta).toEqual({ found: false, toolIds: [], defaultFeatureIds: [], capabilities: {}, builtinTools: {}, terminal: false, knowledgeCount: 0, functionCalling: null })
+    expect(result.access).toEqual({ tools: { visible: null, items: [] }, skills: { visible: null, items: [] } })
     expect(result.attempts[0]).toMatchObject({ mode: 'current', status: 200 })
     const legacy = result.attempts[1]!
     expect(legacy).toMatchObject({ mode: 'legacy', status: 400, firstContentMs: null, frames: [] })
@@ -105,6 +107,7 @@ describe('probeOpenWebUi', () => {
     await new Promise((resolve) => server!.close(resolve)); server = undefined
     const offline = await probeOpenWebUi(settings, 'agent-a')
     expect(offline.attempts.map((a) => [a.status, a.error])).toEqual([[null, 'LLM 서비스 연결 오류'], [null, 'LLM 서비스 연결 오류']])
+    expect(offline.session).toMatchObject({ status: null, error: 'LLM 서비스 연결 오류', cleanup: null })
   })
 
   it('전체 시간 상한을 넘으면 남은 시험은 시간 초과로 끝나고, 응답 크기 상한을 지킨다', async () => {
@@ -115,6 +118,7 @@ describe('probeOpenWebUi', () => {
     })
     const result = await probeOpenWebUi(settings, 'agent-a', { deadlineMs: 300 })
     expect(result.attempts.every((a) => a.error === '응답 시간 초과')).toBe(true)
+    expect(result.session.error).toBe('응답 시간 초과')
     const small = await probeOpenWebUi(settings, 'agent-a', { maxResponseBytes: 1024, deadlineMs: 5_000 })
     expect(small.attempts.map((a) => a.error)).toEqual(['응답 크기 한도 초과', '응답 크기 한도 초과'])
   })
@@ -127,6 +131,7 @@ describe('probeOpenWebUi', () => {
     const result = await probeOpenWebUi(settings, 'agent-a', { signal: controller.signal })
     expect(performance.now() - started).toBeLessThan(3_000)
     expect(result.attempts.every((a) => a.error === '요청이 취소되었습니다.')).toBe(true)
+    expect(result.session.error).toBe('요청이 취소되었습니다.')
   })
 })
 
@@ -148,7 +153,7 @@ describe('유출 경로 재현 (S10-5 리뷰 P1 ×4) — 허용 목록 밖은 �
     const settings = await serve({
       'GET /api/version': json(200, { version: 'owui.corp.example' }),
       'GET /api/models': json(200, { data: [{ id: 'agent-a', info: {
-        meta: { capabilities: { [SECRET]: true, vision: true, internal_flag_x: false, file_upload: 'yes' },
+        meta: { capabilities: { [SECRET]: true, vision: true, internal_flag_x: false, file_upload: 'yes', web_search: true },
           toolIds: ['web_tool', '10.20.30.40', 'private-report.pdf', 'team/secret', 'server:mcp:docs', 'probe-secret-key', '12345', 'x'.repeat(41)],
           defaultFeatureIds: ['web_search', 'confidential.txt'] },
         params: { function_calling: SECRET } } }] }),
@@ -159,7 +164,7 @@ describe('유출 경로 재현 (S10-5 리뷰 P1 ×4) — 허용 목록 밖은 �
     })
     const result = await probeOpenWebUi(settings, 'agent-a')
     expect(result.version).toBeNull()
-    expect(result.meta.capabilities).toEqual({ vision: true })
+    expect(result.meta.capabilities).toEqual({ vision: true, web_search: true })
     expect(result.meta.toolIds).toEqual(['web_tool', OWUI_PROBE_MASKED, OWUI_PROBE_MASKED, OWUI_PROBE_MASKED, 'server:mcp:docs', OWUI_PROBE_MASKED, OWUI_PROBE_MASKED, OWUI_PROBE_MASKED])
     expect(result.meta.defaultFeatureIds).toEqual(['web_search', OWUI_PROBE_MASKED])
     expect(result.meta.functionCalling).toBe(OWUI_PROBE_OTHER)
@@ -211,5 +216,205 @@ describe('재리뷰 재현 (S10-5 P1 ×2·P2)', () => {
     expect(result.meta.toolIds).toEqual([...fine, ...secrets.map(() => OWUI_PROBE_MASKED)])
     expect(result.meta.defaultFeatureIds).toEqual([OWUI_PROBE_MASKED])
     expect((await probeOpenWebUi(settings, 'sk-model-secret')).model).toBe(OWUI_PROBE_MASKED)
+  })
+})
+
+describe('도구·스킬 접근 (S13-J) — 서비스 계정이 보는 목록(GET /api/v1/tools/·/api/v1/skills/)으로 판정', () => {
+  const SECRET = 'sk-live-9f8e7d6c5b4a'
+  const meta = { toolIds: ['web_tool', 'server:mcp:docs', 'private_tool'], skillIds: ['skill_a', 'skill_off', 'skill_hidden', SECRET],
+    builtinTools: { skills: true, web_search: false, 'evil.example': true, memory: 'yes' } }
+  const models = { data: [{ id: 'agent-a', info: { meta } }] }
+  it('항목별 ✅(ok)·❌(denied)·비활성(inactive)과 보이는 개수, 이름·설명은 결과에 없다', async () => {
+    const settings = await serve({ 'GET /api/version': json(200, { version: '0.12.0' }), 'GET /api/models': json(200, models), 'POST /api/chat/completions': sse(['[DONE]']),
+      'GET /api/v1/tools/': json(200, [{ id: 'web_tool', name: '사내 도구 비밀', meta: { description: 'http://tool.corp.example' } }, { id: 'server:mcp:docs', name: 'MCP' }, { id: 'other_tool', name: 'x' }]),
+      'GET /api/v1/skills/': json(200, [{ id: 'skill_a', name: '스킬 비밀', description: '비밀 설명', is_active: true }, { id: 'skill_off', is_active: false }, { id: 'skill_x', is_active: true }]) })
+    const result = await probeOpenWebUi(settings, 'agent-a', { sessionPollMs: 5 })
+    expect(result.meta.builtinTools).toEqual({ skills: true, web_search: false })
+    expect(result.access.tools).toEqual({ visible: 3, items: [{ id: 'web_tool', state: 'ok' }, { id: 'server:mcp:docs', state: 'ok' }, { id: 'private_tool', state: 'denied' }] })
+    expect(result.access.skills).toEqual({ visible: 2, items: [{ id: 'skill_a', state: 'ok' }, { id: 'skill_off', state: 'inactive' }, { id: 'skill_hidden', state: 'denied' }, { id: OWUI_PROBE_MASKED, state: 'denied' }] })
+    for (const path of ['/api/v1/tools/', '/api/v1/skills/']) expect(seen.find((x) => x.path === path)?.auth).toBe('Bearer probe-secret-key')
+    const text = JSON.stringify(result)
+    for (const leaked of [SECRET, '사내 도구', '스킬 비밀', '비밀 설명', 'corp', 'evil', 'other_tool', 'skill_x']) expect(text).not.toContain(leaked)
+  })
+
+  it('목록 엔드포인트가 없거나(404) 막히거나(403) 형식이 다르면 확인 불가(unknown)와 고정 분류', async () => {
+    for (const [tools, skills, toolError, skillError] of [
+      [json(404, { detail: 'Not Found' }), json(403, { detail: `API key ${SECRET} not allowed` }), 'HTTP 404 · 찾을 수 없음', 'HTTP 403 · 인증 거부'],
+      [json(200, { data: [] }), json(200, '<html>'), '응답 형식 오류', '응답 형식 오류'],
+    ] as const) {
+      const settings = await serve({ 'GET /api/version': json(200, { version: '0.12.0' }), 'GET /api/models': json(200, models), 'POST /api/chat/completions': sse(['[DONE]']),
+        'GET /api/v1/tools/': tools, 'GET /api/v1/skills/': skills })
+      const result = await probeOpenWebUi(settings, 'agent-a', { sessionPollMs: 5 })
+      expect(result.access.tools).toEqual({ visible: null, error: toolError, items: meta.toolIds.map((id) => ({ id, state: 'unknown' })) })
+      expect(result.access.skills).toMatchObject({ visible: null, error: skillError })
+      expect(result.access.skills.items.every((item) => item.state === 'unknown')).toBe(true)
+      expect(JSON.stringify(result)).not.toContain(SECRET)
+      server!.closeAllConnections(); await new Promise((resolve) => server!.close(resolve)); server = undefined
+    }
+  })
+})
+
+describe('③ 세션 방식 시험 (S13-J) — 결과 코드·시간·상태 이름·정리 여부만', () => {
+  const SECRET = 'sk-live-9f8e7d6c5b4a'
+  type Status = Record<string, unknown>
+  /** 생성(session_id 있는 POST)은 chat_id JSON, 그 밖은 SSE. 채팅 GET은 states를 차례로 돌려준다 */
+  function sessionServer(states: { statuses?: Status[]; done?: boolean; error?: boolean }[], extra: Record<string, Handler> = {}) {
+    let polls = 0
+    const calls = { stop: 0, delete: 0 }
+    const handlers: Record<string, Handler> = {
+      'GET /api/version': json(200, { version: '0.12.0' }), 'GET /api/models': json(200, MODELS),
+      'GET /api/v1/tools/': json(200, [{ id: 'web_tool' }]), 'GET /api/v1/skills/': json(200, []),
+      'POST /api/chat/completions': (req, res, body) => 'session_id' in body ? json(200, { status: true, task_ids: ['t'], chat_id: 'chat-1' })(req, res, body) : sse(['[DONE]'])(req, res, body),
+      'GET /api/v1/chats/chat-1': (req, res, body) => {
+        const created = seen.find((x) => 'session_id' in x.body)!.body
+        const state = states[Math.min(polls++, states.length - 1)]!
+        const message = { id: created.id, role: 'assistant', content: ANSWER, done: state.done ?? false, statusHistory: state.statuses ?? [],
+          output: [{ type: 'message', content: [{ type: 'output_text', text: ANSWER }] }], ...(state.error ? { error: { content: `upstream ${SECRET}` } } : {}) }
+        return json(200, { id: 'chat-1', chat: { history: { messages: { [String(created.id)]: message } } } })(req, res, body)
+      },
+      'POST /api/tasks/chat/chat-1/stop': (req, res, body) => { calls.stop++; return json(200, { status: true })(req, res, body) },
+      'DELETE /api/v1/chats/chat-1': (req, res, body) => { calls.delete++; return json(200, true)(req, res, body) },
+      ...extra,
+    }
+    return { handlers, calls }
+  }
+
+  it('세션으로 보내 첫 상태·완료 시간과 상태 action 이름(설명 없음=기타, 오류=!)을 모으고 채팅을 지운다 — 본문·상태 설명은 없다', async () => {
+    const searching = { action: 'web_search', description: `Searching http://search.corp.example?q=${SECRET}`, done: false }
+    const { handlers, calls } = sessionServer([{}, { statuses: [searching, searching] },
+      { statuses: [searching, searching, { description: '사내 비밀 상태' }, { action: 'tool_connection', description: "Failed to connect to MCP server 'x'", error: true, done: true }, { action: 'sk_live_abc' }] },
+      { statuses: [searching, searching], done: true }])
+    const settings = await serve(handlers)
+    const result = await probeOpenWebUi(settings, 'agent-a', { sessionPollMs: 5 })
+    expect(result.session).toEqual({ status: 200, firstStatusMs: expect.any(Number), doneMs: expect.any(Number), totalMs: expect.any(Number),
+      statuses: ['web_search ×2', OWUI_PROBE_OTHER, 'tool_connection!', OWUI_PROBE_OTHER], cleanup: true })
+    expect(result.session.doneMs!).toBeGreaterThanOrEqual(result.session.firstStatusMs!)
+    expect(calls).toEqual({ stop: 0, delete: 1 })
+    const body = seen.find((x) => 'session_id' in x.body)!.body
+    expect(body).toEqual({ model: 'agent-a', messages: [{ role: 'user', content: OWUI_PROBE_PROMPT }], stream: true, tool_ids: ['web_tool', 'server:mcp:docs'], features: { web_search: true },
+      session_id: expect.stringMatching(/^mes-probe-/), id: expect.any(String), parent_id: null, params: { tool_approval_mode: 'full' } })
+    expect(body).not.toHaveProperty('user_message')
+    const text = JSON.stringify(result)
+    for (const leaked of [ANSWER, SECRET, 'Searching', 'corp', '사내 비밀', 'Failed to connect', 'chat-1', 'sk_live']) expect(text).not.toContain(leaked)
+  })
+
+  it('모델 기본 터미널(meta.terminalId)은 설정됨으로만 보이고, legacy·세션 본문에 terminal_id로 싣는다 — capabilities.terminal 끔이면 안 싣는다', async () => {
+    for (const [capabilities, sent] of [[{}, true], [{ terminal: false }, false]] as const) {
+      const { handlers } = sessionServer([{ done: true }], { 'GET /api/models': json(200, { data: [{ id: 'agent-a', info: { meta: { toolIds: ['web_tool'], terminalId: 'term-corp-1', capabilities } } }] }) })
+      const result = await probeOpenWebUi(await serve(handlers), 'agent-a', { sessionPollMs: 5 })
+      expect(result.meta.terminal).toBe(true)
+      expect(result.meta.capabilities).toEqual(capabilities)
+      const posted = seen.filter((x) => x.path === '/api/chat/completions').map((x) => x.body)
+      expect(posted[0]).not.toHaveProperty('terminal_id')
+      for (const body of posted.slice(1)) expect(body.terminal_id).toBe(sent ? 'term-corp-1' : undefined)
+      expect(JSON.stringify(result)).not.toContain('term-corp')
+      server!.closeAllConnections(); await new Promise((resolve) => server!.close(resolve)); server = undefined
+    }
+  })
+
+  it('작업 실패는 고정 문구, 끝나지 않으면 시간 초과 뒤 중지·삭제하고 삭제 실패는 cleanup false', async () => {
+    const failed = sessionServer([{ statuses: [{ action: 'web_search' }] }, { error: true, done: true }])
+    let result = await probeOpenWebUi(await serve(failed.handlers), 'agent-a', { sessionPollMs: 5 })
+    expect(result.session).toMatchObject({ status: 200, doneMs: null, error: '작업 실패', cleanup: true, statuses: ['web_search'] })
+    expect(failed.calls).toEqual({ stop: 0, delete: 1 })
+    expect(JSON.stringify(result)).not.toContain(SECRET)
+    server!.closeAllConnections(); await new Promise((resolve) => server!.close(resolve)); server = undefined
+
+    const stuck = sessionServer([{}], { 'DELETE /api/v1/chats/chat-1': json(500, { detail: 'boom' }) })
+    result = await probeOpenWebUi(await serve(stuck.handlers), 'agent-a', { sessionPollMs: 5, deadlineMs: 1_500 })
+    expect(result.session).toMatchObject({ status: 200, firstStatusMs: null, doneMs: null, error: '응답 시간 초과', cleanup: false })
+    expect(stuck.calls.stop).toBe(1)
+  })
+
+  describe('서비스 계정 역할·기능 권한과 fetch_url 주입 조건 (S13-J 추가) — 역할·불린만', () => {
+    const IDENTITY = ['owui-user-7f3a', 'svc@corp.example', '서비스 계정 실명']
+    const agent = (meta: Record<string, unknown>, params: Record<string, unknown> = {}) => ({ 'GET /api/models': json(200, { data: [{ id: 'agent-a', info: { meta, params } }] }) })
+    const perms = (features: Record<string, unknown>) => json(200, { id: IDENTITY[0], email: IDENTITY[1], name: IDENTITY[2], workspace: { tools: true }, features })
+
+    it('일반 계정(관리자 확인 401): 기능 권한 그대로, web_search 권한이 없으면 fetch_url 조건 ❌', async () => {
+      const { handlers } = sessionServer([{ done: true }], { ...agent({ toolIds: [], defaultFeatureIds: ['web_search'], capabilities: { web_search: true }, builtinTools: { web_search: true } }, { function_calling: 'native' }),
+        'GET /api/v1/users/permissions': perms({ web_search: false, image_generation: true, code_interpreter: 'yes', api_keys: true }),
+        'GET /api/v1/users/default/permissions': json(401, { detail: `Access prohibited for ${IDENTITY[1]}` }) })
+      const result = await probeOpenWebUi(await serve(handlers), 'agent-a', { sessionPollMs: 5 })
+      expect(result.account).toEqual({ role: 'user', features: { web_search: false, image_generation: true, code_interpreter: null } })
+      expect(result.fetchUrl).toEqual([
+        { name: 'session_id', ok: true }, { name: 'function_calling', ok: true }, { name: 'builtin_tools', ok: true }, { name: 'builtinTools.web_search', ok: true },
+        { name: 'web.search.enable', ok: null }, { name: 'capabilities.web_search', ok: true }, { name: 'features.web_search', ok: true }, { name: 'permission.web_search', ok: false }])
+      // 토큰·이름·이메일을 되돌려 주는 /api/v1/auths/는 부르지 않는다
+      expect(seen.some((x) => x.path.startsWith('/api/v1/auths'))).toBe(false)
+      const text = JSON.stringify(result)
+      for (const leaked of IDENTITY) expect(text).not.toContain(leaked)
+    })
+
+    it('관리자(200)는 권한 검사를 항상 통과, 모델 설정이 막으면 해당 조건 ❌', async () => {
+      const { handlers } = sessionServer([{ done: true }], { ...agent({ capabilities: { web_search: false, builtin_tools: false }, builtinTools: { web_search: false } }, { function_calling: 'legacy' }),
+        'GET /api/v1/users/permissions': perms({ web_search: false }),
+        'GET /api/v1/users/default/permissions': json(200, { features: { web_search: true } }) })
+      const result = await probeOpenWebUi(await serve(handlers), 'agent-a', { sessionPollMs: 5 })
+      expect(result.account).toEqual({ role: 'admin', features: { web_search: false, image_generation: null, code_interpreter: null } })
+      expect(Object.fromEntries(result.fetchUrl.map((c) => [c.name, c.ok]))).toEqual({ session_id: true, function_calling: false, builtin_tools: false, 'builtinTools.web_search': false,
+        'web.search.enable': null, 'capabilities.web_search': false, 'features.web_search': false, 'permission.web_search': true })
+    })
+
+    it('권한 조회가 막히고(403) 메타가 없으면 확인 불가, 세션이 거부되면 session_id ❌', async () => {
+      const { handlers } = sessionServer([{}], { 'GET /api/models': json(200, { data: [{ id: 'agent-a' }] }),
+        'GET /api/v1/users/permissions': json(403, { detail: IDENTITY[1] }), 'GET /api/v1/users/default/permissions': json(403, {}),
+        'POST /api/chat/completions': (req, res, body) => 'session_id' in body ? json(400, {})(req, res, body) : sse(['[DONE]'])(req, res, body) })
+      const result = await probeOpenWebUi(await serve(handlers), 'agent-a', { sessionPollMs: 5 })
+      expect(result.account).toEqual({ role: null, features: { web_search: null, image_generation: null, code_interpreter: null }, error: 'HTTP 403 · 인증 거부' })
+      expect(Object.fromEntries(result.fetchUrl.map((c) => [c.name, c.ok]))).toEqual({ session_id: false, function_calling: null, builtin_tools: null, 'builtinTools.web_search': null,
+        'web.search.enable': null, 'capabilities.web_search': null, 'features.web_search': false, 'permission.web_search': null })
+    })
+  })
+
+  it('생성 거부(400)·chat_id 없음·채팅 조회 실패는 각각 상태 코드와 고정 분류만', async () => {
+    const cases: [Handler, Record<string, unknown>][] = [
+      [json(400, { detail: `session rejected ${SECRET}` }), { status: 400, error: 'HTTP 400 · 형식 거부', cleanup: null }],
+      [json(200, { status: true, detail: SECRET }), { status: 200, error: '응답 형식 오류', cleanup: null }],
+    ]
+    for (const [create, expected] of cases) {
+      const { handlers } = sessionServer([{}], { 'POST /api/chat/completions': (req, res, body) => 'session_id' in body ? create(req, res, body) : sse(['[DONE]'])(req, res, body) })
+      const result = await probeOpenWebUi(await serve(handlers), 'agent-a', { sessionPollMs: 5 })
+      expect(result.session).toMatchObject(expected)
+      expect(JSON.stringify(result)).not.toContain(SECRET)
+      server!.closeAllConnections(); await new Promise((resolve) => server!.close(resolve)); server = undefined
+    }
+    const missing = sessionServer([{}], { 'GET /api/v1/chats/chat-1': json(404, { detail: SECRET }) })
+    const result = await probeOpenWebUi(await serve(missing.handlers), 'agent-a', { sessionPollMs: 5 })
+    expect(result.session).toMatchObject({ status: 200, error: 'HTTP 404 · 찾을 수 없음', cleanup: true })
+    expect(missing.calls).toEqual({ stop: 1, delete: 1 })
+  })
+})
+
+describe('checkOpenWebUiAccess (S13-J 에이전트 편집) — 모델 호출 없이 메타·접근·권한만', () => {
+  const SECRET = 'sk-live-9f8e7d6c5b4a'
+  it('도구·스킬 접근, 기본 터미널, 계정 역할, fetch_url 조건(session_id 제외)을 읽고 시험 호출·버전 조회는 하지 않는다', async () => {
+    const settings = await serve({
+      'GET /api/models': json(200, { data: [{ id: 'agent-a', info: { meta: { toolIds: ['web_tool', 'private_tool'], skillIds: ['skill_a'], defaultFeatureIds: ['web_search'], terminalId: 'term-corp-1',
+        capabilities: { web_search: true }, builtinTools: { skills: true } }, params: { function_calling: 'native', system: SECRET } } }] }),
+      'GET /api/v1/tools/': json(200, [{ id: 'web_tool', name: '사내 도구' }]), 'GET /api/v1/skills/': json(200, [{ id: 'skill_a', is_active: true, description: SECRET }]),
+      'GET /api/v1/users/permissions': json(200, { email: 'svc@corp.example', features: { web_search: true, image_generation: false } }),
+      'GET /api/v1/users/default/permissions': json(401, {}),
+    })
+    const result = await checkOpenWebUiAccess(settings, 'agent-a')
+    expect(result).toEqual({ model: 'agent-a', ms: expect.any(Number),
+      meta: { found: true, toolIds: ['web_tool', 'private_tool'], defaultFeatureIds: ['web_search'], capabilities: { web_search: true }, builtinTools: { skills: true }, terminal: true, knowledgeCount: 0, functionCalling: 'native' },
+      access: { tools: { visible: 1, items: [{ id: 'web_tool', state: 'ok' }, { id: 'private_tool', state: 'denied' }] }, skills: { visible: 1, items: [{ id: 'skill_a', state: 'ok' }] } },
+      account: { role: 'user', features: { web_search: true, image_generation: false, code_interpreter: null } },
+      fetchUrl: [{ name: 'function_calling', ok: true }, { name: 'builtin_tools', ok: true }, { name: 'builtinTools.web_search', ok: true }, { name: 'web.search.enable', ok: null },
+        { name: 'capabilities.web_search', ok: true }, { name: 'features.web_search', ok: true }, { name: 'permission.web_search', ok: true }] })
+    expect(seen.map((x) => x.path).filter((path) => path === '/api/chat/completions' || path === '/api/version')).toEqual([])
+    expect(JSON.stringify(result)).not.toMatch(/sk-live|corp|사내/)
+  })
+
+  it('모델 목록에 없는 모델은 거부하고, 목록을 못 읽으면 메타 오류와 확인 불가로 돌려준다', async () => {
+    let settings = await serve({ 'GET /api/models': json(200, { data: [{ id: 'agent-a' }] }) })
+    await expect(checkOpenWebUiAccess(settings, 'no-such')).rejects.toBeInstanceOf(OwuiProbeUnknownModelError)
+    server!.closeAllConnections(); await new Promise((resolve) => server!.close(resolve)); server = undefined
+    settings = await serve({ 'GET /api/models': json(500, {}) })
+    const result = await checkOpenWebUiAccess(settings, 'agent-a')
+    expect(result.meta).toMatchObject({ found: false, error: 'HTTP 500 · 서버 오류' })
+    expect(result.account).toMatchObject({ role: null, error: 'HTTP 404 · 찾을 수 없음' })
+    expect(result.fetchUrl.every((c) => c.name === 'features.web_search' ? c.ok === false : c.ok === null)).toBe(true)
   })
 })

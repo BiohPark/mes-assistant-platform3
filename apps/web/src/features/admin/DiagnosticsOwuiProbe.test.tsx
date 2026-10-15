@@ -17,7 +17,12 @@ const diagnostics = (mode: 'live' | 'mock') => ({
 })
 const result = {
   model: 'agent-a', version: '0.12.0', ms: 2400, leaked: 'hidden-answer',
-  meta: { found: true, toolIds: ['web_tool', 'docs'], defaultFeatureIds: ['web_search'], capabilities: { vision: true, file_upload: false }, knowledgeCount: 2, functionCalling: 'native' },
+  meta: { found: true, toolIds: ['web_tool', 'docs'], defaultFeatureIds: ['web_search'], capabilities: { vision: true, file_upload: false }, builtinTools: { skills: true, web_search: false }, terminal: true, knowledgeCount: 2, functionCalling: 'native' },
+  access: { tools: { visible: 1, items: [{ id: 'web_tool', state: 'ok' }, { id: 'docs', state: 'denied' }] },
+    skills: { visible: null, items: [{ id: 'skill_a', state: 'unknown' }], error: 'HTTP 404 · 찾을 수 없음' } },
+  account: { role: 'user', features: { web_search: false, image_generation: true, code_interpreter: null } },
+  fetchUrl: [{ name: 'session_id', ok: true }, { name: 'web.search.enable', ok: null }, { name: 'permission.web_search', ok: false }],
+  session: { status: 200, firstStatusMs: 50, doneMs: 900, totalMs: 1000, statuses: ['web_search ×2', '기타', 'tool_connection!'], cleanup: true },
   attempts: [
     { mode: 'current', status: 200, firstByteMs: 120, firstContentMs: 900, totalMs: 1100, frames: ['sources', 'choices.delta.reasoning_content ×3', 'choices.delta.content ×2', '[DONE]'] },
     { mode: 'legacy', status: 400, firstByteMs: null, firstContentMs: null, totalMs: 30, frames: [], error: 'HTTP 400 · 형식 거부' },
@@ -56,6 +61,16 @@ it('OpenWebUI 진단: 모델 하나로 실행 → 진행 중 → 요약 카드, 
   expect(summary).toHaveTextContent('HTTP 200 · 첫 바이트 120 ms · 첫 내용 900 ms · 총 1100 ms')
   expect(summary).toHaveTextContent('sources → choices.delta.reasoning_content ×3 → choices.delta.content ×2 → [DONE]')
   expect(summary).toHaveTextContent('HTTP 400 · 형식 거부')
+  // S13-J: 서비스 계정 접근·권한·fetch_url 조건·③ 세션 시험
+  expect(summary).toHaveTextContent('도구 접근 (서비스 계정)web_tool ✅, docs ❌ · 보이는 항목 1개')
+  expect(summary).toHaveTextContent('스킬 접근 (서비스 계정)skill_a 확인 불가 · 확인 불가 (HTTP 404 · 찾을 수 없음)')
+  expect(summary).toHaveTextContent('builtinToolsskills 켬 · web_search 끔')
+  expect(summary).toHaveTextContent('기본 터미널설정됨')
+  expect(summary).toHaveTextContent('지식2개 (OpenWebUI가 적용)')
+  expect(summary).toHaveTextContent('서비스 계정user · web_search ❌ · image_generation ✅ · code_interpreter 확인 불가')
+  expect(summary).toHaveTextContent('fetch_url 조건session_id ✅ · web.search.enable 확인 불가 · permission.web_search ❌')
+  expect(summary).toHaveTextContent('③ 세션 방식HTTP 200 · 첫 상태 50 ms · 완료 900 ms · 총 1000 ms · 채팅 정리 성공')
+  expect(summary).toHaveTextContent('③ 상태 순서web_search ×2 → 기타 → tool_connection!')
   fireEvent.click(within(card).getByRole('button', { name: '진단 결과 복사' }))
   await waitFor(() => expect(writes).toHaveLength(1))
   expect(writes[0]).toContain('0.12.0')
@@ -83,12 +98,19 @@ it('호출이 막히면(429) 알림을 띄운다', async () => {
 })
 
 it('영문 요약도 같은 항목을 담고, 메타가 없으면 확인 불가로 적는다', () => {
-  const text = formatOwuiProbe({ ...result, version: null, meta: { ...result.meta, found: false, toolIds: [], defaultFeatureIds: [], capabilities: {}, knowledgeCount: 0, functionCalling: null, error: 'HTTP 401 · 인증 거부' } } as never, createT('en'))
+  const text = formatOwuiProbe({ ...result, version: null, meta: { ...result.meta, found: false, toolIds: [], defaultFeatureIds: [], capabilities: {}, builtinTools: {}, terminal: false, knowledgeCount: 0, functionCalling: null, error: 'HTTP 401 · 인증 거부' },
+    account: { role: null, features: { web_search: null, image_generation: null, code_interpreter: null }, error: 'HTTP 403 · 인증 거부' },
+    session: { status: 200, firstStatusMs: null, doneMs: null, totalMs: 5, statuses: [], cleanup: null, error: '세션 미지원' } } as never, createT('en'))
   expect(text).toContain('OpenWebUI version: Unknown')
   expect(text).toContain('Model meta: Not found (HTTP 401 · 인증 거부)')
   expect(text).toContain('function_calling: Not set')
   expect(text).toContain('① Current: HTTP 200')
   expect(text).toContain('② Legacy (tool_ids · features · function_calling legacy): HTTP 400')
+  expect(text).toContain('builtinTools: Not set (all on by default)')
+  expect(text).toContain('Default terminal: None')
+  expect(text).toContain('Service account: Unknown · web_search Unknown · image_generation Unknown · code_interpreter Unknown (HTTP 403 · 인증 거부)')
+  expect(text).toContain('③ Session: HTTP 200 · total 5 ms · No chat to clean up · 세션 미지원')
+  expect(text).toContain('③ Status order: —')
 })
 
 it('허용 목록 밖 표기는 화면 언어로 바뀐다 — (가림)·기타', () => {

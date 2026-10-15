@@ -2,6 +2,7 @@ import { useT, type Translator } from '@/i18n'
 import { useSearchParams } from 'react-router'
 import { useMe } from '@/app/auth'
 import { ModelSelect } from '@/components/ModelSelect'
+import { OwuiAccessSummary } from './OwuiAccessSummary'
 import { AgentTestChat } from '@/components/AgentTestChat'
 import { SuggestInput } from '@/components/SuggestInput'
 import { AssistantStatusBadge, IoBadges } from '@/components/StatusBadges'
@@ -184,6 +185,7 @@ function AssistantEditorSheet({ assistant, onClose, onDeleted, onSaved, onCloseA
           {STATUSES.map(value => <ToggleGroupItem key={value} value={value}><AssistantStatusBadge status={value} /></ToggleGroupItem>)}
         </ToggleGroup></Field>
         <Field label={t('admin.connectedModel')} status={states.modelId}><ModelSelect value={form.modelId ?? ''} onChange={value => change('modelId', value)} onBlur={() => commit('modelId', form.modelId ?? '')} disabled={busy} aria-label={t('admin.connectedModel')} /></Field>
+        <OwuiAccessSummary modelId={form.modelId ?? ''} />
         {!!form.link1 && <div className="flex items-center gap-2 text-xs"><span>{t('admin.manage.linkOverride')}</span><span aria-hidden>·</span><Button type="button" size="xs" variant="ghost" disabled={busy} onClick={() => commit('link1', '')}>{t('admin.manage.clearLink')}</Button></div>}
         <SaveStatus state={states.link1} />
         <Field label={t('admin.documentUrl')} status={states.docUrl}><Input value={form.docUrl ?? ''} onChange={(event) => change('docUrl', event.target.value)} onBlur={(event) => commit('docUrl', event.target.value)} /></Field>
