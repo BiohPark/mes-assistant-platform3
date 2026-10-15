@@ -12,7 +12,9 @@ test(`S10 ${mode}: opens elapsed thinking, collapses on answer, preserves reason
   await page.getByRole('button', { name: '회원가입' }).click()
   await expect(page).toHaveURL(/\/$/)
   const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string; name: string }>
-  const created = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id } })).json() as { id: string; threadId: string }
+  // 제목을 정해 둔다 — 기본 제목이면 첫 답 뒤 배경 AI 제목(maybeTitle)이 시스템 프롬프트의 대화 제목을 바꾸는데, 보조 요청 슬롯이 겹치면 다음 성공 뒤로
+  // 미뤄져 후속 질문의 추정과 전송 사이에 끼어들 수 있다(live 4바이트 차). 이 테스트가 보는 것은 생각 과정과 '보낸 것=본 것'이다
+  const created = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id, title: '생각 과정 확인' } })).json() as { id: string; threadId: string }
   await page.goto(`/c/${created.id}`)
   await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('[reasoning] 응답 대기 확인')
   await page.getByRole('button', { name: '전송', exact: true }).click()

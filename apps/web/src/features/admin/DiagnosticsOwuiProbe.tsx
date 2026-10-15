@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { OWUI_PROBE_MASKED, OWUI_PROBE_OTHER, type OwuiProbeAttemptResult, type OwuiProbeReport } from '@mes/contracts'
+import { OWUI_PROBE_MASKED, OWUI_PROBE_OTHER, type OwuiAccessCheck, type OwuiProbeAccessListResult, type OwuiProbeAttemptResult, type OwuiProbeReport, type OwuiProbeSessionResult } from '@mes/contracts'
 import { probeOpenWebUi } from '@/api/admin'
 import { ModelSelect } from '@/components/ModelSelect'
 import { Button } from '@/components/ui/button'
@@ -16,11 +16,47 @@ function attemptLine(attempt: OwuiProbeAttemptResult, t: Translator): string {
     ...(attempt.error ? [attempt.error] : [])].join(' · ')
 }
 
+function sessionLine(session: OwuiProbeSessionResult, t: Translator): string {
+  const cleanup = session.cleanup === null ? 'cleanupNone' : session.cleanup ? 'cleanupOk' : 'cleanupFailed'
+  return [session.status === null ? t('admin.diagnostics.probe.noResponse') : `HTTP ${session.status}`,
+    ...(session.firstStatusMs === null ? [] : [t('admin.diagnostics.probe.firstStatus', { ms: String(session.firstStatusMs) })]),
+    ...(session.doneMs === null ? [] : [t('admin.diagnostics.probe.done', { ms: String(session.doneMs) })]),
+    t('admin.diagnostics.probe.total', { ms: String(session.totalMs) }), t(`admin.diagnostics.probe.${cleanup}`),
+    ...(session.error ? [session.error] : [])].join(' · ')
+}
+
+const maskedId = (id: string, t: Translator) => id === OWUI_PROBE_MASKED ? t('admin.diagnostics.probe.masked') : id
+/** ✅ · ❌ · 확인 불가 */
+const mark = (ok: boolean | null, t: Translator) => ok === null ? t('admin.diagnostics.probe.unknown') : ok ? '✅' : '❌'
+
+function accessLine(list: OwuiProbeAccessListResult, t: Translator): string {
+  const state = { ok: '✅', denied: '❌', inactive: `❌ ${t('admin.diagnostics.probe.inactive')}`, unknown: t('admin.diagnostics.probe.unknown') }
+  const items = list.items.length ? list.items.map((item) => `${maskedId(item.id, t)} ${state[item.state]}`).join(', ') : t('admin.diagnostics.probe.none')
+  return list.error ? `${items} · ${t('admin.diagnostics.probe.unknown')} (${list.error})`
+    : list.visible === null ? items : `${items} · ${t('admin.diagnostics.probe.visible', { count: String(list.visible) })}`
+}
+
+/** 서비스 계정 접근·권한·주입 조건 행 — 진단 카드와 에이전트 편집의 연결 확인이 같이 쓴다(S13-J). 이름·불린만 담긴다 */
+export function accessRows(result: Pick<OwuiAccessCheck, 'meta' | 'access' | 'account' | 'fetchUrl'>, t: Translator): [string, string][] {
+  const builtin = Object.entries(result.meta.builtinTools)
+  const { account } = result
+  return [
+    [t('admin.diagnostics.probe.toolAccess'), accessLine(result.access.tools, t)],
+    [t('admin.diagnostics.probe.skillAccess'), accessLine(result.access.skills, t)],
+    ['builtinTools', builtin.length ? builtin.map(([name, on]) => `${name} ${on ? t('admin.diagnostics.probe.on') : t('admin.diagnostics.probe.off')}`).join(' · ') : t('admin.diagnostics.probe.builtinDefault')],
+    [t('admin.diagnostics.probe.terminal'), result.meta.terminal ? t('admin.diagnostics.probe.terminalSet') : t('admin.diagnostics.probe.none')],
+    [t('admin.diagnostics.probe.knowledge'), `${t('common.items', { count: result.meta.knowledgeCount })} ${t('admin.diagnostics.probe.appliedByOwui')}`],
+    [t('admin.diagnostics.probe.account'), [account.role ?? t('admin.diagnostics.probe.unknown'), ...Object.entries(account.features).map(([name, ok]) => `${name} ${mark(ok, t)}`)].join(' · ')
+      + (account.error ? ` (${account.error})` : '')],
+    [t('admin.diagnostics.probe.fetchUrl'), result.fetchUrl.map((condition) => `${condition.name} ${mark(condition.ok, t)}`).join(' · ') || '—'],
+  ]
+}
+
 /** 화면 요약과 복사 텍스트가 같은 행을 쓴다 — 결과 스키마에 있는 값만 담긴다 */
 function probeRows(result: OwuiProbeReport, t: Translator): [string, string][] {
   // 허용 목록 밖 표기((가림)·기타)는 화면 언어로 바꿔 보여 준다
   const other = (value: string) => value.replaceAll(OWUI_PROBE_OTHER, t('admin.diagnostics.probe.other'))
-  const list = (items: string[]) => items.length ? items.map((id) => id === OWUI_PROBE_MASKED ? t('admin.diagnostics.probe.masked') : id).join(', ') : t('admin.diagnostics.probe.none')
+  const list = (items: string[]) => items.length ? items.map((id) => maskedId(id, t)).join(', ') : t('admin.diagnostics.probe.none')
   const caps = Object.entries(result.meta.capabilities)
   const attempt = (mode: OwuiProbeAttemptResult['mode']) => result.attempts.find((item) => item.mode === mode)
   const rows: [string, string][] = [
@@ -31,14 +67,15 @@ function probeRows(result: OwuiProbeReport, t: Translator): [string, string][] {
     ['toolIds', list(result.meta.toolIds)],
     ['defaultFeatureIds', list(result.meta.defaultFeatureIds)],
     ['capabilities', caps.length ? caps.map(([name, on]) => `${name} ${on ? t('admin.diagnostics.probe.on') : t('admin.diagnostics.probe.off')}`).join(' · ') : t('admin.diagnostics.probe.none')],
-    [t('admin.diagnostics.probe.knowledge'), t('common.items', { count: result.meta.knowledgeCount })],
     ['function_calling', result.meta.functionCalling === null ? t('admin.diagnostics.probe.notSet') : other(result.meta.functionCalling)],
+    ...accessRows(result, t),
   ]
   for (const [mode, label, frames] of [['current', 'admin.diagnostics.probe.current', 'admin.diagnostics.probe.framesCurrent'], ['legacy', 'admin.diagnostics.probe.legacy', 'admin.diagnostics.probe.framesLegacy']] as const) {
     const item = attempt(mode)
     if (!item) continue
     rows.push([t(label), attemptLine(item, t)], [t(frames), other(item.frames.join(' → ')) || '—'])
   }
+  rows.push([t('admin.diagnostics.probe.session'), sessionLine(result.session, t)], [t('admin.diagnostics.probe.framesSession'), other(result.session.statuses.join(' → ')) || '—'])
   rows.push([t('admin.diagnostics.probe.elapsed'), `${result.ms} ms`])
   return rows
 }

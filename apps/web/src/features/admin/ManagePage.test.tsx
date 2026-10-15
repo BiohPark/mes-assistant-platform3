@@ -488,3 +488,22 @@ it('입력 중인 연결 모델·설명은 Escape로 시트를 닫을 때 확정
   await new Promise((resolve) => setTimeout(resolve, 20))
   expect(bodies).toHaveLength(2)
 })
+
+it('편집 시트는 연결 모델의 OpenWebUI 연결 확인을 열 때 자동으로 보인다 (S13-J)', async () => {
+  assistantRows = [{ ...assistant, modelId: 'agent-model' }]
+  const checks: unknown[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/admin/diagnostics/openwebui/access') {
+      checks.push(JSON.parse(String(init?.body)))
+      return jsonResponse(200, { model: 'agent-model', ms: 1, meta: { found: true, toolIds: ['web_tool'], defaultFeatureIds: [], capabilities: {}, builtinTools: {}, terminal: false, knowledgeCount: 0, functionCalling: null },
+        access: { tools: { visible: 0, items: [{ id: 'web_tool', state: 'denied' }] }, skills: { visible: 0, items: [] } },
+        account: { role: 'admin', features: { web_search: true, image_generation: null, code_interpreter: null } }, fetchUrl: [] })
+    }
+    return jsonResponse(200, url === '/api/llm/models' ? { models: [] } : [])
+  }))
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  fireEvent.click(screen.getByRole('button', { name: '편집' }))
+  const region = within(screen.getByRole('dialog', { name: '에이전트 편집' })).getByRole('region', { name: 'OpenWebUI 연결 확인' })
+  expect(await within(region).findByRole('status')).toHaveTextContent('web_tool ❌')
+  expect(checks).toEqual([{ model: 'agent-model' }])
+})

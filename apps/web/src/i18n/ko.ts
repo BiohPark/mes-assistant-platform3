@@ -138,6 +138,8 @@ export const ko = {
     name: '이름', nameRequired: '이름을 입력하세요', save: '저장', saveFailed: '저장 실패', changeFailed: '변경 실패', nameSaved: '이름을 저장했습니다',
     defaultModel: '기본 모델', fileMaxPerRequest: '첨부 개수 한도',
     manage: {
+      owuiCheck: { title: 'OpenWebUI 연결 확인', refresh: '다시 확인', checking: '확인 중…', noModel: '연결 모델을 정하면 확인합니다. 모델을 부르지 않고 도구·스킬 접근과 권한만 봅니다.',
+        failed: '확인하지 못했습니다: {error}' },
       settingsTab: '설정', testTab: '시험 대화', paths: '분류 경로', primaryPath: '대표', addPath: '경로 추가',
       pathLabel: '경로 {number}', pathUp: '경로 {number} 위로', pathDown: '경로 {number} 아래로', removePath: '경로 {number} 제거',
       duplicatePaths: '같은 분류 경로를 중복해서 추가할 수 없습니다',
@@ -168,12 +170,16 @@ export const ko = {
       envGuide: '주소·모드·키는 서버 .env(LLM_MODE · LLM_PRESET · LLM_BASE_URL · LLM_API_KEY · LLM_DEFAULT_MODEL)에서 바꾸고 서비스를 재시작합니다. 이 화면에서는 표시와 연결 시험만 합니다.',
       open: '연결 진단 열기', badge: '{mode} · 연결 진단 열기', testChat: '시험 대화',
       probe: {
-        title: 'OpenWebUI 진단', hint: '짧은 시험 질문을 두 번 보냅니다 — ① 지금 방식 ② tool_ids · features · function_calling legacy. 모델은 OpenWebUI 모델 목록에 있는 것만 진단합니다. 결과에는 질문·답변·파일·키·주소가 담기지 않고 저장되지 않습니다. 도구·기능·모델 ID와 버전은 정해진 형식일 때만 그대로 보이고, 주소·경로·파일명·대표 비밀 접두(sk-·ghp_ 등)·24자 이상 무작위 문자열 모양은 (가림)으로 바뀝니다. 다만 짧은 식별자처럼 생긴 비밀값은 구분하지 못합니다.',
+        title: 'OpenWebUI 진단', hint: '짧은 시험 질문을 세 번 보냅니다 — ① 지금 방식 ② tool_ids · features · function_calling legacy ③ 세션 방식(만든 채팅은 끝나면 지웁니다). 에이전트의 도구·스킬이 서비스 계정에 보이는지, 계정 역할·기능 권한, fetch_url 주입 조건(이름·켜짐 여부만)도 확인합니다. builtinTools에 없는 항목은 OpenWebUI 기본으로 켜져 있습니다. 모델은 OpenWebUI 모델 목록에 있는 것만 진단합니다. 결과에는 질문·답변·파일·키·주소가 담기지 않고 저장되지 않습니다. 도구·기능·모델 ID와 버전은 정해진 형식일 때만 그대로 보이고, 주소·경로·파일명·대표 비밀 접두(sk-·ghp_ 등)·24자 이상 무작위 문자열 모양은 (가림)으로 바뀝니다. 다만 짧은 식별자처럼 생긴 비밀값은 구분하지 못합니다.',
         modelLabel: '진단 모델', run: 'OpenWebUI 진단', running: '진단 중… (최대 3분)', liveOnly: 'Live 모드에서만 실행할 수 있습니다.',
         failed: '진단을 실행하지 못했습니다: {error}', copy: '진단 결과 복사', version: 'OpenWebUI 버전', unknown: '확인 불가', model: '모델',
         meta: '모델 메타', metaFound: '있음', metaMissing: '없음', none: '없음', on: '켬', off: '끔', knowledge: '지식', notSet: '미지정',
         current: '① 지금 방식', legacy: '② legacy (tool_ids · features · function_calling legacy)', framesCurrent: '① 프레임 순서', framesLegacy: '② 프레임 순서',
         masked: '(가림)', other: '기타', noResponse: '응답 없음', firstByte: '첫 바이트 {ms} ms', firstContent: '첫 내용 {ms} ms', total: '총 {ms} ms', elapsed: '총 소요',
+        toolAccess: '도구 접근 (서비스 계정)', skillAccess: '스킬 접근 (서비스 계정)', inactive: '비활성', visible: '보이는 항목 {count}개', builtinDefault: '미지정 (모두 기본 켬)',
+        terminal: '기본 터미널', terminalSet: '설정됨', appliedByOwui: '(OpenWebUI가 적용)', account: '서비스 계정', fetchUrl: 'fetch_url 조건',
+        session: '③ 세션 방식', framesSession: '③ 상태 순서', firstStatus: '첫 상태 {ms} ms', done: '완료 {ms} ms',
+        cleanupOk: '채팅 정리 성공', cleanupFailed: '채팅 정리 실패', cleanupNone: '정리할 채팅 없음',
       },
     },
     test: {

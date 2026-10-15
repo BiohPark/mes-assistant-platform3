@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { ChatChunk, ChatProvider, ChatRequest } from './provider.js'
 import { LimitedFetchError, limitedFetch, toLimitedFetchError } from './limitedFetch.js'
 import { extractDelta, parseSseLines, ThinkSplitter, type ToolCallFragment } from './sse.js'
-import { owuiModelTools } from './owuiProbe.js'
+import { owuiModelTools, type OwuiDefaults } from './owuiProbe.js'
 import type { LlmSettings } from '@mes/domain'
 
 /** 모델 목록·ping 상한 — 목록은 모델당 메타데이터가 붙어 수 MB가 될 수 있다 */
@@ -55,6 +55,9 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     signal?.addEventListener('abort', done, { once: true })
   })
 }
+
+/** 전달 기록(owuiTools)은 도구·기능만 — 나머지 기본값은 snapshot이 본문에서 남긴다 */
+const toolDelivery = ({ tool_ids, features }: OwuiDefaults) => ({ mode: 'tools' as const, ...(tool_ids ? { tool_ids } : {}), ...(features ? { features } : {}) })
 
 function parseModelIds(body: unknown): string[] {
   const data = body !== null && typeof body === 'object' ? (body as { data?: unknown }).data : undefined
@@ -130,7 +133,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
       try {
         const mode = req.owuiTools ?? (this.readOwuiTools ? await this.readOwuiTools() : this.settings.owuiTools ?? 'auto')
         const meta = mode === 'auto' ? await this.modelTools(String(basic.model), req.signal) : undefined
-        if (meta && (meta.tool_ids.length || Object.keys(meta.features).length)) extras = meta
+        if (meta && Object.keys(meta).length) extras = meta
       } catch { /* 메타·설정 조회 실패는 기본 전송으로 진행한다. */ }
     }
     // 세션 모드는 지정한 대화 요청만 — 앱 도구 호출·시험(limits) 호출은 기존 방식을 쓴다
@@ -140,7 +143,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
     for (let attempt = 0; attempt < (extras ? 2 : 1); attempt++) {
       const enhanced = !!extras && attempt === 0
       const body = enhanced ? { ...basic, ...extras, params: { function_calling: 'legacy' } } : basic
-      const delivery = enhanced ? { mode: 'tools' as const, ...extras } : { mode: attempt ? 'fallback' as const : 'basic' as const }
+      const delivery = enhanced && extras ? toolDelivery(extras) : { mode: attempt ? 'fallback' as const : 'basic' as const }
       if (req.signal?.aborted) { yield { type: 'error', message: CANCELLED }; return }
       await req.onDispatch?.(delivery, body)
       let res: Response
@@ -235,7 +238,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
     const messageId = randomUUID()
     const body = { ...basic, ...extras, session_id: `mes-${randomUUID()}`, id: messageId, parent_id: null, params: { tool_approval_mode: 'full' } }
     if (req.signal?.aborted) { yield { type: 'error', message: CANCELLED }; return 'handled' }
-    await req.onDispatch?.(extras ? { mode: 'tools', ...extras } : { mode: 'basic' }, body)
+    await req.onDispatch?.(extras ? toolDelivery(extras) : { mode: 'basic' }, body)
     let res: Response
     try {
       res = await limitedFetch(joinUrl(this.settings.baseUrl, 'chat/completions'), { method: 'POST', headers: this.headers(), body: JSON.stringify(body) }, { signal: req.signal })

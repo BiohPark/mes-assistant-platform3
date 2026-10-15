@@ -51,6 +51,43 @@ test('version and model meta mimic OpenWebUI for the diagnostics probe', async (
   assert.equal(data.find((m) => m.id === 'fake-writer').info, undefined)
 }))
 
+test('model meta carries the OpenWebUI screen defaults (skills, filters, terminal) for S13-J', async () => withServer(false, async (base) => {
+  const { data } = await (await fetch(`${base}/api/models`)).json()
+  const meta = data.find((m) => m.id === 'fake-general').info.meta
+  assert.deepEqual(meta.skillIds, ['fake_skill', 'fake_private_skill'])
+  assert.deepEqual(meta.defaultFilterIds, ['fake_filter'])
+  assert.equal(meta.terminalId, 'fake-terminal')
+  assert.equal(meta.capabilities.web_search, true)
+  assert.deepEqual(meta.builtinTools, { skills: true })
+}))
+
+test('service-account lists and permissions: fake_private_skill is denied by default; deny and missing modes', async () => {
+  const lists = async (base) => Promise.all(['/api/v1/tools/', '/api/v1/skills/', '/api/v1/users/permissions', '/api/v1/users/default/permissions']
+    .map(async (path) => { const res = await fetch(`${base}${path}`); return [res.status, res.status === 200 ? await res.json() : null] }))
+  await withServer(false, async (base) => {
+    const [tools, skills, permissions, admin] = await lists(base)
+    assert.deepEqual(tools[1].map((t) => t.id), ['fake_tool'])
+    assert.deepEqual(skills[1].map((s) => [s.id, s.is_active]), [['fake_skill', true]])
+    assert.deepEqual(permissions[1].features, { web_search: true, image_generation: false, code_interpreter: false })
+    assert.equal(admin[0], 401)
+    assert.equal((await fetch(`${base}/__e2e/owui-access`)).status, 404)
+  })
+  await withServer(false, async (base) => {
+    const [tools, skills, permissions] = await lists(base)
+    assert.deepEqual([tools[1], skills[1]], [[], []])
+    assert.equal(permissions[1].features.web_search, false)
+  }, { FAKE_OWUI_ACCESS: 'deny' })
+  await withServer(true, async (base) => {
+    const set = (mode) => fetch(`${base}/__e2e/owui-access`, { method: 'POST', body: JSON.stringify({ mode }) })
+    assert.deepEqual(await (await fetch(`${base}/__e2e/owui-access`)).json(), { mode: 'ok' })
+    assert.equal((await set('bad')).status, 400)
+    assert.equal((await set('missing')).status, 200)
+    assert.deepEqual((await lists(base)).map(([status]) => status), [404, 404, 404, 404])
+    assert.equal((await set('ok')).status, 200)
+    assert.equal((await lists(base))[0][0], 200)
+  })
+})
+
 test('legacy tool calls stream a sources frame first; tool_ids are rejected (400) in reject mode', async () => {
   await withServer(false, async (base) => {
     const text = await (await chat(base, { tool_ids: ['fake_tool'], params: { function_calling: 'legacy' } })).text()

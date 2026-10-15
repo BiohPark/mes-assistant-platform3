@@ -26,4 +26,18 @@ export class DiagnosticsController {
     try { return await this.diagnostics.probeOpenWebUi(req.user!.id, parsed.data.model, client.signal) }
     finally { res.off('close', onClose) }
   }
+
+  /** 에이전트 편집의 연결 확인(S13-J) — 모델 호출 없이 도구·스킬 접근·계정 권한·주입 조건만 */
+  @Post('openwebui/access')
+  @HttpCode(200)
+  @Roles('system_owner')
+  async access(@Body() body: unknown, @Res({ passthrough: true }) res: Response) {
+    const parsed = OwuiProbeRequestSchema.safeParse(body)
+    if (!parsed.success) throw new BadRequestException('요청 형식이 올바르지 않습니다')
+    const client = new AbortController()
+    const onClose = () => { if (!res.writableEnded) client.abort() }
+    res.on('close', onClose)
+    try { return await this.diagnostics.checkOpenWebUiAccess(parsed.data.model, client.signal) }
+    finally { res.off('close', onClose) }
+  }
 }
