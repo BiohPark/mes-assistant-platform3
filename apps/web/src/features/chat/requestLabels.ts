@@ -15,6 +15,9 @@ export const statusLabel: Record<string, StatusKey> = {
 /** 서버 phase의 언어와 화면 번역을 분리한다. */
 export const responsePhase = { thinking: '생각 중', answering: '답변 중' } as const
 
+/** 파일 올리기·처리 대기 진행 — 서버 무응답 제한을 다시 걸지 않는 단계 */
+export const isFileProgress = (phase?: string) => !!phase && /^(파일 올리는 중|파일 처리 대기) \d+\/\d+ · /.test(phase)
+
 export function requestPhaseDetail(phase: string | undefined, t: Translator): string | undefined {
   if (!phase || phase === responsePhase.thinking || phase === responsePhase.answering) return undefined
   const progress = /^(파일 올리는 중|파일 처리 대기) (\d+)\/(\d+) · (.*)$/s.exec(phase)

@@ -7,7 +7,7 @@ import { clearDrafts, getDraft } from './drafts'
 
 const toastSuccess = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: toastSuccess } }))
-afterEach(() => toastSuccess.mockClear())
+afterEach(() => { vi.useRealTimers(); toastSuccess.mockClear() })
 
 function renderComposer(props: React.ComponentProps<typeof Composer>) {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Composer {...props} /></QueryClientProvider>)
@@ -309,4 +309,20 @@ it('S14: 비활성 칩은 ★·×를 막고 실패 칩은 경고색이다', () =
   expect(screen.getByRole('button', { name: 'bad.bin 주 입력 전환' })).toHaveAttribute('aria-pressed', 'true')
   expect(screen.getByRole('button', { name: 'bad.bin 첨부 빼기' })).toBeDisabled()
   expect(screen.getByRole('listitem')).toHaveClass('text-destructive')
+})
+
+it('S14: turns send into stop with the elapsed time while keeping the stop name stable', () => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-01-01T00:00:10Z'))
+  const stop = vi.fn()
+  renderComposer({ streaming: true, startedAt: Date.now() - 4000, onSend: async () => undefined, onStop: stop })
+  const button = screen.getByRole('button', { name: '중지' })
+  expect(button).toHaveAccessibleName('중지')
+  expect(button).toHaveTextContent('4초')
+  act(() => vi.advanceTimersByTime(3000))
+  expect(button).toHaveTextContent('7초')
+  expect(button).toHaveAccessibleName('중지')
+  fireEvent.click(button)
+  expect(stop).toHaveBeenCalled()
+  vi.useRealTimers()
 })

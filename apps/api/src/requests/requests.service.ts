@@ -64,6 +64,8 @@ export class RequestsService implements OnModuleDestroy {
   private readonly truncated = new Set<string>()
   private readonly streamText = new Map<string, string>()
   private readonly streamReasoning = new Map<string, string>()
+  /** 요청별 첫 응답·무응답 제한(ms) — 화면의 '제한까지 남은 시간'용. 없으면(다른 인스턴스·재시작) 기록된 파일 자료로 다시 계산한다 */
+  private readonly limits = new Map<string, { firstTokenMs: number; idleMs: number }>()
   private readonly auxiliaryUsers = new Set<string>()
   /** DB 행이 없는 모델 호출(시험 대화·연결 시험)이 쥔 전역 슬롯 — 단일 인스턴스 전제(D43) */
   private extraActive = 0
@@ -206,7 +208,7 @@ export class RequestsService implements OnModuleDestroy {
     this.events.set(id, history)
     for (const listener of this.listeners.get(id) ?? []) listener(event)
     if (event.event === 'completed' || event.event === 'failed') {
-      const timer = setTimeout(() => { this.events.delete(id); this.truncated.delete(id); this.streamText.delete(id); this.streamReasoning.delete(id) }, 60_000)
+      const timer = setTimeout(() => { this.events.delete(id); this.truncated.delete(id); this.streamText.delete(id); this.streamReasoning.delete(id); this.limits.delete(id) }, 60_000)
       timer.unref?.()
     }
   }
@@ -288,7 +290,8 @@ export class RequestsService implements OnModuleDestroy {
 
   private async replay(row: typeof chatRequest.$inferSelect): Promise<StartedRequest> {
     const record = await this.get(row.id)
-    const started = { event: 'started', data: { requestId: row.id, replyMessageId: row.replyMessageId, userMessageId: row.userMessageId, createdAt: row.createdAt.toISOString() } } as const
+    const started = { event: 'started', data: { requestId: row.id, replyMessageId: row.replyMessageId, userMessageId: row.userMessageId, createdAt: row.createdAt.toISOString(),
+      firstTokenMs: record.firstTokenMs, idleMs: record.idleMs } } as const
     if (this.truncated.has(row.id) || !this.events.has(row.id)) {
       const [reply] = await this.db.select({ content: message.content, reasoning: message.reasoning }).from(message).where(eq(message.id, row.replyMessageId))
       this.events.set(row.id, [{ event: 'started', data: { ...started.data, resumedText: this.streamText.get(row.id) ?? reply?.content ?? '', resumedReasoning: this.streamReasoning.get(row.id) ?? reply?.reasoning ?? '' } }])
@@ -317,7 +320,7 @@ export class RequestsService implements OnModuleDestroy {
     if ((!body.content?.trim() && !attachments.length) || oneShot.some((id) => !attachments.includes(id))) throw new BadRequestException('요청 내용 또는 첨부가 올바르지 않습니다')
     const existing = await this.db.select().from(chatRequest).where(and(eq(chatRequest.threadId, threadId), eq(chatRequest.idempotencyKey, key)))
     if (existing[0]) return this.replay(existing[0])
-    let acquired: { id: string; replyMessageId: string; userMessageId: string; taskId?: string | null; deadlineAt?: number; duplicate?: boolean; autoStarted?: boolean; staged?: StagedFile[] }
+    let acquired: { id: string; replyMessageId: string; userMessageId: string; taskId?: string | null; deadlineAt?: number; firstTokenMs?: number; duplicate?: boolean; autoStarted?: boolean; staged?: StagedFile[] }
     try {
       acquired = await this.db.transaction(async (tx) => {
         await this.lockGlobalCapacity(tx)
@@ -348,7 +351,8 @@ export class RequestsService implements OnModuleDestroy {
           if (selected.length) await tx.delete(taskInput).where(eq(taskInput.taskId, owner.taskId))
           await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, owner.taskId))
         }
-        const deadlineAt = Date.now() + (attachments.length || staged.length ? this.config.request.filesFirstTokenMs : this.config.request.firstTokenMs)
+        const firstTokenMs = this.firstTokenMs(attachments.length > 0 || staged.length > 0)
+        const deadlineAt = Date.now() + firstTokenMs
         const [currentTask] = owner.taskId ? await tx.select().from(task).where(eq(task.id, owner.taskId)) : []
         const [currentAssistant] = currentTask ? await tx.select().from(assistant).where(eq(assistant.id, currentTask.assistantId)) : []
         const [budgetSetting] = await tx.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
@@ -382,7 +386,7 @@ export class RequestsService implements OnModuleDestroy {
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'message.sent', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         await tx.insert(activityLog).values({ id: randomUUID(), type: 'request.started', userId: actor, taskId: owner.taskId, srId: owner.srId, payload: { requestId } })
         const autoStarted = await resumeHeldTask(tx, currentTask, actor)
-        return { id: requestId, replyMessageId, userMessageId, taskId: owner.taskId, deadlineAt, autoStarted, staged }
+        return { id: requestId, replyMessageId, userMessageId, taskId: owner.taskId, deadlineAt, firstTokenMs, autoStarted, staged }
       })
     } catch (error) {
       if (isDuplicateKey(error) && await this.hasActiveOrKey(threadId, key)) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
@@ -398,7 +402,9 @@ export class RequestsService implements OnModuleDestroy {
       this.appEvents?.publish('context.updated', { taskId: acquired.taskId })
     }
     this.appEvents?.publish('request.updated', { requestId: acquired.id, threadId, taskId: acquired.taskId ?? null, status: 'pending', phase: null })
-    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString(), autoStarted: acquired.autoStarted ?? false } })
+    const limits = { firstTokenMs: acquired.firstTokenMs!, idleMs: this.config.request.idleMs }
+    this.limits.set(acquired.id, limits)
+    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString(), autoStarted: acquired.autoStarted ?? false, ...limits } })
     const done = this.run(acquired.id, acquired.staged ?? [], [], acquired.deadlineAt!)
     return { ...acquired, done }
   }
@@ -428,7 +434,8 @@ export class RequestsService implements OnModuleDestroy {
       const recorded = (await tx.select().from(chatRequestInput).where(and(eq(chatRequestInput.requestId, original.id), eq(chatRequestInput.kind, 'file'))).orderBy(chatRequestInput.seq))
         .flatMap((item): StagedFile[] => item.fileId ? [{ fileId: item.fileId, weight: item.weight as StagedFile['weight'], oneShot: item.oneShot }] : [])
       const snapshot = [...recorded, ...files.filter((item) => !recorded.some((input) => input.fileId === item.fileId)).map((item) => ({ fileId: item.fileId, weight: 'reference' as const, oneShot: true }))]
-      const deadlineAt = Date.now() + (snapshot.length ? this.config.request.filesFirstTokenMs : this.config.request.firstTokenMs)
+      const firstTokenMs = this.firstTokenMs(snapshot.length > 0)
+      const deadlineAt = Date.now() + firstTokenMs
       const selectable = new Set(snapshot.map((item) => item.fileId))
       if (exclude.some((id) => !selectable.has(id)) || inline.some((id) => !selectable.has(id) || exclude.includes(id))) throw new BadRequestException('재시도 파일 ID가 올바르지 않습니다')
       if (inline.length) {
@@ -456,7 +463,7 @@ export class RequestsService implements OnModuleDestroy {
       const [currentTask] = owner.taskId ? await tx.select().from(task).where(eq(task.id, owner.taskId)) : []
       const autoStarted = await resumeHeldTask(tx, currentTask, actor)
       if (owner.taskId) await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, owner.taskId))
-      return { id, replyMessageId, userMessageId: original.userMessageId, taskId: owner.taskId, deadlineAt, autoStarted, staged }
+      return { id, replyMessageId, userMessageId: original.userMessageId, taskId: owner.taskId, deadlineAt, firstTokenMs, autoStarted, staged }
     }).catch(async (error: unknown) => {
       if (isDuplicateKey(error) && await this.hasActiveOrKey(original.threadId, key)) throw new ConflictException({ code: 'REQUEST_ACTIVE' })
       throw error
@@ -468,8 +475,15 @@ export class RequestsService implements OnModuleDestroy {
     }
     this.appEvents?.publish('request.updated', { requestId: acquired.id, threadId: original.threadId,
       taskId: acquired.taskId ?? null, status: 'pending', phase: null })
-    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString(), autoStarted: acquired.autoStarted ?? false } })
+    const limits = { firstTokenMs: acquired.firstTokenMs!, idleMs: this.config.request.idleMs }
+    this.limits.set(acquired.id, limits)
+    this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString(), autoStarted: acquired.autoStarted ?? false, ...limits } })
     return { ...acquired, done: this.run(acquired.id, acquired.staged, inline, acquired.deadlineAt!) }
+  }
+
+  /** 첫 응답 제한 — 파일 자료가 있으면 업로드·처리 시간을 감안해 더 길다 */
+  private firstTokenMs(files: boolean) {
+    return files ? this.config.request.filesFirstTokenMs : this.config.request.firstTokenMs
   }
 
   private async getRow(id: string) {
@@ -481,7 +495,8 @@ export class RequestsService implements OnModuleDestroy {
     const row = await this.getRow(id)
     if (actor) await assertThreadAccess(this.db, actor, row.threadId)
     const inputs = await this.db.select().from(chatRequestInput).where(eq(chatRequestInput.requestId, id)).orderBy(chatRequestInput.seq)
-    return { id: row.id, threadId: row.threadId, status: row.status, phase: row.phase, code: errorCode(row.status, row.error, row.bytes), provider: row.provider, transport: row.transport, owuiTools: row.owuiTools,
+    const limits = this.limits.get(id) ?? { firstTokenMs: this.firstTokenMs(inputs.some((item) => item.kind === 'file')), idleMs: this.config.request.idleMs }
+    return { id: row.id, threadId: row.threadId, status: row.status, ...limits, phase: row.phase, code: errorCode(row.status, row.error, row.bytes), provider: row.provider, transport: row.transport, owuiTools: row.owuiTools,
       model: row.model, bytes: row.status === 'pending' && row.bytes === 0 ? null : row.bytes, limitBytes: row.limitBytes, error: row.error, retryOf: row.retryOf, createdAt: row.createdAt.toISOString(),
       finishedAt: row.finishedAt?.toISOString(), hasSnapshot: row.snapshot !== null, inputs: inputs.map((item) => ({ kind: item.kind, weight: item.weight, fileId: item.fileId,
         fileVersion: item.fileVersion, srId: item.srId, srCode: item.srSnapshot?.code, srTitle: item.srSnapshot?.title, sourceLabel: item.sourceLabel, oneShot: item.oneShot, delivery: item.delivery, sourceTaskId: item.sourceTaskId,

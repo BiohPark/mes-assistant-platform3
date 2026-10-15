@@ -7,7 +7,8 @@ import { rememberMyRequest } from '@/features/assistant-pill/replyBubble'
 import { getDraft, setDraft, type ComposerDraft } from './drafts'
 import { useT } from '@/i18n'
 
-export interface ChatRun { requestId: string; replyId: string; text: string; reasoning?: string; phase?: string; startedAt?: number }
+/** firstTokenMs·idleMs: 서버가 알린 이 요청의 첫 응답·무응답 제한(ms) */
+export interface ChatRun { requestId: string; replyId: string; text: string; reasoning?: string; phase?: string; startedAt?: number; firstTokenMs?: number; idleMs?: number }
 interface Attempt { key: string; threadId: string; requestId?: string; startedAt?: number; text: string; attachmentIds: string[]; path: string; body: unknown; autoStartNotified?: boolean }
 interface FirstDraft { taskId: string; draft: ComposerDraft }
 const firstDrafts = new Map<string, FirstDraft>()
@@ -69,7 +70,8 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
                 rememberMyRequest(attempt.requestId) // 다른 창·탭의 도우미가 이 요청의 끝을 알린다(replyBubble)
                 if (notify) autoStarted.current?.()
                 setRun({ requestId: attempt.requestId, replyId: String(data.replyMessageId), text: String(data.resumedText ?? ''), reasoning: String(data.resumedReasoning ?? ''),
-                  startedAt: typeof data.createdAt === 'string' ? Date.parse(data.createdAt) : attempt.startedAt })
+                  startedAt: typeof data.createdAt === 'string' ? Date.parse(data.createdAt) : attempt.startedAt,
+                  firstTokenMs: typeof data.firstTokenMs === 'number' ? data.firstTokenMs : undefined, idleMs: typeof data.idleMs === 'number' ? data.idleMs : undefined })
                 void query.invalidateQueries({ queryKey: ['messages', attempt.threadId] })
               } else if (event === 'phase') {
                 setRun((current) => current ? { ...current, phase: String(data.text) } : current)

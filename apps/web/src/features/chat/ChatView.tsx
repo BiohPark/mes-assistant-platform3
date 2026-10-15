@@ -69,7 +69,7 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
   const remoteReply = messages.data?.find(item => item.status === 'streaming' && item.requestId === remoteRequestId)
   const visibleRun = chat.run ?? (remoteReply && remoteRequestId ? { requestId: remoteRequestId, replyId: remoteReply.id,
     text: remoteReply.content, reasoning: remoteReply.reasoning ?? '', phase: remoteRequest.data?.phase ?? undefined,
-    startedAt: Date.parse(remoteRequest.data?.createdAt ?? remoteReply.createdAt) } : null)
+    startedAt: Date.parse(remoteRequest.data?.createdAt ?? remoteReply.createdAt), firstTokenMs: remoteRequest.data?.firstTokenMs, idleMs: remoteRequest.data?.idleMs } : null)
   // 보관된 실패 시도가 있으면 다음 전송은 그 시도를 그대로 재전송하므로, 다른 텍스트를 프리필하면 화면과 전송 내용이 어긋난다.
   const pendingAttempt = chat.hasPendingAttempt()
   const askAgainDisabled = task.status === 'done' || !task.threadId || sending || chat.sending || !!chat.run || remoteStreaming || pendingAttempt
@@ -217,7 +217,7 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
     blockedReason={task.status !== 'done' && estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping} draftKey={task.id}
     placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}
     tools={assistant && <ModelPicker task={task} assistant={assistant} disabled={task.status === 'done'} />}
-    beforeSend={beforeSend} onSend={send} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />
+    beforeSend={beforeSend} onSend={send} startedAt={chat.waitingSince ?? submissionSince ?? visibleRun?.startedAt} onStop={() => { void chat.stop(chat.run?.requestId ?? messages.data?.find((item) => item.status === 'streaming')?.requestId) }} />
   {saveTarget && assistant && <SaveAsOutputDialog key={saveTarget.id} message={saveTarget} task={task} assistant={assistant} onOpenMaterials={onOpenMaterials} onClose={() => setSaveTarget(null)} />}</FileDropZone>
   <ReasonDialog key={String(reopenForSend)} open={reopenForSend} onOpenChange={open => {
     setReopenForSend(open)

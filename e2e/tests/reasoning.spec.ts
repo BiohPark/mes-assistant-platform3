@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 const mode = process.env.E2E_LLM_MODE ?? process.env.LLM_MODE ?? 'mock'
 
-test(`S10 ${mode}: opens elapsed thinking, collapses on answer, preserves reasoning and excludes it from follow-up context`, async ({ page }) => {
+test(`S10 ${mode}: keeps thinking collapsed with a last-lines preview, drops it on answer, preserves reasoning and excludes it from follow-up context`, async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' })
   await page.goto('/signup')
   await page.getByLabel('ID').fill(`e2e-reasoning-${Date.now()}`)
@@ -22,15 +22,18 @@ test(`S10 ${mode}: opens elapsed thinking, collapses on answer, preserves reason
   await expect(page.getByRole('timer')).toHaveText(/\d+초 경과/)
   const replyBubble = page.locator('[data-message-id]').filter({ has: page.locator('details').filter({ hasText: '생각 과정' }) }).last()
   const disclosure = replyBubble.locator('details')
-  await expect(disclosure).toHaveAttribute('open', '')
-  await expect(disclosure.getByText(/PRIVATE_REASONING/)).toBeVisible()
+  // S14: 생각 과정은 기본 접힘 — 생각하는 동안 마지막 줄 미리보기만 보인다
+  const preview = disclosure.locator('[data-reasoning-preview]')
+  await expect(disclosure).not.toHaveAttribute('open', '')
+  await expect(preview).toContainText('PRIVATE_REASONING')
   await expect(replyBubble.locator('.md-body')).toHaveCount(0)
   const header = replyBubble.getByRole('status').locator('..')
   await expect(header).toContainText(assistants[0]!.name) // S11 U1: 'assistant' 대신 에이전트 이름
   await expect(header.getByRole('timer')).toHaveText(/[1-9]\d*초 경과/)
-  await expect(disclosure.getByText(/답변을 준비합니다\./)).toBeVisible()
+  await expect(preview).toContainText('답변을 준비합니다.')
   await expect(replyBubble.locator('.md-body')).toBeVisible()
   await expect(disclosure).not.toHaveAttribute('open', '')
+  await expect(preview).toHaveCount(0)
   await expect(disclosure.getByText(/PRIVATE_REASONING/)).toBeHidden()
   await expect(page.getByRole('timer')).toHaveCount(0)
   const messages = await (await page.request.get(`/api/threads/${created.threadId}/messages`)).json() as Array<{ id: string; role: string; content: string; reasoning?: string; requestId?: string }>

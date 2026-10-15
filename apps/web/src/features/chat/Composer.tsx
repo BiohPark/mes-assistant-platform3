@@ -61,6 +61,8 @@ interface ComposerProps {
   /** Ask for confirmation before marking the draft as sent; false preserves it without an error. */
   beforeSend?: (discussion: boolean) => Promise<boolean>
   onStop: () => void
+  /** 응답 시작 시각 — 있으면 중지 버튼에 경과 시간을 함께 보인다 */
+  startedAt?: number
   suggestions?: string[]
   allowAttachments?: boolean
   onTyping?: () => void
@@ -83,8 +85,16 @@ interface ComposerProps {
   contentClassName?: string
 }
 
-export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, stagedAttachmentCount = 0, onSend, beforeSend, onStop, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey, tools, attachments = [], notice, contentClassName }: ComposerProps) {
+export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, stagedAttachmentCount = 0, onSend, beforeSend, onStop, startedAt, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey, tools, attachments = [], notice, contentClassName }: ComposerProps) {
   const t = useT()
+  const [now, setNow] = useState(Date.now)
+  const timing = streaming && startedAt !== undefined
+  useEffect(() => {
+    if (!timing) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [timing])
   const [saved] = useState(() => (draftKey ? getDraft(draftKey) : undefined))
   const [discussion, setDiscussionState] = useState(saved?.discussion ?? false)
   const [text, setTextState] = useState(saved?.text ?? '')
@@ -266,8 +276,10 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
             </Button>
           )}
           {streaming && !discussion ? (
-            <Button type="button" variant="outline" size="icon-sm" aria-label={t('chat.stop')} onClick={onStop}>
+            <Button type="button" variant="outline" size={timing ? 'sm' : 'icon-sm'} aria-label={t('chat.stop')} onClick={onStop}>
               <Square className="size-3.5" />
+              {/* 이름은 '중지'로 고정 — 매초 바뀌는 경과는 보이기만 한다 */}
+              {timing && <span aria-hidden="true" className="tabular-nums">{t('chat.stopElapsed', { seconds: Math.max(0, Math.floor((now - startedAt) / 1000)) })}</span>}
             </Button>
           ) : (
             <Button type="button" size="icon-sm" aria-label={t('chat.send')} onClick={() => void submit()} disabled={!canSend} title={blocked ? blockedReason : undefined}>

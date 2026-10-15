@@ -1,6 +1,6 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import type { Message } from '@mes/domain'
@@ -11,7 +11,7 @@ import { MessageBubble } from './MessageBubble'
 const { copy, copyError, copySuccess } = vi.hoisted(() => ({ copy: vi.fn(), copyError: vi.fn(), copySuccess: vi.fn() }))
 vi.mock('@/lib/clipboard', () => ({ copyText: copy }))
 vi.mock('sonner', () => ({ toast: { error: copyError, success: copySuccess } }))
-afterEach(() => { vi.unstubAllGlobals(); copy.mockReset(); copyError.mockClear(); copySuccess.mockClear() })
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); copy.mockReset(); copyError.mockClear(); copySuccess.mockClear() })
 
 it.each([
   { role: 'user', kind: undefined, intake: false, tone: 'primary', background: 'bg-primary' },
@@ -153,6 +153,11 @@ it('opens the mobile actions menu by keyboard and respects disabled reasking', a
   expect(ask).not.toHaveBeenCalled()
 })
 
+function reduceMotion() {
+  const original = window.matchMedia
+  window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query, addListener() {}, removeListener() {} })) as unknown as typeof window.matchMedia
+  onTestFinished(() => { window.matchMedia = original })
+}
 const thinkingMessage: Message = { id: 'thinking', threadId: 'h', role: 'assistant', content: '', reasoning: '검토 중', status: 'streaming', createdAt: '2026-01-01T00:00:00Z', attachmentIds: [] }
 function renderThinking(message = thinkingMessage) {
   vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
@@ -161,30 +166,50 @@ function renderThinking(message = thinkingMessage) {
   return render(<MessageBubble message={message} />, { wrapper })
 }
 
-it('opens streaming reasoning, follows its last line instantly, and collapses when the answer starts', () => {
-  const { container, rerender } = renderThinking()
+it('keeps streaming reasoning collapsed with a last-lines preview that leaves the accessible name alone, and drops the preview once the answer starts', () => {
+  const { container, rerender } = renderThinking({ ...thinkingMessage, reasoning: '첫 줄\n\n둘째 줄\n셋째 줄' })
   const details = container.querySelector('details')!
   const summary = screen.getByText('생각 과정')
-  expect(details.open).toBe(true)
-  expect(summary).toHaveAttribute('aria-expanded', 'true')
-  const reasoning = screen.getByText('검토 중')
-  expect(reasoning).toHaveAttribute('aria-live', 'off')
-  expect(reasoning).toHaveClass('max-h-64', 'overflow-y-auto', 'scroll-auto')
-  Object.defineProperty(reasoning, 'scrollHeight', { configurable: true, value: 500 })
-  rerender(<MessageBubble message={{ ...thinkingMessage, reasoning: '검토 중\n다음 단계' }} />)
-  expect(reasoning.scrollTop).toBe(500)
-  rerender(<MessageBubble message={{ ...thinkingMessage, content: '답변 시작' }} />)
   expect(details.open).toBe(false)
   expect(summary).toHaveAttribute('aria-expanded', 'false')
-  expect(screen.getByText('답변 시작')).toBeInTheDocument()
+  const preview = container.querySelector('[data-reasoning-preview]')!
+  expect(preview).toHaveAttribute('aria-hidden', 'true')
+  expect(preview).toHaveTextContent('둘째 줄 셋째 줄')
+  expect(preview).not.toHaveTextContent('첫 줄')
+  expect(summary).toContainElement(preview as HTMLElement)
+  rerender(<MessageBubble message={{ ...thinkingMessage, content: '답변 시작' }} />)
+  expect(details.open).toBe(false)
+  expect(container.querySelector('[data-reasoning-preview]')).toBeNull()
+  expect(container.querySelector('.md-body')).toBeInTheDocument()
 })
 
-it.each(['done', 'error'] as const)('collapses reasoning when streaming ends with %s even without an answer', (status) => {
+it('follows opened reasoning only while the reader stays at its bottom', async () => {
+  reduceMotion()
   const { container, rerender } = renderThinking()
+  await userEvent.setup().click(screen.getByText('생각 과정'))
   expect(container.querySelector('details')?.open).toBe(true)
+  const box = container.querySelector<HTMLElement>('details > div')!
+  expect(box).toHaveAttribute('aria-live', 'off')
+  expect(box).toHaveClass('max-h-64', 'overflow-y-auto', 'scroll-auto')
+  Object.defineProperties(box, { scrollHeight: { configurable: true, value: 500 }, clientHeight: { configurable: true, value: 200 } })
+  rerender(<MessageBubble message={{ ...thinkingMessage, reasoning: '검토 중\n다음 단계' }} />)
+  expect(box.scrollTop).toBe(500)
+  box.scrollTop = 100 // 사용자가 위로 올려 읽는다
+  fireEvent.scroll(box)
+  rerender(<MessageBubble message={{ ...thinkingMessage, reasoning: '검토 중\n다음 단계\n셋째' }} />)
+  expect(box.scrollTop).toBe(100)
+  box.scrollTop = 300 // 바닥(500-200)으로 돌아오면 다시 따라간다
+  fireEvent.scroll(box)
+  rerender(<MessageBubble message={{ ...thinkingMessage, reasoning: '검토 중\n다음 단계\n셋째\n넷째' }} />)
+  expect(box.scrollTop).toBe(500)
+})
+
+it.each(['done', 'error'] as const)('keeps reasoning collapsed without a preview when streaming ends with %s', (status) => {
+  const { container, rerender } = renderThinking()
+  expect(container.querySelector('details')?.open).toBe(false)
   rerender(<MessageBubble message={{ ...thinkingMessage, status }} />)
   expect(container.querySelector('details')?.open).toBe(false)
-  expect(screen.getByText('검토 중')).toBeInTheDocument()
+  expect(container.querySelector('[data-reasoning-preview]')).toBeNull()
 })
 
 it.each(['close', 'open'] as const)('preserves the user choice to %s reasoning across tokens, answer and completion', async (choice) => {
@@ -193,7 +218,7 @@ it.each(['close', 'open'] as const)('preserves the user choice to %s reasoning a
   const summary = screen.getByText('생각 과정')
   summary.focus()
   await user.keyboard('{Enter}')
-  if (choice === 'open') await user.keyboard(' ')
+  if (choice === 'close') await user.keyboard(' ')
   const open = choice === 'open'
   expect(container.querySelector('details')?.open).toBe(open)
   for (const message of [
@@ -212,6 +237,49 @@ it('keeps completed reasoning initially collapsed and allows reopening it', asyn
   expect(container.querySelector('details')?.open).toBe(false)
   await userEvent.setup().click(screen.getByText('생각 과정'))
   expect(container.querySelector('details')?.open).toBe(true)
+})
+
+it('shows the progress line with a live dot, last response age, and the limit countdown once quiet', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  const client = new QueryClient()
+  const view = (progress: import('react').ComponentProps<typeof MessageBubble>['progress']) => <QueryClientProvider client={client}><MessageBubble message={thinkingMessage} progress={progress} /></QueryClientProvider>
+  const { container, rerender } = render(view({ phase: '생각 중', elapsed: 12, lastSignal: 3 }))
+  const header = screen.getByRole('status').parentElement!
+  expect(screen.getByRole('status')).toHaveTextContent('생각 중')
+  expect(within(header).getByRole('timer')).toHaveTextContent('12초 경과')
+  expect(header).toHaveTextContent('마지막 응답 3초 전')
+  const dot = container.querySelector('[data-live-dot]')!
+  expect(dot).toHaveAttribute('aria-hidden', 'true')
+  expect(dot).toHaveClass('motion-safe:animate-pulse')
+  rerender(view({ phase: '생각 중', elapsed: 40, lastSignal: 25, quiet: true, limitLeft: 275 }))
+  expect(screen.getByRole('status')).toHaveTextContent('응답 대기 중')
+  expect(header).toHaveTextContent('제한까지 4분 35초')
+  expect(header).not.toHaveTextContent('마지막 응답')
+  expect(container.querySelector('[data-live-dot]')).not.toHaveClass('motion-safe:animate-pulse')
+  rerender(view({ phase: '생각 중', elapsed: 300, quiet: true, limitLeft: 9 }))
+  expect(header).toHaveTextContent('제한까지 9초')
+  expect(screen.getAllByRole('status')).toHaveLength(1)
+  expect(screen.getAllByRole('timer')).toHaveLength(1)
+})
+
+it('types out a streaming answer for display while copy keeps the raw text', async () => {
+  vi.useFakeTimers()
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  copy.mockResolvedValue(true)
+  const client = new QueryClient()
+  const streaming: Message = { ...thinkingMessage, reasoning: undefined, content: '시작' }
+  const view = (message: Message) => <QueryClientProvider client={client}><MessageBubble message={message} /></QueryClientProvider>
+  const { container, rerender } = render(view(streaming))
+  act(() => vi.advanceTimersByTime(1000))
+  const full = `시작${'가'.repeat(200)}`
+  rerender(view({ ...streaming, content: full }))
+  const body = () => container.querySelector('.md-body')!.textContent!
+  expect(body().length).toBeLessThan(full.length)
+  fireEvent.click(within(screen.getByRole('group', { name: '메시지 동작' })).getByRole('button', { name: '복사' }))
+  expect(copy).toHaveBeenCalledWith(full)
+  rerender(view({ ...streaming, content: full, status: 'done' }))
+  expect(body()).toBe(full)
+  vi.useRealTimers()
 })
 
 it.each(['', '   '])('omits an empty assistant answer bubble for %j', (content) => {
@@ -236,8 +304,9 @@ it('copies fenced code without controls or inline code and preserves raw Markdow
 })
 
 it('shows reasoning text as received from the model', () => {
-  renderThinking({ ...thinkingMessage, reasoning: 'original reasoning' })
-  expect(screen.getByText('original reasoning')).toBeVisible()
+  const { container } = renderThinking({ ...thinkingMessage, reasoning: 'original reasoning' })
+  expect(container.querySelector('[data-reasoning-preview]')).toHaveTextContent('original reasoning')
+  expect(container.querySelector('details > div')).toHaveTextContent('original reasoning')
 })
 
 it('S14: 답변은 넓게(모바일 전체 폭), 내 질문은 모바일 90%·데스크톱 80%까지 쓴다', () => {
