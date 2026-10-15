@@ -270,7 +270,16 @@ export interface ConversationRequestInput {
   bytes: number
 }
 
-export type RequestInput = FileRequestInput | ConversationRequestInput
+export interface SrRequestInput {
+  kind: 'sr'
+  srId: ID
+  code: string
+  title: string
+  weight: InputWeight
+  bytes: number
+}
+
+export type RequestInput = FileRequestInput | ConversationRequestInput | SrRequestInput
 
 /** 답변 1건을 만들 때 AI에 실제로 보낸 것 — 화면의 "사용한 자료"와 전송 기록 뷰어가 읽는다 */
 export interface OwuiToolDelivery {

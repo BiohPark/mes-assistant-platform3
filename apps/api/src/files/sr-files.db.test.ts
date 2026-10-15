@@ -17,6 +17,7 @@ import { RequestsService } from '../requests/requests.service.js'
 import { SrService } from '../sr/sr.service.js'
 import { TaskExtrasService } from '../tasks/task-extras.service.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
+import { SrInputsService } from '../tasks/sr-inputs.service.js'
 import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 import { DbFilesService } from './files.service.js'
 import { FileStorageService } from './fileStorage.service.js'
@@ -122,22 +123,40 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
   })
 
   it('보낸 것=본 것: 트레이 추정과 실제 전송이 같은 조립을 타고, ×로 빼면 둘 다에서 빠진다', async () => {
-    const { srId, official } = await submittedSr('전송')
+    const { srId, code, official } = await submittedSr('전송')
     const started = await startFrom(srId)
     const requests = new RequestsService(db, config, provider)
     try {
       const estimate = await requests.estimate('staff', started.threadId!, { draft: '분석해 줘' })
-      expect(estimate.inputs).toHaveLength(2)
+      expect(estimate.inputs).toHaveLength(3)
       expect(estimate.inputs[0]).toMatchObject({ kind: 'file', fileId: official.id, name: official.name, source: 'SR 첨부', weight: 'reference' })
-      await (await requests.start('staff', started.threadId!, { content: '분석해 줘' }, 'sr-files-send-1')).done
+      expect(estimate.inputs[2]).toMatchObject({ kind: 'sr', srId, code, title: '전송', weight: 'reference' })
+      const sent = await requests.start('staff', started.threadId!, { content: '분석해 줘' }, 'sr-files-send-1')
+      await sent.done
+      expect((await requests.get(sent.id)).bytes).toBe(estimate.bytes)
+      expect((await requests.get(sent.id)).inputs).toHaveLength(estimate.inputs.length)
       expect(captured).toHaveLength(1)
       expect(JSON.stringify(captured[0]!.messages)).toContain('SR-ATTACHMENT-BODY 전송')
-      // SR 시작 시 담긴 첨부는 첫 요청에 한 번 가고 스테이징에서 빠진다
+      expect(captured[0]!.messages[0]!.content).toContain(`### ${code} 전송\n본문`)
+      // SR 시작 시 담긴 본문과 첨부는 첫 요청에 한 번 가고 스테이징에서 빠진다
       expect((await tasks.get(started.id)).inputs).toEqual([])
-      expect((await requests.estimate('staff', started.threadId!, { draft: '다시' })).inputs).toEqual([])
+      const next = await requests.estimate('staff', started.threadId!, { draft: '다시' })
+      expect(next.inputs).toEqual([])
+      expect(next.srs).toEqual([{ code, title: '전송' }])
       await (await requests.start('staff', started.threadId!, { content: '다시' }, 'sr-files-send-2')).done
       expect(captured).toHaveLength(2)
       expect(JSON.stringify(captured[1]!.messages)).not.toContain('SR-ATTACHMENT-BODY')
+      expect(captured[1]!.messages[0]!.content).not.toContain(`### ${code} 전송\n본문`)
+      const srInputs = new SrInputsService(db, new EventsService())
+      await srInputs.select('staff', started.id, srId)
+      await files.setInput('staff', started.id, official.id, 'reference')
+      await srInputs.remove('staff', started.id, srId)
+      await files.setInput('staff', started.id, official.id, null)
+      expect((await requests.estimate('staff', started.threadId!, { draft: '제거 확인' })).inputs).toEqual([])
+      await (await requests.start('staff', started.threadId!, { content: '제거 확인' }, 'sr-files-send-removed')).done
+      expect(captured).toHaveLength(3)
+      expect(JSON.stringify(captured[2]!.messages)).not.toContain('SR-ATTACHMENT-BODY')
+      expect(captured[2]!.messages[0]!.content).not.toContain(`### ${code} 전송\n본문`)
     } finally { requests.onModuleDestroy() }
   })
 
@@ -188,20 +207,30 @@ describe('연결 SR 첨부 → 업무 자료함', () => {
   })
 
   it('한도를 넘으면 자르지 않고 전송을 막는다', async () => {
-    const { srId } = await submittedSr('한도')
+    const { srId, code } = await submittedSr('한도')
     const started = await startFrom(srId)
     const requests = new RequestsService(db, config, provider)
     await db.insert(appSetting).values({ key: 'requestBudgetBytes', value: 64 }).onDuplicateKeyUpdate({ set: { value: 64 } })
     try {
       const estimate = await requests.estimate('staff', started.threadId!, { draft: '분석' })
       expect(estimate.overLimit).toBe(true)
-      expect(estimate.inputs).toHaveLength(2)
+      expect(estimate.inputs).toHaveLength(3)
+      expect(estimate.inputs[2]).toMatchObject({ kind: 'sr', srId, code, title: '한도' })
       const over = await requests.start('staff', started.threadId!, { content: '분석' }, 'sr-files-over')
       await over.done
       expect(captured).toHaveLength(0)
       // 시작과 함께 스테이징은 비지만, 무엇을 담았는지는 요청 기록에 남아 재시도(빼고 다시)가 그 기준으로 된다
-      expect(await requests.get(over.id)).toMatchObject({ status: 'failed', code: 'REQUEST_TOO_LARGE', inputs: [{ fileId: expect.any(String) }, { fileId: expect.any(String) }] })
+      expect(await requests.get(over.id)).toMatchObject({ status: 'failed', code: 'REQUEST_TOO_LARGE', bytes: estimate.bytes, hasSnapshot: false,
+        inputs: [{ kind: 'file', fileId: expect.any(String) }, { kind: 'file', fileId: expect.any(String) }, { kind: 'sr', srId, srCode: code, srTitle: '한도' }] })
       expect((await tasks.get(started.id)).inputs).toEqual([])
+      const next = await requests.estimate('staff', started.threadId!, { draft: '분석' })
+      expect(next.inputs).toEqual([])
+      expect(next.srs).toEqual([{ code, title: '한도' }])
+      expect(next.bytes).toBeLessThan(estimate.bytes)
+      const unselected = await requests.start('staff', started.threadId!, { content: '분석' }, 'sr-files-over-unselected')
+      await unselected.done
+      expect(await requests.get(unselected.id)).toMatchObject({ status: 'failed', code: 'REQUEST_TOO_LARGE', inputs: [], hasSnapshot: false })
+      expect(captured).toHaveLength(0)
     } finally {
       await db.delete(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
       requests.onModuleDestroy()

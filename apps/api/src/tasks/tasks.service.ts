@@ -5,7 +5,7 @@ import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, tagSu
 import { and, desc, eq, exists, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import { alias, unionAll } from 'drizzle-orm/mysql-core'
 import { DB, type Db } from '../db/db.module.js'
-import { activityLog, appUser, assistant, assistantChecklistTemplate, chatRequest, chatRequestInput, checklistItem, checklistReview, checklistReviewItem, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, serviceRequest, tag, task, taskAssignee, taskFeedback, taskInput, taskTag, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, assistantChecklistTemplate, chatRequest, chatRequestInput, checklistItem, checklistReview, checklistReviewItem, contextSnapshot, contextSnapshotMessage, conversationInput, dbLock, fileObject, message, messageAttachment, serviceRequest, srInput, tag, task, taskAssignee, taskFeedback, taskInput, taskTag, thread } from '../db/schema.js'
 import { EventsService } from '../events/events.service.js'
 import { assertTaskAccess, assertThreadAccess } from '../sr/access.js'
 import { srAttachments } from '../files/sr-attachments.js'
@@ -230,6 +230,7 @@ export class DbTasksService {
       }
       await tx.insert(activityLog).values({ id: id(), type: 'task.created', userId: actor, taskId, assistantId: selected.id, payload: { assistantName: selected.name } })
       if (srId) {
+        await tx.insert(srInput).values({ taskId, srId })
         // SR에서 시작한 업무: 접수 첨부 정본을 참고 입력으로 기본 선택한다. 파일은 복사하지 않고 같은 file_object를 가리키며, 사람이 ×로 뺀다.
         const attachments = await srAttachments(tx, srId)
         if (attachments.length) {

@@ -376,6 +376,12 @@ export const conversationInput = mysqlTable(
   ],
 )
 
+/** 다음 질문에 한 번만 담을 연결 SR 본문. */
+export const srInput = mysqlTable('sr_input', {
+  taskId: varchar('task_id', { length: 191 }).notNull().references((): AnyMySqlColumn => task.id, { onDelete: 'cascade' }),
+  srId: varchar('sr_id', { length: 191 }).notNull().references((): AnyMySqlColumn => serviceRequest.id),
+}, (t) => [primaryKey({ columns: [t.taskId, t.srId] })])
+
 // ── 요청 기록 ─────────────────────────────────────────────────────────────
 export const chatRequest = mysqlTable(
   'chat_request',
@@ -427,6 +433,8 @@ export const chatRequestInput = mysqlTable(
     weight: text('weight').notNull(),
     fileId: varchar('file_id', { length: 191 }).references((): AnyMySqlColumn => fileObject.id),
     fileVersion: integer('file_version'),
+    srId: varchar('sr_id', { length: 191 }).references((): AnyMySqlColumn => serviceRequest.id),
+    srSnapshot: jsonObject('sr_snapshot').$type<{ id: string; code: string; title: string; body: string }>(),
     sourceLabel: text('source_label'),
     oneShot: boolean('one_shot').notNull().default(false),
     delivery: text('delivery'),
@@ -440,7 +448,8 @@ export const chatRequestInput = mysqlTable(
   },
   (t) => [
     primaryKey({ columns: [t.requestId, t.seq] }),
-    check('chat_request_input_kind_check', inList(t.kind, ['file', 'conversation'])),
+    check('chat_request_input_kind_check', inList(t.kind, ['file', 'conversation', 'sr'])),
+    check('chat_request_input_sr_check', sql`(${t.kind} = 'sr') = (${t.srId} is not null) and (${t.kind} = 'sr') = (${t.srSnapshot} is not null)`),
     check('chat_request_input_weight_check', inList(t.weight, ['main', 'reference'])),
     check('chat_request_input_delivery_check', inList(t.delivery, ['attached', 'inline', 'metadata_only', 'failed'])),
     check('chat_request_input_mode_check', inList(t.mode, ['full', 'messages', 'summary'])),

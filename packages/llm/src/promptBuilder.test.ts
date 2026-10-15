@@ -112,7 +112,7 @@ describe('buildChatRequest — files', () => {
       bytes: value.bytes, limitBytes: value.limitBytes, srCodes: value.srCodes, srs: value.srs,
       inputs: value.inputs.map((item) => item.kind === 'file' ? { kind: item.kind, fileId: item.fileId, version: item.version,
         weight: item.weight, source: item.source, oneShot: item.oneShot, delivery: item.delivery, bytes: item.bytes }
-        : { kind: item.kind, sourceTaskId: item.sourceTaskId, snapshotId: item.snapshotId, mode: item.mode, messageCount: item.messageCount, bytes: item.bytes }) })
+        : item.kind === 'sr' ? item : { kind: item.kind, sourceTaskId: item.sourceTaskId, snapshotId: item.snapshotId, mode: item.mode, messageCount: item.messageCount, bytes: item.bytes }) })
     expect(comparable(actual.info)).toEqual(comparable(dry.info))
   })
 
@@ -146,8 +146,16 @@ describe('buildChatRequest — linked SR by tag', () => {
     expect(built.info.srs).toEqual([{ code: 'SR-2026-0001', title: '알람' }])
     const dry = await buildChatRequest(scope, thread, [], { dryRun: true })
     expect(dry.info.srs).toEqual(built.info.srs)
-    expect(built.messages[0].content).toContain('## 연결된 SR (1)')
-    expect(built.messages[0].content).toContain('SR-BODY')
+    expect(built.messages[0].content).not.toContain('SR-BODY')
+    expect(built.info.inputs).toEqual([])
+    const captured = [(await db.serviceRequests.get(sr.id))!]
+    const selected = await buildChatRequest(scope, thread, [], { srs: captured })
+    const estimated = await buildChatRequest(scope, thread, [], { srs: captured, dryRun: true })
+    expect(selected.messages[0].content).toContain('SR-BODY')
+    expect(selected.info.inputs).toContainEqual(expect.objectContaining({ kind: 'sr', srId: sr.id, code: 'SR-2026-0001' }))
+    expect(selected.info.bytes).toBe(estimated.info.bytes)
+    expect(selected.messages).toEqual(estimated.messages)
+    expect((await buildChatRequest(scope, thread, [], { srs: [] })).messages[0].content).not.toContain('SR-BODY')
   })
 })
 

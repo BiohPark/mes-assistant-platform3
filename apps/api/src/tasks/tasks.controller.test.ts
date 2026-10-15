@@ -12,6 +12,7 @@ import { CONFIG, loadConfig } from '../config/config.js'
 import { HEALTH_PROBE } from '../health/health.controller.js'
 import { TaskExtrasService } from './task-extras.service.js'
 import { TaskBriefService } from './task-brief.service.js'
+import { SrInputsService } from './sr-inputs.service.js'
 import { DbTasksService } from './tasks.service.js'
 
 const config = loadConfig({ DATABASE_URL: 'mysql://u:p@localhost:1/none', SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', AUTH_MODE: 'local' })
@@ -25,6 +26,7 @@ describe('tasks HTTP API', () => {
     delete: vi.fn(async () => undefined), suggestions: vi.fn(async () => []), activity: vi.fn(async () => []),
     messages: vi.fn(async () => []), appendMessage: vi.fn(async () => ({ id: 'm', kind: 'discussion' })),
   }
+  const srInputs = { list: vi.fn(async () => [{ srId: 'sr', selected: true, used: false }]), select: vi.fn(), remove: vi.fn() }
   const extras = { review: vi.fn() }
   const brief = { get: vi.fn(async () => ({ stats: { questions: 0, participants: [], startedAt: '2026-10-15T00:00:00.000Z' }, generating: false, failed: false, stale: false })) }
   beforeEach(async () => {
@@ -32,6 +34,7 @@ describe('tasks HTTP API', () => {
       .overrideProvider(CONFIG).useValue(config)
       .overrideProvider(DbTasksService).useValue(service)
       .overrideProvider(TaskExtrasService).useValue(extras)
+      .overrideProvider(SrInputsService).useValue(srInputs)
       .overrideProvider(TaskBriefService).useValue(brief)
       .overrideProvider(HEALTH_PROBE).useValue(async () => true)
       .overrideProvider(SESSION_STORE).useValue({ resolve: async (token: string) => token === 'member' ? { id: 'u', name: '사용자', role: '', theme: 'system' as const, locale: 'ko' as const, isSystemOwner: false } : null })
@@ -41,6 +44,21 @@ describe('tasks HTTP API', () => {
   })
   afterEach(async () => { await app.close(); vi.clearAllMocks() })
   const auth = () => ({ Cookie: 'mes_session=member' })
+
+  it('authenticates SR input routes and maps list/select/remove to the task and SR IDs', async () => {
+    await request(app.getHttpServer()).get('/api/tasks/t/sr-inputs').expect(401)
+    await request(app.getHttpServer()).put('/api/tasks/t/sr-inputs/sr').expect(401)
+    await request(app.getHttpServer()).delete('/api/tasks/t/sr-inputs/sr').expect(401)
+    const listed = await request(app.getHttpServer()).get('/api/tasks/t/sr-inputs').set(auth()).expect(200)
+    expect(listed.body).toEqual([{ srId: 'sr', selected: true, used: false }])
+    expect(srInputs.list).toHaveBeenCalledWith('u', 't')
+    await request(app.getHttpServer()).put('/api/tasks/t/sr-inputs/sr').set(auth()).expect(204)
+    expect(srInputs.select).toHaveBeenCalledWith('u', 't', 'sr')
+    await request(app.getHttpServer()).delete('/api/tasks/t/sr-inputs/sr').set(auth()).expect(204)
+    expect(srInputs.remove).toHaveBeenCalledWith('u', 't', 'sr')
+    srInputs.select.mockRejectedValueOnce(new ConflictException({ code: 'TASK_DONE' }))
+    await request(app.getHttpServer()).put('/api/tasks/t/sr-inputs/sr').set(auth()).expect(409)
+  })
 
   it('serves the display-only brief for the signed-in reader', async () => {
     const response = await request(app.getHttpServer()).get('/api/tasks/t/brief').set(auth()).expect(200)
