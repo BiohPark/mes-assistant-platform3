@@ -97,7 +97,7 @@ pnpm setup:env
 | `LLM_PRESET` | `openwebui`(서버가 `{origin}/api`를 붙임, 파일은 Files API) / `openai-compatible`(OpenAI 등 — base URL 그대로, 파일은 본문) | `openwebui` |
 | `LLM_BASE_URL` · `LLM_API_KEY` | LLM 서비스 주소·키 — `live`일 때 필수. **키는 이 파일에만**, 화면·응답·로그에 나오지 않음 | 가짜 OpenWebUI |
 | `LLM_DEFAULT_MODEL` | 전역 설정 미지정 시 폴백 모델 ID(선택) | 비움 |
-| `FILE_STORAGE_ROOT` | 파일 저장 루트(상대 경로면 api 실행 폴더 기준). 드라이브·UNC 경로 가능 | `./storage` |
+| `FILE_STORAGE_ROOT` | 파일 저장 루트(상대 경로면 읽은 `.env` 폴더 기준, .env 없으면 저장소 루트 — 실행 폴더와 무관. 운영은 절대 경로). 드라이브·UNC 경로 가능 | `./storage` |
 | `FILE_MAX_BYTES` · `FILE_MAX_PER_REQUEST` | 파일 하나 최대 크기(바이트)·요청당 첨부 개수 — PRD §6 제안값, 확정 시 기본값만 갱신 | `52428800`(50 MB) · `20` |
 | `REQUEST_FIRST_TOKEN_MS` · `REQUEST_FILES_FIRST_TOKEN_MS` · `REQUEST_IDLE_MS` | AI 요청 시간 제한 — 첫 응답(첨부 없음 5분/있음 10분)·본문/생각 청크 사이 무응답(5분) (FR-33) | `300000` · `600000` · `300000` |
 | `LLM_OWUI_MODE` · `LLM_OWUI_CLEANUP` | OpenWebUI 요청 방식(auto·session·direct)과 세션 채팅 정리 (S12, 관리 설정이 우선) | `auto` · `true` |
@@ -302,7 +302,7 @@ HTTPS_KEY_FILE='D:\mes-hub\config\certificates\server-key.pem'
 HTTPS_CA_FILE='D:\mes-hub\config\certificates\ca-chain.pem'
 ```
 
-드라이브 경로·공백·UNC 경로(`\\fileserver\certificates\server.pfx`)를 허용한다. **Windows 경로는 작은따옴표(`'D:\...'`)로 감싸거나 `/` 구분자(`D:/mes-hub/...`)를 쓴다** — `.env`의 큰따옴표 안에서는 `\n`이 줄바꿈으로 바뀌어(`"C:\new certs\..."`) 경로가 깨지며, 경로에 줄바꿈·탭 같은 제어 문자가 있으면 기동 오류로 안내한다. 상대 경로는 **프로세스 작업 폴더** 기준이다(WinSW는 `D:\mes-hub\app`). 운영에서는 절대 경로를 권장한다. 두 방식 혼용, PEM 짝 누락, CA 또는 PFX 비밀번호만 지정, 파일 누락·읽기 실패, 잘못된 키·PFX 비밀번호는 기동 오류가 된다. 비밀번호와 인증서 내용은 오류 로그에 출력하지 않는다. PEM 키는 암호화되지 않은 키를 사용한다. 암호화 개인 키가 필요하면 비밀번호가 있는 PFX를 사용한다.
+드라이브 경로·공백·UNC 경로(`\\fileserver\certificates\server.pfx`)를 허용한다. **Windows 경로는 작은따옴표(`'D:\...'`)로 감싸거나 `/` 구분자(`D:/mes-hub/...`)를 쓴다** — `.env`의 큰따옴표 안에서는 `\n`이 줄바꿈으로 바뀌어(`"C:\new certs\..."`) 경로가 깨지며, 경로에 줄바꿈·탭 같은 제어 문자가 있으면 기동 오류로 안내한다. 상대 경로는 **실제로 읽은 `.env` 파일이 있는 폴더** 기준이다(.env 없이 실행하면 저장소 루트 기준, 실행 폴더와 무관 — S13). 기동 로그와 진단 화면에 '파일 저장소' 절대 경로가 나온다. 운영에서는 절대 경로를 권장한다. 두 방식 혼용, PEM 짝 누락, CA 또는 PFX 비밀번호만 지정, 파일 누락·읽기 실패, 잘못된 키·PFX 비밀번호는 기동 오류가 된다. 비밀번호와 인증서 내용은 오류 로그에 출력하지 않는다. PEM 키는 암호화되지 않은 키를 사용한다. 암호화 개인 키가 필요하면 비밀번호가 있는 PFX를 사용한다.
 
 `APP_ORIGIN`은 사용자가 실제 접속하는 HTTPS origin(포트 포함)으로 설정하고 그 호스트가 인증서 SAN에 있어야 한다. 위 `localhost`는 예시이며 실제 발급 인증서의 호스트로 바꾼다. Secure 쿠키는 **`APP_ORIGIN`이 `https://`일 때만** 설정된다. 직접 HTTPS를 켜고 `APP_ORIGIN`을 HTTP로 두면 기동 경고가 난다. 개발 Vite 프록시는 기본 HTTP API를 전제로 하므로 이 직접 HTTPS 확인은 빌드한 web을 API에서 제공하는 배포 방식으로 한다.
 

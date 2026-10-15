@@ -2,6 +2,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { isIP } from 'node:net'
 import { z } from 'zod'
 import { AuthModeSchema, EmailDomainSchema, FILE_MAX_PER_REQUEST } from '@mes/contracts'
+import { configPaths, type ConfigPathOptions } from './paths.js'
 import { parseHttpsConfig } from '../https/https.js'
 
 const list = z
@@ -102,7 +103,7 @@ export function isOutsideApp(appPath: string, targetPath: string, pathApi = { re
 export type AppConfig = ReturnType<typeof loadConfig>
 
 /** 환경 변수 → 설정. 비밀값은 여기서만 읽고 로그에 남기지 않는다. */
-export function loadConfig(env: Record<string, string | undefined>) {
+export function loadConfig(env: Record<string, string | undefined>, pathOptions: ConfigPathOptions = {}) {
   const parsed = EnvSchema.safeParse(env)
   if (!parsed.success) {
     const keys = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
@@ -111,18 +112,26 @@ export function loadConfig(env: Record<string, string | undefined>) {
   const e = parsed.data
   const appOrigin = e.APP_ORIGIN
   const allowedOrigins = [...new Set([appOrigin, ...e.APP_EXTRA_ORIGINS])]
-  const envFileAt = process.execArgv.findIndex((arg) => arg === '--env-file' || arg.startsWith('--env-file='))
-  const envFileArg = process.execArgv[envFileAt]
-  const configFile = envFileArg?.startsWith('--env-file=') ? envFileArg.slice('--env-file='.length) : envFileAt >= 0 ? process.execArgv[envFileAt + 1] : undefined
-  const configOutsideApp = configFile && isOutsideApp(process.cwd(), resolve(configFile))
+  const paths = configPaths(pathOptions)
+  const fileStorageRoot = paths.resolve(e.FILE_STORAGE_ROOT, 'FILE_STORAGE_ROOT')
+  const configOutsideApp = paths.envFiles.some((file) => isOutsideApp(paths.appRoot, file, paths.pathApi))
   if (env.NODE_ENV === 'production' || configOutsideApp) {
-    if (!isAbsolute(e.FILE_STORAGE_ROOT) || !isOutsideApp(process.cwd(), resolve(e.FILE_STORAGE_ROOT))) {
+    if (!paths.pathApi.isAbsolute(e.FILE_STORAGE_ROOT) || !isOutsideApp(paths.appRoot, fileStorageRoot, paths.pathApi)) {
       throw new Error('설정 오류 — FILE_STORAGE_ROOT: 운영에서는 app 밖의 절대 경로여야 합니다')
+    }
+  }
+  const https = parseHttpsConfig(env)
+  if (https) {
+    if ('pfxFile' in https) https.pfxFile = paths.resolve(https.pfxFile, 'HTTPS_PFX_FILE')
+    else {
+      https.certFile = paths.resolve(https.certFile, 'HTTPS_CERT_FILE')
+      https.keyFile = paths.resolve(https.keyFile, 'HTTPS_KEY_FILE')
+      if (https.caFile) https.caFile = paths.resolve(https.caFile, 'HTTPS_CA_FILE')
     }
   }
   return {
     port: e.API_PORT,
-    https: parseHttpsConfig(env),
+    https,
     appOrigin,
     allowedOrigins,
     databaseUrl: e.DATABASE_URL,
@@ -141,8 +150,10 @@ export function loadConfig(env: Record<string, string | undefined>) {
     } : undefined,
     initialSystemOwners: e.INITIAL_SYSTEM_OWNERS,
     defaultEmailDomain: e.DEFAULT_EMAIL_DOMAIN,
-    fileStorageRoot: resolve(e.FILE_STORAGE_ROOT),
-    webDistDir: resolve(e.WEB_DIST_DIR || resolve(import.meta.dirname, '../../../web/dist')),
+    fileStorageRoot,
+    fileStorageResolution: { configuredPath: e.FILE_STORAGE_ROOT,
+      baseDir: paths.pathApi.isAbsolute(e.FILE_STORAGE_ROOT) ? null : paths.baseDir, envFile: paths.envFile },
+    webDistDir: e.WEB_DIST_DIR ? paths.resolve(e.WEB_DIST_DIR, 'WEB_DIST_DIR') : resolve(import.meta.dirname, '../../../web/dist'),
     fileMaxBytes: e.FILE_MAX_BYTES,
     fileMaxPerRequest: e.FILE_MAX_PER_REQUEST,
     llm: { mode: e.LLM_MODE, preset: e.LLM_PRESET, baseUrl: e.LLM_BASE_URL, apiKey: e.LLM_API_KEY, defaultModel: e.LLM_DEFAULT_MODEL,

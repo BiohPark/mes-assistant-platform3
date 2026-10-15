@@ -4,6 +4,10 @@ import { constants } from 'node:fs'
 import { arch, platform, release } from 'node:os'
 import type { Pool } from 'mysql2/promise'
 import { OwuiAccessCheckSchema, OwuiProbeResultSchema, type OwuiAccessCheck, type OwuiProbeReport } from '@mes/contracts'
+import { eq, isNotNull } from 'drizzle-orm'
+import { appSetting, assistant, fileObject } from '../db/schema.js'
+import { FileStorageService } from '../files/fileStorage.service.js'
+import { FILE_STORAGE } from '../files/files.service.js'
 import { OwuiProbeUnknownModelError, checkOpenWebUiAccess, probeOpenWebUi } from '@mes/llm'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, DB_CLIENT, type Db } from '../db/db.module.js'
@@ -41,6 +45,7 @@ export class DiagnosticsService {
     @Inject(DB_CLIENT) private readonly dbClient: Pool,
     @Inject(RequestsService) private readonly requests: RequestsService,
     @Inject(DB) private readonly settingsDb: Db,
+    @Inject(FILE_STORAGE) private readonly storage: FileStorageService,
   ) {}
 
   async get() {
@@ -81,6 +86,25 @@ export class DiagnosticsService {
       freeBytes = stats.bavail * stats.bsize
     } catch { /* path or filesystem unavailable */ }
 
+    let assistantImages: { configured: number; missing: number; unreadable: number } | null = null
+    try {
+      const images = await this.settingsDb.select({ storageKey: fileObject.storageKey, deletedAt: fileObject.deletedAt })
+        .from(assistant).leftJoin(fileObject, eq(assistant.imageFileId, fileObject.id)).where(isNotNull(assistant.imageFileId))
+      const [character] = await this.settingsDb.select({ fileId: appSetting.value }).from(appSetting)
+        .where(eq(appSetting.key, 'assistantImageFileId'))
+      if (typeof character?.fileId === 'string' && character.fileId) {
+        const [file] = await this.settingsDb.select({ storageKey: fileObject.storageKey, deletedAt: fileObject.deletedAt })
+          .from(fileObject).where(eq(fileObject.id, character.fileId)).limit(1)
+        images.push(file ?? { storageKey: null, deletedAt: null })
+      }
+      assistantImages = { configured: images.length, missing: 0, unreadable: 0 }
+      for (const image of images) {
+        if (!image.storageKey || image.deletedAt) { assistantImages.missing++; continue }
+        try { if (!await this.storage.exists(image.storageKey)) assistantImages.missing++ }
+        catch { assistantImages.unreadable++ }
+      }
+    } catch { /* 이미지 DB 조회 실패는 누락 0과 구분한다 */ }
+
     let databasePassword = false
     let dbPassword = ''
     try { dbPassword = decodeURIComponent(new URL(this.config.databaseUrl).password); databasePassword = Boolean(dbPassword) } catch { /* malformed URL */ }
@@ -90,7 +114,7 @@ export class DiagnosticsService {
       llm: { mode: this.config.llm.mode, preset: this.config.llm.preset,
         baseUrlHost: URL.canParse(this.config.llm.baseUrl) ? new URL(this.config.llm.baseUrl).hostname : '',
         defaultModel, ok, detail, ms: Math.round(performance.now() - started) },
-      storage: { path: this.config.fileStorageRoot, writable, freeBytes },
+      storage: { path: this.config.fileStorageRoot, resolution: this.config.fileStorageResolution, writable, freeBytes, assistantImages },
       trustProxy: this.config.trustProxy,
       settings: { authMode: this.config.authMode, apiPort: this.config.port, fileMaxBytes: this.config.fileMaxBytes,
         fileMaxPerRequest: this.config.fileMaxPerRequest, requestMaxActive: this.config.request.maxActive },

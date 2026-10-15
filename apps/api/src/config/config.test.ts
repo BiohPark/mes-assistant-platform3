@@ -1,6 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { resolve, win32 } from 'node:path'
 import { isOutsideApp, loadConfig } from './config.js'
+
+const roots: string[] = []
+function tempRoot() {
+  const root = mkdtempSync(resolve(tmpdir(), 'mes-config-'))
+  roots.push(root)
+  return root
+}
+afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 const base = {
   DATABASE_URL: 'mysql://u:p@localhost:3306/db',
@@ -109,23 +119,76 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base, SESSION_SECRET: 'short' })).toThrow(/SESSION_SECRET/)
   })
 
-  it('파일 저장 루트는 절대 경로로 풀어 둔다 (Windows 드라이브·UNC도 path.resolve가 처리)', () => {
-    const c = loadConfig({ ...base, FILE_STORAGE_ROOT: 'storage' })
-    expect(c.fileStorageRoot).toBe(resolve('storage'))
+  it('env 파일이 없으면 실행 폴더와 무관하게 저장소 루트를 쓴다', () => {
+    const appRoot = resolve(import.meta.dirname, '../../../..')
+    for (const cwd of [appRoot, resolve(appRoot, 'apps/api'), tmpdir()]) {
+      const c = loadConfig({ ...base, FILE_STORAGE_ROOT: 'storage', WEB_DIST_DIR: './public' }, { cwd, execArgv: [] })
+      expect(c.fileStorageRoot).toBe(resolve(appRoot, 'storage'))
+      expect(c.webDistDir).toBe(resolve(appRoot, 'public'))
+      expect(c.fileStorageResolution).toEqual({ configuredPath: 'storage', baseDir: appRoot, envFile: null })
+    }
+  })
+
+  it.each(['--env-file', '--env-file-if-exists'])('%s의 실제 env 폴더를 기준으로 상대 경로를 푼다', (flag) => {
+    const root = tempRoot()
+    mkdirSync(resolve(root, 'config'))
+    writeFileSync(resolve(root, 'config/.env'), 'FILE_STORAGE_ROOT=./storage\n')
+    for (const cwd of [root, resolve(root, 'apps/api')]) {
+      const file = resolve(root, 'config/.env')
+      for (const execArgv of [[`${flag}=${file}`], [flag, file]]) {
+        const c = loadConfig({ ...base, FILE_STORAGE_ROOT: './storage', WEB_DIST_DIR: 'public', HTTPS_CERT_FILE: 'tls/cert.pem', HTTPS_KEY_FILE: 'tls/key.pem' }, { cwd, execArgv, appRoot: root })
+        expect(c.fileStorageRoot).toBe(resolve(root, 'config/storage'))
+        expect(c.webDistDir).toBe(resolve(root, 'config/public'))
+        expect(c.https).toEqual({ certFile: resolve(root, 'config/tls/cert.pem'), keyFile: resolve(root, 'config/tls/key.pem'), caFile: undefined })
+        expect(c.fileStorageResolution).toEqual({ configuredPath: './storage', baseDir: resolve(root, 'config'), envFile: file })
+      }
+    }
+    const c = loadConfig(base, { cwd: resolve(root, 'apps/api'), execArgv: ['--env-file-if-exists=../../config/.env'], appRoot: root })
+    expect(c.fileStorageRoot).toBe(resolve(root, 'config/storage'))
+  })
+
+  it('없는 선택적 env 파일은 기준과 운영 규칙에 영향을 주지 않는다', () => {
+    const root = tempRoot()
+    writeFileSync(resolve(root, '.env'), '')
+    const c = loadConfig(base, { cwd: root, appRoot: root, execArgv: ['--env-file=.env', '--env-file-if-exists=../missing.env'] })
+    expect(c.fileStorageRoot).toBe(resolve(root, 'storage'))
+    expect(c.fileStorageResolution.envFile).toBe(resolve(root, '.env'))
+    expect(loadConfig(base, { cwd: tmpdir(), execArgv: ['--env-file-if-exists=missing.env'] }).fileStorageRoot)
+      .toBe(resolve(import.meta.dirname, '../../../../storage'))
+  })
+
+  it('절대 경로는 env 기준을 덧붙이지 않는다', () => {
+    const c = loadConfig({ ...base, FILE_STORAGE_ROOT: tmpdir(), WEB_DIST_DIR: tmpdir() })
+    expect(c.fileStorageRoot).toBe(resolve(tmpdir()))
+    expect(c.webDistDir).toBe(resolve(tmpdir()))
+    expect(c.fileStorageResolution.baseDir).toBeNull()
+  })
+
+  it('Windows 드라이브·UNC 경로와 상대 경로를 Windows 기준으로 푼다', () => {
+    const options = { cwd: 'D:\\work', appRoot: 'C:\\mes-hub\\app', execArgv: ['--env-file=C:\\mes-hub\\app\\config\\.env'], pathApi: win32, fileExists: () => true }
+    expect(loadConfig({ ...base, FILE_STORAGE_ROOT: 'storage' }, options).fileStorageRoot).toBe('C:\\mes-hub\\app\\config\\storage')
+    for (const path of ['D:\\storage', '\\\\server\\share\\storage']) {
+      expect(loadConfig({ ...base, NODE_ENV: 'production', FILE_STORAGE_ROOT: path }, options).fileStorageRoot).toBe(path)
+    }
+    expect(() => loadConfig({ ...base, FILE_STORAGE_ROOT: 'D:storage' }, options)).toThrow(/FILE_STORAGE_ROOT/)
   })
 
   it('운영 환경은 app 안이나 상대 경로의 파일 저장소를 거부한다', () => {
-    const app = process.cwd()
+    const app = resolve(import.meta.dirname, '../../../..')
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', FILE_STORAGE_ROOT: './storage' })).toThrow(/FILE_STORAGE_ROOT/)
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', FILE_STORAGE_ROOT: `${app}/storage` })).toThrow(/FILE_STORAGE_ROOT/)
     expect(loadConfig({ ...base, NODE_ENV: 'production', FILE_STORAGE_ROOT: resolve(app, '..', 'mes-hub-storage') }).fileStorageRoot).toBe(resolve(app, '..', 'mes-hub-storage'))
   })
 
-  it('app 밖의 설정 파일을 쓰면 NODE_ENV 없이도 운영 파일 저장소 규칙을 적용한다', () => {
-    for (const args of [['--env-file=../config/.env'], ['--env-file', '../config/.env']]) {
-      process.execArgv.push(...args)
-      try { expect(() => loadConfig({ ...base, FILE_STORAGE_ROOT: './storage' })).toThrow(/FILE_STORAGE_ROOT/) }
-      finally { process.execArgv.splice(-args.length) }
+  it.each(['--env-file', '--env-file-if-exists'])('app 밖의 %s는 운영 파일 저장소 규칙을 적용한다', (flag) => {
+    const root = tempRoot()
+    mkdirSync(resolve(root, 'app'))
+    writeFileSync(resolve(root, '.env'), '')
+    for (const execArgv of [[`${flag}=../.env`], [flag, '../.env']]) {
+      const options = { cwd: resolve(root, 'app'), appRoot: resolve(root, 'app'), execArgv }
+      expect(() => loadConfig({ ...base, FILE_STORAGE_ROOT: './storage' }, options)).toThrow(/FILE_STORAGE_ROOT/)
+      expect(() => loadConfig({ ...base, FILE_STORAGE_ROOT: resolve(root, 'app/storage') }, options)).toThrow(/FILE_STORAGE_ROOT/)
+      expect(loadConfig({ ...base, FILE_STORAGE_ROOT: resolve(root, 'storage') }, options).fileStorageRoot).toBe(resolve(root, 'storage'))
     }
   })
 
