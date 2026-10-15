@@ -28,7 +28,7 @@ export function QuickSwitch({ currentTaskId }: { currentTaskId: string }) {
   const responding = items.filter(isAiResponding).length
   return <DropdownMenu open={open} onOpenChange={setOpen}>
     <DropdownMenuTrigger asChild>
-      <Button ref={trigger} variant="ghost" size="icon" title={t('task.header.quickSwitch')} className="relative text-muted-foreground after:absolute after:-inset-1.5"><ArrowLeftRight /><span className="sr-only">{t('task.header.quickSwitch')}</span>{responding > 0 && <><span aria-hidden className="absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-tone-violet-bg px-1 text-[11px] font-medium text-tone-violet-fg">{responding}</span><span className="sr-only"> {t('task.header.quickSwitchResponding', { count: responding })}</span></>}</Button>
+      <Button ref={trigger} variant="ghost" size="icon" data-tour="quick-switch" title={t('task.header.quickSwitch')} className="relative text-muted-foreground after:absolute after:-inset-1.5"><ArrowLeftRight /><span className="sr-only">{t('task.header.quickSwitch')}</span>{responding > 0 && <><span aria-hidden className="absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-tone-violet-bg px-1 text-[11px] font-medium text-tone-violet-fg">{responding}</span><span className="sr-only"> {t('task.header.quickSwitchResponding', { count: responding })}</span></>}</Button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="start" className="w-[min(22rem,calc(100vw-2rem))]">
       <DropdownMenuLabel className="text-xs">{t('hub.myActiveConversations')}</DropdownMenuLabel>

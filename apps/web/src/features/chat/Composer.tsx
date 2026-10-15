@@ -216,6 +216,7 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
               type="button"
               variant={discussion ? 'secondary' : 'ghost'}
               size="icon-sm"
+              data-tour="discussion"
               aria-label={t('chat.discussionToggle')}
               aria-pressed={discussion}
               title={t('chat.discussionToggleTitle')}

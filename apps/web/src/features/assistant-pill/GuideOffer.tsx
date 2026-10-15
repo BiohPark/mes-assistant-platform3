@@ -39,7 +39,7 @@ export function GuideOffer({ userId, pillRef, pos }: { userId: string; pillRef: 
   const answer = (state: 'accepted' | 'skipped') => {
     saveGuideOffer(userId, route, state)
     setOffer(null)
-    if (state === 'accepted') useTourStore.getState().start(route)
+    if (state === 'accepted') useTourStore.getState().start(route, userId)
   }
 
   return <div ref={ref} role="status" aria-live="polite" aria-label={t('bubble.guideRegion')} style={shown ? { left: place.left, bottom: place.bottom, width: WIDTH } : undefined}

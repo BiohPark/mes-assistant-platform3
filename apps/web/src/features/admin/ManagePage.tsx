@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router'
 import { useMe } from '@/app/auth'
 import { ModelSelect } from '@/components/ModelSelect'
 import { OwuiAccessSummary } from './OwuiAccessSummary'
+import { EditorGuidePanel, HereMarker, type EditorPointer } from './EditorGuide'
 import { AgentTestChat } from '@/components/AgentTestChat'
 import { SuggestInput } from '@/components/SuggestInput'
 import { AssistantStatusBadge, IoBadges } from '@/components/StatusBadges'
@@ -76,7 +77,16 @@ function ImageDropzone({ assistant, onSaved }: { assistant: Assistant; onSaved: 
 
 type SaveKey = keyof AssistantInput | 'paths'
 /** 기존 에이전트는 필드를 바꾸는 즉시(텍스트는 blur) 그 필드만 PATCH한다. 새 에이전트는 만들기 버튼으로 한 번에 보낸다 */
-function AssistantEditorSheet({ assistant, onClose, onDeleted, onSaved, onCloseAutoFocus }: { assistant?: Assistant; onClose: () => void; onDeleted: () => void; onSaved: () => void; onCloseAutoFocus: (event: Event) => void }) {
+/** 기존 에이전트를 열 때 비어 있는 필수값 — 첫 번째만 짚는다 */
+function missingRequired(form: AssistantInput, paths: PathDraft[]): EditorPointer | null {
+  if (!form.name.trim()) return 'name'
+  if (!form.ownerId) return 'owner'
+  if (toClassifications(paths) === undefined) return 'paths'
+  return null
+}
+
+/** initialPointer: 대화의 모델 선택에서 [에이전트 설정 열기]로 왔을 때(?point=model) 연결 모델을 '여기예요'로 짚는다 */
+function AssistantEditorSheet({ assistant, userId, initialPointer, onClose, onDeleted, onSaved, onCloseAutoFocus }: { assistant?: Assistant; userId: string; initialPointer?: EditorPointer; onClose: () => void; onDeleted: () => void; onSaved: () => void; onCloseAutoFocus: (event: Event) => void }) {
   const t = useT()
   const users = useUsers()
   const assistants = useAssistants()
@@ -90,6 +100,12 @@ function AssistantEditorSheet({ assistant, onClose, onDeleted, onSaved, onCloseA
   const deleteTrigger = useRef<HTMLButtonElement>(null)
   const ownerTouched = useRef(false)
   const [ownerInvalid, setOwnerInvalid] = useState(false)
+  // '여기예요'는 시트를 연 동안 1회 — 우선순위: 온 길(?point) › 비어 있는 필수값 › OpenWebUI 연결 확인 ❌ › 만들기 실패
+  const [pointer, setPointer] = useState<EditorPointer | null>(() => initialPointer ?? (assistant ? missingRequired(fromAssistant(assistant), initialPaths(assistant)) : null))
+  const pointed = useRef(pointer !== null)
+  const point = (target: EditorPointer) => { if (pointed.current) return; pointed.current = true; setPointer(target) }
+  const dismissPointer = () => setPointer(null)
+  const marker = (target: EditorPointer) => ({ active: pointer === target, message: t(`admin.manage.guide.point.${target}`), onDismiss: dismissPointer })
   const { states, run, fail } = useAutoSave<SaveKey>()
   const peopleSource = useCallback(() => users.map(user => ({ value: user.id, label: user.name })), [users])
   const owner = users.find(user => user.id === form.ownerId)
@@ -141,9 +157,9 @@ function AssistantEditorSheet({ assistant, onClose, onDeleted, onSaved, onCloseA
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (assistant) return
-    if (!form.ownerId) { setOwnerInvalid(true); toast.error(t('admin.ownerRequired')); return }
+    if (!form.ownerId) { setOwnerInvalid(true); point('owner'); toast.error(t('admin.ownerRequired')); return }
     const classifications = toClassifications(paths)
-    if (classifications === undefined) { toast.error(t('admin.codesRequired')); return }
+    if (classifications === undefined) { point('paths'); toast.error(t('admin.codesRequired')); return }
     if (classifications === 'duplicate') { toast.error(t('admin.manage.duplicatePaths')); return }
     setBusy(true)
     try {
@@ -159,8 +175,9 @@ function AssistantEditorSheet({ assistant, onClose, onDeleted, onSaved, onCloseA
         <TabsList aria-label={t('admin.manage.editorLabel')}><TabsTrigger value="settings">{t('admin.manage.settingsTab')}</TabsTrigger><TabsTrigger value="test">{t('admin.manage.testTab')}</TabsTrigger></TabsList>
         <TabsContent value="settings" forceMount hidden={editorTab !== 'settings'}>
       <form onSubmit={(event) => void submit(event)} className="space-y-3 text-sm">
-        <Field label={t('admin.name')} status={states.name}><Input value={form.name} onChange={(event) => change('name', event.target.value)} onBlur={(event) => commitName(event.target.value)} required /></Field>
-        <fieldset className="space-y-2"><legend>{t('admin.manage.paths')}</legend>
+        <EditorGuidePanel userId={userId} />
+        <HereMarker {...marker('name')}><Field label={t('admin.name')} status={states.name}><Input value={form.name} onChange={(event) => change('name', event.target.value)} onBlur={(event) => commitName(event.target.value)} required /></Field></HereMarker>
+        <HereMarker {...marker('paths')}><fieldset className="space-y-2"><legend>{t('admin.manage.paths')}</legend>
           {paths.map((path, index) => <div key={path.key} role="group" aria-label={t('admin.manage.pathLabel', { number: index + 1 })} className="space-y-1 rounded-lg border p-2">
             <div className="flex items-center gap-1 text-xs"><span>{t('admin.manage.pathLabel', { number: index + 1 })}</span>{index === 0 && <Chip label={t('admin.manage.primaryPath')} />}
               <div className="ml-auto flex gap-1">{([-1, 1] as const).map(step => <Button key={step} type="button" size="icon-xs" variant="ghost" disabled={busy || (step === -1 ? index === 0 : index === paths.length - 1)} aria-label={t(step === -1 ? 'admin.manage.pathUp' : 'admin.manage.pathDown', { number: index + 1 })} onClick={() => { const next = [...paths]; [next[index], next[index + step]] = [next[index + step]!, next[index]!]; commitPaths(next) }}>{step === -1 ? '↑' : '↓'}</Button>)}
@@ -176,16 +193,16 @@ function AssistantEditorSheet({ assistant, onClose, onDeleted, onSaved, onCloseA
           </div>)}
           <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setPaths(current => [...current, { key: newId(), level1: '', level2: '' }])}>+ {t('admin.manage.addPath')}</Button>
           <SaveStatus state={states.paths} />
-        </fieldset>
-        <Field label={t('admin.owner')} error={ownerInvalid ? t('admin.ownerRequired') : undefined} status={states.ownerId}><PersonPicker mode="single" source={peopleSource}
+        </fieldset></HereMarker>
+        <HereMarker {...marker('owner')}><Field label={t('admin.owner')} error={ownerInvalid ? t('admin.ownerRequired') : undefined} status={states.ownerId}><PersonPicker mode="single" source={peopleSource}
           value={owner ? { value: owner.id, label: owner.name } : null} aria-label={t('admin.owner')} aria-required aria-invalid={ownerInvalid}
-          onChange={person => { ownerTouched.current = true; setOwnerInvalid(!person); if (person) commit('ownerId', person.value); else change('ownerId', '') }} /></Field>
+          onChange={person => { ownerTouched.current = true; setOwnerInvalid(!person); if (person) commit('ownerId', person.value); else change('ownerId', '') }} /></Field></HereMarker>
         <Field label={t('admin.assistantStatus')} status={states.status}><ToggleGroup type="single" variant="outline" size="sm" value={form.status} aria-label={t('admin.assistantStatus')}
           onValueChange={value => { if (value) commit('status', value as AssistantInput['status']) }} className="flex-wrap">
           {STATUSES.map(value => <ToggleGroupItem key={value} value={value}><AssistantStatusBadge status={value} /></ToggleGroupItem>)}
         </ToggleGroup></Field>
-        <Field label={t('admin.connectedModel')} status={states.modelId}><ModelSelect value={form.modelId ?? ''} onChange={value => change('modelId', value)} onBlur={() => commit('modelId', form.modelId ?? '')} disabled={busy} aria-label={t('admin.connectedModel')} /></Field>
-        <OwuiAccessSummary modelId={form.modelId ?? ''} />
+        <HereMarker {...marker('model')}><Field label={t('admin.connectedModel')} status={states.modelId}><ModelSelect value={form.modelId ?? ''} onChange={value => change('modelId', value)} onBlur={() => commit('modelId', form.modelId ?? '')} disabled={busy} aria-label={t('admin.connectedModel')} /></Field></HereMarker>
+        <HereMarker {...marker('owui')}><OwuiAccessSummary modelId={form.modelId ?? ''} onIssue={(issue) => { if (issue) point('owui') }} /></HereMarker>
         {!!form.link1 && <div className="flex items-center gap-2 text-xs"><span>{t('admin.manage.linkOverride')}</span><span aria-hidden>·</span><Button type="button" size="xs" variant="ghost" disabled={busy} onClick={() => commit('link1', '')}>{t('admin.manage.clearLink')}</Button></div>}
         <SaveStatus state={states.link1} />
         <Field label={t('admin.documentUrl')} status={states.docUrl}><Input value={form.docUrl ?? ''} onChange={(event) => change('docUrl', event.target.value)} onBlur={(event) => commit('docUrl', event.target.value)} /></Field>
@@ -270,7 +287,8 @@ function CodesPanel() {
 }
 
 export function ManagePage() {
-  const canEdit = useMe().roles.includes('system_owner')
+  const me = useMe()
+  const canEdit = me.roles.includes('system_owner')
   const [params, setParams] = useSearchParams()
   const t = useT()
   const rows = useAssistants()
@@ -287,9 +305,10 @@ export function ManagePage() {
   }
   function closeEditor() {
     setEditor(null)
-    const next = new URLSearchParams(params); next.delete('edit'); setParams(next, { replace: true })
+    const next = new URLSearchParams(params); next.delete('edit'); next.delete('point'); setParams(next, { replace: true })
   }
   const editId = params.get('edit')
+  const pointer = params.get('point') === 'model' ? 'model' : undefined
   const handledEditId = useRef<string | null>(null)
   useEffect(() => {
     if (!editId) { handledEditId.current = null; return }
@@ -301,5 +320,5 @@ export function ManagePage() {
   const filtered = sorted.filter((row) => `${row.name} ${(row.classifications ?? [row]).map(path => `${path.level1} ${path.level2}`).join(' ')}`.toLowerCase().includes(search.toLowerCase()))
   const refresh = () => { void client.invalidateQueries({ queryKey: ['assistants'] }); void client.invalidateQueries({ queryKey: ['managed-codes'] }) }
   useEffect(() => { if (editor === 'new' && users.length === 0) void client.invalidateQueries({ queryKey: ['users'] }) }, [editor, users.length, client])
-  return <><TopBar title={t('nav.assistants')} actions={canEdit && <Button ref={newAssistantTrigger} data-tour="admin-new-assistant" size="sm" onClick={() => openEditor('new')}>{t('admin.manage.newAssistant')}</Button>} /><div className="flex-1 space-y-4 overflow-auto p-4 lg:p-6"><div className="flex gap-2"><Button variant={tab === 'assistants' ? 'default' : 'outline'} onClick={() => setTab('assistants')}>{t('admin.manage.assistant')}</Button><Button variant={tab === 'codes' ? 'default' : 'outline'} onClick={() => setTab('codes')}>{t('admin.manage.codesTab')}</Button></div>{tab === 'codes' ? <CodesPanel /> : <><Field label={t('admin.manage.searchPlaceholder')} className="max-w-xs [&>label]:sr-only"><Input placeholder={t('admin.manage.searchPlaceholder')} value={search} onChange={(event) => setSearch(event.target.value)} /></Field><AssistantTable rows={filtered} onEdit={openEditor} canEdit={canEdit} />{canEdit && !search && <SortableAssistantGrid rows={sorted} onSaved={refresh} />}</>}</div>{canEdit && editor && <AssistantEditorSheet key={editor === 'new' ? 'new' : editor.id} assistant={editor === 'new' ? undefined : editor} onClose={closeEditor} onDeleted={() => { editorTrigger.current = null; closeEditor() }} onSaved={refresh} onCloseAutoFocus={event => { event.preventDefault(); (editorTrigger.current?.isConnected ? editorTrigger.current : newAssistantTrigger.current)?.focus() }} />}</>
+  return <><TopBar title={t('nav.assistants')} actions={canEdit && <Button ref={newAssistantTrigger} data-tour="admin-new-assistant" size="sm" onClick={() => openEditor('new')}>{t('admin.manage.newAssistant')}</Button>} /><div className="flex-1 space-y-4 overflow-auto p-4 lg:p-6"><div className="flex gap-2"><Button variant={tab === 'assistants' ? 'default' : 'outline'} onClick={() => setTab('assistants')}>{t('admin.manage.assistant')}</Button><Button variant={tab === 'codes' ? 'default' : 'outline'} onClick={() => setTab('codes')}>{t('admin.manage.codesTab')}</Button></div>{tab === 'codes' ? <CodesPanel /> : <><Field label={t('admin.manage.searchPlaceholder')} className="max-w-xs [&>label]:sr-only"><Input placeholder={t('admin.manage.searchPlaceholder')} value={search} onChange={(event) => setSearch(event.target.value)} /></Field><AssistantTable rows={filtered} onEdit={openEditor} canEdit={canEdit} />{canEdit && !search && <SortableAssistantGrid rows={sorted} onSaved={refresh} />}</>}</div>{canEdit && editor && <AssistantEditorSheet key={editor === 'new' ? 'new' : editor.id} assistant={editor === 'new' ? undefined : editor} userId={me.id} initialPointer={pointer} onClose={closeEditor} onDeleted={() => { editorTrigger.current = null; closeEditor() }} onSaved={refresh} onCloseAutoFocus={event => { event.preventDefault(); (editorTrigger.current?.isConnected ? editorTrigger.current : newAssistantTrigger.current)?.focus() }} />}</>
 }

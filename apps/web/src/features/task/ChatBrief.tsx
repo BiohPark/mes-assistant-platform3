@@ -32,7 +32,7 @@ export function ChatBrief({ taskId }: { taskId: string }) {
     ...(stats.participants.length ? [t('chat.brief.participants', { names: stats.participants.map((user) => user.name).join(', ') })] : []),
     t('chat.brief.started', { when: formatRelative(stats.startedAt) })].join(' · ')
   const placeholder = data.generating ? t('chat.brief.generating') : data.failed ? t('chat.brief.failed') : t('chat.brief.pending')
-  return <section data-testid="chat-brief" className="mx-4 mt-2 shrink-0 rounded-md border bg-muted/30 text-sm">
+  return <section data-testid="chat-brief" data-tour="chat-brief" className="mx-4 mt-2 shrink-0 rounded-md border bg-muted/30 text-sm">
     <button type="button" onClick={toggle} aria-expanded={!collapsed} aria-controls={bodyId} title={t('chat.brief.toggle')}
       className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-xs text-muted-foreground">
       <Sparkles className="size-3.5 shrink-0" aria-hidden />

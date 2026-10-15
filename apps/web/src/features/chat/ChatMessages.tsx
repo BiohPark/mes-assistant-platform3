@@ -134,10 +134,10 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
           <button type="button" disabled={!matches.length} onClick={() => nextMatch(1)} className="min-h-11 px-2 text-xs disabled:opacity-50">{t('chat.searchNext')}</button></>}
       </div>
   const tools = <>
-      <button ref={searchToggle} type="button" aria-label={t('chat.searchConversation')} title={t('chat.searchConversation')} aria-expanded={searchOpen}
+      <button ref={searchToggle} type="button" data-tour="chat-search" aria-label={t('chat.searchConversation')} title={t('chat.searchConversation')} aria-expanded={searchOpen}
         onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))} className={cn(toolButton, searchOpen && 'bg-muted text-foreground')}><Search aria-hidden="true" className="size-4" /></button>
       {questions.length > 0 && <Popover open={indexOpen} onOpenChange={setIndexOpen}><PopoverTrigger asChild>
-        <button type="button" aria-label={t('chat.questionIndex')} title={t('chat.questionIndex')} className={toolButton}><List aria-hidden="true" className="size-4" /></button>
+        <button type="button" data-tour="chat-toc" aria-label={t('chat.questionIndex')} title={t('chat.questionIndex')} className={toolButton}><List aria-hidden="true" className="size-4" /></button>
       </PopoverTrigger><PopoverContent align="end" aria-label={t('chat.questionIndex')} className="max-h-80 overflow-y-auto"
         onCloseAutoFocus={(event) => { if (jumpTarget.current) { event.preventDefault(); focusMessage(jumpTarget.current); jumpTarget.current = null } }}>
         <nav aria-label={t('chat.questionIndex')} className="space-y-1">{questions.map((item, index) => <button key={item.id} type="button"
