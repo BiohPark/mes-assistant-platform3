@@ -91,6 +91,9 @@ test('창의 "가이드해 주세요"는 창을 닫고 섹션 투어를 시작�
   await expect(dialog.getByText(/☑ 체크하면 아래/)).toBeVisible()
   await expectSpotlightAround(page, page.getByTestId('materials-library'))
   await page.keyboard.press('Enter')
+  await expect(dialog.getByText(/같은 태그 대화도 파일처럼 \[\+ 담기\]/)).toBeVisible() // 대화 담기 장면
+  await expectSpotlightAround(page, page.locator('[data-tour="materials-conversations"]'))
+  await page.keyboard.press('Enter')
   await expect(dialog.getByText(/다음 질문과 한 번만 함께 가고, 보내면 비워져요/)).toBeVisible()
   await expectSpotlightAround(page, page.getByTestId('materials-staged'))
   await list.getByRole('button', { name: 'AI 도우미', exact: true }).click()
