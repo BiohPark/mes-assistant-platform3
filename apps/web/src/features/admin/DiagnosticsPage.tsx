@@ -15,11 +15,31 @@ type Diagnostics = {
   app: { version: string; commit: string; builtAt: string; node: string; os: string }
   db: { version: string; charset: string; collation: string; migrations: number | null; error?: string }
   llm: { mode: string; preset: string; baseUrlHost: string; defaultModel: string; ok: boolean; detail: string; ms: number }
-  storage: { path: string; writable: boolean; freeBytes: number | null }
+  storage: { path: string; writable: boolean; freeBytes: number | null
+    resolution?: { configuredPath: string; baseDir: string | null; envFile: string | null }
+    assistantImages?: { configured: number; missing: number; unreadable: number } | null }
   trustProxy: false | number | string[]
   settings: { authMode: string; apiPort: number; fileMaxBytes: number; fileMaxPerRequest: number; requestMaxActive: number }
   secrets: { databasePassword: boolean; sessionSecret: boolean; llmApiKey: boolean; oidcClientSecret: boolean; devUserPassword: boolean }
   recentErrors: { at: string; path: string; status: number; message: string }[]
+}
+
+function storagePath(data: Diagnostics, t: Translator): string {
+  const resolution = data.storage.resolution
+  if (!resolution?.baseDir) return data.storage.path
+  const basis = resolution.envFile
+    ? t('admin.diagnostics.storageRelativeEnv', { baseDir: resolution.baseDir, envFile: resolution.envFile, configuredPath: resolution.configuredPath })
+    : t('admin.diagnostics.storageRelativeRepo', { baseDir: resolution.baseDir, configuredPath: resolution.configuredPath })
+  return `${data.storage.path}\n${basis}`
+}
+
+function storageWarnings(data: Diagnostics, t: Translator): string[] {
+  const images = data.storage.assistantImages
+  if (images === null) return [t('admin.diagnostics.imageCheckFailed')]
+  const warnings: string[] = []
+  if (images?.missing) warnings.push(t('admin.diagnostics.imagesMissing', { count: images.missing }))
+  if (images?.unreadable) warnings.push(t('admin.diagnostics.imagesUnreadable', { count: images.unreadable }))
+  return warnings
 }
 
 function rows(data: Diagnostics, t: Translator): [string, string][] {
@@ -30,7 +50,7 @@ function rows(data: Diagnostics, t: Translator): [string, string][] {
     [t('admin.diagnostics.migrations'), data.db.migrations === null ? t('admin.diagnostics.lookupFailed') : String(data.db.migrations)],
     [t('admin.diagnostics.llmMode'), data.llm.mode], [t('admin.diagnostics.llmPreset'), data.llm.preset], [t('admin.diagnostics.llmHost'), data.llm.baseUrlHost],
     [t('admin.defaultModel'), data.llm.defaultModel], [t('admin.diagnostics.llmConnection'), t('admin.diagnostics.llmResult', { result: data.llm.ok ? t('admin.diagnostics.success') : t('admin.diagnostics.failure'), ms: String(data.llm.ms), detail: data.llm.detail })],
-    [t('admin.diagnostics.storagePath'), data.storage.path], [t('admin.diagnostics.storageWritable'), data.storage.writable ? t('admin.diagnostics.writable') : t('admin.diagnostics.notWritable')],
+    [t('admin.diagnostics.storagePath'), storagePath(data, t)], [t('admin.diagnostics.storageWritable'), data.storage.writable ? t('admin.diagnostics.writable') : t('admin.diagnostics.notWritable')],
     [t('admin.diagnostics.freeSpace'), data.storage.freeBytes === null ? t('admin.diagnostics.lookupFailed') : `${data.storage.freeBytes} bytes`],
     ['TRUST_PROXY', Array.isArray(data.trustProxy) ? data.trustProxy.join(', ') : String(data.trustProxy)],
     [t('admin.diagnostics.authMode'), data.settings.authMode], [t('admin.diagnostics.apiPort'), String(data.settings.apiPort)],
@@ -43,7 +63,7 @@ function rows(data: Diagnostics, t: Translator): [string, string][] {
 }
 
 export function formatDiagnostics(data: Diagnostics, t: Translator): string {
-  return [...rows(data, t).map(([name, value]) => `${name}: ${value}`), '', t('admin.diagnostics.recentErrors'),
+  return [...rows(data, t).map(([name, value]) => `${name}: ${value}`), ...storageWarnings(data, t), '', t('admin.diagnostics.recentErrors'),
     ...data.recentErrors.map((error) => `${error.at} ${error.path} ${error.status} ${error.message}`)].join('\n')
 }
 
@@ -98,7 +118,8 @@ export function DiagnosticsPage() {
       <Button disabled={!query.data} onClick={() => { if (query.data) void copyText(formatDiagnostics(query.data, t)).then((ok) => toast[ok ? 'success' : 'error'](ok ? t('admin.diagnostics.copied') : t('admin.diagnostics.copyFailed'))) }}>{t('admin.diagnostics.copyText')}</Button></div>
     {query.isError && <p role="alert">{t('admin.diagnostics.loadFailed')}</p>}
     {query.data && <><section className="rounded-xl border bg-card p-4"><h2 className="mb-3 font-semibold">{t('admin.diagnostics.environment')}</h2>
-      <dl className="grid grid-cols-[minmax(10rem,1fr)_2fr] gap-2 text-sm">{rows(query.data, t).map(([name, value]) => <div className="contents" key={name}><dt className="text-muted-foreground">{name}</dt><dd className="break-all">{value}</dd></div>)}</dl>
+      <dl className="grid grid-cols-[minmax(10rem,1fr)_2fr] gap-2 text-sm">{rows(query.data, t).map(([name, value]) => <div className="contents" key={name}><dt className="text-muted-foreground">{name}</dt><dd className="whitespace-pre-line break-all">{value}</dd></div>)}</dl>
+      {storageWarnings(query.data, t).map((warning) => <p role="alert" key={warning} className="mt-3 text-sm text-destructive">{warning}</p>)}
     </section><section className="rounded-xl border bg-card p-4"><h2 className="mb-3 font-semibold">{t('admin.diagnostics.recentErrors')}</h2>
       {query.data.recentErrors.length ? <ul className="space-y-2 text-sm">{query.data.recentErrors.map((error, index) => <li key={`${error.at}-${index}`}>{error.at} · {error.path} · {error.status} · {error.message}</li>)}</ul> : <p className="text-sm text-muted-foreground">{t('admin.diagnostics.noErrors')}</p>}
     </section></>}

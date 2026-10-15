@@ -97,3 +97,22 @@ it('Mock 모드는 호스트 없이 Mock으로, 키가 없으면 없음으로 �
   expect(within(chat).getByRole('textbox', { name: '시험 메시지' })).toBeInTheDocument()
   expect(within(chat).queryByRole('link', { name: '연결 진단 열기' })).not.toBeInTheDocument()
 })
+
+it('저장소 경로 옆에 상대 경로의 env 기준과 이미지 누락 경고를 보여주고 복사한다', async () => {
+  const storage = { ...data.storage, resolution: { configuredPath: './storage', baseDir: 'D:/config', envFile: 'D:/config/.env' }, assistantImages: { configured: 3, missing: 2, unreadable: 0 } }
+  stubFetch({ ...base, '/api/admin/diagnostics': () => jsonResponse(200, { ...data, storage }) })
+  renderWithProviders(<DiagnosticsPage />)
+  expect(await screen.findByText(/상대 경로 기준.*D:\/config/)).toBeInTheDocument()
+  expect(screen.getByRole('alert')).toHaveTextContent('도우미 이미지 2개의 파일이 없습니다')
+  const text = formatDiagnostics({ ...data, trustProxy: false as const, storage }, createT('ko'))
+  expect(text).toContain('D:/config/.env')
+  expect(text).toContain('도우미 이미지 2개의 파일이 없습니다')
+})
+
+it('env 없이 상대 경로를 쓰면 저장소 루트 기준임을 보여 준다', async () => {
+  const storage = { ...data.storage, resolution: { configuredPath: 'storage', baseDir: '/repo', envFile: null }, assistantImages: { configured: 0, missing: 0, unreadable: 0 } }
+  stubFetch({ ...base, '/api/admin/diagnostics': () => jsonResponse(200, { ...data, storage }) })
+  renderWithProviders(<DiagnosticsPage />)
+  expect(await screen.findByText(/저장소 루트.*\/repo/)).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})

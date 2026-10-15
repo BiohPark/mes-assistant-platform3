@@ -12,6 +12,7 @@ import { RequestsService } from './requests/requests.service.js'
 const httpsOptions = loadHttpsOptions(loadConfig(process.env).https)
 const app = await NestFactory.create(AppModule, httpsOptions ? { httpsOptions } : {})
 const config = app.get<AppConfig>(CONFIG)
+new Logger('Bootstrap').log(`파일 저장소: ${config.fileStorageRoot}`)
 const originWarning = httpsOriginWarning(config)
 if (originWarning) new Logger('Bootstrap').warn(originWarning)
 configureApp(app, config)

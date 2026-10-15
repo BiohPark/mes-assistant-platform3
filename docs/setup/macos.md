@@ -56,7 +56,7 @@ Windows와 같다. `pnpm dev` → http://localhost:5173 → 회원가입(예: `d
 
 macOS에서는 경로만 바꾼다. 예를 들어 `.env`에 `HTTPS_CERT_FILE=/absolute/path/mes-hub/config/certificates/server-chain.pem`, `HTTPS_KEY_FILE=/absolute/path/mes-hub/config/certificates/server-key.pem`, `API_PORT=8443`, `APP_ORIGIN=https://localhost:8443`, `TRUST_PROXY=false`를 지정한다. PFX를 쓰면 PEM 설정 대신 `HTTPS_PFX_FILE=/absolute/path/mes-hub/config/certificates/server.pfx`를 지정한다. 호스트는 인증서 SAN과 일치해야 하며 Secure 쿠키는 `APP_ORIGIN`의 HTTPS 여부를 따른다. 직접 HTTPS인데 HTTP origin이면 경고한다. IIS 등 프록시에서 TLS를 종료하면 API `HTTPS_*`는 비우고 사용자 HTTPS origin과 신뢰할 프록시 IP/서브넷을 지정한다. API 직접 접근은 막는다.
 
-배포 API가 빌드한 web을 제공하는 방식으로 확인한다. 기본 `pnpm dev`의 Vite 프록시는 HTTP API를 전제로 한다. 상대 인증서 경로는 API 작업 폴더 기준이므로 절대 경로를 권장한다. API를 실행하는 계정에 상위 폴더 접근과 파일 읽기를 허용하고 개인 키/PFX와 `.env`의 권한을 해당 계정만 읽을 수 있게 제한한다(예: 소유자 지정 후 `chmod 600`). 인증서 교체 후 API를 재시작한다. Windows로 옮길 때는 WinSW 서비스 계정의 NTFS/공유 권한을 별도로 설정하고, `.env`의 Windows 경로는 큰따옴표 대신 작은따옴표나 `/` 구분자로 쓴다(큰따옴표 안의 `\n`은 줄바꿈이 된다).
+배포 API가 빌드한 web을 제공하는 방식으로 확인한다. 기본 `pnpm dev`의 Vite 프록시는 HTTP API를 전제로 한다. 상대 인증서 경로는 읽은 `.env` 폴더 기준(.env 없으면 저장소 루트)이지만 절대 경로를 권장한다. API를 실행하는 계정에 상위 폴더 접근과 파일 읽기를 허용하고 개인 키/PFX와 `.env`의 권한을 해당 계정만 읽을 수 있게 제한한다(예: 소유자 지정 후 `chmod 600`). 인증서 교체 후 API를 재시작한다. Windows로 옮길 때는 WinSW 서비스 계정의 NTFS/공유 권한을 별도로 설정하고, `.env`의 Windows 경로는 큰따옴표 대신 작은따옴표나 `/` 구분자로 쓴다(큰따옴표 안의 `\n`은 줄바꿈이 된다).
 
 사내 CA는 PEM 방식의 `HTTPS_CA_FILE`(발급 루트 포함)을 쓰거나, PFX·프록시 방식에서는 Node 시작 전에 셸에서 지정한다:
 
