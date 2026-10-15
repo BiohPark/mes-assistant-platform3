@@ -88,3 +88,13 @@ it('a slow-request bubble opens the request info dialog for that request', async
   expect(await screen.findByRole('dialog', { name: '사용한 자료' })).toBeVisible()
   expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe('/api/requests/r9')
 })
+
+it('S14-DD: 태그 공유 말풍선은 들어오고 빠진 같은 태그 대화·파일 수를 보이고, 누르면 자료 탭을 연다', () => {
+  renderWithProviders(<AssistantBubble pillRef={{ current: null }} pos={null} />)
+  const onOpen = vi.fn()
+  push({ source: 'share.in', key: 't', counts: { conversations: 1, files: 3 }, onOpen })
+  fireEvent.click(screen.getByText('같은 태그 대화 1개·파일 3개가 자료함에 들어왔어요. 눌러서 확인하세요'))
+  expect(onOpen).toHaveBeenCalledOnce()
+  push({ source: 'share.out', key: 't', counts: { conversations: 0, files: 2 } })
+  expect(screen.getByText('같은 태그 대화 0개·파일 2개가 자료함에서 빠졌어요')).toBeVisible()
+})

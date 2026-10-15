@@ -9,7 +9,7 @@ import { BUBBLE_TTL_MS, isReplyBubble, useBubbleStore, type Bubble, type BubbleS
 import { usePillAnchor } from './pillAnchor'
 
 const WIDTH = 260
-const MESSAGE = { 'budget.warn': 'bubble.budgetWarn', 'budget.over': 'bubble.budgetOver', 'request.slow': 'bubble.requestSlow' } as const satisfies Record<Exclude<BubbleSource, ReplySource>, string>
+const MESSAGE = { 'budget.warn': 'bubble.budgetWarn', 'budget.over': 'bubble.budgetOver', 'request.slow': 'bubble.requestSlow', 'share.in': 'bubble.shareIn', 'share.out': 'bubble.shareOut', 'share.none': 'bubble.shareNone' } as const satisfies Record<Exclude<BubbleSource, ReplySource>, string>
 const REPLY = { 'reply.done': 'bubble.replyDone', 'reply.failed': 'bubble.replyFailed', 'reply.cancelled': 'bubble.replyCancelled' } as const satisfies Record<ReplySource, string>
 
 /** 알약 옆 말풍선(U6) — 큐 1개, 8초 뒤 소멸(hover·focus 중 정지), 클릭하면 요청 크기 안내(onOpen)나 요청 정보를 연다. reply.*는 제목·답 첫 문장과 [바로 가기](그 대화로 이동). 서버 알림(벨)과 겹치지 않고 AI를 호출하지 않는다 */
@@ -52,7 +52,7 @@ export function AssistantBubble({ pillRef, pos }: { pillRef: RefObject<HTMLButto
             {current.excerpt && <p data-testid="bubble-excerpt" className="line-clamp-2 text-xs text-muted-foreground">{current.excerpt}</p>}
             <Button size="xs" onClick={() => go(current.taskId)}>{t('bubble.goToConversation')}</Button>
           </div>
-          : <button type="button" className="flex-1 text-left leading-snug hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-lg" onClick={() => open(current)}>{t(MESSAGE[current.source as keyof typeof MESSAGE])}</button>}
+          : <button type="button" className="flex-1 text-left leading-snug hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-lg" onClick={() => open(current)}>{t(MESSAGE[current.source as keyof typeof MESSAGE] as 'bubble.shareIn', current.counts ?? { conversations: 0, files: 0 })}</button>}
         <button type="button" aria-label={t('bubble.close')} className="rounded-full p-0.5 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" onClick={dismiss}><X className="size-3.5" /></button>
       </div>}
     </div>

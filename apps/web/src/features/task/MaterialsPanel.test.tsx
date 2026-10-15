@@ -5,6 +5,7 @@ import type { Task } from '@mes/domain'
 import { MeContext } from '@/app/auth'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { MaterialsPanel } from './MaterialsPanel'
+import { useTagShareStore } from './tagShare'
 
 const toastSuccess = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: toastSuccess, warning: vi.fn() } }))
@@ -117,14 +118,34 @@ it('previews directly shared conversations before staging and shows count, recen
   expect(screen.getByTestId('conversation-source')).not.toHaveTextContent(/\bdone\b/)
   expect(screen.getByTestId('conversation-source').querySelector('time')).toHaveAttribute('datetime', '2026-01-01T00:00:00.000Z')
   expect(screen.getByTestId('conversation-candidates').parentElement).toHaveAttribute('data-tour', 'materials-conversations')
+  // 범위 좁히기는 선택 — 제목을 누르면 미리보기·범위 고르기 창이 열리고, 닫으면 아무것도 붙지 않는다
+  fireEvent.click(screen.getByRole('button', { name: 'WK-2026-0002 · 원본' }))
+  expect(await screen.findByText('미리 볼 원문')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '취소' }))
+  expect(calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+  // [첨부] 한 번에 대화 전체(전체 원문) — 창 없이 바로
   const attach = screen.getByRole('button', { name: 'WK-2026-0002 첨부' })
   expect(attach).toHaveAttribute('aria-pressed', 'false')
   fireEvent.click(attach)
-  expect(await screen.findByText('미리 볼 원문')).toBeInTheDocument()
-  expect(calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
-  fireEvent.click(screen.getByRole('button', { name: '적용' }))
   await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t/conversation-inputs/source' && init?.method === 'PUT' && JSON.parse(String(init.body)).mode === 'full')).toBe(true))
+  expect(screen.queryByRole('dialog')).toBeNull()
   expect(calls.some(([url]) => url.includes('summary-draft'))).toBe(false)
+})
+
+it('S14-DD: 태그 변경 직후 들어온 같은 태그 파일·대화를 표시하고 빠진 항목을 잠시 남긴다', async () => {
+  const fileMeta = { id: 'sf', originTaskId: 'source', name: 'shared.txt', mime: 'text/plain', size: 1, sha256: 'x', version: 1, source: 'upload', isOutput: false, uploadedBy: 'u', uploadedAt: '2026-01-01T00:00:00.000Z' }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/tasks/t/candidates' ? jsonResponse(200, { files: [{ file: fileMeta, sourceTaskId: 'source', sourceCode: 'WK-2', viaTags: ['X'], role: 'upload' }],
+    conversations: [{ taskId: 'source', code: 'WK-2', title: '원본', status: 'todo', assistant: { id: 'a', name: '도우미', color: '#000' }, sharedTags: ['X'], messageCount: 2, bytes: 4, lastActivityAt: '2026-01-01T00:00:00.000Z' }] })
+    : jsonResponse(200, [])))
+  useTagShareStore.setState({ byTask: { t: { fresh: ['sf', 'source'], gone: [{ id: 'old', kind: 'conversation', label: 'WK-9' }, { id: 'of', kind: 'file', label: 'gone.txt' }] } } })
+  onTestFinished(() => useTagShareStore.setState({ byTask: {} }))
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={{ ...baseTask, tags: ['X'] }} /></MeContext>)
+  expect(await screen.findByTestId('candidate-file-sf')).toHaveAttribute('data-fresh', 'true')
+  expect(screen.getByTestId('candidate-file-sf')).toHaveTextContent('방금 들어옴')
+  expect(screen.getByTestId('conversation-source')).toHaveAttribute('data-fresh', 'true')
+  expect(screen.getByTestId('materials-gone')).toHaveTextContent('방금 빠짐')
+  expect(screen.getByTestId('materials-gone')).toHaveTextContent('WK-9')
+  expect(screen.getByTestId('materials-gone')).toHaveTextContent('gone.txt')
 })
 
 it('groups shared files by assistant order and sorts names within each group', async () => {
