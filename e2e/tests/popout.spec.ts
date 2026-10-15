@@ -38,7 +38,7 @@ test('새 창으로 띄우기 — 팝업에는 사이드바·상단 내비·도�
   await expect(popoutButton(popup)).toHaveCount(0) // 팝업 안에서 다시 띄우기 없음
   await expect(popup.getByRole('button', { name: '업무 완료' })).toBeVisible() // 대화 헤더는 남는다
   await popup.getByRole('tab', { name: '자료', exact: true }).click() // 작은 창 → 보조 패널은 탭
-  await expect(popup.getByRole('tabpanel')).toBeVisible()
+  await expect(popup.getByRole('tabpanel', { name: '자료' })).toBeVisible() // 자료 패널 안의 'AI 입력' tabpanel과 구분
   await expect(page).toHaveURL(new RegExp(`/c/${task.id}$`)) // 본창은 그대로
   await expect(page.getByRole('navigation')).toBeVisible()
 
@@ -63,7 +63,7 @@ test('완료 알림 — 팝업에서 보낸 답이 끝나면 다른 화면에 �
   const composer = popup.getByRole('textbox', { name: 'AI 요청 입력' })
   await composer.fill('요구사항을 정리해 주세요')
   await page.goto('/') // 본창은 허브로 — 그 대화를 보고 있지 않다
-  await popup.getByRole('button', { name: '전송' }).click()
+  await popup.getByRole('button', { name: '전송', exact: true }).click() // '팀 의견 (AI 미전송)' 토글과 구분
   await expect(popup.getByRole('button', { name: '중지' })).toHaveCount(0, { timeout: 30_000 }) // 응답 끝
 
   const bubble = page.getByTestId('assistant-bubble')
@@ -75,5 +75,5 @@ test('완료 알림 — 팝업에서 보낸 답이 끝나면 다른 화면에 �
   await bubble.getByRole('button', { name: '바로 가기' }).click()
   await expect(page).toHaveURL(new RegExp(`/c/${task.id}$`))
   await expect(bubble).toHaveCount(0)
-  await expect(page.getByText('요구사항을 정리해 주세요')).toBeVisible()
+  await expect(page.getByText('요구사항을 정리해 주세요', { exact: true })).toBeVisible() // 이력의 '변경 사유: …'와 구분
 })
