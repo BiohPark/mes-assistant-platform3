@@ -140,15 +140,14 @@ test('E3e 참고 대화는 한 질문에서 소비되고 자료함에서 다시 
   await page.getByRole('button', { name: '적용', exact: true }).click()
   const selected = await selectedInputs<{ snapshot: { id: string } }>(page, consumer.id)
   await request(page, consumer.threadId, '첫 소비 E3e')
+  // 둘째 요청 기록에도 첫 질문이 대화 이력으로 남으므로, 첫 요청 본문은 둘째를 보내기 전에 확인한다
+  if (live) expect(await modelRequest(page, '첫 소비 E3e')).toContain('원본 질문 E3e')
   expect(await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json()).toEqual([])
   await page.reload()
   await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
   await expect(page.getByTestId('conversation-candidates')).toContainText('쓴 적 있음')
   await request(page, consumer.threadId, '둘째 소비 E3e')
-  if (live) {
-    expect(await modelRequest(page, '첫 소비 E3e')).toContain('원본 질문 E3e')
-    expect(await modelRequest(page, '둘째 소비 E3e')).not.toContain('## 참조 대화')
-  }
+  if (live) expect(await modelRequest(page, '둘째 소비 E3e')).not.toContain('## 참조 대화')
   await page.getByTestId('conversation-candidates').getByRole('button', { name: `${source.code} 담기` }).click()
   await page.getByRole('button', { name: '적용', exact: true }).click()
   const again = await selectedInputs<{ snapshot: { id: string } }>(page, consumer.id)
