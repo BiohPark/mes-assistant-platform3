@@ -1,8 +1,9 @@
 import { useId, useState } from 'react'
 import { Link } from 'react-router'
-import { BookOpen, ChevronDown, ChevronUp, ExternalLink, MessageSquarePlus } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronUp, MessageSquarePlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
+import { OpenWebUiIcon } from '@/components/OpenWebUiIcon'
 import { useMe } from '@/app/auth'
 import { AssistantStatusBadge, IoBadges } from '@/components/StatusBadges'
 import { UserAvatar } from '@/components/UserAvatar'
@@ -93,7 +94,7 @@ export function AssistantCard({ row, owner, baseUrl, link1Rule }: AssistantCardP
         )}
         {link1 && <Button size="xs" variant="ghost" asChild>
           <a href={link1} target="_blank" rel="noreferrer" title={t('hub.openWebUi')}>
-            <ExternalLink data-icon="inline-start" />
+            <OpenWebUiIcon data-icon="inline-start" />
             OpenWebUI
           </a>
         </Button>}

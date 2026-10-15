@@ -3,7 +3,7 @@ import { MODEL_SOURCE_KEY } from '@/lib/labels'
 import { use, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Check, ChevronDown, Cpu, ExternalLink, RefreshCw, Settings2 } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown, Cpu, RefreshCw, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { resolveModel, type Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
@@ -12,6 +12,7 @@ import { getSettings } from '@/api/admin'
 import { MeContext } from '@/app/auth'
 import { useActor, useUserMap } from '@/app/hooks'
 import { assistantLink1 } from '@/lib/links'
+import { OpenWebUiIcon } from '@/components/OpenWebUiIcon'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -55,7 +56,7 @@ export function ModelPicker({ task, assistant, disabled }: { task: Task; assista
         <p className="text-muted-foreground">{owner ? t('chat.modelSettingsQuestion') : ownerName ? t('chat.modelSettingsByOwner', { owner: ownerName }) : t('chat.modelSettingsByOwnerUnknown')}</p>
         {(owner || link1) && <div className="flex flex-wrap gap-1.5">
           {owner && <Button type="button" size="xs" variant="outline" onClick={() => { setOpen(false); void navigate(`/assistants/manage?edit=${encodeURIComponent(assistant.id)}&point=model`) }}><Settings2 data-icon="inline-start" />{t('chat.openAgentSettings')}</Button>}
-          {link1 && <Button size="xs" variant="outline" asChild><a href={link1} target="_blank" rel="noreferrer">{t('chat.openWebUi')}<ExternalLink data-icon="inline-end" /></a></Button>}
+          {link1 && <Button size="xs" variant="outline" asChild><a href={link1} target="_blank" rel="noreferrer">{t('chat.openWebUi')}<OpenWebUiIcon data-icon="inline-end" /></a></Button>}
         </div>}
       </div>
       <div className="mb-2 flex items-center justify-between"><div className="text-xs font-semibold">{t('chat.assistantModel')}</div><Button variant="ghost" size="icon" aria-label={t('chat.reloadModels')} onClick={() => void reload()} disabled={loading}><RefreshCw className={cn(loading && 'animate-spin')} /></Button></div>

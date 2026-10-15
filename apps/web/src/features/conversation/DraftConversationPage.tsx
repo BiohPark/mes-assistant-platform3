@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, ExternalLink } from 'lucide-react'
+import { OpenWebUiIcon } from '@/components/OpenWebUiIcon'
 import { normalizeTag, tagKey } from '@mes/domain'
 import { TopBar } from '@/app/TopBar'
 import { useActor, useUserMap } from '@/app/hooks'
@@ -115,7 +116,7 @@ export function DraftConversationPage() {
               <div className="flex flex-wrap items-center gap-2"><h1 className="text-lg font-semibold">{assistant.name}</h1><AssistantStatusBadge status={assistant.status} /></div>
               {(assistant.modelId || link1 || assistant.docUrl) && <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {assistant.modelId && <Chip label={assistant.modelId} title={t('admin.connectedModel')} className="font-mono" />}
-                {link1 && <Chip label={t('chat.openWebUi')}><a href={link1} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">{t('chat.openWebUi')}<ExternalLink aria-hidden className="size-3" /></a></Chip>}
+                {link1 && <Chip label={t('chat.openWebUi')}><a href={link1} target="_blank" rel="noreferrer" title={t('chat.openWebUi')} className="inline-flex items-center gap-1 rounded-full outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">{t('chat.openWebUi')}<OpenWebUiIcon className="size-3" /></a></Chip>}
                 {assistant.docUrl && <Chip label={t('chat.documentation')}><a href={assistant.docUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">{t('chat.documentation')}<ExternalLink aria-hidden className="size-3" /></a></Chip>}
               </div>}
               <p className="mt-1 text-sm text-muted-foreground">{assistant.summary}</p>

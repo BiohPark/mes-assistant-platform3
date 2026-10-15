@@ -38,7 +38,12 @@ describe('AssistantCard (S9-8 U2)', () => {
     expect(actions).not.toHaveClass('absolute')
     expect(actions.parentElement).toBe(stats.parentElement)
     expect(actions.compareDocumentPosition(stats) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'OpenWebUI' })).toHaveAttribute('href', assistant.link1)
+    const link = screen.getByRole('link', { name: 'OpenWebUI' })
+    expect(link).toHaveAttribute('href', assistant.link1)
+    expect(link).toHaveAttribute('title', 'OpenWebUI에서 열기')
+    expect(link.querySelector('svg')).toHaveTextContent('OW')
+    expect(link.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    expect(link.querySelector('.lucide-external-link')).toBeNull()
   })
 
   it('toggles the summary by pointer and keyboard without following the card link', async () => {
