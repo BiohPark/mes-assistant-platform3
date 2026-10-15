@@ -71,7 +71,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
   private readonly settings: LlmSettings
   private modelMeta?: { body: unknown; expires: number }
 
-  private async modelTools(model: string, signal?: AbortSignal) {
+  private async modelTools(model: string, messages: ChatRequest['messages'], signal?: AbortSignal) {
     if (!this.modelMeta || this.modelMeta.expires <= Date.now()) {
       const res = await limitedFetch(joinUrl(this.settings.baseUrl, 'models'), { headers: this.headers() },
         { timeoutMs: MODELS_TIMEOUT_MS, maxResponseBytes: MODELS_MAX_BYTES, signal })
@@ -80,7 +80,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
       parseModelIds(body)
       this.modelMeta = { body, expires: Date.now() + 5 * 60_000 }
     }
-    return owuiModelTools(this.modelMeta.body, model, this.settings.apiKey)
+    return owuiModelTools(this.modelMeta.body, model, this.settings.apiKey, messages)
   }
 
   private readonly sessionPollMs: number
@@ -132,7 +132,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
     if (this.settings.preset === 'openwebui' && !req.tools?.length) {
       try {
         const mode = req.owuiTools ?? (this.readOwuiTools ? await this.readOwuiTools() : this.settings.owuiTools ?? 'auto')
-        const meta = mode === 'auto' ? await this.modelTools(String(basic.model), req.signal) : undefined
+        const meta = mode === 'auto' ? await this.modelTools(String(basic.model), req.messages, req.signal) : undefined
         if (meta && Object.keys(meta).length) extras = meta
       } catch { /* 메타·설정 조회 실패는 기본 전송으로 진행한다. */ }
     }

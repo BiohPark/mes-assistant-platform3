@@ -489,30 +489,17 @@ it('입력 중인 연결 모델·설명은 Escape로 시트를 닫을 때 확정
   expect(bodies).toHaveLength(2)
 })
 
-it('편집 시트는 연결 모델의 OpenWebUI 연결 확인을 열 때 자동으로 보인다 (S13-J)', async () => {
+it('편집 시트에서 OpenWebUI 연결 확인을 제거하고 접근 점검을 호출하지 않는다', async () => {
   assistantRows = [{ ...assistant, modelId: 'agent-model' }]
-  const checks: unknown[] = []
-  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
-    if (url === '/api/admin/diagnostics/openwebui/access') {
-      checks.push(JSON.parse(String(init?.body)))
-      return jsonResponse(200, { model: 'agent-model', ms: 1, meta: { found: true, toolIds: ['web_tool'], defaultFeatureIds: [], capabilities: {}, builtinTools: {}, terminal: false, knowledgeCount: 0, functionCalling: null },
-        access: { tools: { visible: 0, items: [{ id: 'web_tool', state: 'denied' }] }, skills: { visible: 0, items: [] } },
-        account: { role: 'admin', features: { web_search: true, image_generation: null, code_interpreter: null } }, fetchUrl: [] })
-    }
-    return jsonResponse(200, url === '/api/llm/models' ? { models: [] } : [])
-  }))
-  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  const fetchMock = vi.fn(async (url: string) => jsonResponse(200, url === '/api/llm/models' ? { models: [] } : []))
+  vi.stubGlobal('fetch', fetchMock)
+  renderWithProviders(<MeContext value={OWNER_ME()}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: '편집' }))
-  const region = within(screen.getByRole('dialog', { name: '에이전트 편집' })).getByRole('region', { name: 'OpenWebUI 연결 확인' })
-  expect(await within(region).findByRole('status')).toHaveTextContent('web_tool ❌')
-  expect(checks).toEqual([{ model: 'agent-model' }])
+  expect(within(screen.getByRole('dialog', { name: '에이전트 편집' })).queryByRole('region', { name: 'OpenWebUI 연결 확인' })).not.toBeInTheDocument()
+  expect(fetchMock.mock.calls.some(([url]) => url.includes('/openwebui/access'))).toBe(false)
 })
 
 const OWNER_ME = (id = 'owner'): Me => ({ id, name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' })
-const ACCESS = '/api/admin/diagnostics/openwebui/access'
-const deniedCheck = { model: 'agent-a', ms: 10, meta: { found: true, toolIds: [], defaultFeatureIds: [], capabilities: {}, builtinTools: {}, terminal: false, knowledgeCount: 0, functionCalling: 'native' },
-  access: { tools: { visible: 0, items: [{ id: 'private_tool', state: 'denied' }] }, skills: { visible: 0, items: [] } }, account: { role: 'user', features: { web_search: null, image_generation: null, code_interpreter: null } }, fetchUrl: [] }
-
 it('에이전트 편집 가이드: 처음 여는 사용자에게는 펼쳐져 있고(사용자별 1회 기록), 다음부터는 접힌 채 토글로 연다', () => {
   vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
   const me = OWNER_ME(`guide-${Date.now()}`)
@@ -522,7 +509,7 @@ it('에이전트 편집 가이드: 처음 여는 사용자에게는 펼쳐져 �
   const guide = screen.getByRole('region', { name: '에이전트 설정 가이드' })
   expect(within(guide).getByRole('button', { name: '가이드 접기' })).toHaveAttribute('aria-expanded', 'true')
   expect(within(guide).getByText(/연결 모델\(AI 모델\)/)).toBeInTheDocument()
-  expect(within(guide).getByText(/OpenWebUI 연결 확인 — /)).toBeInTheDocument()
+  expect(within(guide).queryByText(/OpenWebUI 연결 확인 — /)).not.toBeInTheDocument()
   expect(localStorage.getItem(`tutorial:${me.id}:assistantEditor:v1`)).toBe('asked')
   expect(screen.queryByTestId('here-marker')).not.toBeInTheDocument() // 필수값이 다 있고 모델이 없으면 짚을 것이 없다
   view.unmount()
@@ -546,21 +533,6 @@ it('?edit=<id>&point=model — 대화의 [에이전트 설정 열기]로 오면 
   expect(screen.getAllByTestId('here-marker')).toHaveLength(1)
   fireEvent.click(within(marker).getByRole('button', { name: '안내 닫기' }))
   expect(screen.queryByTestId('here-marker')).not.toBeInTheDocument()
-})
-
-it('OpenWebUI 연결 확인에 ❌가 있으면 그 항목을 "여기예요"로 짚는다 — 시트를 연 동안 한 번만', async () => {
-  assistantRows = [{ ...assistant, modelId: 'agent-a' }]
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === ACCESS ? jsonResponse(200, deniedCheck) : jsonResponse(200, [])))
-  renderWithProviders(<MeContext value={OWNER_ME()}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
-  fireEvent.click(screen.getByRole('button', { name: '편집' }))
-  const marker = await screen.findByTestId('here-marker', undefined, { timeout: 3000 })
-  expect(marker).toContainElement(screen.getByRole('region', { name: 'OpenWebUI 연결 확인' }))
-  expect(marker).toHaveTextContent('여기예요 — OpenWebUI 연결 확인에 ❌가 있어요')
-  fireEvent.click(within(marker).getByRole('button', { name: '안내 닫기' }))
-  expect(screen.queryByTestId('here-marker')).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '다시 확인' }))
-  await new Promise((resolve) => setTimeout(resolve, 50))
-  expect(screen.queryByTestId('here-marker')).not.toBeInTheDocument() // 1회
 })
 
 it('기존 에이전트의 필수값(담당자)이 비어 있으면 열자마자 그 자리를 짚는다', () => {

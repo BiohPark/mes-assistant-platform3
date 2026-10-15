@@ -6,7 +6,7 @@ import { OwuiAccessSummary } from './OwuiAccessSummary'
 
 const check = {
   model: 'agent-a', ms: 120,
-  meta: { found: true, toolIds: ['web_tool', 'private_tool'], defaultFeatureIds: ['web_search'], capabilities: { web_search: true }, builtinTools: {}, terminal: true, knowledgeCount: 3, functionCalling: 'native' },
+  meta: { found: true, toolIds: ['web_tool', 'private_tool'], defaultFeatureIds: [], capabilities: { web_search: true }, builtinTools: {}, terminal: true, knowledgeCount: 3, functionCalling: 'native' },
   access: { tools: { visible: 1, items: [{ id: 'web_tool', state: 'ok' }, { id: 'private_tool', state: 'denied' }] }, skills: { visible: 1, items: [{ id: 'skill_off', state: 'inactive' }] } },
   account: { role: 'user', features: { web_search: false, image_generation: null, code_interpreter: null } },
   fetchUrl: [{ name: 'capabilities.web_search', ok: true }, { name: 'features.web_search', ok: true }, { name: 'permission.web_search', ok: false }],
@@ -21,7 +21,7 @@ function stub(respond: (body: { model: string }) => Response | Promise<Response>
   return fetchMock
 }
 afterEach(() => { vi.unstubAllGlobals() })
-/** 시트의 연결 모델 입력처럼 modelId를 바꾼다 */
+/** 연결 진단의 에이전트 선택처럼 modelId를 바꾼다 */
 function Harness({ initial }: { initial: string }) {
   const [model, setModel] = useState(initial)
   return <><input aria-label="model" value={model} onChange={(event) => setModel(event.target.value)} /><OwuiAccessSummary modelId={model} /></>
@@ -39,7 +39,7 @@ it('모델이 있으면 열 때 자동으로 확인하고 도구·스킬 접근�
   expect(summary).toHaveTextContent('기본 터미널설정됨')
   expect(summary).toHaveTextContent('지식3개 (OpenWebUI가 적용)')
   expect(summary).toHaveTextContent('서비스 계정user · web_search ❌')
-  expect(summary).toHaveTextContent('fetch_url 조건capabilities.web_search ✅ · features.web_search ✅ · permission.web_search ❌')
+  expect(summary).toHaveTextContent('fetch_url 조건capabilities.web_search ✅ · features.web_search URL 포함 시 자동 · permission.web_search ❌')
   expect(region.textContent).not.toContain('svc@')
   // 시험 호출(①②③)은 없다
   expect(region).not.toHaveTextContent('③')

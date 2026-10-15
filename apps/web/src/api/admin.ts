@@ -62,7 +62,7 @@ export async function probeOpenWebUi(model: string) {
   if (!parsed.success) throw new Error('응답 형식 오류')
   return parsed.data
 }
-/** SO 전용 에이전트 편집 연결 확인(S13-J) — 모델 호출 없이 접근·권한만. 같은 허용 목록 검사 */
+/** SO 전용 연결 진단의 에이전트 접근 확인(S13-J) — 모델 호출 없이 접근·권한만. 같은 허용 목록 검사 */
 export async function checkOpenWebUiAccess(model: string) {
   const parsed = OwuiAccessCheckSchema.safeParse(await adminRequest('admin/diagnostics/openwebui/access', 'POST', { model }))
   if (!parsed.success) throw new Error('응답 형식 오류')

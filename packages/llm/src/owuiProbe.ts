@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { LlmSettings } from '@mes/domain'
+import type { ChatMessageInput } from './provider.js'
 import { LimitedFetchError, limitedFetch, toLimitedFetchError } from './limitedFetch.js'
 import { parseSseLines } from './sse.js'
 
@@ -97,7 +98,7 @@ export interface OwuiProbeResult {
   session: OwuiProbeSession
   ms: number
 }
-/** 에이전트 편집의 연결 확인 — 진단 결과에서 시험 호출·버전을 뺀 것 */
+/** 연결 진단의 접근 확인 — 진단 결과에서 시험 호출·버전을 뺀 것 */
 export type OwuiAccessCheck = Pick<OwuiProbeResult, 'model' | 'meta' | 'access' | 'account' | 'fetchUrl' | 'ms'>
 export interface OwuiProbeOptions {
   signal?: AbortSignal
@@ -167,14 +168,16 @@ const DEFAULT_FEATURES = ['web_search', 'image_generation', 'code_interpreter', 
  * OpenWebUI 화면이 모델을 고를 때 채우는 기본값(Chat.svelte 1117-1206 setDefaults → 4097-4170 요청 본문)을 모델 meta에서 그대로 만든다.
  * 세션 방식·도구 전달·진단이 같은 함수를 쓴다. 사용자 변수·이메일은 싣지 않고, 지식(knowledge)은 OpenWebUI가 모델 meta로 직접 붙인다(utils/tools.py 680-720).
  * - tool_ids ← toolIds, skill_ids ← skillIds(서버도 합친다, middleware.py 2839-2843), filter_ids ← defaultFilterIds(서버가 다시 거른다, utils/filter.py 115-117)
- * - features ← defaultFeatureIds ∩ 켜진 capabilities
+ * - features ← defaultFeatureIds ∩ 켜진 capabilities, 마지막 사용자 메시지에 HTTP(S) URL이 있으면 web_search도 켠다
  * - terminal_id ← terminalId, capabilities.terminal이 false가 아닐 때(Chat.svelte 4102-4132). 서버는 terminal_server.connections에 있는 ID만 받는다(middleware.py 2784·3122-3135)
  */
-export function owuiDefaults(meta: Record<string, unknown> | undefined, apiKey = ''): OwuiDefaults {
+export function owuiDefaults(meta: Record<string, unknown> | undefined, apiKey = '', messages: readonly ChatMessageInput[] = []): OwuiDefaults {
   const ids = (value: unknown) => [...new Set(owuiMetaIds(value, apiKey))]
   const capabilities = isObject(meta?.capabilities) ? meta.capabilities : {}
   const featureIds = ids(meta?.defaultFeatureIds)
   const features = Object.fromEntries(DEFAULT_FEATURES.filter((id) => featureIds.includes(id) && capabilities[id] === true).map((id) => [id, true as const]))
+  const userText = messages.findLast((message) => message.role === 'user')?.content ?? ''
+  if (capabilities.web_search === true && /https?:\/\/[^\s<>"'`)\]]+/i.test(userText)) features.web_search = true
   const terminalId = meta?.terminalId
   const list = (key: 'tool_ids' | 'skill_ids' | 'filter_ids', value: string[]) => value.length ? { [key]: value } : {}
   return { ...list('tool_ids', ids(meta?.toolIds)), ...list('skill_ids', ids(meta?.skillIds)), ...list('filter_ids', ids(meta?.defaultFilterIds)),
@@ -183,10 +186,10 @@ export function owuiDefaults(meta: Record<string, unknown> | undefined, apiKey =
 }
 
 /** /api/models의 해당 모델 info.meta로 기본값을 만든다. */
-export function owuiModelTools(body: unknown, model: string, apiKey = ''): OwuiDefaults {
+export function owuiModelTools(body: unknown, model: string, apiKey = '', messages: readonly ChatMessageInput[] = []): OwuiDefaults {
   const entry = isObject(body) && Array.isArray(body.data) ? body.data.find(item => isObject(item) && item.id === model) : undefined
   const info = modelInfo(entry)
-  return owuiDefaults(info && isObject(info.meta) ? info.meta : undefined, apiKey)
+  return owuiDefaults(info && isObject(info.meta) ? info.meta : undefined, apiKey, messages)
 }
 
 /** 입력 모델이 OpenWebUI 모델 목록에 없다 — 시험 호출 전에 멈춘다(API 400) */
@@ -356,7 +359,7 @@ async function readModelAccess(settings: LlmSettings, model: string, { classify,
 }
 
 /** fetch_url·search_web 주입 조건 — session은 ③ 세션 시험 결과(없으면 session_id 항목을 뺀다) */
-function fetchUrlConditions(found: boolean, meta: OwuiProbeMeta, account: OwuiProbeAccount, featureSent: boolean, session?: OwuiProbeSession): OwuiFetchUrlCondition[] {
+function fetchUrlConditions(found: boolean, meta: OwuiProbeMeta, account: OwuiProbeAccount, session?: OwuiProbeSession): OwuiFetchUrlCondition[] {
   // 모델 설정 항목은 없으면 OpenWebUI 기본(켬·native)이다. 전역 web.search.enable은 API 키로 읽을 곳이 없다(/api/config는 JWT 사용자에게만, main.py 2280-2290·2404-2455)
   const modelFlag = (value: boolean | undefined) => found ? value !== false : null
   const ok: Record<OwuiFetchUrlCondition['name'], boolean | null> = {
@@ -366,18 +369,19 @@ function fetchUrlConditions(found: boolean, meta: OwuiProbeMeta, account: OwuiPr
     'builtinTools.web_search': modelFlag(meta.builtinTools.web_search),
     'web.search.enable': null,
     'capabilities.web_search': modelFlag(meta.capabilities.web_search),
-    'features.web_search': featureSent,
+    // 진단 질문의 기본값이 아니라, URL이 있는 실제 요청에서 자동으로 켤 수 있는지 표시한다.
+    'features.web_search': meta.capabilities.web_search === true,
     // has_user_permission: 관리자는 항상 통과(utils/tools.py 638-645)
     'permission.web_search': account.role === 'admin' || account.features.web_search === true ? true : account.role === 'user' ? account.features.web_search : null,
   }
   return OWUI_FETCH_URL_CONDITIONS.filter((name) => session || name !== 'session_id').map((name) => ({ name, ok: ok[name] }))
 }
 
-/** 에이전트 편집용 연결 확인(S13-J) — 진단에서 시험 호출(①②③)과 버전 조회를 뺀 읽기 전용 확인 */
+/** 연결 진단의 접근 확인(S13-J) — 진단에서 시험 호출(①②③)과 버전 조회를 뺀 읽기 전용 확인 */
 export async function checkOpenWebUiAccess(settings: LlmSettings, model: string, options: OwuiProbeOptions = {}): Promise<OwuiAccessCheck> {
   const client = probeClient(settings, options)
-  const { meta, info, raw, access, account } = await readModelAccess(settings, model, client)
-  return { model: safeModel(model), meta, access, account, fetchUrl: fetchUrlConditions(!!info, meta, account, !!owuiDefaults(raw, settings.apiKey).features?.web_search), ms: elapsed(client.started) }
+  const { meta, info, access, account } = await readModelAccess(settings, model, client)
+  return { model: safeModel(model), meta, access, account, fetchUrl: fetchUrlConditions(!!info, meta, account), ms: elapsed(client.started) }
 }
 
 export async function probeOpenWebUi(settings: LlmSettings, model: string, options: OwuiProbeOptions = {}): Promise<OwuiProbeResult> {
@@ -524,6 +528,6 @@ export async function probeOpenWebUi(settings: LlmSettings, model: string, optio
 
   const attempts = [await attempt('current'), await attempt('legacy')]
   const session = await sessionAttempt()
-  const fetchUrl = fetchUrlConditions(!!info, meta, account, !!defaults.features?.web_search, session)
+  const fetchUrl = fetchUrlConditions(!!info, meta, account, session)
   return { model: safeModel(model), version, meta, access, account, fetchUrl, attempts, session, ms: elapsed(started) }
 }

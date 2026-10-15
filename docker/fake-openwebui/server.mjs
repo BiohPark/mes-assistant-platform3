@@ -7,7 +7,7 @@ const port = Number(process.env.PORT ?? 8080)
 // fake_private_skill은 서비스 계정 스킬 목록에 없다 — 접근 거부(❌) 시나리오
 const MODELS = [
   { id: 'fake-general', name: '가짜 범용 에이전트', info: {
-    meta: { toolIds: ['fake_tool'], skillIds: ['fake_skill', 'fake_private_skill'], defaultFilterIds: ['fake_filter'], defaultFeatureIds: ['web_search'], terminalId: 'fake-terminal',
+    meta: { toolIds: ['fake_tool'], skillIds: ['fake_skill', 'fake_private_skill'], defaultFilterIds: ['fake_filter'], defaultFeatureIds: [], terminalId: 'fake-terminal',
       capabilities: { vision: false, file_upload: true, citations: true, web_search: true }, builtinTools: { skills: true }, knowledge: [{ id: 'fake-kb', name: '가짜 지식' }] },
     params: { function_calling: 'native' } } },
   { id: 'fake-writer', name: '가짜 문서 작성 에이전트' },
@@ -99,7 +99,7 @@ async function runSession(chat, payload) {
   await wait(100)
   if (/\[delay\]/i.test(userText)) for (let i = 0; i < 3; i++) { if (!alive()) return; status('작업 대기 중'); await wait(1000) }
   const url = /https?:\/\/[^\s<>"')\]]+/.exec(userText)?.[0]
-  if (url) {
+  if (url && payload.features?.web_search === true) {
     if (!alive()) return
     status(`URL 읽는 중: ${url}`, { action: 'fetch_url' })
     // 실제 URL 읽기처럼 폴링 간격(1초)보다 길게 — 짧으면 화면이 이 단계를 보지 못한다

@@ -147,7 +147,7 @@ export class DiagnosticsService {
   }
 
   /**
-   * 에이전트 편집의 OpenWebUI 연결 확인(S13-J) — 모델을 부르지 않는 읽기 GET만 하므로 응답 상한(admit)·보조 요청 슬롯을 쓰지 않는다.
+   * 연결 진단의 에이전트 OpenWebUI 연결 확인(S13-J) — 모델을 부르지 않는 읽기 GET만 하므로 응답 상한(admit)·보조 요청 슬롯을 쓰지 않는다.
    * 결과는 진단과 같은 허용 목록(계약)으로 거르고 저장하지 않는다.
    */
   async checkOpenWebUiAccess(model: string, signal?: AbortSignal): Promise<OwuiAccessCheck> {

@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { createT } from '@/i18n'
 import { DiagnosticsPage, formatDiagnostics } from './DiagnosticsPage'
+vi.mock('@/app/hooks', () => ({ useAssistants: () => [{ id: 'a', name: '에이전트 A', modelId: 'agent-a' }, { id: 'b', name: '에이전트 B', modelId: 'agent-b' }, { id: 'c', name: '기본 모델 에이전트', modelId: '' }] }))
 vi.mock('@/app/TopBar', () => ({ TopBar: ({ title }: { title: string }) => <h1>{title}</h1> }))
 
 const data = {
@@ -14,12 +15,12 @@ const data = {
   secrets: { databasePassword: true, sessionSecret: true, llmApiKey: true, oidcClientSecret: false, devUserPassword: false },
   recentErrors: [{ at: '2026-10-08', path: '/api/test', status: 500, message: 'HTTP 500' }],
 }
-type Routes = Record<string, () => Response | Promise<Response>>
+type Routes = Record<string, (init?: RequestInit) => Response | Promise<Response>>
 function stubFetch(routes: Routes) {
-  const fetchMock = vi.fn(async (url: string) => {
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const route = routes[url]
     if (!route) throw new Error(`unexpected fetch ${url}`)
-    return route()
+    return route(init)
   })
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
@@ -115,4 +116,34 @@ it('env 없이 상대 경로를 쓰면 저장소 루트 기준임을 보여 준�
   renderWithProviders(<DiagnosticsPage />)
   expect(await screen.findByText(/저장소 루트.*\/repo/)).toBeInTheDocument()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+it('진단에서 에이전트를 고르면 연결 모델의 접근·권한을 확인하고 바꾼 에이전트로 다시 점검한다', async () => {
+  const checks: string[] = []
+  stubFetch({ ...base, '/api/admin/diagnostics/openwebui/access': (init) => {
+    const { model } = JSON.parse(String(init?.body)) as { model: string }
+    checks.push(model)
+    return jsonResponse(200, { model, ms: 1,
+      meta: { found: true, toolIds: [], defaultFeatureIds: [], capabilities: { web_search: true }, builtinTools: {}, terminal: false, knowledgeCount: 0, functionCalling: 'native' },
+      access: { tools: { visible: 0, items: [] }, skills: { visible: 0, items: [] } },
+      account: { role: 'user', features: { web_search: true, image_generation: null, code_interpreter: null } }, fetchUrl: [{ name: 'features.web_search', ok: true }] })
+  } })
+  const originalScroll = HTMLElement.prototype.scrollIntoView
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+  try {
+    renderWithProviders(<DiagnosticsPage />)
+    const select = await screen.findByRole('combobox', { name: '연결 확인 에이전트' })
+    expect(checks).toEqual([])
+    fireEvent.keyDown(select, { key: 'ArrowDown' })
+    fireEvent.keyDown(await screen.findByRole('option', { name: '에이전트 A' }), { key: 'Enter' })
+    const region = await screen.findByRole('region', { name: 'OpenWebUI 연결 확인' })
+    expect(await within(region).findByRole('status')).toHaveTextContent('features.web_search URL 포함 시 자동')
+    expect(checks).toEqual(['agent-a'])
+    fireEvent.keyDown(select, { key: 'ArrowDown' })
+    fireEvent.keyDown(await screen.findByRole('option', { name: '에이전트 B' }), { key: 'Enter' })
+    await waitFor(() => expect(checks).toEqual(['agent-a', 'agent-b']))
+    fireEvent.keyDown(select, { key: 'ArrowDown' })
+    fireEvent.keyDown(await screen.findByRole('option', { name: '기본 모델 에이전트' }), { key: 'Enter' })
+    await waitFor(() => expect(checks).toEqual(['agent-a', 'agent-b', 'm']))
+  } finally { HTMLElement.prototype.scrollIntoView = originalScroll }
 })

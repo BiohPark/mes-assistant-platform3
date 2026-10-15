@@ -295,6 +295,7 @@ export async function buildChatRequest(scope: ChatScope, thread: Thread, history
       provider: settings.llm.mode,
       transport,
       model,
+      // 모델·메시지·첨부가 크기 기준이다. 전송 시 붙는 OWUI features·세션 옵션은 추정과 전송 모두 제외한다.
       bytes: requestBytes({ model, messages, ...(budgetFiles.length && { files: budgetFiles }), stream: true }),
       limitBytes,
       inputs: built.inputs,
