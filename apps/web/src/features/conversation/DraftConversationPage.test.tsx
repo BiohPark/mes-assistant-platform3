@@ -264,7 +264,14 @@ it.each([
   }))
   const { container } = mountDraft('/new/a?ref=internal-reference-uuid')
   await screen.findByText('도우미')
-  if (expected) expect(await screen.findByRole('link', { name: 'OpenWebUI에서 열기' })).toHaveAttribute('href', expected)
+  if (expected) {
+    const link = await screen.findByRole('link', { name: 'OpenWebUI에서 열기' })
+    expect(link).toHaveAttribute('href', expected)
+    expect(link).toHaveAttribute('title', 'OpenWebUI에서 열기')
+    expect(link.querySelector('svg')).toHaveTextContent('OW')
+    expect(link.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    expect(link.querySelector('.lucide-external-link')).toBeNull()
+  }
   else expect(screen.queryByRole('link', { name: 'OpenWebUI에서 열기' })).not.toBeInTheDocument()
   if (modelId) expect(screen.getByText(modelId).closest('[data-slot="chip"]')).not.toBeNull()
   if (docUrl) expect(screen.getByRole('link', { name: '설명 문서' })).toHaveAttribute('href', docUrl)
