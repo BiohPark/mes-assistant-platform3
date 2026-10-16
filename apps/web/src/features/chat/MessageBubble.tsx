@@ -28,8 +28,11 @@ function lastLines(text: string) {
 
 export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithoutFiles, onRetryAsText, onRequestInfo, onAskAgain, askAgainDisabled = false, intake = false, assistantName, progress, searchMatch = false }: {
   searchMatch?: boolean
-  /** 진행 상태 줄 — lastSignal: 마지막 신호 뒤 초, quiet: 신호가 끊김, limitLeft: 서버 무응답 제한까지 남은 초 */
-  progress?: { phase: string; elapsed: number; lastSignal?: number; quiet?: boolean; limitLeft?: number };
+  /**
+   * 진행 상태 줄 — lastSignal: 마지막 신호 뒤 초, quiet: 신호가 끊김, limitLeft: 서버 제한까지 남은 초,
+   * working: OpenWebUI 작업이 살아 있음(무응답이 아니라 작업 중 — 제한은 최대 처리 시간), stalled: 글이 멈춤(답 아래에도 상태를 보인다)
+   */
+  progress?: { phase: string; elapsed: number; lastSignal?: number; quiet?: boolean; limitLeft?: number; working?: boolean; stalled?: boolean };
   onAskAgain?: () => void; askAgainDisabled?: boolean; intake?: boolean; assistantName?: string; message: Message; onSaveAsOutput?: () => void; onRetry?: () => void; onRetryWithoutFiles?: () => void; onRetryAsText?: () => void; onRequestInfo?: () => void
 }) {
   const t = useT()
@@ -78,15 +81,24 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
     if (await copyText(message.content)) toast.success(t('chat.copiedMessage'))
     else toast.error(t('chat.copyMessageFailed'))
   }
+  // 작업 중이면 조용해도 '응답 대기'가 아니다 — 단계 이름과 작업 시간을 그대로 보이고, 제한은 최대 처리 시간까지
+  const waitingQuietly = !!progress?.quiet && !progress.working
+  const limitText = progress?.quiet && progress.limitLeft !== undefined ? progress.limitLeft >= 60
+    ? t('chat.limitLeft', { minutes: Math.floor(progress.limitLeft / 60), seconds: progress.limitLeft % 60 }) : t('chat.limitLeftSeconds', { seconds: progress.limitLeft }) : undefined
+  const sinceText = progress?.lastSignal === undefined ? undefined : progress.working
+    ? progress.lastSignal >= 60 ? t('chat.workingFor', { minutes: Math.floor(progress.lastSignal / 60), seconds: progress.lastSignal % 60 }) : t('chat.workingForSeconds', { seconds: progress.lastSignal })
+    : t('chat.lastSignal', { seconds: progress.lastSignal })
+  const progressLabel = waitingQuietly ? t('chat.quiet') : progress?.phase ?? t(hasContent ? 'chat.answering' : message.reasoning ? 'chat.thinking' : 'chat.waiting')
+  const progressDot = progress && <span data-live-dot aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', waitingQuietly ? 'bg-tone-warning-fg' : 'bg-tone-success-fg motion-safe:animate-pulse')} />
+  const progressTiming = <>{sinceText && (progress?.working || !limitText) && <><span aria-hidden>·</span><span aria-live="off">{sinceText}</span></>}
+    {limitText && <span aria-live="off">{limitText}</span>}</>
   const actionClass = 'inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50'
   return <><div data-message-id={message.id} data-search-match={searchMatch || undefined} tabIndex={-1} className={`group/message flex gap-2.5 rounded-md data-[search-match=true]:ring-2 data-[search-match=true]:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${assistant ? '' : 'flex-row-reverse'}`}>{!assistant && <UserAvatar user={user} size="sm" className="mt-1" />}<div className={`flex min-w-0 flex-col gap-1 ${assistant ? 'max-w-full items-start sm:max-w-[92%]' : 'max-w-[90%] items-end sm:max-w-[80%]'}`}>
     <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">{assistant ? assistantName ?? t('chat.agent') : user?.name ?? t(intake ? 'sr.requester' : 'chat.user')}</span><span>{formatDateTime(message.createdAt)}</span>{assistant && (progress || message.status === 'streaming') && <>
-      {progress && <span data-live-dot aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', progress.quiet ? 'bg-tone-warning-fg' : 'bg-tone-success-fg motion-safe:animate-pulse')} />}
-      <span role="status">{progress?.quiet ? t('chat.quiet') : progress?.phase ?? t(hasContent ? 'chat.answering' : message.reasoning ? 'chat.thinking' : 'chat.waiting')}</span>
+      {progressDot}
+      <span role="status">{progressLabel}</span>
       {progress && <><span aria-hidden>·</span><span role="timer" aria-live="off">{t('chat.elapsed', { seconds: progress.elapsed })}</span></>}
-      {progress?.quiet && progress.limitLeft !== undefined ? <span aria-live="off">{progress.limitLeft >= 60
-        ? t('chat.limitLeft', { minutes: Math.floor(progress.limitLeft / 60), seconds: progress.limitLeft % 60 }) : t('chat.limitLeftSeconds', { seconds: progress.limitLeft })}</span>
-        : progress?.lastSignal !== undefined && <><span aria-hidden>·</span><span aria-live="off">{t('chat.lastSignal', { seconds: progress.lastSignal })}</span></>}
+      {progressTiming}
     </>}{!assistant && !intake && message.kind === 'discussion' && <Badge tone="warning" className="gap-0.5 px-1.5"><MessagesSquare className="size-2.5" />{t('chat.discussionBadge')}</Badge>}</div>
     {assistant && message.reasoning && <details open={reasoningOpen} className="w-full rounded-lg border bg-muted text-foreground">
       <summary aria-expanded={reasoningOpen} onClick={(event) => { event.preventDefault(); toggleReasoning() }}
@@ -104,6 +116,9 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
         a: ({ href, title, children }) => href?.startsWith(SR_CODE_HREF) ? <SrCodeLink code={href.slice(SR_CODE_HREF.length)}>{children}</SrCodeLink> : <a href={href} title={title} target="_blank" rel="noreferrer">{children}</a>,
         pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
       }}>{content}</ReactMarkdown></div></div>}
+    {/* 글이 멈췄는데 아직 끝나지 않았으면 답 바로 아래에도 같은 상태를 보인다 — 읽는 자리(답 끝)에서 끝난 것처럼 보이지 않게. 읽기는 머리 줄(role=status)이 맡는다 */}
+    {assistant && progress?.stalled && <div data-testid="reply-progress" aria-hidden="true" className="flex flex-wrap items-center gap-1.5 px-1 text-xs text-muted-foreground">
+      {progressDot}<span>{progressLabel}</span>{progressTiming}</div>}
     {!assistant && attachments.length > 0 && <div className="flex flex-wrap justify-end gap-1 text-xs">{attachments.map((attachment, index) => <span key={message.attachmentIds[index]} className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5"><Paperclip className="size-3" />{intake ? <a href={`/api/files/${encodeURIComponent(message.attachmentIds[index]!)}/content`} className="underline">{attachment.data?.name ?? t('sr.attachment', { number: index + 1 })}</a> : attachment.data ? <button type="button" className="hover:underline" onClick={(event) => { previewOpener.current = event.currentTarget; setPreview(attachment.data) }}>{attachment.data.name}</button> : (attachment.isError ? attachmentFallback(attachment.error) : t('chat.checkingFile'))}</span>)}</div>}
     <div className="flex items-center gap-1 text-foreground">
       <div role="group" aria-label={t('chat.messageActions')} className="hidden md:flex md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100 motion-safe:transition-opacity">

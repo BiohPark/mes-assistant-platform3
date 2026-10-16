@@ -14,16 +14,22 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   return parsed.data
 }
 
-function stream(res: Response, requests: RequestsService, id: string): void {
+/** 응답 스트림 생존 주석 간격 — 도구 실행처럼 몇 분씩 청크가 없어도 프록시가 유휴 연결로 끊지 않게 한다(/api/events와 같은 15초) */
+export const STREAM_HEARTBEAT_MS = 15_000
+
+export function stream(res: Response, requests: Pick<RequestsService, 'subscribe'>, id: string): void {
   res.status(201).set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
   res.flushHeaders()
   let finished = false
+  const heartbeat = setInterval(() => { if (!res.writableEnded && !res.destroyed) res.write(': ping\n\n') }, STREAM_HEARTBEAT_MS)
+  heartbeat.unref?.()
   const unsubscribe = requests.subscribe(id, (event) => {
     writeEvent(res, event)
-    if (event.event === 'completed' || event.event === 'failed') { finished = true; res.end() }
+    if (event.event === 'completed' || event.event === 'failed') { finished = true; clearInterval(heartbeat); res.end() }
   })
-  if (finished) unsubscribe()
-  res.on('close', unsubscribe)
+  const stop = () => { clearInterval(heartbeat); unsubscribe() }
+  if (finished) stop()
+  res.on('close', stop)
 }
 
 @Controller('threads/:threadId/requests')

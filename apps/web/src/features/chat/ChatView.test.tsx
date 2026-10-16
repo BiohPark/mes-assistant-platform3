@@ -216,6 +216,25 @@ it('shows the phase of a request running in another tab', async () => {
   await waitFor(() => expect(screen.getByText('파일 올리는 중 1/1')).toBeVisible())
 })
 
+it('clears another tab\'s run from the request record when live events never arrive, then refetches the messages', async () => {
+  let messageReads = 0
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/threads/h/messages') {
+      const done = ++messageReads > 1
+      return Response.json([{ id: 'a', requestId: 'remote', threadId: 'h', seq: 1, role: 'assistant', content: '다 쓴 답', status: done ? 'done' : 'streaming',
+        createdAt: new Date().toISOString(), attachmentIds: [] }])
+    }
+    if (url === '/api/requests/remote') return Response.json({ id: 'remote', status: 'succeeded', phase: null })
+    return Response.json([])
+  }))
+  const task = { id: 't', threadId: 'h', status: 'in_progress' } as Task
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
+  await waitFor(() => expect(messageReads).toBeGreaterThan(1))
+  await waitFor(() => expect(screen.queryByRole('button', { name: '중지' })).toBeNull())
+  expect(screen.getByText('다 쓴 답')).toBeVisible()
+  expect(screen.queryByRole('status')).toBeNull()
+})
+
 it('disables AI send when the estimate exceeds the request budget', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/threads/h/requests/estimate') return new Response(JSON.stringify({ provider: 'mock', transport: 'inline', model: 'mock',

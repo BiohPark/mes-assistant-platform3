@@ -34,6 +34,8 @@ const SR_AUXILIARY_TIMEOUT_MS = 2_147_483_647
 const ACTIVE = ['pending', 'streaming']
 const dbLeaseUntil = (ms: number) => sql`timestampadd(microsecond, ${ms * 1000}, current_timestamp(6))`
 const STOPPED = '요청을 중지했습니다.'
+const TIMEOUT = '응답 시간 초과 — 제한 시간 안에 응답이 오지 않았습니다.'
+const maxLabel = (ms: number) => ms >= 60_000 ? `${Math.round(ms / 60_000)}분` : `${Math.ceil(ms / 1000)}초`
 const STALE = '응답이 중단되었습니다 — 요청한 화면이 닫혔거나 연결이 끊겼습니다. 자동으로 다시 보내지 않았습니다.'
 const errorCode = (status: string, error: string | null, bytes: number) => {
   if (status === 'cancelled') return 'CANCELLED'
@@ -64,8 +66,8 @@ export class RequestsService implements OnModuleDestroy {
   private readonly truncated = new Set<string>()
   private readonly streamText = new Map<string, string>()
   private readonly streamReasoning = new Map<string, string>()
-  /** 요청별 첫 응답·무응답 제한(ms) — 화면의 '제한까지 남은 시간'용. 없으면(다른 인스턴스·재시작) 기록된 파일 자료로 다시 계산한다 */
-  private readonly limits = new Map<string, { firstTokenMs: number; idleMs: number }>()
+  /** 요청별 첫 응답·무응답·최대 처리 제한(ms) — 화면의 '제한까지 남은 시간'용. 없으면(다른 인스턴스·재시작) 기록된 파일 자료로 다시 계산한다 */
+  private readonly limits = new Map<string, { firstTokenMs: number; idleMs: number; maxMs: number }>()
   private readonly auxiliaryUsers = new Set<string>()
   /** DB 행이 없는 모델 호출(시험 대화·연결 시험)이 쥔 전역 슬롯 — 단일 인스턴스 전제(D43) */
   private extraActive = 0
@@ -291,7 +293,7 @@ export class RequestsService implements OnModuleDestroy {
   private async replay(row: typeof chatRequest.$inferSelect): Promise<StartedRequest> {
     const record = await this.get(row.id)
     const started = { event: 'started', data: { requestId: row.id, replyMessageId: row.replyMessageId, userMessageId: row.userMessageId, createdAt: row.createdAt.toISOString(),
-      firstTokenMs: record.firstTokenMs, idleMs: record.idleMs } } as const
+      firstTokenMs: record.firstTokenMs, idleMs: record.idleMs, maxMs: record.maxMs } } as const
     if (this.truncated.has(row.id) || !this.events.has(row.id)) {
       const [reply] = await this.db.select({ content: message.content, reasoning: message.reasoning }).from(message).where(eq(message.id, row.replyMessageId))
       this.events.set(row.id, [{ event: 'started', data: { ...started.data, resumedText: this.streamText.get(row.id) ?? reply?.content ?? '', resumedReasoning: this.streamReasoning.get(row.id) ?? reply?.reasoning ?? '' } }])
@@ -402,7 +404,7 @@ export class RequestsService implements OnModuleDestroy {
       this.appEvents?.publish('context.updated', { taskId: acquired.taskId })
     }
     this.appEvents?.publish('request.updated', { requestId: acquired.id, threadId, taskId: acquired.taskId ?? null, status: 'pending', phase: null })
-    const limits = { firstTokenMs: acquired.firstTokenMs!, idleMs: this.config.request.idleMs }
+    const limits = { firstTokenMs: acquired.firstTokenMs!, idleMs: this.config.request.idleMs, maxMs: this.config.request.maxMs }
     this.limits.set(acquired.id, limits)
     this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString(), autoStarted: acquired.autoStarted ?? false, ...limits } })
     const done = this.run(acquired.id, acquired.staged ?? [], [], acquired.deadlineAt!)
@@ -475,7 +477,7 @@ export class RequestsService implements OnModuleDestroy {
     }
     this.appEvents?.publish('request.updated', { requestId: acquired.id, threadId: original.threadId,
       taskId: acquired.taskId ?? null, status: 'pending', phase: null })
-    const limits = { firstTokenMs: acquired.firstTokenMs!, idleMs: this.config.request.idleMs }
+    const limits = { firstTokenMs: acquired.firstTokenMs!, idleMs: this.config.request.idleMs, maxMs: this.config.request.maxMs }
     this.limits.set(acquired.id, limits)
     this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString(), autoStarted: acquired.autoStarted ?? false, ...limits } })
     return { ...acquired, done: this.run(acquired.id, acquired.staged, inline, acquired.deadlineAt!) }
@@ -495,7 +497,7 @@ export class RequestsService implements OnModuleDestroy {
     const row = await this.getRow(id)
     if (actor) await assertThreadAccess(this.db, actor, row.threadId)
     const inputs = await this.db.select().from(chatRequestInput).where(eq(chatRequestInput.requestId, id)).orderBy(chatRequestInput.seq)
-    const limits = this.limits.get(id) ?? { firstTokenMs: this.firstTokenMs(inputs.some((item) => item.kind === 'file')), idleMs: this.config.request.idleMs }
+    const limits = this.limits.get(id) ?? { firstTokenMs: this.firstTokenMs(inputs.some((item) => item.kind === 'file')), idleMs: this.config.request.idleMs, maxMs: this.config.request.maxMs }
     return { id: row.id, threadId: row.threadId, status: row.status, ...limits, phase: row.phase, code: errorCode(row.status, row.error, row.bytes), provider: row.provider, transport: row.transport, owuiTools: row.owuiTools,
       model: row.model, bytes: row.status === 'pending' && row.bytes === 0 ? null : row.bytes, limitBytes: row.limitBytes, error: row.error, retryOf: row.retryOf, createdAt: row.createdAt.toISOString(),
       finishedAt: row.finishedAt?.toISOString(), hasSnapshot: row.snapshot !== null, inputs: inputs.map((item) => ({ kind: item.kind, weight: item.weight, fileId: item.fileId,
@@ -601,9 +603,13 @@ export class RequestsService implements OnModuleDestroy {
     const stopped = new Promise<never>((_, reject) => controller.signal.addEventListener('abort', () => reject(new Error('요청 중지')), { once: true }))
     void stopped.catch(() => undefined)
     const arm = (ms: number) => { if (timer) clearTimeout(timer); timer = setTimeout(() => {
-      controller.abort('timeout'); rejectDeadline?.(new Error('응답 시간 초과 — 제한 시간 안에 응답이 오지 않았습니다.'))
+      controller.abort('timeout'); rejectDeadline?.(new Error(TIMEOUT))
     }, ms) }
     arm(Math.max(1, deadlineAt - Date.now()))
+    // 최대 처리 시간 — 세션 모드는 OpenWebUI 작업이 살아 있으면 무응답 제한을 계속 다시 걸므로 이것이 상한이다
+    let capped = false
+    const cap = setTimeout(() => { capped = true; controller.abort('timeout'); rejectDeadline?.(new Error(TIMEOUT)) }, this.config.request.maxMs)
+    cap.unref?.()
     const lease = setInterval(() => { void this.db.update(chatRequest).set({ leaseUntil: dbLeaseUntil(this.config.request.leaseMs) })
       .where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
       .then((result) => { if (!result[0].affectedRows) controller.abort('lost') }).catch(() => controller.abort('lost')) }, this.config.request.keepaliveMs)
@@ -740,12 +746,13 @@ export class RequestsService implements OnModuleDestroy {
         dirty = true
         this.emit(id, { event: chunk.value.type, data: { text: chunk.value.text } })
       }
-    } catch (error) { failure = controller.signal.reason === 'timeout' ? '응답 시간 초과 — 제한 시간 안에 응답이 오지 않았습니다.' : this.safeError(error) }
+    } catch (error) { failure = controller.signal.reason === 'timeout' ? TIMEOUT : this.safeError(error) }
     finally {
       if (timer) clearTimeout(timer)
+      clearTimeout(cap)
       clearInterval(lease)
       clearInterval(flushTimer)
-      if (controller.signal.reason === 'timeout') failure = '응답 시간 초과 — 제한 시간 안에 응답이 오지 않았습니다.'
+      if (controller.signal.reason === 'timeout') failure = capped ? `응답 시간 초과 — 최대 처리 시간(${maxLabel(this.config.request.maxMs)})을 넘었습니다.` : TIMEOUT
       try {
         if (controller.signal.reason !== 'lost' && controller.signal.reason !== 'cancelled') {
           let writtenKey: string | undefined

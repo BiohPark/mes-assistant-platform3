@@ -17,6 +17,11 @@ const SESSION_POLL_MAX_BYTES = 32 * 1024 * 1024
 const SESSION_POLL_FAILURES = 5
 const SESSION_CLEANUP_TIMEOUT_MS = 10_000
 const SESSION_STATUS_MAX = 200
+/** 본문·생각·상태가 이만큼 그대로면 '멈춤' — 마무리 단계를 알리고 OpenWebUI 작업이 끝났는지 확인한다 */
+const SESSION_SETTLE_MS = 3_000
+/** 본문이 멈춘 뒤 OpenWebUI가 하는 일 — 서버 단계 문구(화면이 번역한다) */
+const SESSION_PHASE = { finishing: '답변 마무리 중', tool: '도구 실행 중: ', code: '코드 실행 중', working: 'OpenWebUI에서 작업 중' } as const
+const ENDED_EMPTY = 'LLM 서비스 응답 없음 (OpenWebUI 작업이 답 없이 끝남)'
 const CANCELLED = '요청이 취소되었습니다.'
 
 function joinUrl(base: string, path: string): string {
@@ -43,8 +48,20 @@ function readSessionMessage(message: Record<string, unknown>) {
   // 상태 항목마다 보이는 문구(숨김·빈 문구는 undefined) — 폴링 사이에 지나간 단계도 놓치지 않는다
   const statuses = history.map((item) => isObject(item) && item.hidden !== true && typeof item.description === 'string' && item.description.trim()
     ? item.description.trim().slice(0, SESSION_STATUS_MAX) : undefined)
-  return { content: content || (typeof message.content === 'string' ? message.content : ''), reasoning, statuses,
+  return { content: content || (typeof message.content === 'string' ? message.content : ''), reasoning, statuses, activity: sessionActivity(output), output: JSON.stringify(output),
     done: message.done === true, error: message.error !== undefined && message.error !== null && message.error !== false }
+}
+
+/**
+ * 진행 중인 도구·코드 — 결과(function_call_output)가 아직 없는 function_call(middleware.py 5997-6005·6158-6168),
+ * 끝나지 않은 코드 실행 항목(open_webui:code_interpreter, 4645-4658). 없으면 undefined
+ */
+function sessionActivity(output: Record<string, unknown>[]): string | undefined {
+  const answered = new Set(output.filter((item) => item.type === 'function_call_output').map((item) => item.call_id))
+  const tool = output.findLast((item) => item.type === 'function_call' && !answered.has(item.call_id))
+  if (tool) return `${SESSION_PHASE.tool}${typeof tool.name === 'string' && tool.name.trim() ? tool.name.trim().slice(0, SESSION_STATUS_MAX) : '?'}`
+  if (output.some((item) => item.type === 'open_webui:code_interpreter' && item.status === 'in_progress')) return SESSION_PHASE.code
+  return undefined
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -84,10 +101,12 @@ export class OpenAICompatibleProvider implements ChatProvider {
   }
 
   private readonly sessionPollMs: number
+  private readonly sessionSettleMs: number
 
-  constructor(settings: LlmSettings, private readonly readOwuiTools?: () => Promise<'auto' | 'off'>, options: { sessionPollMs?: number } = {}) {
+  constructor(settings: LlmSettings, private readonly readOwuiTools?: () => Promise<'auto' | 'off'>, options: { sessionPollMs?: number; sessionSettleMs?: number } = {}) {
     this.settings = settings
     this.sessionPollMs = options.sessionPollMs ?? SESSION_POLL_MS
+    this.sessionSettleMs = options.sessionSettleMs ?? SESSION_SETTLE_MS
   }
 
   private headers(): Record<string, string> {
@@ -177,14 +196,16 @@ export class OpenAICompatibleProvider implements ChatProvider {
       let buffer = ''
       const think = new ThinkSplitter()
       const toolAcc = new Map<number, ToolCallFragment>()
-      while (true) {
+      // [DONE]이 끝이다 — OpenWebUI는 [DONE]을 보낸 뒤 outlet 필터를 기다리느라 연결을 더 열어 둔다(middleware.py 6748-6760)
+      let ended = false
+      while (!ended) {
         const { value, done } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
         const { events, rest } = parseSseLines(buffer)
         buffer = rest
         for (const ev of events) {
-          if (ev === '[DONE]') continue
+          if (ev === '[DONE]') { ended = true; break }
           if (Number.isFinite(maxFrameBytes) && encoder.encode(ev).byteLength > maxFrameBytes) {
             await reader.cancel().catch(() => undefined)
             yield { type: 'error', message: FRAME_TOO_LARGE }
@@ -288,11 +309,36 @@ export class OpenAICompatibleProvider implements ChatProvider {
       if (!finished) await call('POST', `tasks/chat/${encodeURIComponent(chatId)}/stop`)
       if (req.owuiCleanup !== false) await call('DELETE', chatPath)
     }
+    /** 진행 작업 ID 목록(main.py 2171-2189). 엔드포인트가 없거나 모양이 다르면 null — 이후 묻지 않는다. 일시 오류는 undefined */
+    const taskIds = async (): Promise<string[] | null | undefined> => {
+      try {
+        const res = await limitedFetch(joinUrl(this.settings.baseUrl, `tasks/chat/${encodeURIComponent(chatId)}`), { headers: this.headers() },
+          { timeoutMs: SESSION_POLL_TIMEOUT_MS, maxResponseBytes: 1024 * 1024, signal: req.signal })
+        if (!res.ok) { await res.body?.cancel().catch(() => undefined); return res.status >= 500 ? undefined : null }
+        const body: unknown = await res.json()
+        return isObject(body) && Array.isArray(body.task_ids) ? body.task_ids : null
+      } catch { return undefined }
+    }
     try {
       await req.onSession?.(chatId)
-      let content = '', reasoning = '', statusCount = 0, failures = 0
+      let content = '', reasoning = '', output = '', statusCount = 0, failures = 0
+      // changedAt: 마지막 변화(본문·생각·상태·output) 시각. shown: 이 폴링이 마지막으로 알린 단계(본문이 자라면 서버가 '답변 중'으로 바꾸므로 비운다).
+      // lastStatus: 본문이 자란 뒤 마지막 OpenWebUI 상태. tasksKnown: 작업 목록 엔드포인트가 있는지. working: 멈춘 동안 작업이 살아 있다고 확인됨
+      let changedAt = Date.now(), changed = true, shown: string | undefined, lastStatus: string | undefined, tasksKnown = true, tasksAt = 0, working = false
       while (true) {
         if (req.signal?.aborted) { await cleanup(); yield { type: 'error', message: CANCELLED }; return }
+        // 멈춘 동안 작업 목록을 본다(main.py 2171-2189) — 있으면 OpenWebUI가 아직 일하는 중(생존 신호), 없는데 done이 없으면 done은 오지 않는다:
+        // OpenWebUI는 done을 쓴 뒤에 작업을 지운다(middleware.py 6598-6612 → main.py 1755-1759; 응답 없는 비스트리밍 4309-4312, 처리 예외 4429-4432는 done 없이 끝난다).
+        // 확인은 채팅 조회 전에 해 다음 조회가 마지막 상태다
+        const stalled = !changed && Date.now() - changedAt >= this.sessionSettleMs
+        let ended = false, active = false
+        if (stalled && tasksKnown && Date.now() - tasksAt >= this.sessionSettleMs) {
+          tasksAt = Date.now()
+          const ids = await taskIds()
+          if (ids === null) tasksKnown = false
+          else if (ids?.length === 0) ended = true
+          else if (ids) active = true
+        }
         let message: Record<string, unknown> | undefined
         try {
           const res = await limitedFetch(joinUrl(this.settings.baseUrl, chatPath), { headers: this.headers() },
@@ -307,28 +353,50 @@ export class OpenAICompatibleProvider implements ChatProvider {
           if (req.signal?.aborted) continue
           if (++failures >= SESSION_POLL_FAILURES) { await cleanup(); yield { type: 'error', message: 'LLM 서비스 응답 확인 실패 (OpenWebUI 채팅 조회)' }; return }
         }
+        changed = false
         if (message) {
           const next = readSessionMessage(message)
-          if (next.statuses.length > statusCount) {
+          const statused = next.statuses.length > statusCount
+          if (statused) {
             // 새 상태를 모두 낸다. 새 항목이 숨김뿐이면 마지막 보이는 상태로 생존 신호만 준다
             const fresh = next.statuses.slice(statusCount).filter((text): text is string => !!text)
             const latest = next.statuses.findLast((text): text is string => !!text)
             statusCount = next.statuses.length
             for (const text of fresh.length ? fresh : latest ? [latest] : []) yield { type: 'status', text }
+            if (latest) shown = lastStatus = latest
           }
+          // 작업이 끝났는데 마지막 조회에 본문이 비면(진행 본문은 response_streams에만 있다 — middleware.py 6598-6600) 보인 글을 지우지 않는다
+          const keep = ended && !next.content.trim() && !!content.trim()
+          const grew = next.reasoning !== reasoning || (next.content !== content && !keep)
           if (next.reasoning !== reasoning) {
             yield next.reasoning.startsWith(reasoning) ? { type: 'reasoning', text: next.reasoning.slice(reasoning.length) } : { type: 'replace', field: 'reasoning', text: next.reasoning }
             reasoning = next.reasoning
           }
-          if (next.content !== content) {
+          if (next.content !== content && !keep) {
             yield next.content.startsWith(content) ? { type: 'delta', text: next.content.slice(content.length) } : { type: 'replace', field: 'content', text: next.content }
             content = next.content
           }
-          if (next.error || next.done) {
+          if (next.error || next.done || ended) {
             finished = true
             await cleanup()
-            yield next.error ? { type: 'error', message: 'LLM 서비스 오류 (OpenWebUI 작업 실패)' } : { type: 'done' }
+            yield next.error ? { type: 'error', message: 'LLM 서비스 오류 (OpenWebUI 작업 실패)' } : next.done || content.trim() ? { type: 'done' } : { type: 'error', message: ENDED_EMPTY }
             return
+          }
+          // 도구 호출·코드 실행 같은 output 변화도 진행이다(본문은 그대로여도)
+          const outputChanged = next.output !== output
+          output = next.output
+          if (grew) { shown = lastStatus = undefined }
+          if (grew || statused || outputChanged) { changed = true; changedAt = Date.now(); working = false }
+          if (active) working = true
+          // 본문이 멈춘 뒤에도 끝나지 않았으면 무엇을 하는지 알린다 — OpenWebUI 상태 > 진행 중 도구·코드 > 마무리 중.
+          // 작업 목록이 살아 있다고 하면 'OpenWebUI에서 작업 중'을 앞에 붙이고, 확인할 때마다 같은 단계를 다시 내 무응답 제한을 다시 건다
+          const quiet = !grew && Date.now() - changedAt >= this.sessionSettleMs
+          const base = lastStatus ?? next.activity ?? (content.trim() && quiet ? SESSION_PHASE.finishing : undefined)
+          const phase = working ? (base ? `${SESSION_PHASE.working} · ${base}` : SESSION_PHASE.working) : base
+          // OpenWebUI 상태가 방금 왔으면 그 문구가 더 구체적이다 — 같은 폴링에서는 덮지 않는다
+          if (!statused && phase && (phase !== shown || active || (outputChanged && !grew))) {
+            shown = phase
+            yield { type: 'status', text: phase }
           }
         }
         await sleep(this.sessionPollMs, req.signal)

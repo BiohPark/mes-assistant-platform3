@@ -40,10 +40,13 @@ export interface RequestRecord {
   retryOf?: string | null
   hasSnapshot: boolean
   inputs: RequestInputRecord[]
-  /** 이 요청의 첫 응답 제한·무응답 제한(ms, 첨부 반영) — 화면의 '제한까지 남은 시간' */
+  /** 이 요청의 첫 응답 제한·무응답 제한·최대 처리 시간(ms, 첨부 반영) — 화면의 '제한까지 남은 시간' */
   firstTokenMs?: number
   idleMs?: number
+  maxMs?: number
 }
+/** 서버 요청의 끝 상태 — 이 상태면 더 기다리지 않는다 */
+export const isTerminalRequest = (status?: string) => status === 'succeeded' || status === 'failed' || status === 'cancelled' || status === 'interrupted'
 
 async function check(response: Response) {
   if (response.ok) return response
@@ -70,10 +73,14 @@ export async function readSse(reader: ReadableStreamDefaultReader<Uint8Array>, o
   }
 }
 
-export async function streamRequest(path: string, body: unknown, onEvent: (event: string, data: Record<string, unknown>) => void, key: string = newId()) {
-  const response = await check(await fetch(`/api${path}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) }))
+export async function streamRequest(path: string, body: unknown, onEvent: (event: string, data: Record<string, unknown>) => void, key: string = newId(), signal?: AbortSignal) {
+  const response = await check(await fetch(`/api${path}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body), signal }))
   if (!response.body) throw new Error('스트림 응답이 없습니다')
-  await readSse(response.body.getReader(), onEvent)
+  const reader = response.body.getReader()
+  // 중단하면 읽기를 끝낸다 — 응답 본문을 이미 받은 뒤에도 바로 멈추게(fetch 구현과 무관하게)
+  const stop = () => { void reader.cancel().catch(() => undefined) }
+  signal?.addEventListener('abort', stop, { once: true })
+  try { await readSse(reader, onEvent) } finally { signal?.removeEventListener('abort', stop) }
 }
 
 export async function getRequest(id: string): Promise<RequestRecord> {

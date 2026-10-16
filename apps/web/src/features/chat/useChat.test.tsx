@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { claimMyRequest } from '@/features/assistant-pill/replyBubble'
 import { useChat } from './useChat'
@@ -92,4 +92,63 @@ it('replaces the streamed answer or reasoning when the server sends replace (Ope
   expect(result.current.run).toMatchObject({ text: '최종 답변', reasoning: '다시 생각' })
   await act(async () => { stream.enqueue(encoder.encode('event: completed\ndata: {}\n\n')); stream.close(); await sending })
   expect(result.current.run).toBeNull()
+})
+
+/** 응답 스트림이 멈추거나(프록시 버퍼링·조용한 끊김) 끝 이벤트 없이 닫혀도 서버가 끝났다고 하면 화면을 정리한다 */
+describe('status check fallback', () => {
+  const started = 'event: started\ndata: {"requestId":"r-stuck","replyMessageId":"m"}\n\nevent: delta\ndata: {"text":"답"}\n\n'
+  function upstream(record: () => Record<string, unknown>, close = false) {
+    const posts: string[] = [], gets: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+      if (init.method === 'POST') {
+        posts.push(url)
+        return new Response(new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new TextEncoder().encode(started)); if (close) controller.close() } }), { status: 201 })
+      }
+      gets.push(url)
+      return new Response(JSON.stringify(record()), { status: 200 })
+    }))
+    const client = new QueryClient()
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    return { posts, gets, client, wrapper }
+  }
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] }) })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('checks the request after a silent stream and clears the run when the server says it succeeded', async () => {
+    let status = 'streaming'
+    const { gets, wrapper } = upstream(() => ({ id: 'r-stuck', status, phase: status === 'streaming' ? 'OpenWebUI에서 작업 중 · 도구 실행 중: t' : null }))
+    const { result } = renderHook(() => useChat('stuck-thread'), { wrapper })
+    let sending!: Promise<void>
+    await act(async () => { sending = result.current.send('hello') })
+    await vi.waitFor(() => expect(result.current.run).toMatchObject({ requestId: 'r-stuck', text: '답' }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_000) })
+    expect(gets).toHaveLength(0)
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000) })
+    await vi.waitFor(() => expect(result.current.run?.phase).toBe('OpenWebUI에서 작업 중 · 도구 실행 중: t'))
+    expect(gets).toEqual(['/api/requests/r-stuck'])
+    status = 'succeeded'
+    await act(async () => { await vi.advanceTimersByTimeAsync(6_000); await sending })
+    expect(result.current.run).toBeNull()
+    expect(result.current.sending).toBe(false)
+    expect(sessionStorage.length).toBe(0)
+  })
+  it('ends with the server error when the stalled request failed, and checks at once when the window regains focus', async () => {
+    const { gets, wrapper } = upstream(() => ({ id: 'r-stuck', status: 'interrupted', error: '응답이 중단되었습니다' }))
+    const { result } = renderHook(() => useChat('stuck-thread-2'), { wrapper })
+    let sending!: Promise<void>
+    await act(async () => { sending = result.current.send('hello') })
+    await vi.waitFor(() => expect(result.current.run).not.toBeNull())
+    const settled = expect(sending).rejects.toThrow('응답이 중단되었습니다')
+    await act(async () => { window.dispatchEvent(new Event('focus')); await settled })
+    expect(gets).toEqual(['/api/requests/r-stuck'])
+    expect(result.current.run).toBeNull()
+  })
+  it('asks the server before reconnecting when the stream closes without an end event', async () => {
+    const { posts, gets, wrapper } = upstream(() => ({ id: 'r-stuck', status: 'succeeded' }), true)
+    const { result } = renderHook(() => useChat('stuck-thread-3'), { wrapper })
+    await act(async () => { await result.current.send('hello') })
+    expect(posts).toHaveLength(1)
+    expect(gets).toEqual(['/api/requests/r-stuck'])
+    expect(result.current.run).toBeNull()
+  })
 })
