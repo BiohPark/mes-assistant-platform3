@@ -21,6 +21,10 @@ export function RequestInfoDialog({ requestId, onClose }: { requestId: string; o
         {input.weight === 'main' ? '★' : '☑'} {input.sourceLabel ?? input.fileId ?? t('chat.referenceConversationName')} {input.fileVersion ? `v${input.fileVersion}` : ''} · {input.kind === 'conversation' ? `${input.mode === 'summary' ? t('chat.summary') : input.mode === 'messages' ? t('chat.selectedMessages') : t('common.all')} · ${t('chat.messageTotal', { count: input.messageCount ?? 0 })}` : deliveryLabel[input.delivery ?? ''] ? t(deliveryLabel[input.delivery ?? '']!) : input.delivery ?? t('chat.reference')} · {input.bytes} bytes
         {input.error && <span className="block text-destructive">{input.error}</span>}
       </li>)}</ul>
+      {!!record.data.webPages?.length && <ul className="space-y-1">{record.data.webPages.map(page => <li key={page.url} className="break-all rounded-xl border p-2">
+        🔗 <a href={page.url} target="_blank" rel="noreferrer" className="underline">{page.url}</a> · {page.bytes} bytes · {page.status === 'read' ? t('chat.webPageRead') : t('chat.webPageFailed', { reason: page.error ?? '' })}
+        {page.finalUrl && page.finalUrl !== page.url && <span className="block">→ {page.finalUrl}</span>}
+      </li>)}</ul>}
       {record.data.hasSnapshot && <a className="underline" href={snapshotUrl(requestId)} download>{t('chat.downloadSnapshot')}</a>}
     </div> : record.isError ? <p role="alert">{t('chat.requestLoadFailed')}</p> : <p>{t('common.loading')}</p>}
   </DialogContent></Dialog>

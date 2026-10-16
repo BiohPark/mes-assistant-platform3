@@ -124,3 +124,7 @@ export type OwuiProbeReport = z.infer<typeof OwuiProbeResultSchema>
 export type OwuiProbeAccessListResult = z.infer<typeof OwuiProbeAccessListSchema>
 export type OwuiProbeSessionResult = z.infer<typeof OwuiProbeSessionSchema>
 export type OwuiProbeAccountResult = z.infer<typeof OwuiProbeAccountSchema>
+
+/** URL 자동 읽기 정책 — 도메인(하위 도메인 포함)만 받는다. URL·포트·와일드카드는 거부한다. */
+export const UrlDomainSchema = z.string().trim().toLowerCase().transform(value => value.replace(/\.$/, '')).pipe(z.string().max(253).regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/))
+export const UrlDomainListSchema = z.array(UrlDomainSchema).max(100).transform(values => [...new Set(values)])

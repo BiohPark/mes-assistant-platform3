@@ -22,6 +22,11 @@ const base = {
 }
 
 describe('loadConfig', () => {
+  it('URL_AUTO_FETCH는 기본 true이고 false일 때만 꺼진다', () => {
+    expect(loadConfig(base).urlAutoFetch).toBe(true)
+    expect(loadConfig({ ...base, URL_AUTO_FETCH: 'false' }).urlAutoFetch).toBe(false)
+    expect(() => loadConfig({ ...base, URL_AUTO_FETCH: 'yes' })).toThrow(/URL_AUTO_FETCH/)
+  })
   it('추가 출처는 선택이며 기본 출처만으로도 동작한다', () => {
     expect(loadConfig(base).allowedOrigins).toEqual([base.APP_ORIGIN])
     expect(loadConfig({ ...base, APP_EXTRA_ORIGINS: ' , , ' }).allowedOrigins).toEqual([base.APP_ORIGIN])

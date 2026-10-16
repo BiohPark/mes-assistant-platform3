@@ -1,3 +1,5 @@
+import { networkInterfaces } from 'node:os'
+import { UrlReader } from '../requests/urlReader.js'
 import { linkedTaskSrs } from '../tasks/sr-inputs.service.js'
 import { createHash } from 'node:crypto'
 import { and, eq, inArray, isNull, or } from 'drizzle-orm'
@@ -13,6 +15,8 @@ import { effectiveDefaultModel, DEFAULT_MODEL_OVERRIDE_KEY } from './effectiveDe
 import { DbCatalogReader } from '../catalog/catalog.service.js'
 import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
 
+const urlReader = new UrlReader()
+
 const iso = (date: Date) => date.toISOString()
 const missing = (name: string): never => { throw new Error(`NotImplemented: ${name} (S2/S3)`) }
 const scopeHash = (key: string) => createHash('sha256').update(key).digest('hex')
@@ -23,6 +27,15 @@ export class DbLlmPorts implements LlmPorts {
   constructor(private readonly db: Db, private readonly config: AppConfig, private readonly currentUserId: string,
     private readonly storage = new FileStorageService(config.fileStorageRoot), private readonly draftInputs?: { taskId: string; fileIds: string[] }) {}
 
+  async readWebPages(text: string, options: { scope: string; signal?: AbortSignal; onProgress?: (host: string) => void }) {
+    const settings = await this.getSettings()
+    return urlReader.read(text, { enabled: this.config.urlAutoFetch !== false && settings.urlAutoFetch !== false,
+      allowDomains: settings.urlAllowDomains ?? [], blockDomains: settings.urlBlockDomains ?? [],
+      selfOrigins: [this.config.appOrigin, ...(this.config.allowedOrigins ?? [])], apiPort: this.config.port,
+      selfAddresses: Object.values(networkInterfaces()).flatMap(entries => entries?.map(entry => entry.address) ?? []),
+    }, { ...options, scope: `${this.currentUserId}:${options.scope}` })
+  }
+
   async getSettings(): Promise<Settings> {
     const rows = await this.db.select().from(appSetting)
     const values = new Map(rows.map((row) => [row.key, row.value]))
@@ -30,6 +43,9 @@ export class DbLlmPorts implements LlmPorts {
     const budget = values.get('requestBudgetBytes')
     const owuiMode = values.get('owuiMode'), owuiCleanup = values.get('owuiCleanup')
     return {
+      urlAutoFetch: this.config.urlAutoFetch !== false && values.get('urlAutoFetch') !== false,
+      urlAllowDomains: Array.isArray(values.get('urlAllowDomains')) ? values.get('urlAllowDomains') as string[] : [],
+      urlBlockDomains: Array.isArray(values.get('urlBlockDomains')) ? values.get('urlBlockDomains') as string[] : [],
       id: 'app', currentUserId: this.currentUserId,
       // 이미 읽은 전역 설정을 단일 정본으로 해석한다. 구형 defaultModel은 읽지 않는다.
       llm: { ...toLlmSettings(this.config.llm), owuiTools: values.get('owuiTools') === 'off' ? 'off' : 'auto', model: effectiveDefaultModel(this.config, values.get(DEFAULT_MODEL_OVERRIDE_KEY)),

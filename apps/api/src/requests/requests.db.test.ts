@@ -54,6 +54,37 @@ describe('RequestService DB', () => {
   })
   afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); await rm(root, { recursive: true, force: true }) })
 
+  it('URL 결과를 추정·전송·스냅샷·자료 조회에 기록하고 한도 초과 시 전송하지 않는다', async () => {
+    const webPages = [{ url: 'https://intra.test/doc', finalUrl: 'https://intra.test/doc', bytes: 42, status: 'read' as const, text: 'URL-DB-BODY' }]
+    const read = vi.spyOn(DbLlmPorts.prototype, 'readWebPages').mockImplementation(async (_text, options) => { options.onProgress?.('intra.test'); return webPages })
+    const events = new EventsService()
+    const publish = vi.spyOn(events, 'publish')
+    const sent: unknown[] = []
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), {
+      ...provider, async *stream(request) { sent.push(request); yield { type: 'delta', text: '응답' }; yield { type: 'done' } },
+    }, events)
+    try {
+      const created = await tasks.create('member', { assistantId })
+      const estimate = await runner.estimate('member', created.thread.id, { draft: 'https://intra.test/doc' })
+      const started = await runner.start('member', created.thread.id, { content: 'https://intra.test/doc' }, 'url-db-test')
+      await started.done
+      const record = await runner.get(started.id)
+      expect(record).toMatchObject({ status: 'succeeded', bytes: estimate.bytes, webPages: [{ url: 'https://intra.test/doc', bytes: 42, status: 'read' }] })
+      expect(record.webPages?.[0]).not.toHaveProperty('text')
+      expect(await runner.snapshot(started.id)).toMatchObject({ webPages: record.webPages })
+      expect(JSON.stringify(await runner.snapshot(started.id))).toContain('URL-DB-BODY')
+      expect(publish.mock.calls.some(([, data]) => 'phase' in data && data.phase === '🔗 페이지 읽는 중(intra.test)')).toBe(true)
+      const over = await tasks.create('member', { assistantId })
+      read.mockResolvedValue([{ ...webPages[0]!, bytes: 400_000, text: 'X'.repeat(400_000) }])
+      const preview = await runner.estimate('member', over.thread.id, { draft: 'https://intra.test/doc' })
+      expect(preview.overLimit).toBe(true)
+      const blocked = await runner.start('member', over.thread.id, { content: 'https://intra.test/doc' }, 'url-db-over')
+      await blocked.done
+      expect(await runner.get(blocked.id)).toMatchObject({ status: 'failed', bytes: preview.bytes, webPages: [{ bytes: 400_000 }] })
+      expect(sent).toHaveLength(1)
+    } finally { read.mockRestore(); runner.onModuleDestroy() }
+  })
+
   it('SR 본문은 원자적으로 한 번 소비하고 재시도는 기록을 쓰며 다음 선택을 보존한다', async () => {
     const sr = new SrService(db, tasks, new EventsService())
     const draft = await sr.create('member')
@@ -368,7 +399,7 @@ describe('RequestService DB', () => {
   it.each(['direct', 'session'] as const)('%s: URL automatically enables web search without a default; estimate equals send and snapshot records actual features', async mode => {
     const upstream = await sessionUpstream(() => sessionMessage([], '', '답변', true), undefined, { defaultFeatureIds: [], mode })
     try {
-      for (const [index, content] of ['https://example.com 읽어 줘', 'URL 없는 다음 질문'].entries()) {
+      for (const [index, content] of ['http://127.0.0.1/url-reader-fixture 읽어 줘', 'URL 없는 다음 질문'].entries()) {
         const estimate = await upstream.runner.estimate('member', upstream.thread.id, { draft: content })
         const started = await upstream.runner.start('member', upstream.thread.id, { content }, `url-auto-${mode}-${index}`)
         await started.done
@@ -441,14 +472,14 @@ describe('RequestService DB', () => {
     })
     const published = vi.spyOn(upstream.events, 'publish')
     try {
-      const estimate = await upstream.runner.estimate('member', upstream.thread.id, { draft: 'https://example.com 읽어 줘' })
-      const started = await upstream.runner.start('member', upstream.thread.id, { content: 'https://example.com 읽어 줘' }, 'owui-session')
+      const estimate = await upstream.runner.estimate('member', upstream.thread.id, { draft: 'http://127.0.0.1/url-reader-fixture 읽어 줘' })
+      const started = await upstream.runner.start('member', upstream.thread.id, { content: 'http://127.0.0.1/url-reader-fixture 읽어 줘' }, 'owui-session')
       const seen: Array<{ event: string; data: Record<string, unknown> }> = []
       const unsubscribe = upstream.runner.subscribe(started.id, event => seen.push(event))
       await started.done
       unsubscribe()
       expect(await upstream.runner.get(started.id)).toMatchObject({ status: 'succeeded', bytes: estimate.bytes, owuiTools: { mode: 'tools', tool_ids: ['lookup'], features: { web_search: true } } })
-      expect(seen.filter(event => event.event === 'phase').map(event => event.data.text)).toEqual(['URL 읽는 중', 'URL 읽음', '생각 중', '답변 중'])
+      expect(seen.filter(event => event.event === 'phase').map(event => event.data.text)).toEqual(['🔗 페이지 읽는 중(127.0.0.1)', 'URL 읽는 중', 'URL 읽음', '생각 중', '답변 중'])
       expect(published).toHaveBeenCalledWith('request.updated', expect.objectContaining({ requestId: started.id, status: 'streaming', phase: 'URL 읽는 중' }))
       const [reply] = await db.select().from(message).where(eq(message.id, started.replyMessageId))
       expect(reply).toMatchObject({ content: '세션 답변', reasoning: '검토', status: 'done' })

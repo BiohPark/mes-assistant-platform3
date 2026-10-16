@@ -23,7 +23,7 @@ type GeneralKey = keyof SettingsPatch
 /** 값을 바꾸면 그 키만 바로 PATCH한다(숫자·주소는 blur). 다른 세션이 바꾼 값을 덮어쓰지 않는다 */
 function SettingsForm({ initial }: { initial: Settings }) {
   const t = useT()
-  const { owuiTools: _owuiTools, assistantImageFileId: _assistantImage, defaultModel: _model, defaultModelSource: _source, ...patchable } = initial
+  const { urlAutoFetchAvailable: _urlAvailable, owuiTools: _owuiTools, assistantImageFileId: _assistantImage, defaultModel: _model, defaultModelSource: _source, ...patchable } = initial
   const modelList = useModelList()
   const [form, setForm] = useState<SettingsPatch>(patchable)
   const saved = useRef<SettingsPatch>(patchable)
@@ -58,6 +58,15 @@ function SettingsForm({ initial }: { initial: Settings }) {
     <fieldset><legend className="mb-1">{t('admin.fileDelivery')}</legend><RadioGroup value={form.fileDelivery ?? 'inline'} onValueChange={value => commit('fileDelivery', value as Settings['fileDelivery'])} aria-label={t('admin.fileDelivery')} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {(['inline', 'openwebui'] as const).map(value => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-xl border p-3 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-accent"><RadioGroupItem value={value} />{t(value === 'inline' ? 'admin.deliveryInline' : 'admin.deliveryOpenWebUi')}</label>)}
     </RadioGroup><SaveStatus state={states.fileDelivery} /></fieldset>
+    <fieldset className="space-y-2"><legend>{t('admin.settings.urlReader')}</legend>
+      <label className="flex items-center gap-2"><input type="checkbox" checked={form.urlAutoFetch ?? true} disabled={initial.urlAutoFetchAvailable === false} onChange={event => commit('urlAutoFetch', event.target.checked)} />{t('admin.settings.urlAutoFetch')}</label>
+      <SaveStatus state={states.urlAutoFetch} />
+      {initial.urlAutoFetchAvailable === false && <p>{t('admin.settings.urlDisabledEnv')}</p>}
+      {(['urlAllowDomains', 'urlBlockDomains'] as const).map(key => <Field key={key} label={t(`admin.settings.${key}`)} help={t('admin.settings.urlDomainsHint')} status={states[key]}>
+        <textarea className="w-full rounded-lg border bg-background p-2" value={(form[key] ?? []).join('\n')} onChange={event => change(key, event.target.value.split('\n'))}
+          onBlur={event => commit(key, event.target.value.split(/[\s,]+/).map(value => value.trim().toLowerCase()).filter(Boolean))} />
+      </Field>)}
+    </fieldset>
     <Field label={t('admin.settings.requestBudget')} status={states.requestBudgetBytes}><Input type="number" min={1024} max={100000000} value={form.requestBudgetBytes ?? 1000000} onChange={(event) => change('requestBudgetBytes', Number(event.target.value))} onBlur={(event) => commit('requestBudgetBytes', Number(event.target.value))} /></Field>
     <Field label={t('admin.fileMaxPerRequest')} status={states.fileMaxPerRequest}><Input type="number" min={1} max={100} value={form.fileMaxPerRequest ?? 10} onChange={(event) => change('fileMaxPerRequest', Number(event.target.value))} onBlur={(event) => commit('fileMaxPerRequest', Number(event.target.value))} /></Field>
     <div><Field label={t('admin.intakeAssistant')} status={states.srIntakeAssistantId}><AssistantPicker mode="single" source={assistantSource}

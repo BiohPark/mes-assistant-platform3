@@ -85,6 +85,17 @@ describe('관리 API 서버 권한', () => {
     admin.assistantImageContent.mockRejectedValueOnce(Object.assign(new Error('missing'), { code: 'ENOENT' }))
     await request(app.getHttpServer()).get('/api/settings/assistant-image').set('Cookie', 'mes_session=member').expect(404)
   })
+  it('URL 정책은 SO만 수정하고 도메인 형식과 목록 길이를 검사한다', async () => {
+    const patch = { urlAutoFetch: false, urlAllowDomains: ['Intra.Example.', 'intra.example'], urlBlockDomains: ['bad.intra.example'] }
+    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send(patch).expect(200)
+    expect(admin.settings).toHaveBeenLastCalledWith({ ...patch, urlAllowDomains: ['intra.example'] })
+    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=member').send(patch).expect(403)
+    for (const domains of [['https://example.com'], ['*.example.com'], ['host:80'], ['bad/path'], Array.from({ length: 101 }, () => 'example.com')]) {
+      await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ urlAllowDomains: domains }).expect(400)
+    }
+    const result = await request(app.getHttpServer()).get('/api/settings').set('Cookie', 'mes_session=so').expect(200)
+    expect(result.body).toMatchObject({ urlAutoFetch: true, urlAllowDomains: [], urlBlockDomains: [] })
+  })
   it('도구 전달 설정은 auto/off만 SO가 변경하고 누락 시 다른 설정에 섞이지 않는다', async () => {
     for (const owuiTools of ['auto', 'off']) {
       await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ owuiTools }).expect(200)
@@ -119,21 +130,21 @@ describe('관리 API 서버 권한', () => {
   it('기본 모델은 읽기 DTO에서 .env 유효값으로만 보이고, 쓰기 DTO에 defaultModel이 오면 400 (S7 C2)', async () => {
     admin.getSettings.mockResolvedValueOnce({ defaultModel: 'db-model', fileMaxPerRequest: 3 })
     const read = await request(app.getHttpServer()).get('/api/settings').set('Cookie', 'mes_session=member').expect(200)
-    expect(read.body).toEqual({ defaultModel: 'glm-5.2', defaultModelSource: 'default', fileMaxPerRequest: 3 })
+    expect(read.body).toEqual({ urlAutoFetch: true, urlAllowDomains: [], urlBlockDomains: [], urlAutoFetchAvailable: true, defaultModel: 'glm-5.2', defaultModelSource: 'default', fileMaxPerRequest: 3 })
     await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ defaultModel: 'm' }).expect(400)
     await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ defaultModel: 'm', fileMaxPerRequest: 5 }).expect(400)
     expect(admin.settings).not.toHaveBeenCalled()
     admin.settings.mockResolvedValueOnce({ defaultModel: 'db-model', fileMaxPerRequest: 5 })
     const written = await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ fileMaxPerRequest: 5 }).expect(200)
     expect(admin.settings).toHaveBeenCalledWith({ fileMaxPerRequest: 5 })
-    expect(written.body).toEqual({ defaultModel: 'glm-5.2', defaultModelSource: 'default', fileMaxPerRequest: 5 })
+    expect(written.body).toEqual({ urlAutoFetch: true, urlAllowDomains: [], urlBlockDomains: [], urlAutoFetchAvailable: true, defaultModel: 'glm-5.2', defaultModelSource: 'default', fileMaxPerRequest: 5 })
   })
   it('SO만 새 override를 trim하여 설정·해제하고 유효 모델과 출처를 읽는다', async () => {
     await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=member').send({ defaultModelOverride: 'new-model' }).expect(403)
     admin.settings.mockResolvedValueOnce({ defaultModelOverride: 'new-model' })
     const written = await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ defaultModelOverride: ' new-model ' }).expect(200)
     expect(admin.settings).toHaveBeenLastCalledWith({ defaultModelOverride: 'new-model' })
-    expect(written.body).toEqual({ defaultModelOverride: 'new-model', defaultModel: 'new-model', defaultModelSource: 'setting' })
+    expect(written.body).toEqual({ urlAutoFetch: true, urlAllowDomains: [], urlBlockDomains: [], urlAutoFetchAvailable: true, defaultModelOverride: 'new-model', defaultModel: 'new-model', defaultModelSource: 'setting' })
     admin.getSettings.mockResolvedValueOnce({ defaultModelOverride: 'new-model' })
     expect((await request(app.getHttpServer()).get('/api/settings').set('Cookie', 'mes_session=member')).body.defaultModelSource).toBe('setting')
     for (const value of [null, '', '   ']) {

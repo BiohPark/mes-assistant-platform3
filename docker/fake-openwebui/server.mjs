@@ -175,6 +175,21 @@ async function runSessionSteps(chat, payload) {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost')
   if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: true })
+  // URL reader targets live on this test server; the application never fetches a public fixture site.
+  if (captureRequests && req.method === 'GET' && url.pathname.startsWith('/__e2e/pages/')) {
+    const name = url.pathname.slice('/__e2e/pages/'.length)
+    if (name === 'redirect') { res.writeHead(302, { location: '/__e2e/pages/article' }); return res.end() }
+    if (name === 'blocked') { res.writeHead(302, { location: 'http://169.254.169.254/latest/meta-data/' }); return res.end() }
+    if (name === 'json') return json(res, 200, { marker: 'URL-READER-JSON' })
+    if (name === 'text') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('URL-READER-TEXT') }
+    if (name === 'large') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('L'.repeat(2 * 1024 * 1024 + 1)) }
+    if (name === 'budget') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('B'.repeat(80_000)) }
+    if (name === 'article') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      return res.end('<html><head><title>URL Reader Test</title></head><body><nav>IGNORE-NAV</nav><article><h1>사내 문서</h1><p>URL-READER-ARTICLE</p><script>IGNORE-SCRIPT</script></article></body></html>')
+    }
+    return json(res, 404, { detail: 'fixture not found' })
+  }
   if (captureRequests && req.method === 'GET' && url.pathname === '/__e2e/requests') return json(res, 200, requests)
   if (captureRequests && req.method === 'GET' && url.pathname === '/__e2e/sessions') return json(res, 200, { active: [...chats.keys()], ...sessionLog })
   if (captureRequests && url.pathname === '/__e2e/tool-ids') {

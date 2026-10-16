@@ -29,6 +29,8 @@ export function requestPhaseDetail(phase: string | undefined, t: Translator): st
     const inner = requestPhaseDetail(phase.slice(sessionPhase.working.length + 3), t)
     return inner ? `${t('chat.owuiWorking')} · ${inner}` : t('chat.owuiWorking')
   }
+  const page = /^🔗 페이지 읽는 중\((.*)\)$/.exec(phase)
+  if (page) return t('chat.readingPage', { host: page[1]! })
   if (phase === sessionPhase.finishing) return t('chat.finishing')
   if (phase === sessionPhase.code) return t('chat.codeRunning')
   if (phase.startsWith(sessionPhase.tool)) return t('chat.toolRunning', { name: phase.slice(sessionPhase.tool.length) })

@@ -237,6 +237,13 @@ export const en = {
       modelNoMatch: 'No matching model. The typed value is used as is.',
     },
     settings: {
+      urlReader: 'Read URLs in questions',
+      urlAutoFetch: 'Automatically read web pages linked in questions',
+      urlDisabledEnv: 'URL reading is disabled in the server environment.',
+      urlAllowDomains: 'Allowed domains',
+      urlBlockDomains: 'Blocked domains',
+      urlDomainsHint: 'Separate domains with lines or commas. Rules include subdomains; blocking takes precedence. An empty allow list permits all domains.',
+
       owuiTools: 'OpenWebUI tool delivery', owuiAuto: 'Automatic (default)', owuiOff: 'Off', owuiHint: 'Pass model tools and default features to OpenWebUI Live conversations. Rejections or connection failures before the first frame retry once with the basic request.',
       global: 'Global settings', requestBudget: 'Max request size (bytes)',
       defaultModelEnvHint: 'Saved changes apply to the next request without restarting. Clear the override to use LLM_DEFAULT_MODEL from the server .env, or the domain default when unset.',
@@ -256,6 +263,10 @@ export const en = {
     },
   },
   chat: {
+    readingPage: '🔗 Reading page ({host})',
+    webPageRead: 'Read',
+    webPageFailed: 'Could not read ({reason})',
+
     brief: {
       title: 'AI summary·suggestion', ruleBased: ' · rule-based', toggle: 'Collapse or expand the summary card', generating: 'AI is writing the summary…', refreshing: 'Updating for new messages…',
       failed: 'Could not make the AI summary. It will retry next time you open this conversation.', pending: 'The summary appears after the first AI answer.',

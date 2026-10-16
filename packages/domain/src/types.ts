@@ -288,7 +288,19 @@ export interface OwuiToolDelivery {
   features?: Record<string, boolean>
 }
 
+export interface WebPageSource {
+  url: string
+  finalUrl?: string
+  title?: string
+  /** 받은 원문 바이트. 프롬프트 전체 예산은 RequestInfo.bytes로 계산한다. */
+  bytes: number
+  status: 'read' | 'failed'
+  error?: string
+}
+export interface WebPageRead extends WebPageSource { text: string }
+
 export interface RequestInfo {
+  webPages?: WebPageSource[]
   /** 실제 마지막 시도의 도구·기능 전달 방식. 파일 transport와 별개다. */
   owuiTools?: OwuiToolDelivery
   at: ISODate
@@ -481,6 +493,9 @@ export type OwuiMode = 'auto' | 'session' | 'direct'
 
 export interface Settings {
   id: 'app'
+  urlAutoFetch?: boolean
+  urlAllowDomains?: string[]
+  urlBlockDomains?: string[]
   currentUserId: ID
   /** SR 접수 대화에 쓰는 에이전트 (기본: URS 분석 도우미) */
   srIntakeAssistantId?: ID

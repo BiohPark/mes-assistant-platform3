@@ -293,3 +293,24 @@ it('OpenWebUI 주소는 blur 때 저장하고 {modelId} 안내를 보인다', as
   await waitFor(() => expect(saved).toEqual([{ link1Rule: 'https://owui.example/' }]))
   expect(address).toHaveAccessibleDescription(/저장됨/)
 })
+
+it('URL 자동 읽기와 허용·차단 목록은 각 설정 키만 저장한다', async () => {
+  const saved: unknown[] = []
+  const initial = { urlAutoFetch: true, urlAllowDomains: [], urlBlockDomains: [] }
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/settings') {
+      if (init?.method === 'PATCH') { const body = JSON.parse(String(init.body)); saved.push(body); Object.assign(initial, body) }
+      return jsonResponse(200, initial)
+    }
+    return jsonResponse(200, [])
+  }))
+  const user = userEvent.setup(); renderPage()
+  await user.click(await screen.findByRole('checkbox', { name: '질문에 있는 웹 페이지를 자동으로 읽기' }))
+  await waitFor(() => expect(saved).toContainEqual({ urlAutoFetch: false }))
+  await user.type(screen.getByLabelText('허용 도메인'), 'Intra.Example, docs.example')
+  await user.tab()
+  await waitFor(() => expect(saved).toContainEqual({ urlAllowDomains: ['intra.example', 'docs.example'] }))
+  await user.type(screen.getByLabelText('차단 도메인'), 'bad.intra.example')
+  await user.tab()
+  await waitFor(() => expect(saved).toContainEqual({ urlBlockDomains: ['bad.intra.example'] }))
+})
