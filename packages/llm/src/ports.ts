@@ -10,6 +10,7 @@ export interface LoadedConversationInput {
 
 /** Storage and file bytes supplied by the host application. */
 export interface LlmPorts {
+  readWebPages?(text: string, options: { scope: string; signal?: AbortSignal; onProgress?: (host: string) => void }): Promise<import('@mes/domain').WebPageRead[]>
   getSettings(): Promise<Settings>
   getTask(id: ID): Promise<Task | undefined>
   getFiles(ids: ID[]): Promise<(FileAsset | undefined)[]>

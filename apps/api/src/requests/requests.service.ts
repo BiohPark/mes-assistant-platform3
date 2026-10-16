@@ -497,8 +497,9 @@ export class RequestsService implements OnModuleDestroy {
     const row = await this.getRow(id)
     if (actor) await assertThreadAccess(this.db, actor, row.threadId)
     const inputs = await this.db.select().from(chatRequestInput).where(eq(chatRequestInput.requestId, id)).orderBy(chatRequestInput.seq)
+    const savedSnapshot = row.snapshot as { webPages?: RequestInfo['webPages'] } | null
     const limits = this.limits.get(id) ?? { firstTokenMs: this.firstTokenMs(inputs.some((item) => item.kind === 'file')), idleMs: this.config.request.idleMs, maxMs: this.config.request.maxMs }
-    return { id: row.id, threadId: row.threadId, status: row.status, ...limits, phase: row.phase, code: errorCode(row.status, row.error, row.bytes), provider: row.provider, transport: row.transport, owuiTools: row.owuiTools,
+    return { id: row.id, threadId: row.threadId, status: row.status, ...limits, ...(savedSnapshot?.webPages ? { webPages: savedSnapshot.webPages } : {}), phase: row.phase, code: errorCode(row.status, row.error, row.bytes), provider: row.provider, transport: row.transport, owuiTools: row.owuiTools,
       model: row.model, bytes: row.status === 'pending' && row.bytes === 0 ? null : row.bytes, limitBytes: row.limitBytes, error: row.error, retryOf: row.retryOf, createdAt: row.createdAt.toISOString(),
       finishedAt: row.finishedAt?.toISOString(), hasSnapshot: row.snapshot !== null, inputs: inputs.map((item) => ({ kind: item.kind, weight: item.weight, fileId: item.fileId,
         fileVersion: item.fileVersion, srId: item.srId, srCode: item.srSnapshot?.code, srTitle: item.srSnapshot?.title, sourceLabel: item.sourceLabel, oneShot: item.oneShot, delivery: item.delivery, sourceTaskId: item.sourceTaskId,
@@ -516,7 +517,7 @@ export class RequestsService implements OnModuleDestroy {
   private async saveBuilt(id: string, info: RequestInfo): Promise<boolean> {
     return this.db.transaction(async (tx) => {
       const updated = await tx.update(chatRequest).set({ provider: info.provider, transport: info.transport, model: info.model,
-        bytes: info.bytes, limitBytes: info.limitBytes, phase: null }).where(and(eq(chatRequest.id, id), eq(chatRequest.status, 'pending')))
+        bytes: info.bytes, limitBytes: info.limitBytes, phase: null, ...(info.webPages?.length ? { snapshot: { webPages: info.webPages } } : {}) }).where(and(eq(chatRequest.id, id), eq(chatRequest.status, 'pending')))
       if (!updated[0].affectedRows) return false
       // 시작 때 남긴 자료 기록(recordStaged)을 실제 조립 결과로 바꾼다
       const recordedSrs = await tx.select().from(chatRequestInput).where(and(eq(chatRequestInput.requestId, id), eq(chatRequestInput.kind, 'sr')))
@@ -656,6 +657,12 @@ export class RequestsService implements OnModuleDestroy {
       const built = await Promise.race([buildChatRequest(scope, domainThread, history, { conversations, srs, inputs: staged.filter((item) => !item.oneShot),
         oneShotFileIds: staged.filter((item) => item.oneShot).map((item) => item.fileId), forceInlineFileIds: forceInline,
         deadlineAt,
+        onWebProgress: (host) => {
+          const phase = `🔗 페이지 읽는 중(${host})`
+          this.emit(id, { event: 'phase', data: { text: phase } })
+          void this.db.update(chatRequest).set({ phase }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
+            .then(result => { if (result[0].affectedRows) this.appEvents?.publish('request.updated', { requestId: id, threadId: row.threadId, taskId: owner.taskId, status: 'pending', phase }) }).catch(() => undefined)
+        },
         signal: controller.signal, onProgress: (progress) => { const phase = `${progress.phase === 'uploading' ? '파일 올리는 중' : '파일 처리 대기'} ${progress.index + 1}/${progress.total} · ${progress.name}`
           void this.db.update(chatRequest).set({ phase }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE)))
             .then((result) => { if (result[0].affectedRows) this.appEvents?.publish('request.updated', { requestId: id,
@@ -667,14 +674,14 @@ export class RequestsService implements OnModuleDestroy {
       if (info.bytes > info.limitBytes) { failure = `요청 크기 한도 초과 (${Math.ceil(info.bytes / 1024)} KB / ${Math.ceil(info.limitBytes / 1024)} KB)`; return }
       const recordSnapshot = (extras: Record<string, unknown> = {}) => {
         snapshot = { sentAt: new Date().toISOString(), provider: this.provider.kind, model: built.model, meta: built.meta,
-          messages: built.messages, stream: true, ...extras, ...(built.files?.length && { files: built.info.inputs.flatMap((input) => input.kind === 'file' && input.delivery === 'attached'
+          messages: built.messages, ...(info?.webPages?.length ? { webPages: info.webPages } : {}), stream: true, ...extras, ...(built.files?.length && { files: built.info.inputs.flatMap((input) => input.kind === 'file' && input.delivery === 'attached'
             ? [{ type: 'file', fileId: input.fileId }] : []) }) }
         const serialized = Buffer.from(JSON.stringify(snapshot))
         snapshotBytes = undefined
         if (serialized.byteLength > 1024 * 1024) {
           const now = new Date(), key = `requests/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${id}.json`
           snapshotBytes = serialized
-          snapshot = { storageKey: key }
+          snapshot = { storageKey: key, ...(info?.webPages?.length ? { webPages: info.webPages } : {}) }
         }
       }
       recordSnapshot()

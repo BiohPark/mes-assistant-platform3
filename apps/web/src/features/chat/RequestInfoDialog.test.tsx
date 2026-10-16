@@ -33,3 +33,13 @@ it.each([
     expect(screen.getByText(/features:.*web_search/)).toBeInTheDocument()
   } else expect(screen.queryByText(/lookup|web_search/)).not.toBeInTheDocument()
 })
+
+it('shows URL, source bytes, redirect target and read failure in used materials', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { id: 'web', status: 'succeeded', model: 'm', bytes: 100, limitBytes: 1000, hasSnapshot: true, inputs: [],
+    webPages: [{ url: 'https://intra.test/', finalUrl: 'https://intra.test/doc', bytes: 42, status: 'read' }, { url: 'https://blocked.test/', bytes: 0, status: 'failed', error: '차단된 주소' }] })))
+  renderWithProviders(<RequestInfoDialog requestId="web" onClose={() => undefined} />)
+  expect(await screen.findByRole('link', { name: 'https://intra.test/' })).toHaveAttribute('href', 'https://intra.test/')
+  expect(screen.getByText(/42 bytes · 읽음/)).toBeInTheDocument()
+  expect(screen.getByText(/읽지 못함\(차단된 주소\)/)).toBeInTheDocument()
+  expect(screen.getByText('→ https://intra.test/doc')).toBeInTheDocument()
+})

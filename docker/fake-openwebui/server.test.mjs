@@ -344,3 +344,18 @@ test('direct done-linger sends [DONE] but keeps the connection open', async () =
   assert.equal(next, 'open')
   await reader.cancel()
 }))
+
+test('URL reader target pages are local fixtures and disabled outside E2E mode', async () => {
+  await withServer(false, async base => assert.equal((await fetch(`${base}/__e2e/pages/article`)).status, 404))
+  await withServer(true, async base => {
+    const article = await (await fetch(`${base}/__e2e/pages/redirect`)).text()
+    assert.match(article, /URL-READER-ARTICLE/)
+    assert.match(article, /IGNORE-SCRIPT/)
+    assert.equal(await (await fetch(`${base}/__e2e/pages/text`)).text(), 'URL-READER-TEXT')
+    assert.deepEqual(await (await fetch(`${base}/__e2e/pages/json`)).json(), { marker: 'URL-READER-JSON' })
+    const blocked = await fetch(`${base}/__e2e/pages/blocked`, { redirect: 'manual' })
+    assert.equal(blocked.status, 302)
+    assert.equal(blocked.headers.get('location'), 'http://169.254.169.254/latest/meta-data/')
+    assert.equal((await (await fetch(`${base}/__e2e/pages/large`)).arrayBuffer()).byteLength, 2 * 1024 * 1024 + 1)
+  })
+})

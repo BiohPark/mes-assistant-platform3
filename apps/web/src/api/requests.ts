@@ -39,6 +39,7 @@ export interface RequestRecord {
   error?: string | null
   retryOf?: string | null
   hasSnapshot: boolean
+  webPages?: RequestInfo['webPages']
   inputs: RequestInputRecord[]
   /** 이 요청의 첫 응답 제한·무응답 제한·최대 처리 시간(ms, 첨부 반영) — 화면의 '제한까지 남은 시간' */
   firstTokenMs?: number

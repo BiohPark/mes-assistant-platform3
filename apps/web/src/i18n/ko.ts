@@ -235,6 +235,13 @@ export const ko = {
       modelNoMatch: '일치하는 모델이 없습니다. 입력한 값을 그대로 씁니다.',
     },
     settings: {
+      urlReader: '질문 URL 자동 읽기',
+      urlAutoFetch: '질문에 있는 웹 페이지를 자동으로 읽기',
+      urlDisabledEnv: '서버 환경 설정에서 URL 자동 읽기를 껐습니다.',
+      urlAllowDomains: '허용 도메인',
+      urlBlockDomains: '차단 도메인',
+      urlDomainsHint: '줄바꿈 또는 쉼표로 구분합니다. 하위 도메인도 적용하며 차단이 우선합니다. 허용 목록이 비어 있으면 모든 도메인을 허용합니다.',
+
       owuiTools: 'OpenWebUI 도구 전달', owuiAuto: '자동 (기본)', owuiOff: '끔', owuiHint: 'OpenWebUI Live 대화에 모델의 도구와 기본 기능을 전달합니다. 첫 프레임 전에 거부되거나 연결이 실패하면 기본 방식으로 한 번 다시 보냅니다.',
       global: '전역 설정', requestBudget: '요청 크기 한도 (바이트)',
       defaultModelEnvHint: '저장하면 재시작 없이 다음 요청부터 적용됩니다. 설정을 해제하면 서버 .env의 LLM_DEFAULT_MODEL을 사용하고, 없으면 도메인 기본값을 사용합니다.',
@@ -254,6 +261,10 @@ export const ko = {
     },
   },
   chat: {
+    readingPage: '🔗 페이지 읽는 중({host})',
+    webPageRead: '읽음',
+    webPageFailed: '읽지 못함({reason})',
+
     brief: {
       title: 'AI 요약·제안', ruleBased: ' · 규칙 판단', toggle: '요약 카드 접기·펼치기', generating: 'AI가 요약을 만드는 중…', refreshing: '새 메시지 반영 중…',
       failed: 'AI 요약을 만들지 못했습니다. 다음에 들어올 때 다시 시도합니다.', pending: 'AI 답이 오면 요약을 만듭니다.',

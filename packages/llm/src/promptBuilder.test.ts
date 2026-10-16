@@ -232,3 +232,33 @@ it('excludes reasoning from dry-run tray estimates and actual context including 
   expect(JSON.stringify(actual.messages)).not.toContain('PRIVATE_REASONING')
   expect(actual.messages.every(message => !('reasoning' in message))).toBe(true)
 })
+
+describe('question URL context', () => {
+  it('reads only the last user message during estimate and send, adds sources and counts the full prompt', async () => {
+    const me = await startConversation(dev, { assistantId: 'fds' })
+    const { scope, thread } = await scopeOf(me.task.id)
+    const readWebPages = vi.fn(async () => [
+      { url: 'https://intra.test', finalUrl: 'https://intra.test/doc', title: '문서', bytes: 42, status: 'read' as const, text: '문서 본문'.repeat(1000) },
+      { url: 'https://failed.test', bytes: 0, status: 'failed' as const, error: 'HTTP 403', text: '' },
+    ])
+    const history = [
+      { id: 'old', threadId: thread.id, role: 'user' as const, content: 'https://old.test', createdAt: '', attachmentIds: [], status: 'done' as const },
+      { id: 'new', threadId: thread.id, role: 'user' as const, content: 'https://intra.test https://failed.test', createdAt: '', attachmentIds: [], status: 'done' as const },
+    ]
+    const run = (dryRun: boolean) => buildChatRequestWithPorts(scope, thread, history, { dryRun }, { ...ports, readWebPages })
+    const estimate = await run(true), sent = await run(false)
+    expect(readWebPages).toHaveBeenCalledWith(history[1]!.content, expect.objectContaining({ scope: thread.id }))
+    expect(sent.messages).toEqual(estimate.messages)
+    expect(sent.info.bytes).toEqual(estimate.info.bytes)
+    expect(sent.info.webPages).toMatchObject([{ url: 'https://intra.test', bytes: 42, status: 'read' }, { status: 'failed', error: 'HTTP 403' }])
+    expect(sent.info.webPages?.[0]).not.toHaveProperty('text')
+    expect(sent.messages[0]!.content).toContain('읽은 웹 페이지')
+    expect(sent.messages[0]!.content).toContain('읽지 못함(HTTP 403)')
+    expect(sent.messages[0]!.content).toContain('문서 본문'.repeat(1000))
+    expect(sent.meta.usedInputs?.join('\n')).toContain('https://intra.test')
+    history.push({ ...history[1]!, id: 'next', content: '다음 질문' })
+    readWebPages.mockResolvedValueOnce([])
+    const next = await run(false)
+    expect(next.messages[0]!.content).not.toContain('읽은 웹 페이지')
+  })
+})
