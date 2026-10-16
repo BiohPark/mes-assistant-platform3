@@ -8,8 +8,8 @@ import { cn } from '@/lib/utils'
 import { useT } from '@/i18n'
 import { MessageBubble } from './MessageBubble'
 import type { ChatRun } from './useChat'
-import { isFileProgress, requestPhaseDetail } from './requestLabels'
-import { QUIET_AFTER_MS, RESPONSE_LIMIT_MS } from './streamProgress'
+import { isFileProgress, isOwuiWorking, requestPhaseDetail } from './requestLabels'
+import { MAX_LIMIT_MS, QUIET_AFTER_MS, RESPONSE_LIMIT_MS, STALLED_AFTER_MS } from './streamProgress'
 
 type BubbleActions = Omit<ComponentProps<typeof MessageBubble>, 'message' | 'progress'>
 const nearBottomDistance = 24
@@ -58,17 +58,25 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
   const signature = `${currentText ?? ''}\u0000${currentReasoning ?? ''}\u0000${run?.phase ?? ''}`
   // 서버는 본문·생각·도구 상태가 올 때만 무응답 제한을 다시 건다(파일 진행은 아님) — 그 전에는 요청 생성부터 첫 응답 제한
   const armedSignature = `${currentText ?? ''}\u0000${currentReasoning ?? ''}\u0000${isFileProgress(run?.phase) ? '' : run?.phase ?? ''}`
-  const lastSignal = useRef<{ startedAt?: number; signature: string; armedSignature: string; at?: number; armedAt?: number }>({ startedAt, signature, armedSignature })
-  if (lastSignal.current.startedAt !== startedAt) lastSignal.current = { startedAt, signature, armedSignature }
+  // 본문만 따로 — 마지막으로 글이 자란 시각(답 아래 진행 상태를 보일지)
+  const text = currentText ?? ''
+  const lastSignal = useRef<{ startedAt?: number; signature: string; armedSignature: string; at?: number; armedAt?: number; text: string; textAt?: number }>({ startedAt, signature, armedSignature, text })
+  if (lastSignal.current.startedAt !== startedAt) lastSignal.current = { startedAt, signature, armedSignature, text }
   else if (lastSignal.current.signature !== signature) {
     const at = Date.now()
-    lastSignal.current = { ...lastSignal.current, signature, armedSignature, at, armedAt: lastSignal.current.armedSignature !== armedSignature ? at : lastSignal.current.armedAt }
+    lastSignal.current = { ...lastSignal.current, signature, armedSignature, at, armedAt: lastSignal.current.armedSignature !== armedSignature ? at : lastSignal.current.armedAt,
+      text, textAt: lastSignal.current.text !== text ? at : lastSignal.current.textAt }
   }
   const signalAt = lastSignal.current.at, armedAt = lastSignal.current.armedAt
   const silentSince = Math.max(signalAt ?? 0, startedAt ?? now)
   const quiet = now - silentSince >= QUIET_AFTER_MS
+  // OpenWebUI 작업 목록이 살아 있으면(세션 모드) 서버가 무응답 제한을 다시 건다 — 남은 시간은 최대 처리 시간 기준
+  const working = isOwuiWorking(run?.phase)
+  // 글이 있는데 한동안 그대로면 답 아래에도 진행 상태를 보인다(아직 끝나지 않았다)
+  const stalled = !!text.trim() && now - (lastSignal.current.textAt ?? startedAt ?? now) >= STALLED_AFTER_MS
   // 서버가 알린 이 요청의 제한을 쓰고, 없으면(옛 서버) 기본값으로 어림한다
-  const limitAt = armedAt !== undefined ? armedAt + (run?.idleMs ?? RESPONSE_LIMIT_MS) : (run?.startedAt ?? startedAt ?? now) + (run?.firstTokenMs ?? RESPONSE_LIMIT_MS)
+  const limitAt = working ? (run?.startedAt ?? startedAt ?? now) + (run?.maxMs ?? MAX_LIMIT_MS)
+    : armedAt !== undefined ? armedAt + (run?.idleMs ?? RESPONSE_LIMIT_MS) : (run?.startedAt ?? startedAt ?? now) + (run?.firstTokenMs ?? RESPONSE_LIMIT_MS)
   const limitLeft = Math.max(0, Math.ceil((limitAt - now) / 1000))
   const lastSignalSeconds = signalAt === undefined ? undefined : Math.max(0, Math.floor((now - signalAt) / 1000))
   // Show an assistant header before the reply is fetched, then reuse its key.
@@ -184,7 +192,7 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
     {visibleMessages.length ? visibleMessages.map(item => <MessageBubble key={item.id} assistantName={assistantName} searchMatch={item.id === selectedMatch}
       message={run?.replyId === item.id ? { ...item, status: 'streaming', content: run.text || item.content, reasoning: run.reasoning || item.reasoning } : item}
       {...(item === currentReply || item.id !== replyId ? actions?.(item) : undefined)}
-      progress={active && item.id === replyId ? { phase, elapsed, lastSignal: lastSignalSeconds, quiet, limitLeft: quiet ? limitLeft : undefined } : undefined} />) : empty}
+      progress={active && item.id === replyId ? { phase, elapsed, lastSignal: lastSignalSeconds, quiet, limitLeft: quiet ? limitLeft : undefined, working, stalled } : undefined} />) : empty}
     {farFromBottom && <div className="sticky bottom-2 flex justify-center"><button type="button" onClick={jumpToEnd}
       className="inline-flex min-h-11 items-center gap-1 rounded-full border bg-card px-3 text-sm text-card-foreground shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowDown aria-hidden="true" className="size-4" />{t('chat.scrollToBottom')}</button></div>}
     <div ref={bottom} />

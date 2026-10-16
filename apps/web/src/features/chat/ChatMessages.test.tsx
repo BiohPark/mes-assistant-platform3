@@ -262,6 +262,41 @@ it('S14: counts down the server limits of this request — first-token limit fro
   expect(header()).toHaveTextContent('제한까지 1분 35초')
 })
 
+it('S14-II: once the text stops, shows what is still running under the answer; OpenWebUI work counts toward the hard cap, not the idle limit', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+  const startedAt = Date.now()
+  const client = new QueryClient()
+  const view = (run: import('./useChat').ChatRun) => <QueryClientProvider client={client}><TooltipProvider><ChatMessages messages={[question]} run={run} /></TooltipProvider></QueryClientProvider>
+  const base = { requestId: 'r', replyId: 'a', startedAt, idleMs: 300_000, maxMs: 1_800_000 }
+  const { container, rerender } = render(view({ ...base, text: '답', phase: '답변 중' }))
+  const header = () => screen.getByRole('status').parentElement!
+  const footer = () => screen.queryByTestId('reply-progress')
+  expect(footer()).toBeNull()
+  act(() => vi.advanceTimersByTime(3000))
+  expect(footer()).toHaveTextContent('답변 작성 중')
+  rerender(view({ ...base, text: '답', phase: '답변 마무리 중' }))
+  expect(screen.getByRole('status')).toHaveTextContent('답변 마무리 중')
+  expect(footer()).toHaveTextContent('답변 마무리 중')
+  rerender(view({ ...base, text: '답', phase: '도구 실행 중: search_docs' }))
+  expect(screen.getByRole('status')).toHaveTextContent('도구 실행: search_docs')
+  rerender(view({ ...base, text: '답', phase: 'OpenWebUI에서 작업 중 · 도구 실행 중: search_docs' }))
+  expect(screen.getByRole('status')).toHaveTextContent('OpenWebUI에서 작업 중 · 도구 실행: search_docs')
+  expect(header()).toHaveTextContent('0초째')
+  act(() => vi.advanceTimersByTime(125_000))
+  // 조용해도 '응답 대기 중'이 아니다 — 작업 중이고, 남은 시간은 시작 + 최대 30분 - 지금 128초 = 1672초
+  expect(screen.getByRole('status')).toHaveTextContent('OpenWebUI에서 작업 중 · 도구 실행: search_docs')
+  expect(header()).toHaveTextContent('2분 5초째')
+  expect(header()).toHaveTextContent('제한까지 27분 52초')
+  expect(footer()).toHaveTextContent('OpenWebUI에서 작업 중 · 도구 실행: search_docs')
+  expect(footer()).toHaveTextContent('제한까지 27분 52초')
+  expect(container.querySelector('[data-live-dot]')).toHaveClass('motion-safe:animate-pulse')
+  rerender(view({ ...base, text: '답이 이어진다', phase: '답변 중' }))
+  expect(footer()).toBeNull()
+  expect(screen.getAllByRole('status')).toHaveLength(1)
+})
+
 it('S14: a new request starts its quiet clock from its own start, not from the previous answer', () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
   vi.useFakeTimers()

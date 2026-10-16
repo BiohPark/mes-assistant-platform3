@@ -75,6 +75,8 @@ const EnvSchema = z.object({
   REQUEST_FIRST_TOKEN_MS: z.coerce.number().int().positive().default(300_000),
   REQUEST_FILES_FIRST_TOKEN_MS: z.coerce.number().int().positive().default(600_000),
   REQUEST_IDLE_MS: z.coerce.number().int().positive().default(300_000),
+  /** 요청 하나의 최대 처리 시간 — 세션 모드에서 OpenWebUI 작업이 살아 있어 무응답 제한을 다시 걸어도 이 시간을 넘기지 않는다 */
+  REQUEST_MAX_MS: z.coerce.number().int().positive().default(1_800_000),
   REQUEST_LEASE_MS: z.coerce.number().int().positive().default(30_000),
   REQUEST_KEEPALIVE_MS: z.coerce.number().int().positive().default(10_000),
   REQUEST_SWEEP_MS: z.coerce.number().int().positive().default(30_000),
@@ -159,7 +161,7 @@ export function loadConfig(env: Record<string, string | undefined>, pathOptions:
     llm: { mode: e.LLM_MODE, preset: e.LLM_PRESET, baseUrl: e.LLM_BASE_URL, apiKey: e.LLM_API_KEY, defaultModel: e.LLM_DEFAULT_MODEL,
       owuiMode: e.LLM_OWUI_MODE, owuiCleanup: e.LLM_OWUI_CLEANUP },
     request: { firstTokenMs: e.REQUEST_FIRST_TOKEN_MS, filesFirstTokenMs: e.REQUEST_FILES_FIRST_TOKEN_MS,
-      idleMs: e.REQUEST_IDLE_MS, leaseMs: e.REQUEST_LEASE_MS, keepaliveMs: e.REQUEST_KEEPALIVE_MS,
+      idleMs: e.REQUEST_IDLE_MS, maxMs: e.REQUEST_MAX_MS, leaseMs: e.REQUEST_LEASE_MS, keepaliveMs: e.REQUEST_KEEPALIVE_MS,
       sweepMs: e.REQUEST_SWEEP_MS, flushMs: e.REQUEST_FLUSH_MS, budgetBytes: e.REQUEST_BUDGET_BYTES, maxActive: e.REQUEST_MAX_ACTIVE },
   }
 }

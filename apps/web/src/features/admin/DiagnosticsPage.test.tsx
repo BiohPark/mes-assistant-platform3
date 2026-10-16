@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { createT } from '@/i18n'
-import { DiagnosticsPage, formatDiagnostics } from './DiagnosticsPage'
+import { checkSse, DiagnosticsPage, formatDiagnostics } from './DiagnosticsPage'
 vi.mock('@/app/hooks', () => ({ useAssistants: () => [{ id: 'a', name: '에이전트 A', modelId: 'agent-a' }, { id: 'b', name: '에이전트 B', modelId: 'agent-b' }, { id: 'c', name: '기본 모델 에이전트', modelId: '' }] }))
 vi.mock('@/app/TopBar', () => ({ TopBar: ({ title }: { title: string }) => <h1>{title}</h1> }))
 
@@ -146,4 +146,23 @@ it('진단에서 에이전트를 고르면 연결 모델의 접근·권한을 �
     fireEvent.keyDown(await screen.findByRole('option', { name: '기본 모델 에이전트' }), { key: 'Enter' })
     await waitFor(() => expect(checks).toEqual(['agent-a', 'agent-b', 'm']))
   } finally { HTMLElement.prototype.scrollIntoView = originalScroll }
+})
+
+const sse = (offsets: number[]) => () => new Response(offsets.map((sentAt, seq) => `event: ping\ndata: ${JSON.stringify({ seq, sentAt })}\n\n`).join(''), { status: 200 })
+
+it('SSE check measures the round trip and the first signal, and calls paced signals unbuffered', async () => {
+  stubFetch({ '/api/health': () => jsonResponse(200, { ok: true }), '/api/admin/diagnostics/sse': sse([0, 500, 1000]) })
+  // 시계: 왕복 시작 0 → 끝 40, 스트림 시작 100 → 신호 도착 160·660·1160(간격 유지)
+  const times = [0, 40, 100, 160, 660, 1160]
+  expect(await checkSse(() => times.shift()!)).toEqual({ rttMs: 40, firstMs: 60, count: 3, sentSpreadMs: 1000, receivedSpreadMs: 1000, buffered: false })
+})
+
+it('SSE check flags buffering when the signals arrive bunched together and shows it on the page', async () => {
+  stubFetch({ ...base, '/api/health': () => jsonResponse(200, { ok: true }), '/api/admin/diagnostics/sse': sse([0, 500, 1000]) })
+  const times = [0, 30, 100, 1210, 1211, 1212]
+  expect(await checkSse(() => times.shift()!)).toMatchObject({ firstMs: 1110, receivedSpreadMs: 2, buffered: true })
+  renderWithProviders(<DiagnosticsPage />)
+  fireEvent.click(await screen.findByRole('button', { name: '점검' }))
+  const region = screen.getByRole('region', { name: '실시간 연결(SSE) 점검' })
+  await waitFor(() => expect(within(region).getByRole('status')).toHaveTextContent(/서버 왕복 \d+ ms · 첫 신호 \d+ ms · 신호 3개/))
 })

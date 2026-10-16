@@ -218,7 +218,7 @@ it('OpenWebUI 세션 모드 기본값은 auto·정리 켬이고 env로 바꾼다
 })
 
 it('defaults chat waits to minutes and preserves explicit environment values', () => {
-  expect(loadConfig(base).request).toMatchObject({ firstTokenMs: 300_000, filesFirstTokenMs: 600_000, idleMs: 300_000 })
-  expect(loadConfig({ ...base, REQUEST_FIRST_TOKEN_MS: '60000', REQUEST_FILES_FIRST_TOKEN_MS: '360000', REQUEST_IDLE_MS: '12345' }).request)
-    .toMatchObject({ firstTokenMs: 60_000, filesFirstTokenMs: 360_000, idleMs: 12_345 })
+  expect(loadConfig(base).request).toMatchObject({ firstTokenMs: 300_000, filesFirstTokenMs: 600_000, idleMs: 300_000, maxMs: 1_800_000 })
+  expect(loadConfig({ ...base, REQUEST_FIRST_TOKEN_MS: '60000', REQUEST_FILES_FIRST_TOKEN_MS: '360000', REQUEST_IDLE_MS: '12345', REQUEST_MAX_MS: '600000' }).request)
+    .toMatchObject({ firstTokenMs: 60_000, filesFirstTokenMs: 360_000, idleMs: 12_345, maxMs: 600_000 })
 })

@@ -4,7 +4,7 @@ import type { Message, Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
 import { appendMessage, getMessages, setTaskStatus } from '@/api/tasks'
 import { uploadFile } from '@/api/files'
-import { estimateRequest, getRequest, type RequestRecord } from '@/api/requests'
+import { estimateRequest, getRequest, isTerminalRequest, type RequestRecord } from '@/api/requests'
 import { subscribeEvent } from '@/app/useEvents'
 import { useActor, useCurrentUserId } from '@/app/hooks'
 import { ReasonDialog } from '@/components/ReasonDialog'
@@ -17,7 +17,7 @@ import { ModelPicker } from './ModelPicker'
 import { SaveAsOutputDialog } from './SaveAsOutputDialog'
 import { RequestInfoDialog } from './RequestInfoDialog'
 import { RetryFilesDialog } from './RetryFilesDialog'
-import { useChat } from './useChat'
+import { STATUS_CHECK_MS, useChat } from './useChat'
 import { RequestSizeNotice, useRequestAttachments } from './RequestAttachments'
 import { useRequestEstimate } from './useRequestEstimate'
 import { getDraft } from './drafts'
@@ -64,12 +64,16 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
   })
   useConversationViewed(selfId, task.id, task.lastActivityAt, conversationPanel)
   const remoteRequestId = messages.data?.find((item) => item.status === 'streaming' && item.requestId !== chat.run?.requestId)?.requestId
-  const remoteRequest = useQuery({ queryKey: ['request', remoteRequestId], queryFn: () => getRequest(remoteRequestId!), enabled: !!remoteRequestId })
-  const remoteStreaming = !!remoteRequestId
+  // 다른 창·탭(또는 끊긴 내 스트림)의 요청 — 실시간 이벤트가 늦거나 막혀도 요청 기록을 주기적으로 읽어 끝을 확인한다(창이 다시 보이면 즉시)
+  const remoteRequest = useQuery({ queryKey: ['request', remoteRequestId], queryFn: () => getRequest(remoteRequestId!), enabled: !!remoteRequestId,
+    refetchInterval: (current) => isTerminalRequest(current.state.data?.status) ? false : STATUS_CHECK_MS })
+  const remoteDone = isTerminalRequest(remoteRequest.data?.status)
+  useEffect(() => { if (remoteDone && task.threadId) void query.invalidateQueries({ queryKey: ['messages', task.threadId] }) }, [remoteDone, task.threadId, query])
+  const remoteStreaming = !!remoteRequestId && !remoteDone
   const remoteReply = messages.data?.find(item => item.status === 'streaming' && item.requestId === remoteRequestId)
-  const visibleRun = chat.run ?? (remoteReply && remoteRequestId ? { requestId: remoteRequestId, replyId: remoteReply.id,
+  const visibleRun = chat.run ?? (remoteReply && remoteStreaming ? { requestId: remoteRequestId!, replyId: remoteReply.id,
     text: remoteReply.content, reasoning: remoteReply.reasoning ?? '', phase: remoteRequest.data?.phase ?? undefined,
-    startedAt: Date.parse(remoteRequest.data?.createdAt ?? remoteReply.createdAt), firstTokenMs: remoteRequest.data?.firstTokenMs, idleMs: remoteRequest.data?.idleMs } : null)
+    startedAt: Date.parse(remoteRequest.data?.createdAt ?? remoteReply.createdAt), firstTokenMs: remoteRequest.data?.firstTokenMs, idleMs: remoteRequest.data?.idleMs, maxMs: remoteRequest.data?.maxMs } : null)
   // 보관된 실패 시도가 있으면 다음 전송은 그 시도를 그대로 재전송하므로, 다른 텍스트를 프리필하면 화면과 전송 내용이 어긋난다.
   const pendingAttempt = chat.hasPendingAttempt()
   const askAgainDisabled = task.status === 'done' || !task.threadId || sending || chat.sending || !!chat.run || remoteStreaming || pendingAttempt

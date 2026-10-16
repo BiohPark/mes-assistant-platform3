@@ -303,3 +303,44 @@ for (const features of [undefined, { web_search: false }]) {
     assert.doesNotMatch(outputText(message, 'message'), /\[fetched:/)
   }))
 }
+
+const tasksOf = async (base, chatId) => (await (await fetch(`${base}/api/tasks/chat/${chatId}`)).json()).task_ids
+
+test('the task list shows a running session until it ends; unknown chats have none', async () => withServer(false, async base => {
+  const { chat_id } = await (await session(base, '작업 목록')).json()
+  assert.deepEqual(await tasksOf(base, chat_id), [`task-${chat_id}`])
+  await pollUntilDone(base, chat_id)
+  await new Promise(resolve => setTimeout(resolve, 50))
+  assert.deepEqual(await tasksOf(base, chat_id), [])
+  assert.deepEqual(await tasksOf(base, 'missing'), [])
+}))
+
+test('tool-slow writes text first, then keeps an unanswered function_call while the task runs, then the result and the rest', async () => withServer(false, async base => {
+  const { chat_id } = await (await session(base, '[tool-slow] 도구')).json()
+  const { message, seen } = await pollUntilDone(base, chat_id)
+  const running = seen.filter(item => item.output.some(entry => entry.type === 'function_call') && !item.output.some(entry => entry.type === 'function_call_output'))
+  assert.ok(running.length * 50 >= 300, 'the tool should run for FAKE_OWUI_TOOL_MS')
+  assert.ok(running.every(item => /받은 메시지: \[tool-slow\]/.test(outputText(item, 'message')) && item.output.at(-1).name === 'fake_tool'))
+  assert.deepEqual(message.output.map(entry => entry.type), ['message', 'function_call', 'function_call_output', 'message'])
+  assert.match(message.content, /\n\[tool: fake_tool 완료\]$/)
+  assert.deepEqual(await tasksOf(base, chat_id), [])
+}, { FAKE_OWUI_TOOL_MS: '400' }))
+
+test('done-missing ends the task with the full text but never sets done', async () => withServer(false, async base => {
+  const { chat_id } = await (await session(base, '[done-missing] 끝')).json()
+  for (let i = 0; i < 100 && (await tasksOf(base, chat_id)).length; i++) await new Promise(resolve => setTimeout(resolve, 50))
+  const { chat } = await (await fetch(`${base}/api/v1/chats/${chat_id}`)).json()
+  const message = Object.values(chat.history.messages)[0]
+  assert.equal(message.done, false)
+  assert.match(message.content, /받은 메시지: \[done-missing\] 끝/)
+}))
+
+test('direct done-linger sends [DONE] but keeps the connection open', async () => withServer(false, async base => {
+  const response = await chat(base, { messages: [{ role: 'user', content: '[done-linger] 오래' }] })
+  const reader = response.body.getReader()
+  let text = ''
+  while (!text.includes('data: [DONE]')) text += new TextDecoder().decode((await reader.read()).value)
+  const next = await Promise.race([reader.read().then(() => 'closed'), new Promise(resolve => setTimeout(() => resolve('open'), 300))])
+  assert.equal(next, 'open')
+  await reader.cancel()
+}))
