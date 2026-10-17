@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react'
-import { createMemoryRouter, Outlet, RouterProvider } from 'react-router'
+import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MeContext } from './auth'
 import { router } from './router'
@@ -11,7 +11,11 @@ const gates = vi.hoisted(() => {
   function gate() { let resolve = () => {}; const promise = new Promise<void>((done) => { resolve = done }); return { promise, resolve } }
   return { reports: gate(), diagnostics: gate() }
 })
-vi.mock('./AppShell', () => ({ AppShell: () => <MeContext value={{ theme: 'system', locale: 'ko', id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles }}><span>shell</span><Outlet /></MeContext> }))
+// 셸은 화면 목록(pageRoutes)을 현재 위치로 렌더한다 — 탭 줄 없는 경로(PageView)로 역할별 관문·뼈대·오류 경계를 확인한다
+vi.mock('./AppShell', async () => {
+  const { PageView } = await import('./pageRoutes')
+  return { AppShell: () => <MeContext value={{ theme: 'system', locale: 'ko', id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles }}><span>shell</span><PageView /></MeContext> }
+})
 vi.mock('@/features/home/HomePage', () => ({ HomePage: () => { if (homeError) throw homeError; return <div>허브 화면</div> } }))
 vi.mock('@/features/sr/SrIntakePage', () => ({ SrIntakePage: () => <div>SR 접수 화면</div> }))
 vi.mock('@/features/my-work/MyWorkPage', () => ({ MyWorkPage: () => <div>내 작업 화면</div> }))

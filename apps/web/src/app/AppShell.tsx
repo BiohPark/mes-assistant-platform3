@@ -1,5 +1,5 @@
-import { Fragment } from 'react'
-import { NavLink, Outlet } from 'react-router'
+import { Fragment, useEffect } from 'react'
+import { NavLink, useLocation } from 'react-router'
 import { LayoutGrid, ListTodo, Boxes, Settings, Bot, Send, Inbox, BarChart3, Activity, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Toaster } from '@/components/ui/sonner'
@@ -8,6 +8,9 @@ import { AuthGate } from './AuthGate'
 import { isPopout } from './popout'
 import { useEvents } from './useEvents'
 import { useMe } from './auth'
+import { useMediaQuery } from './useMediaQuery'
+import { TabHost } from './TabHost'
+import { useTabTitle } from './useTabTitle'
 import { PasswordPage } from '@/features/admin/PasswordPage'
 import { AssistantPill } from '@/features/assistant-pill/AssistantPill'
 import { useT } from '@/i18n'
@@ -45,6 +48,11 @@ function AppContent() {
   const items = NAV.filter((item) => !('show' in item) || item.show(me.roles))
   const sectioned = new Set(items.map((item) => item.section)).size > 1
   const popout = isPopout() // 대화 팝업 창 — 사이드바·도우미 알약(말풍선·가이드 포함) 없이 본문만
+  const tabbed = useMediaQuery('(min-width: 768px)') && !popout // 상단 탭(MDI)은 넓은 화면만 — 모바일·팝업은 화면 하나
+  const { pathname, search, hash } = useLocation()
+  const title = useTabTitle(pathname + search + hash)
+  const appName = t('common.appName')
+  useEffect(() => { document.title = title === appName ? appName : `${title} · ${appName}` }, [title, appName]) // 주소 = 활성 탭
   if (me.mustChangePassword) return <PasswordPage />
   return (
     <>
@@ -83,7 +91,7 @@ function AppContent() {
             </nav>
           </aside>}
           <main className="flex min-w-0 flex-1 flex-col">
-            <Outlet />
+            <TabHost home={requesterOnly ? '/sr' : '/'} userId={me.id} single={!tabbed} />
           </main>
         </div>
         {!requesterOnly && !popout && <AssistantPill />}

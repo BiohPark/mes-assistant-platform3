@@ -40,3 +40,15 @@ it('S14: 좁은 화면의 보이는 대화 탭을 연다(투어의 첨부 단계
   expect(tabs[0]).not.toHaveAttribute('aria-selected', 'true')
   expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
 })
+
+it('S15: 숨은 탭(inert)의 같은 검색창은 건너뛴다', () => {
+  const t = createT('ko')
+  const hidden = document.createElement('div')
+  hidden.setAttribute('inert', '')
+  hidden.innerHTML = `<input aria-label="${t('hub.searchAssistants')}">`
+  const shown = document.createElement('input')
+  shown.setAttribute('aria-label', t('hub.searchAssistants'))
+  document.body.append(hidden, shown)
+  expect(pageTarget('search', t)).toBe(shown)
+  hidden.remove(); shown.remove()
+})
