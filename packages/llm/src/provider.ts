@@ -73,6 +73,7 @@ export type ChatChunk =
   /** 세션 모드 — OpenWebUI 진행 상태(도구 실행 등). 진행 단계이자 생존 신호 */
   | { type: 'status'; text: string }
   | { type: 'tool_call'; call: ToolCall }
+  | ({ type: 'images' } & import('./responseImages.js').ResponseImages)
   | { type: 'done' }
   | { type: 'error'; message: string }
 

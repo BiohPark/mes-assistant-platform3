@@ -52,7 +52,35 @@ describe('RequestService DB', () => {
     const extras = new TaskExtrasService(db, provider, service, new FileStorageService(root), new EventsService())
     tasks = new DbTasksService(db, undefined, extras)
   })
-  afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); await rm(root, { recursive: true, force: true }) })
+  afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); if (root) await rm(root, { recursive: true, force: true }) })
+
+  it('persists reply images as conversation files and preserves original AI resend text', async () => {
+    const original = '![generated](/cache/generated.png) plain /cache/generated.png'
+    const sent: import('@mes/llm').ChatRequest[] = []
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root })
+    const runner = new RequestsService(db, config, { ...provider, async *stream(req) {
+      sent.push(req)
+      yield { type: 'delta', text: original }
+      yield { type: 'images', images: [{ sources: ['/cache/generated.png'], name: 'generated.png', mime: 'image/png', bytes: new Uint8Array([1, 2, 3]) }], failures: [{ source: '/cache/missing.png', reason: '이미지 다운로드 실패 (HTTP 404)' }] }
+      yield { type: 'done' }
+    } }, new EventsService())
+    const created = await tasks.create('member', { assistantId })
+    const first = await runner.start('member', created.thread.id, { content: 'draw' }, 'image-persist-first')
+    await first.done
+    const [reply] = await db.select().from(message).where(eq(message.id, first.replyMessageId))
+    const files = await db.select().from(fileObject).where(eq(fileObject.originTaskId, created.task.id))
+    expect(files).toHaveLength(1)
+    expect(files[0]).toMatchObject({ kind: 'ai_output', source: 'assistant', mime: 'image/png', uploadedBy: 'member' })
+    expect(await new FileStorageService(root).read(files[0]!.storageKey)).toEqual(new Uint8Array([1, 2, 3]))
+    expect(reply?.content).toBe(`![generated](/api/files/${files[0]!.id}/content) plain /cache/generated.png`)
+    expect(await runner.snapshot(first.id)).toMatchObject({ responseImages: { saved: [{ fileId: files[0]!.id }], failures: [{ source: '/cache/missing.png' }] } })
+    const estimate = await runner.estimate('member', created.thread.id, { draft: 'again' })
+    const second = await runner.start('member', created.thread.id, { content: 'again' }, 'image-persist-second')
+    await second.done
+    expect(sent[1]!.messages.some(item => item.role === 'assistant' && item.content === original)).toBe(true)
+    expect((await runner.get(second.id)).bytes).toBe(estimate.bytes)
+    runner.onModuleDestroy()
+  })
 
   it('URL 결과를 추정·전송·스냅샷·자료 조회에 기록하고 한도 초과 시 전송하지 않는다', async () => {
     const webPages = [{ url: 'https://intra.test/doc', finalUrl: 'https://intra.test/doc', bytes: 42, status: 'read' as const, text: 'URL-DB-BODY' }]

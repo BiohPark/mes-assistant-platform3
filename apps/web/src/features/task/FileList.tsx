@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge'
 import { useT } from '@/i18n'
 import { FileVersionsDialog } from './FileVersionsDialog'
 
+export const isAiGenerated = (file: FileMeta): boolean => 'kind' in file && file.kind === 'ai_output'
+
 const iconButton = 'inline-flex size-8 shrink-0 items-center justify-center rounded-lg hover:bg-muted'
 
 export function FileList({ files, taskId, onToggleOutput, onPreview, canDelete = true, canViewHistory = true, renderActions, deletableBy }: {
@@ -27,7 +29,7 @@ export function FileList({ files, taskId, onToggleOutput, onPreview, canDelete =
   if (!files.length) return <div className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">{t('task.files.empty')}</div>
   return <><ul className="space-y-1">{files.map((file) => <li key={file.id} data-testid={`file-${file.id}`} className="flex items-center gap-1 rounded-lg border bg-card px-2 py-1 text-xs">
     {onPreview ? <button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => onPreview(file)}>{file.name} v{file.version}</button> : <span className="min-w-0 flex-1 truncate">{file.name} v{file.version}</span>}
-    {file.source === 'assistant' && <Badge tone="violet">{t('components.assistantSource')}</Badge>}
+    {file.source === 'assistant' && <Badge tone="violet">{t(isAiGenerated(file) ? 'components.aiGenerated' : 'components.assistantSource')}</Badge>}
     <span className="text-xs text-muted-foreground">{formatSize(file.size)}</span>
     {renderActions?.(file)}
     {taskId && onToggleOutput && <button type="button" className={iconButton} aria-label={file.isOutput ? t('task.files.unmarkOutput') : t('task.files.markOutput')} onClick={() => onToggleOutput(file.id, !file.isOutput)}><Sparkles className={`size-3.5 ${file.isOutput ? 'fill-tone-violet-fg text-tone-violet-fg' : ''}`} /></button>}

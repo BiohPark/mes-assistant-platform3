@@ -30,6 +30,7 @@ export const ko = {
     modelSource: { thread: '이 대화', task: '이 대화', assistant: '에이전트 설정', settings: '공통 기본 모델' },
   },
   components: {
+    aiGenerated: 'AI 생성',
     assistantSource: '에이전트',
     removeValue: '{value} 제거',
     editValue: '{value} 수정',

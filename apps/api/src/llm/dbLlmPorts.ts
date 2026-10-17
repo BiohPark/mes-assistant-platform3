@@ -8,7 +8,7 @@ import type { LlmPorts } from '@mes/llm'
 import { remoteKey } from '@mes/llm'
 import type { AppConfig } from '../config/config.js'
 import type { Db } from '../db/db.module.js'
-import { appSetting, appUser, checklistItem, fileObject, fileRemoteRef, serviceRequest, srInput, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { appSetting, appUser, checklistItem, fileObject, fileRemoteRef, message, serviceRequest, srInput, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { toLlmSettings } from './presets.js'
 import { effectiveDefaultModel, DEFAULT_MODEL_OVERRIDE_KEY } from './effectiveDefaultModel.js'
@@ -151,15 +151,18 @@ export class DbLlmPorts implements LlmPorts {
     const rows = await this.db.select({ id: fileObject.id }).from(fileObject).where(and(eq(fileObject.originSrId, srId), isNull(fileObject.deletedAt)))
     return (await this.getFiles(rows.map((row) => row.id))).filter((file): file is FileAsset => !!file)
   }
-  async loadConversationInputs(taskId: string) {
-    const loaded = await new DbConversationInputsService(this.db).load(taskId)
+  async loadConversationInputs(taskId: string, captured?: Parameters<DbConversationInputsService['load']>[2]) {
+    const loaded = await new DbConversationInputsService(this.db).load(taskId, undefined, captured)
+    const ids = loaded.flatMap(item => item.messages.map(value => value.id))
+    const originals = ids.length ? await this.db.select({ id: message.id, content: message.originalContent }).from(message).where(inArray(message.id, ids)) : []
+    const originalById = new Map(originals.map(row => [row.id, row.content]))
     const sources = await this.getTasks(loaded.map((item) => item.input.sourceTaskId))
     const assistants = await this.getAssistants()
     return loaded.flatMap((item, index) => {
       const source = sources[index]
       if (!source) return []
       return [{ input: item.input, snapshot: item.snapshot, source,
-        assistant: assistants.find((agent) => agent.id === source.assistantId), messages: item.messages }]
+        assistant: assistants.find((agent) => agent.id === source.assistantId), messages: item.messages.map(value => ({ ...value, content: originalById.get(value.id) ?? value.content })) }]
     })
   }
   async updateFileRemoteIds(fileId: string, remoteIds: Record<string, string>): Promise<void> {

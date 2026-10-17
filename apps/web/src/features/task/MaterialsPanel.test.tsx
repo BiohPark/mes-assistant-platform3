@@ -384,3 +384,14 @@ it('S14: 이 대화 파일의 이전 버전을 첨부 중이면 그 행에서 �
   await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t/inputs/own1/switch-version' && init?.method === 'POST')).toBe(true))
   expect(within(screen.getByTestId('file-own2')).queryByRole('button', { name: '새 버전 있음 · 바꾸기' })).not.toBeInTheDocument()
 })
+
+it('labels AI generated files in shared-tag and linked SR material lists', async () => {
+  const image = { id: 'ai-shared', kind: 'ai_output', name: 'generated.png', mime: 'image/png', size: 3, version: 1, source: 'assistant', isOutput: false }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/tasks/t/candidates' ? jsonResponse(200, {
+    files: [{ file: { ...image, originTaskId: 'other' }, sourceTaskId: 'other', sourceCode: 'WK-1', viaTags: ['direct'], role: 'upload' }],
+    srFiles: [{ file: { ...image, id: 'ai-sr', originSrId: 'sr' }, srId: 'sr', srCode: 'SR-1', srTitle: '접수' }], conversations: [],
+  }) : jsonResponse(200, [])))
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={baseTask} /></MeContext>)
+  expect(await screen.findByTestId('candidate-file-ai-shared')).toHaveTextContent('AI 생성')
+  expect(screen.getByTestId('sr-file-ai-sr')).toHaveTextContent('AI 생성')
+})

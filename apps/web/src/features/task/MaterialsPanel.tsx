@@ -11,7 +11,7 @@ import { HelpTip } from '@/components/HelpTip'
 import { listAssistants } from '@/lib/catalog'
 import { useT } from '@/i18n'
 import { FileDropZone } from '@/components/FileDropZone'
-import { FileList } from './FileList'
+import { FileList, isAiGenerated } from './FileList'
 import { FilePreviewDialog } from './FilePreviewDialog'
 import { AttachToggle, UsedMark } from './AttachToggle'
 import { ConversationInputs } from './ConversationInputs'
@@ -97,7 +97,7 @@ export function MaterialsPanel({ task }: { task: Task }) {
             : <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">{t('task.materials.noShared')}</div>)}
         {candidates.isSuccess && sortedGroups.flatMap(([assistantId, items]) => [<div key={`group-${assistantId}`} className="pt-1 font-medium" data-testid={`shared-group-${assistantId}`}>{assistantById.get(assistantId)?.name ?? assistantId}</div>, ...items.sort((a, b) => a.file.name.localeCompare(b.file.name) || a.file.version - b.file.version).map((item) => <div key={item.file.id} className={cn('rounded-xl border p-2', fresh.has(item.file.id) && 'border-tone-info-fg/40 bg-tone-info-bg')} data-testid={`candidate-file-${item.file.id}`} data-fresh={fresh.has(item.file.id) ? 'true' : undefined}>
           <div className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(item.file)}>{item.file.name} v{item.file.version}</button>{fresh.has(item.file.id) && <span className="shrink-0 text-[11px] text-tone-info-fg">{t('task.materials.fresh')}</span>}{stage(item.file)}</div>
-          <div className="mt-1 text-xs text-muted-foreground">{item.role === 'output' ? <Badge tone="violet">{t('task.materials.roleOutput')}</Badge> : <Badge tone="neutral">{t('task.materials.roleUpload')}</Badge>} · <SourceLink taskId={item.sourceTaskId} code={item.sourceCode} title={item.sourceTitle} /> · {item.viaTags.join(', ')}
+          <div className="mt-1 text-xs text-muted-foreground">{isAiGenerated(item.file) && <><Badge tone="violet">{t('components.aiGenerated')}</Badge> · </>}{item.role === 'output' ? <Badge tone="violet">{t('task.materials.roleOutput')}</Badge> : <Badge tone="neutral">{t('task.materials.roleUpload')}</Badge>} · <SourceLink taskId={item.sourceTaskId} code={item.sourceCode} title={item.sourceTitle} /> · {item.viaTags.join(', ')}
             {!!item.olderVersionIds?.length && <button type="button" className="ml-2 underline" onClick={() => setExpanded(expanded === item.file.id ? null : item.file.id)}>{t('task.materials.olderVersions', { count: item.olderVersionIds.length })}</button>}
           </div>
           {expanded === item.file.id && <OlderVersions file={item.file} attach={attach} onPreview={setPreview} />}
@@ -116,6 +116,7 @@ export function MaterialsPanel({ task }: { task: Task }) {
         <div className="flex items-center gap-1 text-xs font-medium">{t('task.materials.srFiles')} · <span className="font-mono">{srFiles[0]!.srCode}</span> <span className="truncate font-normal text-muted-foreground">{srFiles[0]!.srTitle}</span><HelpTip text={t('task.materials.srFilesHelp')} /></div>
         {srFiles.map((item) => <div key={item.file.id} className="flex items-center gap-1 rounded-xl border p-2" data-testid={`sr-file-${item.file.id}`}>
           <button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(item.file)}>{item.file.name} v{item.file.version}</button>
+          {isAiGenerated(item.file) && <Badge tone="violet">{t('components.aiGenerated')}</Badge>}
           <button type="button" className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg hover:bg-muted" aria-label={t('task.download')} onClick={() => void downloadBlob(item.file, t)}><Download className="size-3.5" /></button>
           {stage(item.file)}
         </div>)}

@@ -22,7 +22,7 @@ export function validName(name: string): string {
 }
 
 export function fileMeta(row: FileRow) {
-  return { id: row.id, originTaskId: row.originTaskId ?? undefined, name: row.originalName,
+  return { id: row.id, kind: row.kind, originTaskId: row.originTaskId ?? undefined, name: row.originalName,
     ...(row.originSrId && { originSrId: row.originSrId }),
     mime: row.mime, size: row.sizeBytes, sha256: row.sha256, uploadedBy: row.uploadedBy,
     uploadedAt: row.uploadedAt.toISOString(), source: row.source, isOutput: row.isOutput,
@@ -151,7 +151,7 @@ export class DbFilesService {
     if (source.originTaskId) await assertTaskAccess(this.db, actor, source.originTaskId)
     const taskId = await this.db.transaction(async (tx) => {
       const row = await this.row(fileId, tx)
-      if (row.kind !== 'task_file' || !row.originTaskId) throw new BadRequestException('대화 파일만 산출물로 지정할 수 있습니다')
+      if (!['task_file', 'ai_output'].includes(row.kind) || !row.originTaskId) throw new BadRequestException('대화 파일만 산출물로 지정할 수 있습니다')
       await this.editable(row.originTaskId, tx)
       await tx.update(fileObject).set({ isOutput }).where(eq(fileObject.id, fileId))
       await tx.insert(activityLog).values({ id: id(), taskId: row.originTaskId, userId: actor, type: 'file.tagged_output', payload: { name: row.originalName, isOutput } })
@@ -170,7 +170,7 @@ export class DbFilesService {
     }
     const taskId = await this.db.transaction(async (tx) => {
       const row = await this.row(fileId, tx)
-      if (row.kind !== 'task_file' || !row.originTaskId) throw new BadRequestException('대화 파일만 삭제할 수 있습니다')
+      if (!['task_file', 'ai_output'].includes(row.kind) || !row.originTaskId) throw new BadRequestException('대화 파일만 삭제할 수 있습니다')
       await this.editable(row.originTaskId, tx)
       await this.row(fileId, tx)
       const chain = await tx.select().from(fileObject).where(and(eq(fileObject.originTaskId, row.originTaskId!), eq(fileObject.originalName, row.originalName)))
@@ -224,7 +224,7 @@ export class DbFilesService {
       const root = rootOf(row)
       if ((heads.get(root)?.version ?? 0) < row.version) heads.set(root, row)
     }
-    const files = rows.filter((row) => row.kind === 'task_file' && (heads.get(rootOf(row))?.id === row.id || selectedById.has(row.id))).map((row) => {
+    const files = rows.filter((row) => ['task_file', 'ai_output'].includes(row.kind) && (heads.get(rootOf(row))?.id === row.id || selectedById.has(row.id))).map((row) => {
       const head = heads.get(rootOf(row))!.id
       const olderVersionIds: string[] = []
       if (head === row.id) { let previous = row.previousId; while (previous && byId.has(previous)) { if (!byId.get(previous)!.deletedAt) olderVersionIds.push(previous); previous = byId.get(previous)!.previousId } }
@@ -272,8 +272,8 @@ export class DbFilesService {
     await this.db.transaction(async (tx) => {
       const source = await this.row(fileId, tx)
       // 연결 SR 첨부(sr_attachment)는 업무가 아닌 SR에 속하므로 이 업무 행만 잠근다
-      const fromSr = source.kind === 'sr_attachment'
-      if (!fromSr && (source.kind !== 'task_file' || !source.originTaskId)) throw new BadRequestException('선택할 수 없는 파일입니다')
+      const fromSr = !!source.originSrId
+      if (!fromSr && (!['task_file', 'ai_output'].includes(source.kind) || !source.originTaskId)) throw new BadRequestException('선택할 수 없는 파일입니다')
       await this.lockTasks(tx, fromSr ? [taskId] : [taskId, source.originTaskId!])
       await this.editable(taskId, tx)
       const row = await this.row(fileId, tx)
@@ -304,7 +304,7 @@ export class DbFilesService {
       await this.editable(taskId, tx)
       const from = await this.row(fromFileId, tx)
       const to = await this.row(toFileId, tx)
-      if (from.kind !== 'task_file' || !from.originTaskId || to.kind !== 'task_file') throw new BadRequestException('대화 파일만 선택할 수 있습니다')
+      if (!['task_file', 'ai_output'].includes(from.kind) || !from.originTaskId || !['task_file', 'ai_output'].includes(to.kind)) throw new BadRequestException('대화 파일만 선택할 수 있습니다')
       await this.row(fromFileId, tx)
       await this.row(toFileId, tx)
       const selected = await tx.select().from(taskInput).where(and(eq(taskInput.taskId, taskId), eq(taskInput.fileId, fromFileId)))

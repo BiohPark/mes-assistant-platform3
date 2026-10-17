@@ -33,3 +33,9 @@ it('renders the file name as a button when a preview handler is given', () => {
   fireEvent.click(screen.getByRole('button', { name: 'report.txt v1' }))
   expect(onPreview).toHaveBeenCalledWith(meta)
 })
+
+it('marks ai_output files as AI generated', () => {
+  const file = { ...meta, kind: 'ai_output' }
+  renderWithProviders(<FileList files={[file]} taskId="t" />)
+  expect(screen.getByText('AI 생성')).toBeInTheDocument()
+})

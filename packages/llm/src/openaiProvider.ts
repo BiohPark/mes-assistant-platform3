@@ -1,3 +1,4 @@
+import { collectResponseImages } from './responseImages.js'
 import { randomUUID } from 'node:crypto'
 import type { ChatChunk, ChatProvider, ChatRequest } from './provider.js'
 import { LimitedFetchError, limitedFetch, toLimitedFetchError } from './limitedFetch.js'
@@ -182,18 +183,18 @@ export class OpenAICompatibleProvider implements ChatProvider {
         yield { type: 'error', message: `LLM 서비스 오류 (HTTP ${res.status})` }
         return
       }
-      yield* this.readSse(res.body, maxFrameBytes)
+      yield* this.readSse(req, res.body, maxFrameBytes)
       return
     }
   }
 
   /** SSE 응답 본문 → 청크. 끝나면 done, 실패하면 error 하나로 끝낸다. */
-  private async *readSse(body: ReadableStream<Uint8Array>, maxFrameBytes: number): AsyncGenerator<ChatChunk> {
+  private async *readSse(req: ChatRequest, body: ReadableStream<Uint8Array>, maxFrameBytes: number): AsyncGenerator<ChatChunk> {
     const reader = body.getReader()
     try {
       const decoder = new TextDecoder()
       const encoder = new TextEncoder()
-      let buffer = ''
+      let buffer = '', content = ''
       const think = new ThinkSplitter()
       const toolAcc = new Map<number, ToolCallFragment>()
       // [DONE]이 끝이다 — OpenWebUI는 [DONE]을 보낸 뒤 outlet 필터를 기다리느라 연결을 더 열어 둔다(middleware.py 6748-6760)
@@ -219,7 +220,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
           }
           const { text, reasoning, toolCalls } = extractDelta(parsed)
           if (reasoning) yield { type: 'reasoning', text: reasoning }
-          for (const chunk of think.push(text)) yield chunk
+          for (const chunk of think.push(text)) { if (chunk.type === 'delta') content += chunk.text; yield chunk }
           for (const tc of toolCalls) {
             const prev = toolAcc.get(tc.index)
             toolAcc.set(tc.index, {
@@ -236,10 +237,12 @@ export class OpenAICompatibleProvider implements ChatProvider {
           return
         }
       }
-      for (const chunk of think.finish()) yield chunk
+      for (const chunk of think.finish()) { if (chunk.type === 'delta') content += chunk.text; yield chunk }
       for (const tc of toolAcc.values()) {
         if (tc.name) yield { type: 'tool_call', call: { id: tc.id ?? `call_${tc.index}`, name: tc.name, arguments: tc.arguments } }
       }
+      const images = await collectResponseImages(this.settings, content, undefined, req.signal)
+      if (images.images.length || images.failures.length) yield { type: 'images', ...images }
       yield { type: 'done' }
     } catch (e) {
       yield { type: 'error', message: errorMessage(e) }
@@ -276,7 +279,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
     }
     // 세션을 모르는 OpenWebUI는 같은 요청을 스트리밍으로 이미 처리 중이다 — 다시 보내지 않고 그대로 읽는다
     if (res.headers.get('content-type')?.includes('text/event-stream')) {
-      yield* this.readSse(res.body, Number.POSITIVE_INFINITY)
+      yield* this.readSse(req, res.body, Number.POSITIVE_INFINITY)
       return 'handled'
     }
     let created: unknown
@@ -378,6 +381,10 @@ export class OpenAICompatibleProvider implements ChatProvider {
           }
           if (next.error || next.done || ended) {
             finished = true
+            if (!next.error && (next.done || content.trim())) {
+              const images = await collectResponseImages(this.settings, content, message, req.signal)
+              if (images.images.length || images.failures.length) yield { type: 'images', ...images }
+            }
             await cleanup()
             yield next.error ? { type: 'error', message: 'LLM 서비스 오류 (OpenWebUI 작업 실패)' } : next.done || content.trim() ? { type: 'done' } : { type: 'error', message: ENDED_EMPTY }
             return

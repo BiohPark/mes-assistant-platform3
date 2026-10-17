@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createPool } from './connection.js'
 import { runMigrations } from './migrate.js'
 import { seedCatalog } from './seed.js'
-import { activityLog, appSetting, appUser, assistant, chatRequest, chatRequestInput, code, codeGroup, fileObject, fileRemoteRef, message, task, thread } from './schema.js'
+import { activityLog, appSetting, appUser, assistant, chatRequest, chatRequestInput, code, codeGroup, fileObject, fileRemoteRef, message, serviceRequest, task, thread } from './schema.js'
 import { createTempDb, MIGRATION_TEST_TIMEOUT_MS } from '../test/tempDb.js'
 
 // PostgreSQL 초안 SQL과의 문법 비교 대신 MariaDB에서 제약의 실제 동작을 확인한다.
@@ -21,6 +21,19 @@ describe('MariaDB 제약 동작', () => {
     await seedCatalog(db)
   }, MIGRATION_TEST_TIMEOUT_MS)
   afterAll(async () => { await pool?.end(); await temp?.drop() })
+
+  it('ai_output는 대화 또는 SR 한 곳에 속하며 기존 파일 제약을 유지한다', async () => {
+    await db.insert(appUser).values({ id: 'image-owner', name: 'Image owner', initials: 'I', color: '#000' })
+    await db.insert(task).values({ id: 'image-task', code: 'IMG-1', assistantId: 'deviation-drafter', title: 'image', titleSource: 'manual', status: 'todo', ownerId: 'image-owner', priority: 'normal', createdBy: 'image-owner' })
+    await db.insert(serviceRequest).values({ id: 'image-sr', requesterId: 'image-owner', titleSource: 'manual', status: 'draft' })
+    const image = (id: string) => ({ id, kind: 'ai_output', originalName: `${id}.png`, mime: 'image/png', sizeBytes: 3,
+      sha256: 'a'.repeat(64), storageKey: id, source: 'assistant', version: 1, uploadedBy: 'image-owner' })
+    await db.insert(fileObject).values({ ...image('ai-task'), originTaskId: 'image-task', isOutput: true })
+    await db.insert(fileObject).values({ ...image('ai-sr'), originSrId: 'image-sr' })
+    await expect(db.insert(fileObject).values(image('ai-no-origin'))).rejects.toMatchObject({ cause: { errno: 4025 } })
+    await expect(db.insert(fileObject).values({ ...image('ai-two-origins'), originTaskId: 'image-task', originSrId: 'image-sr' })).rejects.toMatchObject({ cause: { errno: 4025 } })
+    await expect(db.insert(fileObject).values({ ...image('invalid-sr'), kind: 'sr_attachment', originTaskId: 'image-task' })).rejects.toMatchObject({ cause: { errno: 4025 } })
+  })
 
   it('check·FK 위반을 거부한다', async () => {
     await expect(db.insert(assistant).values({ id: 'invalid-status', name: 'bad', level1CodeId: 'assistant_level1:Record', level2CodeId: 'assistant_level2:Deviation', sortOrder: 1, ownerId: 'seed-system', createdBy: 'seed-system', status: 'unknown', color: '#000' })).rejects.toMatchObject({ cause: { errno: 4025 } })
