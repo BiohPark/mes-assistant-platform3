@@ -12,7 +12,10 @@ import { SystemAssistantController } from './system-assistant.controller.js'
 
 @Module({
   controllers: [LlmController, LlmAdminController, SystemAssistantController],
-  providers: [{ provide: LLM_PROVIDER, inject: [CONFIG, DB], useFactory: (config: AppConfig, db: Db) => RequestsService.createProvider(toLlmSettings(config.llm), async () => {
+  providers: [{ provide: LLM_PROVIDER, inject: [CONFIG, DB], useFactory: (config: AppConfig, db: Db) => RequestsService.createProvider(toLlmSettings(config.llm, { readOwuiDefaultTerminalId: async () => {
+    const [row] = await db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'owuiDefaultTerminalId'))
+    return typeof row?.value === 'string' && row.value.trim() ? row.value : null
+  } }), async () => {
     const [row] = await db.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'owuiTools'))
     return row?.value === 'off' ? 'off' : 'auto'
   }) }, RequestsService],

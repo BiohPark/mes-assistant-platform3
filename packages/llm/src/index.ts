@@ -1,9 +1,9 @@
 import { MockProvider } from './mockProvider.js'
 import { OpenAICompatibleProvider } from './openaiProvider.js'
 import type { ChatProvider } from './provider.js'
-import type { LlmSettings } from '@mes/domain'
+import type { OwuiSettings } from './owuiTerminals.js'
 
-export function createProvider(settings: LlmSettings, readOwuiTools?: () => Promise<'auto' | 'off'>): ChatProvider {
+export function createProvider(settings: OwuiSettings, readOwuiTools?: () => Promise<'auto' | 'off'>): ChatProvider {
   return settings.mode === 'live' ? new OpenAICompatibleProvider(settings, readOwuiTools) : new MockProvider()
 }
 
@@ -26,3 +26,5 @@ export * from './sse.js'
 export * from './srRefine.js'
 export * from './title.js'
 export * from './tools.js'
+
+export * from './owuiTerminals.js'

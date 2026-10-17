@@ -1,4 +1,5 @@
 import type { OwuiMode, OwuiToolDelivery } from '@mes/domain'
+import type { OwuiTerminalSource } from './owuiTerminals.js'
 export interface ChatMessageInput {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
@@ -43,7 +44,7 @@ export interface ChatRequest {
   /** 전역 설정을 호출 시점에 반영한다. */
   owuiTools?: 'auto' | 'off'
   /** 실제 전송 직전 기록. 폴백이면 기본 본문으로 다시 호출한다. */
-  onDispatch?: (delivery: OwuiToolDelivery, body: Record<string, unknown>) => void | Promise<void>
+  onDispatch?: (delivery: OwuiToolDelivery & { terminal_id?: string; terminalSource?: OwuiTerminalSource }, body: Record<string, unknown>) => void | Promise<void>
   /** OpenWebUI 세션 모드(S12) — 지정한 호출(대화 요청)만 쓴다. 없으면 direct */
   owuiMode?: OwuiMode
   /** 세션 모드가 끝나면 OpenWebUI 채팅을 지운다. 없으면 true */

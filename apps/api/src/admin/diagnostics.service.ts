@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { BadRequestException, HttpException, Inject, Injectable, Logger } from '@nestjs/common'
 import { access, statfs } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -15,6 +16,11 @@ import { buildInfo } from '../health/build-info.js'
 import { effectiveDefaultModel, readEffectiveDefaultModel } from '../llm/effectiveDefaultModel.js'
 import { toLlmSettings } from '../llm/presets.js'
 import { RequestsService } from '../requests/requests.service.js'
+
+// R4: 공유 contracts는 쓰기 범위 밖이므로 OWUI 진단의 meta 확장만 이 경계에서 허용한다.
+const terminalMeta = OwuiProbeResultSchema.shape.meta.extend({ terminalSource: z.enum(['model', 'global', 'single', 'none']).optional() })
+const terminalProbeSchema = OwuiProbeResultSchema.extend({ meta: terminalMeta })
+const terminalAccessSchema = OwuiAccessCheckSchema.extend({ meta: terminalMeta })
 
 type ServerError = { at: string; path: string; status: number; message: string }
 const recentErrors: ServerError[] = []
@@ -130,15 +136,21 @@ export class DiagnosticsService {
    * OpenWebUI 진단(S10-5) — 전역 응답 상한(admit)과 사용자별 보조 요청 단일 진행 아래에서 돈다.
    * 결과는 저장하지 않고, 로그는 상태 코드·소요 시간만 남긴다. 키·호스트는 한 번 더 가린다.
    */
+  private async defaultTerminalId(): Promise<string | null> {
+    const [row] = await this.settingsDb.select({ value: appSetting.value }).from(appSetting).where(eq(appSetting.key, 'owuiDefaultTerminalId'))
+    return typeof row?.value === 'string' ? row.value : null
+  }
+
   async probeOpenWebUi(actor: string, model: string, signal?: AbortSignal): Promise<OwuiProbeReport> {
     if (this.config.llm.mode !== 'live') throw new BadRequestException('Live 모드에서만 진단할 수 있습니다')
     const release = await this.requests.admit('test')
     try {
       const settings = toLlmSettings(this.config.llm)
-      const result = await this.requests.runAuxiliary(actor, 'test', (auxSignal) => probeOpenWebUi(settings, model, { signal: auxSignal }), { timeoutMs: PROBE_GUARD_MS, signal })
+      const defaultTerminalId = await this.defaultTerminalId()
+      const result = await this.requests.runAuxiliary(actor, 'test', (auxSignal) => probeOpenWebUi(settings, model, { signal: auxSignal, defaultTerminalId }), { timeoutMs: PROBE_GUARD_MS, signal })
       this.logger.log(`openwebui-probe ${result.attempts.map((a) => a.status ?? 'none').join('/')} ${result.ms}ms`)
       const host = URL.canParse(settings.baseUrl) ? new URL(settings.baseUrl).host : ''
-      return OwuiProbeResultSchema.parse(redact(result, [this.config.llm.apiKey, host].filter(Boolean)))
+      return terminalProbeSchema.parse(redact(result, [this.config.llm.apiKey, host].filter(Boolean)))
     } catch (error) {
       if (error instanceof HttpException) throw error
       if (error instanceof OwuiProbeUnknownModelError) throw new BadRequestException('모델 목록에 없는 모델입니다')
@@ -154,9 +166,10 @@ export class DiagnosticsService {
     if (this.config.llm.mode !== 'live') throw new BadRequestException('Live 모드에서만 진단할 수 있습니다')
     const settings = toLlmSettings(this.config.llm)
     try {
-      const result = await checkOpenWebUiAccess(settings, model, { deadlineMs: ACCESS_CHECK_MS, signal })
+      const defaultTerminalId = await this.defaultTerminalId()
+      const result = await checkOpenWebUiAccess(settings, model, { deadlineMs: ACCESS_CHECK_MS, signal, defaultTerminalId })
       const host = URL.canParse(settings.baseUrl) ? new URL(settings.baseUrl).host : ''
-      return OwuiAccessCheckSchema.parse(redact(result, [this.config.llm.apiKey, host].filter(Boolean)))
+      return terminalAccessSchema.parse(redact(result, [this.config.llm.apiKey, host].filter(Boolean)))
     } catch (error) {
       if (error instanceof OwuiProbeUnknownModelError) throw new BadRequestException('모델 목록에 없는 모델입니다')
       throw new HttpException('OpenWebUI 연결 확인을 마치지 못했습니다', 504)

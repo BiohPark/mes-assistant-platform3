@@ -1,9 +1,9 @@
 // @vitest-environment node
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LlmSettings } from '@mes/domain'
-import { OWUI_PROBE_MASKED, OWUI_PROBE_OTHER, OWUI_PROBE_PROMPT, OwuiProbeUnknownModelError, checkOpenWebUiAccess, frameKeyPaths, looksLikeSecret, probeOpenWebUi } from './owuiProbe.js'
+import { OWUI_PROBE_MASKED, OWUI_PROBE_OTHER, OWUI_PROBE_PROMPT, OwuiProbeUnknownModelError, checkOpenWebUiAccess, frameKeyPaths, looksLikeSecret, probeOpenWebUi, owuiDefaults, owuiTerminal } from './owuiProbe.js'
 
 type Handler = (req: IncomingMessage, res: ServerResponse, body: Record<string, unknown>) => void | Promise<void>
 let server: Server | undefined
@@ -25,7 +25,7 @@ async function serve(handlers: Record<string, Handler>): Promise<LlmSettings> {
   const { port } = server.address() as AddressInfo
   return { mode: 'live', baseUrl: `http://127.0.0.1:${port}/api`, apiKey: 'probe-secret-key', model: 'm', fileDelivery: 'openwebui' }
 }
-afterEach(async () => { server?.closeAllConnections(); await new Promise((resolve) => server ? server.close(resolve) : resolve(undefined)); server = undefined })
+afterEach(async () => { vi.unstubAllGlobals(); server?.closeAllConnections(); await new Promise((resolve) => server ? server.close(resolve) : resolve(undefined)); server = undefined })
 
 const json = (status: number, body: unknown): Handler => (_req, res) => { res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body)) }
 const frame = (value: unknown) => `data: ${JSON.stringify(value)}\n\n`
@@ -59,7 +59,7 @@ describe('probeOpenWebUi', () => {
     expect(result.version).toBe('0.12.0')
     expect(result.model).toBe('agent-a')
     expect(result.meta).toEqual({ found: true, toolIds: ['web_tool', 'server:mcp:docs'], defaultFeatureIds: ['web_search'],
-      capabilities: { vision: true, file_upload: false, web_search: true }, builtinTools: {}, terminal: false, knowledgeCount: 2, functionCalling: 'native' })
+      capabilities: { vision: true, file_upload: false, web_search: true }, builtinTools: {}, terminal: false, terminalSource: 'none', knowledgeCount: 2, functionCalling: 'native' })
     expect(result.attempts.map((a) => a.mode)).toEqual(['current', 'legacy'])
     for (const attempt of result.attempts) {
       expect(attempt.status).toBe(200)
@@ -90,7 +90,7 @@ describe('probeOpenWebUi', () => {
     })
     const result = await probeOpenWebUi(settings, 'plain')
     expect(result.version).toBeNull()
-    expect(result.meta).toEqual({ found: false, toolIds: [], defaultFeatureIds: [], capabilities: {}, builtinTools: {}, terminal: false, knowledgeCount: 0, functionCalling: null })
+    expect(result.meta).toEqual({ found: false, toolIds: [], defaultFeatureIds: [], capabilities: {}, builtinTools: {}, terminal: false, terminalSource: 'none', knowledgeCount: 0, functionCalling: null })
     expect(result.access).toEqual({ tools: { visible: null, items: [] }, skills: { visible: null, items: [] } })
     expect(result.attempts[0]).toMatchObject({ mode: 'current', status: 200 })
     const legacy = result.attempts[1]!
@@ -398,7 +398,7 @@ describe('checkOpenWebUiAccess (연결 진단) — 모델 호출 없이 메타·
     })
     const result = await checkOpenWebUiAccess(settings, 'agent-a')
     expect(result).toEqual({ model: 'agent-a', ms: expect.any(Number),
-      meta: { found: true, toolIds: ['web_tool', 'private_tool'], defaultFeatureIds: [], capabilities: { web_search: true }, builtinTools: { skills: true }, terminal: true, knowledgeCount: 0, functionCalling: 'native' },
+      meta: { found: true, toolIds: ['web_tool', 'private_tool'], defaultFeatureIds: [], capabilities: { web_search: true }, builtinTools: { skills: true }, terminal: true, terminalSource: 'model', knowledgeCount: 0, functionCalling: 'native' },
       access: { tools: { visible: 1, items: [{ id: 'web_tool', state: 'ok' }, { id: 'private_tool', state: 'denied' }] }, skills: { visible: 1, items: [{ id: 'skill_a', state: 'ok' }] } },
       account: { role: 'user', features: { web_search: true, image_generation: false, code_interpreter: null } },
       fetchUrl: [{ name: 'function_calling', ok: true }, { name: 'builtin_tools', ok: true }, { name: 'builtinTools.web_search', ok: true }, { name: 'web.search.enable', ok: null },
@@ -416,5 +416,55 @@ describe('checkOpenWebUiAccess (연결 진단) — 모델 호출 없이 메타·
     expect(result.meta).toMatchObject({ found: false, error: 'HTTP 500 · 서버 오류' })
     expect(result.account).toMatchObject({ role: null, error: 'HTTP 404 · 찾을 수 없음' })
     expect(result.fetchUrl.every((c) => c.name === 'features.web_search' ? c.ok === false : c.ok === null)).toBe(true)
+  })
+})
+
+
+describe('terminal defaults', () => {
+  const terminals = [{ id: 'model' }, { id: 'global' }]
+  it('does not start terminal discovery after the diagnostic deadline expires', async () => {
+    const fetcher = vi.fn(async () => Response.json([]))
+    vi.stubGlobal('fetch', fetcher)
+    await checkOpenWebUiAccess({ mode: 'live', baseUrl: 'https://expired.example/api', apiKey: '', model: 'm' }, 'm', { deadlineMs: 0 })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+  it('disables the mutually exclusive code interpreter when a terminal is selected, like MessageInput.svelte', () => {
+    const meta = { defaultFeatureIds: ['code_interpreter', 'web_search'], capabilities: { code_interpreter: true, web_search: true } }
+    expect(owuiDefaults(meta, '', [], { terminals: [{ id: 'only' }] })).toEqual({ terminal_id: 'only', features: { web_search: true } })
+    expect(owuiDefaults(meta)).toEqual({ features: { code_interpreter: true, web_search: true } })
+  })
+  it.each([
+    [{ terminalId: 'model' }, 'global', terminals, 'model', 'model'],
+    [{}, 'global', terminals, 'global', 'global'],
+    [undefined, null, [{ id: 'only' }], 'only', 'single'],
+    [{}, null, terminals, undefined, 'none'],
+    [{}, null, [], undefined, 'none'],
+    [{ terminalId: 'model', capabilities: { terminal: false } }, 'global', terminals, undefined, 'none'],
+    [{ terminalId: 'missing' }, 'global', terminals, 'global', 'global'],
+    [{}, 'missing', [{ id: 'only' }], undefined, 'none'],
+  ])('resolves model/global/single/none: %j', (meta, defaultTerminalId, terminals, id, source) => {
+    const fallback = { defaultTerminalId, terminals }
+    expect(owuiDefaults(meta, '', [], fallback).terminal_id).toBe(id)
+    expect(owuiTerminal(meta, fallback)).toEqual({ id, source })
+  })
+  it('does not infer a single terminal from invalid or duplicate entries', () => {
+    expect(owuiTerminal(undefined, { terminals: [{ id: '' }] }).source).toBe('none')
+    expect(owuiTerminal(undefined, { terminals: [{ id: 'one' }, { id: 'one' }] }).source).toBe('none')
+  })
+  it('uses the same global selection in diagnostics and legacy/session trial bodies', async () => {
+    const settings: LlmSettings = { mode: 'live', baseUrl: 'https://probe.example/api', apiKey: 'probe-key', model: 'm' }
+    const bodies: Record<string, unknown>[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/models')) return Response.json({ data: [{ id: 'm' }] })
+      if (url.endsWith('/terminals/')) return Response.json([{ id: 'global', name: 'Terminal', url: 'https://private' }])
+      if (url.endsWith('/chat/completions')) { bodies.push(JSON.parse(String(init?.body))); return new Response('data: [DONE]\n\n') }
+      return new Response('', { status: 404 })
+    }))
+    const result = await probeOpenWebUi(settings, 'm', { defaultTerminalId: 'global' })
+    expect(result.meta).toMatchObject({ terminalSource: 'global' })
+    const enhanced = bodies.slice(1)
+    expect(enhanced).toHaveLength(2)
+    for (const row of enhanced) expect(row.terminal_id).toBe('global')
+    expect(JSON.stringify(result)).not.toContain('https://private')
   })
 })
