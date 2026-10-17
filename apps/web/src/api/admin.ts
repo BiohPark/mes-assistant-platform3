@@ -25,7 +25,7 @@ export async function uploadImage(id: string, file: File | null) {
   return response.json() as Promise<unknown>
 }
 /** 유효 모델·출처는 읽기 전용, override는 SO가 설정·해제한다. */
-export type Settings = { urlAutoFetch?: boolean; urlAutoFetchAvailable?: boolean; urlAllowDomains?: string[]; urlBlockDomains?: string[]; owuiTools?: 'auto' | 'off'; defaultModel?: string; defaultModelSource?: 'setting' | 'env' | 'default'; defaultModelOverride?: string | null; fileDelivery?: 'inline' | 'openwebui'; requestBudgetBytes?: number; srIntakeAssistantId?: string | null; link1Rule?: string; fileMaxPerRequest?: number; assistantImageFileId?: string | null }
+export type Settings = { urlAutoFetch?: boolean; urlAutoFetchAvailable?: boolean; urlAllowDomains?: string[]; urlBlockDomains?: string[]; owuiTools?: 'auto' | 'off'; owuiDefaultTerminalId?: string | null; defaultModel?: string; defaultModelSource?: 'setting' | 'env' | 'default'; defaultModelOverride?: string | null; fileDelivery?: 'inline' | 'openwebui'; requestBudgetBytes?: number; srIntakeAssistantId?: string | null; link1Rule?: string; fileMaxPerRequest?: number; assistantImageFileId?: string | null }
 /** assistantImageFileId는 PATCH가 아니라 uploadAssistantImage로만 바뀐다 (U4) */
 export type SettingsPatch = Omit<Settings, 'defaultModel' | 'defaultModelSource' | 'assistantImageFileId' | 'urlAutoFetchAvailable'>
 export const getSettings = async (): Promise<Settings> => {
@@ -56,15 +56,27 @@ export const setMyAccountProfile = async (input: ProfilePatch) => ProfileSchema.
 export const setMyName = (name: string) => setMyProfile({ name })
 export const setUserFlag = (id: string, field: 'system-owner' | 'business-owner' | 'active', enabled: boolean) => adminRequest(`users/${encodeURIComponent(id)}/${field}`, 'PUT', { enabled })
 export const temporaryPassword = async (id: string) => await adminRequest(`users/${encodeURIComponent(id)}/temporary-password`, 'POST') as { temporaryPassword: string }
+export type TerminalSource = 'model' | 'global' | 'single' | 'none'
+export type TerminalMeta = { terminalSource?: TerminalSource }
+export const listOwuiTerminals = async () => await adminRequest('settings/owui-terminals', 'GET') as { id: string; name?: string }[]
+/** 고정 출처 enum만 추가로 허용한다. 기존 계약은 나머지 진단 정보를 계속 검증한다. */
+function terminalMeta(payload: unknown): TerminalMeta {
+  const source = (payload as { meta?: { terminalSource?: unknown } } | null)?.meta?.terminalSource
+  if (source === undefined) return {}
+  if (source !== 'model' && source !== 'global' && source !== 'single' && source !== 'none') throw new Error('응답 형식 오류')
+  return { terminalSource: source }
+}
 /** SO 전용 OpenWebUI 진단(S10-5) — 허용 목록(계약) 밖 값이 있으면 보여 주지 않는다. 검증 오류 문구는 값을 인용할 수 있어 고정 문구로 바꾼다 */
 export async function probeOpenWebUi(model: string) {
-  const parsed = OwuiProbeResultSchema.safeParse(await adminRequest('admin/diagnostics/openwebui', 'POST', { model }))
+  const payload = await adminRequest('admin/diagnostics/openwebui', 'POST', { model })
+  const parsed = OwuiProbeResultSchema.safeParse(payload)
   if (!parsed.success) throw new Error('응답 형식 오류')
-  return parsed.data
+  return { ...parsed.data, meta: { ...parsed.data.meta, ...terminalMeta(payload) } }
 }
 /** SO 전용 연결 진단의 에이전트 접근 확인(S13-J) — 모델 호출 없이 접근·권한만. 같은 허용 목록 검사 */
 export async function checkOpenWebUiAccess(model: string) {
-  const parsed = OwuiAccessCheckSchema.safeParse(await adminRequest('admin/diagnostics/openwebui/access', 'POST', { model }))
+  const payload = await adminRequest('admin/diagnostics/openwebui/access', 'POST', { model })
+  const parsed = OwuiAccessCheckSchema.safeParse(payload)
   if (!parsed.success) throw new Error('응답 형식 오류')
-  return parsed.data
+  return { ...parsed.data, meta: { ...parsed.data.meta, ...terminalMeta(payload) } }
 }

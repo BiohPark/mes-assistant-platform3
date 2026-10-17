@@ -14,10 +14,11 @@ import { useAutoSave } from '@/lib/useAutoSave'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ModelSelect } from '@/components/ModelSelect'
 import { useModelList } from '@/lib/useModelList'
 import { Sparkles } from 'lucide-react'
-import { getSettings, saveSettings, uploadAssistantImage, type Settings, type SettingsPatch } from '@/api/admin'
+import { getSettings, listOwuiTerminals, saveSettings, uploadAssistantImage, type Settings, type SettingsPatch } from '@/api/admin'
 
 type GeneralKey = keyof SettingsPatch
 /** 값을 바꾸면 그 키만 바로 PATCH한다(숫자·주소는 blur). 다른 세션이 바꾼 값을 덮어쓰지 않는다 */
@@ -25,6 +26,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
   const t = useT()
   const { urlAutoFetchAvailable: _urlAvailable, owuiTools: _owuiTools, assistantImageFileId: _assistantImage, defaultModel: _model, defaultModelSource: _source, ...patchable } = initial
   const modelList = useModelList()
+  const terminals = useQuery({ queryKey: ['owui-terminals'], queryFn: listOwuiTerminals, staleTime: 5 * 60_000, retry: false })
   const [form, setForm] = useState<SettingsPatch>(patchable)
   const saved = useRef<SettingsPatch>(patchable)
   const { states, run } = useAutoSave<GeneralKey>()
@@ -54,6 +56,24 @@ function SettingsForm({ initial }: { initial: Settings }) {
       <p>{t('admin.settings.effectiveModel', { model: initial.defaultModel || '—' })}</p>
       <p className="text-xs text-muted-foreground">{t('admin.settings.modelSource', { source: t(`admin.settings.modelSource${initial.defaultModelSource ?? 'default'}`) })}</p>
       <p className="text-xs text-muted-foreground">{t('admin.settings.defaultModelEnvHint')}</p>
+    </div>
+    <div className="space-y-1.5">
+      <Field label={t('admin.settings.defaultTerminal')} status={states.owuiDefaultTerminalId}>
+        <Select value={form.owuiDefaultTerminalId ? `id:${form.owuiDefaultTerminalId}` : 'auto'}
+          disabled={terminals.isPending || terminals.isError || states.owuiDefaultTerminalId?.status === 'saving'}
+          onValueChange={value => commit('owuiDefaultTerminalId', value === 'auto' ? null : value.slice(3))}>
+          <SelectTrigger aria-label={t('admin.settings.defaultTerminal')} className="w-full"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">{t('admin.settings.terminalAuto')}</SelectItem>
+            {form.owuiDefaultTerminalId && !terminals.data?.some(item => item.id === form.owuiDefaultTerminalId) && <SelectItem value={`id:${form.owuiDefaultTerminalId}`}>{t('admin.settings.terminalUnavailable')}</SelectItem>}
+            {terminals.data?.map(item => <SelectItem key={item.id} value={`id:${item.id}`}>{item.name || item.id}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </Field>
+      <Button type="button" variant="outline" size="sm" disabled={!form.owuiDefaultTerminalId || states.owuiDefaultTerminalId?.status === 'saving'}
+        onClick={() => commit('owuiDefaultTerminalId', null)}>{t('admin.settings.clearDefaultTerminal')}</Button>
+      <p className="text-xs text-muted-foreground">{t('admin.settings.terminalHint')}</p>
+      {terminals.isError && <div role="alert">{t('admin.settings.terminalLoadFailed')} <Button type="button" variant="outline" size="sm" onClick={() => void terminals.refetch()}>{t('admin.test.modelRetry')}</Button></div>}
     </div>
     <fieldset><legend className="mb-1">{t('admin.fileDelivery')}</legend><RadioGroup value={form.fileDelivery ?? 'inline'} onValueChange={value => commit('fileDelivery', value as Settings['fileDelivery'])} aria-label={t('admin.fileDelivery')} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {(['inline', 'openwebui'] as const).map(value => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-xl border p-3 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-accent"><RadioGroupItem value={value} />{t(value === 'inline' ? 'admin.deliveryInline' : 'admin.deliveryOpenWebUi')}</label>)}

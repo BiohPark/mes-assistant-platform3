@@ -219,6 +219,7 @@ export const en = {
         masked: '(masked)', other: 'other', noResponse: 'No response', firstByte: 'first byte {ms} ms', firstContent: 'first content {ms} ms', total: 'total {ms} ms', elapsed: 'Total time',
         toolAccess: 'Tool access (service account)', skillAccess: 'Skill access (service account)', inactive: 'inactive', visible: '{count} visible', builtinDefault: 'Not set (all on by default)',
         urlAuto: 'Automatic when a URL is included', agentLabel: 'Agent to check', selectAgent: 'Select an agent',
+        terminalSourcemodel: 'Model default (model)', terminalSourceglobal: 'Global setting (global)', terminalSourcesingle: 'Single accessible terminal (single)', terminalSourcenone: 'Not sent (none)',
         terminal: 'Default terminal', terminalSet: 'Set', appliedByOwui: '(applied by OpenWebUI)', account: 'Service account', fetchUrl: 'fetch_url conditions',
         session: '③ Session', framesSession: '③ Status order', firstStatus: 'first status {ms} ms', done: 'done {ms} ms',
         cleanupOk: 'Chat cleaned up', cleanupFailed: 'Chat cleanup failed', cleanupNone: 'No chat to clean up',
@@ -238,6 +239,7 @@ export const en = {
       modelNoMatch: 'No matching model. The typed value is used as is.',
     },
     settings: {
+      defaultTerminal: 'Default terminal', clearDefaultTerminal: 'Clear default terminal', terminalAuto: 'Automatic (one accessible terminal)', terminalHint: 'Model defaults take priority. Without a global selection, a single service-account terminal is selected automatically.', terminalUnavailable: 'Configured terminal (unavailable)', terminalLoadFailed: 'Could not load terminals.',
       urlReader: 'Read URLs in questions',
       urlAutoFetch: 'Automatically read web pages linked in questions',
       urlDisabledEnv: 'URL reading is disabled in the server environment.',

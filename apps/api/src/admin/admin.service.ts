@@ -25,7 +25,7 @@ type AssistantInput = {
 }
 type AssistantPatch = Partial<Omit<AssistantInput, 'id'>>
 /** 새 전역 모델 키만 쓴다. 구형 defaultModel은 읽기·쓰기 모두 무시한다. */
-type SettingsPatch = Partial<{ urlAutoFetch: boolean; urlAllowDomains: string[]; urlBlockDomains: string[]; owuiTools: 'auto' | 'off'; owuiMode: 'auto' | 'session' | 'direct'; owuiCleanup: boolean; defaultModelOverride: string | null; fileDelivery: 'inline' | 'openwebui'; requestBudgetBytes: number; srIntakeAssistantId: string | null; link1Rule: string; fileMaxPerRequest: number }>
+type SettingsPatch = Partial<{ urlAutoFetch: boolean; urlAllowDomains: string[]; urlBlockDomains: string[]; owuiTools: 'auto' | 'off'; owuiDefaultTerminalId: string | null; owuiMode: 'auto' | 'session' | 'direct'; owuiCleanup: boolean; defaultModelOverride: string | null; fileDelivery: 'inline' | 'openwebui'; requestBudgetBytes: number; srIntakeAssistantId: string | null; link1Rule: string; fileMaxPerRequest: number }>
 const normalizeCodeName = (value: string) => value.trim().replace(/\s+/gu, ' ').normalize('NFC')
 const defaultChecklist = () => [
   { id: randomUUID(), label: '입력 자료 선택', required: true },
@@ -244,7 +244,7 @@ export class AdminService {
         if (row.status === 'retired') throw new ConflictException('폐기된 에이전트는 접수 에이전트로 지정할 수 없습니다')
       }
       for (const [key, value] of Object.entries(patch)) {
-        if ((key === 'srIntakeAssistantId' || key === 'defaultModelOverride') && value === null) await tx.delete(appSetting).where(eq(appSetting.key, key))
+        if ((key === 'srIntakeAssistantId' || key === 'defaultModelOverride' || key === 'owuiDefaultTerminalId') && value === null) await tx.delete(appSetting).where(eq(appSetting.key, key))
         else await tx.insert(appSetting).values({ key, value }).onDuplicateKeyUpdate({ set: { value } })
       }
     })

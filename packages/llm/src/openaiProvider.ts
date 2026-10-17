@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto'
 import type { ChatChunk, ChatProvider, ChatRequest } from './provider.js'
 import { LimitedFetchError, limitedFetch, toLimitedFetchError } from './limitedFetch.js'
 import { extractDelta, parseSseLines, ThinkSplitter, type ToolCallFragment } from './sse.js'
-import { owuiModelTools, type OwuiDefaults } from './owuiProbe.js'
-import type { LlmSettings } from '@mes/domain'
+import { owuiModelTools, owuiTerminal, type OwuiDefaults } from './owuiProbe.js'
+import { OwuiTerminalCatalog, type OwuiSettings, type OwuiTerminalSource } from './owuiTerminals.js'
 
 /** 모델 목록·ping 상한 — 목록은 모델당 메타데이터가 붙어 수 MB가 될 수 있다 */
 const MODELS_TIMEOUT_MS = 15_000
@@ -74,8 +74,8 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   })
 }
 
-/** 전달 기록(owuiTools)은 도구·기능만 — 나머지 기본값은 snapshot이 본문에서 남긴다 */
-const toolDelivery = ({ tool_ids, features }: OwuiDefaults) => ({ mode: 'tools' as const, ...(tool_ids ? { tool_ids } : {}), ...(features ? { features } : {}) })
+/** 전송 기록은 실제 전달한 터미널 ID와 선택 출처를 함께 보관한다. 출처는 OWUI 본문에 싣지 않는다. */
+const toolDelivery = ({ tool_ids, features, terminal_id }: OwuiDefaults, terminalSource: OwuiTerminalSource) => ({ mode: 'tools' as const, ...(tool_ids ? { tool_ids } : {}), ...(features ? { features } : {}), ...(terminal_id ? { terminal_id } : {}), terminalSource })
 
 function parseModelIds(body: unknown): string[] {
   const data = body !== null && typeof body === 'object' ? (body as { data?: unknown }).data : undefined
@@ -86,7 +86,8 @@ function parseModelIds(body: unknown): string[] {
 /** OpenAI-compatible /chat/completions 스트리밍 클라이언트 (OpenWebUI 포함) */
 export class OpenAICompatibleProvider implements ChatProvider {
   readonly kind = 'live' as const
-  private readonly settings: LlmSettings
+  private readonly settings: OwuiSettings
+  private readonly terminals = new OwuiTerminalCatalog()
   private modelMeta?: { body: unknown; expires: number }
 
   private async modelTools(model: string, messages: ChatRequest['messages'], signal?: AbortSignal) {
@@ -98,13 +99,20 @@ export class OpenAICompatibleProvider implements ChatProvider {
       parseModelIds(body)
       this.modelMeta = { body, expires: Date.now() + 5 * 60_000 }
     }
-    return owuiModelTools(this.modelMeta.body, model, this.settings.apiKey, messages)
+    const defaultTerminalId = await this.settings.readOwuiDefaultTerminalId?.()
+    let terminals
+    try { terminals = await this.terminals.list(this.settings, signal) } catch { /* 목록 실패가 모델 도구 전달을 막지 않는다. */ }
+    const defaults = owuiModelTools(this.modelMeta.body, model, this.settings.apiKey, messages, { defaultTerminalId, terminals })
+    const entry = isObject(this.modelMeta.body) && Array.isArray(this.modelMeta.body.data) ? this.modelMeta.body.data.find(item => isObject(item) && item.id === model) : undefined
+    const meta = isObject(entry) && isObject(entry.info) && isObject(entry.info.meta) ? entry.info.meta : undefined
+    const terminalSource = owuiTerminal(meta, { defaultTerminalId, terminals }).source
+    return { defaults, terminalSource }
   }
 
   private readonly sessionPollMs: number
   private readonly sessionSettleMs: number
 
-  constructor(settings: LlmSettings, private readonly readOwuiTools?: () => Promise<'auto' | 'off'>, options: { sessionPollMs?: number; sessionSettleMs?: number } = {}) {
+  constructor(settings: OwuiSettings, private readonly readOwuiTools?: () => Promise<'auto' | 'off'>, options: { sessionPollMs?: number; sessionSettleMs?: number } = {}) {
     this.settings = settings
     this.sessionPollMs = options.sessionPollMs ?? SESSION_POLL_MS
     this.sessionSettleMs = options.sessionSettleMs ?? SESSION_SETTLE_MS
@@ -149,21 +157,22 @@ export class OpenAICompatibleProvider implements ChatProvider {
     const basic: Record<string, unknown> = { model: req.model || this.settings.model, messages: req.messages,
       ...(req.tools?.length ? { tools: req.tools } : {}), ...(req.files?.length ? { files: req.files } : {}), stream: true }
     let extras: ReturnType<typeof owuiModelTools> | undefined
+    let terminalSource: OwuiTerminalSource = 'none'
     if (this.settings.preset === 'openwebui' && !req.tools?.length) {
       try {
         const mode = req.owuiTools ?? (this.readOwuiTools ? await this.readOwuiTools() : this.settings.owuiTools ?? 'auto')
         const meta = mode === 'auto' ? await this.modelTools(String(basic.model), req.messages, req.signal) : undefined
-        if (meta && Object.keys(meta).length) extras = meta
+        if (meta) { terminalSource = meta.terminalSource; if (Object.keys(meta.defaults).length) extras = meta.defaults }
       } catch { /* 메타·설정 조회 실패는 기본 전송으로 진행한다. */ }
     }
     // 세션 모드는 지정한 대화 요청만 — 앱 도구 호출·시험(limits) 호출은 기존 방식을 쓴다
     if (this.settings.preset === 'openwebui' && !req.tools?.length && !req.limits && (req.owuiMode === 'auto' || req.owuiMode === 'session')) {
-      if ((yield* this.streamSession(req, basic, extras, req.owuiMode)) === 'handled') return
+      if ((yield* this.streamSession(req, basic, extras, req.owuiMode, terminalSource)) === 'handled') return
     }
     for (let attempt = 0; attempt < (extras ? 2 : 1); attempt++) {
       const enhanced = !!extras && attempt === 0
       const body = enhanced ? { ...basic, ...extras, params: { function_calling: 'legacy' } } : basic
-      const delivery = enhanced && extras ? toolDelivery(extras) : { mode: attempt ? 'fallback' as const : 'basic' as const }
+      const delivery = enhanced && extras ? toolDelivery(extras, terminalSource) : { mode: attempt ? 'fallback' as const : 'basic' as const, terminalSource: 'none' as const }
       if (req.signal?.aborted) { yield { type: 'error', message: CANCELLED }; return }
       await req.onDispatch?.(delivery, body)
       let res: Response
@@ -258,11 +267,11 @@ export class OpenAICompatibleProvider implements ChatProvider {
    * 'fallback' = 실행되지 않았음이 확실한 생성 거부(4xx)·형식 불일치(auto만) — 호출부가 기존 방식으로 한 번 보낸다.
    */
   private async *streamSession(req: ChatRequest, basic: Record<string, unknown>, extras: ReturnType<typeof owuiModelTools> | undefined,
-    mode: 'auto' | 'session'): AsyncGenerator<ChatChunk, 'handled' | 'fallback'> {
+    mode: 'auto' | 'session', terminalSource: OwuiTerminalSource): AsyncGenerator<ChatChunk, 'handled' | 'fallback'> {
     const messageId = randomUUID()
     const body = { ...basic, ...extras, session_id: `mes-${randomUUID()}`, id: messageId, parent_id: null, params: { tool_approval_mode: 'full' } }
     if (req.signal?.aborted) { yield { type: 'error', message: CANCELLED }; return 'handled' }
-    await req.onDispatch?.(extras ? toolDelivery(extras) : { mode: 'basic' }, body)
+    await req.onDispatch?.(extras ? toolDelivery(extras, terminalSource) : { mode: 'basic', terminalSource: 'none' }, body)
     let res: Response
     try {
       res = await limitedFetch(joinUrl(this.settings.baseUrl, 'chat/completions'), { method: 'POST', headers: this.headers(), body: JSON.stringify(body) }, { signal: req.signal })

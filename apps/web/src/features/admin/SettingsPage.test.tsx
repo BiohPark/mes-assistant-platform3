@@ -1,6 +1,6 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { MeContext } from '@/app/auth'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { jsonResponse, renderWithProviders } from '@/test/render'
@@ -313,4 +313,56 @@ it('URL 자동 읽기와 허용·차단 목록은 각 설정 키만 저장한다
   await user.type(screen.getByLabelText('차단 도메인'), 'bad.intra.example')
   await user.tab()
   await waitFor(() => expect(saved).toContainEqual({ urlBlockDomains: ['bad.intra.example'] }))
+})
+
+
+it('터미널 목록에서 선택·자동 선택으로 해제하면 해당 키만 즉시 저장한다', async () => {
+  const originalScroll = HTMLElement.prototype.scrollIntoView
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+  onTestFinished(() => { HTMLElement.prototype.scrollIntoView = originalScroll })
+  const saved: unknown[] = []
+  const current = { owuiDefaultTerminalId: null as string | null }
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/settings/owui-terminals') return jsonResponse(200, [{ id: 'term-1', name: '코드 실행 서버' }])
+    if (url === '/api/settings') {
+      if (init?.method === 'PATCH') { const body = JSON.parse(String(init.body)); saved.push(body); Object.assign(current, body) }
+      return jsonResponse(200, current)
+    }
+    return jsonResponse(200, [])
+  }))
+  renderPage()
+  const select = await screen.findByRole('combobox', { name: '기본 터미널' })
+  await waitFor(() => expect(select).toBeEnabled())
+  fireEvent.keyDown(select, { key: 'ArrowDown' })
+  fireEvent.keyDown(await screen.findByRole('option', { name: '코드 실행 서버' }), { key: 'Enter' })
+  await waitFor(() => expect(saved).toEqual([{ owuiDefaultTerminalId: 'term-1' }]))
+  await waitFor(() => expect(select).toBeEnabled())
+  fireEvent.keyDown(select, { key: 'ArrowDown' })
+  fireEvent.keyDown(await screen.findByRole('option', { name: '자동 (접근 가능한 터미널이 하나일 때)' }), { key: 'Enter' })
+  await waitFor(() => expect(saved).toEqual([{ owuiDefaultTerminalId: 'term-1' }, { owuiDefaultTerminalId: null }]))
+})
+
+it('터미널 목록 실패는 오류·재시도로 표시하고 저장을 막는다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/settings/owui-terminals' ? jsonResponse(503, {}) : jsonResponse(200, url === '/api/settings' ? {} : [])))
+  renderPage()
+  expect(await screen.findByText('터미널 목록을 불러오지 못했습니다.')).toBeInTheDocument()
+  expect(screen.getByRole('combobox', { name: '기본 터미널' })).toBeDisabled()
+})
+
+it('목록 조회가 실패해도 저장된 전역 터미널은 자동 선택으로 해제할 수 있다', async () => {
+  const saved: unknown[] = []
+  let terminal: string | null = 'unavailable'
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/settings/owui-terminals') return jsonResponse(503, {})
+    if (url === '/api/settings') {
+      if (init?.method === 'PATCH') { const body = JSON.parse(String(init.body)); saved.push(body); terminal = body.owuiDefaultTerminalId }
+      return jsonResponse(200, { owuiDefaultTerminalId: terminal })
+    }
+    return jsonResponse(200, [])
+  }))
+  const user = userEvent.setup()
+  renderPage()
+  await screen.findByText('터미널 목록을 불러오지 못했습니다.')
+  await user.click(screen.getByRole('button', { name: '기본 터미널 해제' }))
+  await waitFor(() => expect(saved).toEqual([{ owuiDefaultTerminalId: null }]))
 })

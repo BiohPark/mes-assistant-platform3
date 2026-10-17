@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './owui-settings-fixture.js'
 import { createPool } from '../../apps/api/src/db/connection.js'
 
 const password = 'e2e-password-1234'
@@ -72,30 +72,38 @@ test('SO OpenWebUI 진단: 모델 하나로 버튼 → 요약 카드·복사, �
     await expect(card).toContainText('Live 모드에서만')
     expect((await page.request.post('/api/admin/diagnostics/openwebui', { data: { model: 'fake-general' } })).status()).toBe(400)
   } else {
-    await card.getByRole('combobox', { name: '진단 모델' }).click()
-    await page.getByRole('option', { name: 'fake-general', exact: true }).click()
-    const probed = page.waitForResponse((response) => response.url().endsWith('/api/admin/diagnostics/openwebui'))
-    await button.click()
-    const response = await probed
-    expect(response.status()).toBe(200)
-    expect(response.request().postDataJSON()).toEqual({ model: 'fake-general' })
-    // 가짜 OpenWebUI 답변은 받은 질문을 되풀이한다 — 질문·답변·키·주소 어느 것도 결과에 없어야 한다
-    expect(JSON.stringify(await response.json())).not.toMatch(/e2e-fake-key|Bearer|127\.0\.0\.1|localhost|http|받은 메시지|가짜 OpenWebUI|Reply with|fake-terminal|가짜 스킬|가짜 도구/)
-    const summary = card.getByRole('status')
-    await expect(summary).toContainText('0.0.0-fake')
-    await expect(summary).toContainText('fake_tool')
-    await expect(summary).toContainText('function_callingnative')
-    await expect(summary).toContainText('HTTP 200 · 첫 바이트')
-    await expect(summary).toContainText('sources → choices.delta.content')
-    // S13-J: 서비스 계정 접근(가짜 OpenWebUI는 fake_private_skill을 목록에 두지 않는다)·기본 터미널·③ 세션 시험
-    await expect(summary).toContainText('fake_tool ✅')
-    await expect(summary).toContainText('fake_skill ✅, fake_private_skill ❌')
-    await expect(summary).toContainText('기본 터미널설정됨')
-    await expect(summary).toContainText('서비스 계정user · web_search ✅')
-    await expect(summary).toContainText('features.web_search URL 포함 시 자동')
-    await expect(summary).toContainText('③ 세션 방식HTTP 200')
-    await expect(summary).toContainText('채팅 정리 성공')
-    await expect(card.getByRole('button', { name: '진단 결과 복사' })).toBeEnabled()
+    const original = await (await page.request.get('/api/settings')).json()
+    expect((await page.request.patch('/api/settings', { data: { owuiDefaultTerminalId: null } })).ok()).toBe(true)
+    try {
+      await card.getByRole('combobox', { name: '진단 모델' }).click()
+      await page.getByRole('option', { name: 'fake-general', exact: true }).click()
+      const probed = page.waitForResponse((response) => response.url().endsWith('/api/admin/diagnostics/openwebui'))
+      await button.click()
+      const response = await probed
+      expect(response.status()).toBe(200)
+      expect(response.request().postDataJSON()).toEqual({ model: 'fake-general' })
+      // 가짜 OpenWebUI 답변은 받은 질문을 되풀이한다 — 질문·답변·키·주소 어느 것도 결과에 없어야 한다
+      const report = await response.json()
+      expect(report.meta).toMatchObject({ terminal: false, terminalSource: 'single' })
+      expect(JSON.stringify(report)).not.toMatch(/e2e-fake-key|Bearer|127\.0\.0\.1|localhost|http|받은 메시지|가짜 OpenWebUI|Reply with|fake-terminal|가짜 스킬|가짜 도구/)
+      const summary = card.getByRole('status')
+      await expect(summary).toContainText('0.0.0-fake')
+      await expect(summary).toContainText('fake_tool')
+      await expect(summary).toContainText('function_callingnative')
+      await expect(summary).toContainText('HTTP 200 · 첫 바이트')
+      await expect(summary).toContainText('sources → choices.delta.content')
+      // S13-J: 서비스 계정 접근(가짜 OpenWebUI는 fake_private_skill을 목록에 두지 않는다)·기본 터미널·③ 세션 시험
+      await expect(summary).toContainText('fake_tool ✅')
+      await expect(summary).toContainText('fake_skill ✅, fake_private_skill ❌')
+      await expect(summary).toContainText('기본 터미널단일 터미널 자동 선택 (single)')
+      await expect(summary).toContainText('서비스 계정user · web_search ✅')
+      await expect(summary).toContainText('features.web_search URL 포함 시 자동')
+      await expect(summary).toContainText('③ 세션 방식HTTP 200')
+      await expect(summary).toContainText('채팅 정리 성공')
+      await expect(card.getByRole('button', { name: '진단 결과 복사' })).toBeEnabled()
+    } finally {
+      expect((await page.request.patch('/api/settings', { data: { owuiDefaultTerminalId: original.owuiDefaultTerminalId ?? null } })).ok()).toBe(true)
+    }
   }
   expect((await page.request.post('/api/admin/diagnostics/openwebui', { data: { model: 'fake-general', prompt: 'x' } })).status()).toBe(400)
   const loginId = `e2e-probe-${Date.now().toString(36)}`
