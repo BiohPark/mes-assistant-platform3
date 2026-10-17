@@ -5,6 +5,7 @@ import { Dialog as SheetPrimitive } from "radix-ui"
 import { XIcon } from "lucide-react"
 import { cn } from "cn"
 import { useT } from "@/i18n"
+import { useTabActive } from "@/app/tabActive"
 
 function Sheet(props: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -29,6 +30,7 @@ const sides = {
 }
 function SheetContent({ className, children, side = "right", showCloseButton = true, ...props }: React.ComponentProps<typeof SheetPrimitive.Content> & { side?: keyof typeof sides; showCloseButton?: boolean }) {
   const t = useT()
+  if (!useTabActive()) return null // 숨은 탭(S15)의 열린 창·메뉴는 내린다 — 포털이라 탭 밖(body)에 남아 보고 있는 탭을 가리고 막는다
   return (
     <SheetPortal>
       <SheetOverlay />

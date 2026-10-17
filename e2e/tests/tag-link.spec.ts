@@ -43,8 +43,10 @@ test('Enter는 후보를 고르지 않으면 입력값 그대로 붙이고, ↑�
   await tagInput(page).press('Enter')
   await expect(removeButton(page, `CC-${stamp}-001`)).toBeVisible()
   await expect(removeButton(page, popular)).toHaveCount(0)
+  await expect(tagInput(page)).toHaveAttribute('aria-busy', 'false') // 저장 중 Enter는 무시된다(중복 제출 방지) — 부하에서 저장이 늦다
 
   await tagInput(page).fill(`CC-${stamp}-00`)
+  await expect(page.getByRole('option', { name: new RegExp(popular) })).toBeVisible() // 후보가 온 뒤에 고른다(부하에서 추천 조회가 늦다)
   await tagInput(page).press('ArrowDown')
   await tagInput(page).press('Enter')
   await expect(removeButton(page, popular)).toBeVisible()

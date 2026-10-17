@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Popover as PopoverPrimitive } from "radix-ui"
 import { cn } from "cn"
+import { useTabActive } from "@/app/tabActive"
 
 function Popover(props: React.ComponentProps<typeof PopoverPrimitive.Root>) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
@@ -14,6 +15,7 @@ function PopoverAnchor(props: React.ComponentProps<typeof PopoverPrimitive.Ancho
   return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />
 }
 function PopoverContent({ className, align = "center", sideOffset = 4, ...props }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+  if (!useTabActive()) return null // 숨은 탭(S15)의 열린 창·메뉴는 내린다 — 포털이라 탭 밖(body)에 남아 보고 있는 탭을 가리고 막는다
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content

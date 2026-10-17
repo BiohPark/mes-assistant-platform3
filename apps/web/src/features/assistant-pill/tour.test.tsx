@@ -59,6 +59,17 @@ it('picks the first shown target — hidden duplicates (display:none, e.g. the o
   expect(tourTarget('task-tabs')).toBeUndefined()
 })
 
+it('S15: 숨은 탭(inert) 안의 대상은 고르지 않는다', () => {
+  const panel = document.createElement('div')
+  panel.setAttribute('inert', '')
+  document.body.append(panel)
+  const hidden = target('task-tabs')
+  panel.append(hidden)
+  const shown = target('task-tabs')
+  expect(tourTarget('task-tabs')).toBe(shown)
+  panel.remove(); shown.remove()
+})
+
 it('starts with only the steps whose target exists, drops empty sections, and next past the end closes', () => {
   target('hub-search')
   target('pill')

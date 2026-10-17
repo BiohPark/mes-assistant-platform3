@@ -8,6 +8,7 @@ import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
 import { useQuery } from '@tanstack/react-query'
 import { getSettings } from '@/api/admin'
 import { useT } from '@/i18n'
+import { useWhenVisible } from '@/app/tabActive'
 import { getDraft, setDraft, type ComposerDraft } from './drafts'
 
 /** 보낼 첨부 1건. 자료함에 남고 이 요청에만 함께 간다(D54 개정). 팀 의견 첨부는 AI에 보내지 않는다 */
@@ -87,6 +88,7 @@ interface ComposerProps {
 
 export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, stagedAttachmentCount = 0, onSend, beforeSend, onStop, startedAt, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey, tools, attachments = [], notice, contentClassName }: ComposerProps) {
   const t = useT()
+  const whenVisible = useWhenVisible()
   const [now, setNow] = useState(Date.now)
   const timing = streaming && startedAt !== undefined
   useEffect(() => {
@@ -176,7 +178,8 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
     } catch (e) {
       if (clearOnSubmit) { writeText((current) => current || submittedText); onDraftChange?.(latest.current.text); setPending((current) => [...f.filter((item) => !current.includes(item)), ...current]) }
       else { sent.current = null; commit({}) } // 실패한 초안은 다시 보존 대상
-      toast.error(t('chat.sendFailed'), { description: e instanceof Error ? e.message : String(e) })
+      const message = e instanceof Error ? e.message : String(e)
+      whenVisible(() => toast.error(t('chat.sendFailed'), { description: message })) // 긴 응답 끝의 실패는 이 대화가 보일 때 알린다(S15)
     } finally { submitting.current = false }
   }
 

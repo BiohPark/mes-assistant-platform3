@@ -10,6 +10,7 @@ import { taskKeys, useMyActive } from '@/api/tasks.queries'
 import { listSr } from '@/api/sr'
 import { useMe } from '@/app/auth'
 import { srDetailPath } from '@/app/useOpenSr'
+import { useTabActive } from '@/app/tabActive'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -44,7 +45,8 @@ export function QuickSwitch({ currentTaskId }: { currentTaskId: string }) {
   const trigger = useRef<HTMLButtonElement>(null)
   const search = useRef<HTMLInputElement>(null)
   const content = useRef<HTMLDivElement>(null)
-  useShortcut('k', () => { trigger.current?.focus(); setOpen(current => !current) })
+  const active = useTabActive() // 숨은 탭(S15)의 화면은 단축키를 받지 않고 메뉴도 닫는다
+  useEffect(() => { if (!active) setOpen(false) }, [active])
   // 열리면 검색 입력에 바로 쓸 수 있게 — 메뉴가 콘텐츠에 초점을 둔 다음 프레임에 옮긴다
   useEffect(() => {
     if (!open) return
@@ -63,6 +65,7 @@ export function QuickSwitch({ currentTaskId }: { currentTaskId: string }) {
     </DropdownMenuItem>
   }
   return <DropdownMenu open={open} onOpenChange={(next) => { setOpen(next); if (!next) setQuery('') }}>
+    {active && <Shortcut onPress={() => { trigger.current?.focus(); setOpen(current => !current) }} />}
     <DropdownMenuTrigger asChild>
       <Button ref={trigger} variant="ghost" size="icon" data-tour="quick-switch" title={t('task.header.quickSwitch')} className="relative text-muted-foreground after:absolute after:-inset-1.5"><ArrowLeftRight /><span className="sr-only">{t('task.header.quickSwitch')}</span>{responding > 0 && <><span aria-hidden className="absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-tone-violet-bg px-1 text-[11px] font-medium text-tone-violet-fg">{responding}</span><span className="sr-only"> {t('task.header.quickSwitchResponding', { count: responding })}</span></>}</Button>
     </DropdownMenuTrigger>
@@ -102,4 +105,10 @@ function UnreadDot({ task, userId }: { task: TaskSummary; userId: string }) {
   const t = useT()
   const unread = useListUnread(task, userId)
   return unread ? <span role="img" aria-label={t('chat.unread')} title={t('chat.unread')} className="size-2 shrink-0 rounded-full bg-primary" /> : null
+}
+
+/** Ctrl/⌘+K — 보이는 탭에서만 등록한다(여러 대화 탭이 살아 있어도 하나만 반응) */
+function Shortcut({ onPress }: { onPress: () => void }) {
+  useShortcut('k', onPress)
+  return null
 }

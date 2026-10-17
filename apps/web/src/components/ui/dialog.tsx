@@ -6,6 +6,7 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
+import { useTabActive } from "@/app/tabActive"
 
 function Dialog({
   ...props
@@ -55,6 +56,7 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
+  if (!useTabActive()) return null // 숨은 탭(S15)의 열린 창·메뉴는 내린다 — 포털이라 탭 밖(body)에 남아 보고 있는 탭을 가리고 막는다
   return (
     <DialogPortal>
       <DialogOverlay />

@@ -621,6 +621,12 @@ export const en = {
     markAllRead: 'Mark all read',
     noNotifications: 'No notifications.',
   },
+  tabs: {
+    label: 'Open screens',
+    close: 'Close tab',
+    closeTitle: 'Close {title} (Delete)',
+    closeOthers: 'Close other tabs',
+  },
   routeError: {
     title: 'This page could not be displayed',
     description: 'If this continues, contact your administrator.',

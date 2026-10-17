@@ -6,6 +6,7 @@ import { resetPopout } from './popout'
 
 vi.mock('@/components/ui/sonner', () => ({ Toaster: () => null }))
 vi.mock('./useEvents', () => ({ useEvents: () => undefined, subscribeEvent: () => () => undefined }))
+vi.mock('./pageRoutes', () => ({ PageView: () => null })) // 셸(사이드바)만 본다 — 화면 목록은 router.test·TabHost.test
 
 afterEach(() => { vi.unstubAllGlobals(); resetPopout(); window.history.replaceState({}, '', '/') })
 

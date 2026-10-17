@@ -12,6 +12,7 @@ import { TopBar } from './TopBar'
 
 vi.mock('./NotificationBell', () => ({ NotificationBell: () => null }))
 vi.mock('./useEvents', () => ({ useEvents: () => undefined }))
+vi.mock('./pageRoutes', () => ({ PageView: () => null })) // 셸(사이드바)만 본다 — 화면 목록은 router.test·TabHost.test
 vi.mock('@/features/assistant-pill/AssistantPill', () => ({ AssistantPill: () => null }))
 
 const me = { id: 'owner', name: 'Kim', roles: ['member', 'system_owner'], role: '', email: null, emailIsDefault: false, theme: 'system', locale: 'ko' }

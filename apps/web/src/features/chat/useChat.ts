@@ -48,19 +48,29 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
   const [waitingSince, setWaitingSince] = useState<number | undefined>(() => threadId ? load(threadId)?.startedAt : undefined)
   const [sending, setSending] = useState(false)
   const active = useRef<Promise<void> | null>(null)
+  /** 진행 중 소비를 이 화면에서 떼어 낸다(스트림·확인 타이머·리스너 정리). 서버 요청은 계속되고 시도는 남아 다시 마운트되면 같은 키로 이어 붙는다 */
+  const detach = useRef<(() => void) | null>(null)
+  const mounted = useRef(false)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
   const consume = useCallback((attempt: Attempt): Promise<void> => {
     if (active.current) return active.current
+    // 내려간 화면에서 늦게 시작된 전송(업로드·추정 대기 뒤)은 붙지 않는다 — 시도는 저장돼 있어 다시 열면 이어 붙는다
+    if (!mounted.current) { save(attempt); return Promise.resolve() }
     const work = (async () => {
       let terminal = false
       let failed: string | undefined
+      let detached = false
+      let stream: AbortController | undefined
+      detach.current = () => { detached = true; stream?.abort() }
       attempt.startedAt ??= Date.now()
       save(attempt)
       setWaitingSince(attempt.startedAt)
       setSending(true)
       try {
-        for (let number = 0; number < 2 && !terminal; number++) {
+        for (let number = 0; number < 2 && !terminal && !detached; number++) {
           const controller = new AbortController()
+          stream = controller
           let lastEventAt = Date.now(), checking: Promise<void> | undefined
           // 서버 기록이 끝 상태면 그것으로 끝낸다(멈춘 스트림은 중단). 아직 진행 중이면 단계만 맞춘다
           const settle = (): Promise<void> => {
@@ -82,6 +92,7 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
           document.addEventListener('visibilitychange', wake)
           try {
             await streamRequest(attempt.path, attempt.body, (event, data) => {
+              if (detached) return
               lastEventAt = Date.now()
               if (event === 'started') {
                 started.current?.()
@@ -112,10 +123,12 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
                 terminal = true
               } else if (event === 'completed') terminal = true
             }, attempt.key, controller.signal)
+            if (detached) break
             // 끝 이벤트 없이 닫혔다 — 서버가 이미 끝냈을 수 있으니 다시 붙기 전에 묻는다
             if (!terminal) await settle()
             if (!terminal) throw new Error(t('chat.streamDisconnected'))
           } catch (error) {
+            if (detached) break
             if (!terminal) await settle()
             // 끝이 확인됐으면(이벤트·상태 확인) 스트림 오류는 무시한다 — 실패는 아래에서 failed로 알린다
             if (!terminal && number === 1) throw error
@@ -125,32 +138,38 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
             document.removeEventListener('visibilitychange', wake)
           }
         }
-        if (failed) throw new Error(failed)
+        if (failed && !detached) throw new Error(failed)
       } finally {
         if (terminal) clear(attempt)
-        setRun(null)
-        setSending(false)
-        setWaitingSince(undefined)
-        await query.cancelQueries({ queryKey: ['messages', attempt.threadId] })
-        await query.invalidateQueries({ queryKey: ['messages', attempt.threadId] })
-        await query.invalidateQueries({ queryKey: ['activity'] })
-        // 사용 기록(chat_request_input)은 전달 단계에서 쌓인다 — 끝난 뒤 자료함의 사용됨·첨부됨을 다시 읽는다(완료 SSE는 이 목록을 건드리지 않는다)
-        for (const key of ['candidates', 'sr-inputs', 'conversation-inputs']) void query.invalidateQueries({ queryKey: [key] })
+        // 떼어 낸 소비는 화면 상태를 건드리지 않는다 — 같은 인스턴스가 다시 붙었을 수 있다(StrictMode)
+        if (!detached) {
+          setRun(null)
+          setSending(false)
+          setWaitingSince(undefined)
+        }
+        if (!detached || terminal) {
+          await query.cancelQueries({ queryKey: ['messages', attempt.threadId] })
+          await query.invalidateQueries({ queryKey: ['messages', attempt.threadId] })
+          await query.invalidateQueries({ queryKey: ['activity'] })
+          // 사용 기록(chat_request_input)은 전달 단계에서 쌓인다 — 끝난 뒤 자료함의 사용됨·첨부됨을 다시 읽는다(완료 SSE는 이 목록을 건드리지 않는다)
+          for (const key of ['candidates', 'sr-inputs', 'conversation-inputs']) void query.invalidateQueries({ queryKey: [key] })
+        }
       }
     })()
     active.current = work
-    void work.finally(() => { if (active.current === work) active.current = null }).catch(() => undefined)
+    void work.finally(() => { if (active.current === work) { active.current = null; detach.current = null } }).catch(() => undefined)
     return work
   }, [query, t])
 
   useEffect(() => {
     if (!threadId) return
+    let mounted = true
     const previous = load(threadId)
     const restore = firstDrafts.get(threadId)
     if (previous) void consume(previous).then(() => {
-      if (firstDrafts.get(threadId) === restore) firstDrafts.delete(threadId)
+      if (mounted && firstDrafts.get(threadId) === restore) firstDrafts.delete(threadId)
     }).catch(error => {
-      if (!restore || firstDrafts.get(threadId) !== restore) return
+      if (!mounted || !restore || firstDrafts.get(threadId) !== restore) return
       firstDrafts.delete(threadId)
       const current = getDraft(restore.taskId)
       const draft: ComposerDraft = {
@@ -161,6 +180,13 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
       setDraft(restore.taskId, draft)
       firstFailure.current?.(draft, error)
     })
+    // 화면이 내려가면(탭 LRU 퇴거·언마운트) 진행 중 소비를 떼어 낸다 — 남은 시도는 다시 열 때 위에서 이어 붙는다(같은 시도를 둘이 소비하지 않게)
+    return () => {
+      mounted = false
+      detach.current?.()
+      detach.current = null
+      active.current = null
+    }
   }, [consume, threadId])
 
   return {

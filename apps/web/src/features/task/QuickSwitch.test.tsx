@@ -6,14 +6,15 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Task } from '@mes/domain'
 import { MeContext } from '@/app/auth'
+import { TabActiveContext } from '@/app/tabActive'
 import { QuickSwitch } from './QuickSwitch'
 
 afterEach(() => vi.unstubAllGlobals())
 const task = (id: string, over: Partial<Task> = {}) => ({ id, code: `WK-2026-00${id}`, assistantId: 'a', title: `대화 ${id}`, titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: [], priority: 'normal', tags: [], checklist: [], inputs: [], outputFileIds: [], threadId: `h${id}`, createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: `2026-10-${id.padStart(2, '0')}T00:00:00.000Z`, aiRequest: null, ...over }) as Task
 function Probe() { return <output aria-label="경로">{useLocation().pathname}</output> }
-function renderSwitch(tasks: Task[], currentTaskId = '11') {
+function renderSwitch(tasks: Task[], currentTaskId = '11', active = true) {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => url.startsWith('/api/tasks?') ? taskApiFixture(url, tasks) : Response.json([])))
-  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><MemoryRouter initialEntries={[`/c/${currentTaskId}`]}><Routes><Route path="/c/:taskId" element={<><QuickSwitch currentTaskId={currentTaskId} /><Probe /></>} /></Routes></MemoryRouter></MeContext></QueryClientProvider>)
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TabActiveContext value={active}><MemoryRouter initialEntries={[`/c/${currentTaskId}`]}><Routes><Route path="/c/:taskId" element={<><QuickSwitch currentTaskId={currentTaskId} /><Probe /></>} /></Routes></MemoryRouter></TabActiveContext></MeContext></QueryClientProvider>)
 }
 
 it('lists my in-progress conversations with responding ones first, marks the current one and navigates on select', async () => {
@@ -86,3 +87,9 @@ it('S14: 검색 결과가 없으면 알린다', async () => {
 })
 
 function ProbeSearch() { const location = useLocation(); return <output aria-label="경로">{location.pathname + location.search}</output> }
+
+it('S15: 숨은 탭의 빠른 전환은 Ctrl+K에 반응하지 않는다(보이는 탭 하나만)', async () => {
+  renderSwitch([task('11')], '11', false)
+  await userEvent.keyboard('{Control>}k{/Control}')
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+})

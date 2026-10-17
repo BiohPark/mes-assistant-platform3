@@ -619,6 +619,12 @@ export const ko = {
     markAllRead: '모두 읽음',
     noNotifications: '알림이 없습니다.',
   },
+  tabs: {
+    label: '열린 화면',
+    close: '탭 닫기',
+    closeTitle: '{title} 닫기 (Delete)',
+    closeOthers: '다른 탭 닫기',
+  },
   routeError: {
     title: '화면을 표시할 수 없습니다',
     description: '문제가 계속되면 관리자에게 알려 주세요.',

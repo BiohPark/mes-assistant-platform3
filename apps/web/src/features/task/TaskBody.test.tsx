@@ -76,19 +76,18 @@ it('방향키로 보조 패널 탭을 옮기고 단일 tabpanel이 활성 탭을
   const history = panelTabs.getByRole('tab', { name: '이력' })
   const materials = panelTabs.getByRole('tab', { name: '자료' })
   // 기본 탭은 자료(S14)
-  expect(materials).toHaveAttribute('id', 'task-tab-materials')
   expect(materials).toHaveAttribute('tabindex', '0')
   expect(history).toHaveAttribute('tabindex', '-1')
   const panel = screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })
-  expect(panel).toHaveAttribute('id', 'task-panel')
-  expect(panel).toHaveAttribute('aria-labelledby', 'task-tab-materials')
-  expect(materials).toHaveAttribute('aria-controls', 'task-panel')
+  expect(materials.id).toBeTruthy()
+  expect(panel).toHaveAttribute('aria-labelledby', materials.id)
+  expect(materials).toHaveAttribute('aria-controls', panel.id)
 
   materials.focus()
   fireEvent.keyDown(materials, { key: 'End' })
   expect(history).toHaveAttribute('aria-selected', 'true')
   expect(history).toHaveFocus()
-  expect(screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })).toHaveAttribute('aria-labelledby', 'task-tab-history')
+  expect(screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })).toHaveAttribute('aria-labelledby', history.id)
   fireEvent.keyDown(history, { key: 'ArrowRight' })
   expect(materials).toHaveAttribute('aria-selected', 'true')
   expect(materials).toHaveFocus()
@@ -101,7 +100,7 @@ it('방향키로 보조 패널 탭을 옮기고 단일 tabpanel이 활성 탭을
   fireEvent.keyDown(chat, { key: 'ArrowRight' })
   expect(mobileTabs.getByRole('tab', { name: '자료' })).toHaveAttribute('aria-selected', 'true')
   expect(mobileTabs.getByRole('tab', { name: '자료' })).toHaveFocus()
-  expect(screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })).toHaveAttribute('aria-labelledby', 'task-tab-materials')
+  expect(screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })).toHaveAttribute('aria-labelledby', materials.id)
   expect(screen.getByRole('region', { name: '대화' })).toBeInTheDocument()
   fireEvent.keyDown(mobileTabs.getByRole('tab', { name: '자료' }), { key: 'Home' })
   expect(chat).toHaveAttribute('aria-selected', 'true')
@@ -203,4 +202,22 @@ it('defaults to materials and opens materials on both layouts without remounting
   await waitFor(() => expect(calls.filter(({ url }) => url === '/api/tasks/t/candidates')).toHaveLength(1))
   expect(calls.some(({ url }) => /\/(?:conversation-)?inputs(?:\/|$)/.test(url) && calls.find(call => call.url === url)?.method !== 'GET')).toBe(false)
   expect(task.inputs).toEqual([])
+})
+
+it('S15: 대화 두 개를 함께 살려 둬도 보조 패널 탭·패널 id가 겹치지 않는다', () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/llm/models' ? jsonResponse(200, { models: [] }) : jsonResponse(200, [])))
+  const me = { id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
+  renderWithProviders(<MeContext value={me}><TooltipProvider>
+    <TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} />
+    <TaskBody task={{ ...task, id: 't2', threadId: 'h2' }} assistant={{ id: 'a', name: '도우미' } as Assistant} />
+  </TooltipProvider></MeContext>)
+  const ids = [...document.querySelectorAll('[id]')].map(element => element.id).filter(id => id.startsWith('task-'))
+  expect(ids.length).toBeGreaterThan(0)
+  expect(new Set(ids).size).toBe(ids.length)
+  for (const tablist of screen.getAllByRole('tablist', { name: '보조 패널' })) {
+    const selected = within(tablist).getByRole('tab', { selected: true })
+    const panel = document.getElementById(selected.getAttribute('aria-controls')!)!
+    expect(panel.getAttribute('aria-labelledby')).toBe(selected.id)
+    expect(tablist.parentElement!.contains(panel)).toBe(true)
+  }
 })

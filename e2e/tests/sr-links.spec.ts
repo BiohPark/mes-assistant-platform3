@@ -72,7 +72,8 @@ test('Ctrl+K에서 SR 번호로 찾아 처리 상세를 연다', async ({ page }
 
 test('접수되지 않은 SR 번호 칩은 이동하지 않고 안내한다', async ({ page }) => {
   await signup(page, 'missing')
-  const code = `SR-2099-${String(Date.now() % 10_000).padStart(4, '0')}`
+  // 2099년 번호는 규모 시드(db:seed:scale, SR-2099-0001…)와 겹칠 수 있다 — 아무도 쓰지 않는 해의 번호로 고른다
+  const code = `SR-2098-${String(Date.now() % 10_000).padStart(4, '0')}`
   const task = await createTask(page, [code])
   await page.goto(`/c/${task.id}`)
   await page.getByRole('button', { name: code, exact: true }).click()

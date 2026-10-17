@@ -4,6 +4,7 @@ import * as React from "react"
 import { cn } from "cn"
 import { Select as SelectPrimitive } from "radix-ui"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
+import { useTabActive } from "@/app/tabActive"
 
 function Select({
   ...props
@@ -63,6 +64,7 @@ function SelectContent({
   align = "center",
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
+  if (!useTabActive()) return null // 숨은 탭(S15)의 열린 창·메뉴는 내린다 — 포털이라 탭 밖(body)에 남아 보고 있는 탭을 가리고 막는다
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content

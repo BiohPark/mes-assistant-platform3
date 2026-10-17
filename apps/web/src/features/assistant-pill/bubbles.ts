@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { create } from 'zustand'
 import type { BudgetLevel } from '@mes/domain'
+import { useTabActive } from '@/app/tabActive'
 
 /**
  * 분류표 — 코드 데이터(U6).
@@ -74,25 +75,27 @@ export function resetBubbles() {
 export function useBudgetBubble(key: string, level: BudgetLevel | undefined, onOpen: () => void) {
   const open = useRef(onOpen)
   open.current = onOpen
+  const active = useTabActive() // 숨은 탭(S15)은 기록·알림을 미룬다 — 다시 보이면 그때 비교한다
   useEffect(() => {
-    if (!level) return
+    if (!level || !active) return
     const previous = seenLevels.get(key) ?? 'ok'
     seenLevels.set(key, level)
     if (RANK[level] > RANK[previous]) useBubbleStore.getState().push({ source: `budget.${level}` as BubbleSource, key, onOpen: () => open.current() })
-  }, [key, level])
-  useEffect(() => () => useBubbleStore.getState().drop(key), [key])
+  }, [key, level, active])
+  useEffect(() => active ? () => useBubbleStore.getState().drop(key) : undefined, [key, active]) // 떠나거나 탭이 숨으면 그 대화의 말풍선을 거둔다
 }
 
 /** 마지막 본문·reasoning delta(없으면 run 시작) 뒤 30초 동안 아무것도 오지 않으면 요청당 한 번 말풍선(S10: reasoning도 생존 신호). delta마다 다시 센다 */
 export function useSlowRequestBubble(run: { requestId: string; text: string; reasoning?: string } | null) {
   const requestId = run?.requestId
   const progress = run ? `${run.text}\u0000${run.reasoning ?? ''}` : undefined
+  const active = useTabActive() // 숨은 탭(S15)의 느린 응답은 알리지 않는다 — 다시 보이면 30초를 새로 센다
   useEffect(() => {
-    if (!requestId || slowNotified.has(requestId)) return
+    if (!requestId || !active || slowNotified.has(requestId)) return
     const timer = setTimeout(() => {
       slowNotified.add(requestId)
       useBubbleStore.getState().push({ source: 'request.slow', requestId })
     }, SLOW_REQUEST_MS)
     return () => clearTimeout(timer)
-  }, [requestId, progress])
+  }, [requestId, progress, active])
 }

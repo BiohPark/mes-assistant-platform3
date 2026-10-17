@@ -6,8 +6,12 @@ import { isModuleLoadError } from './lazyPage'
 
 /** 라우트 errorElement — 모듈 로드 실패(새 버전 배포)와 그 밖의 화면 오류를 앱 스타일로 보여 준다 */
 export function RouteErrorPage() {
+  return <RouteErrorView error={useRouteError()} />
+}
+
+/** 오류 화면 본체 — 라우트 errorElement와 탭별 오류 경계(PageErrorBoundary)가 같이 쓴다 */
+export function RouteErrorView({ error }: { error: unknown }) {
   const t = useT()
-  const error = useRouteError()
   const stale = isModuleLoadError(error)
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 bg-muted/30 p-8 text-center">

@@ -89,8 +89,9 @@ export const TOUR_SECTIONS: Record<PageRoute, readonly TourSection[]> = {
   other: [NAVIGATION, ASSISTANT],
 }
 
-// checkVisibility는 레이아웃 기준(브라우저). 없으면(jsdom) 조상의 display:none만 본다
+// checkVisibility는 레이아웃 기준(브라우저). 없으면(jsdom) 조상의 display:none만 본다. 숨은 탭(inert)은 어느 쪽이든 제외
 function isShown(element: HTMLElement): boolean {
+  if (element.closest('[inert]')) return false // 숨은 탭(S15)의 화면
   if (typeof element.checkVisibility === 'function') return element.checkVisibility()
   for (let node: HTMLElement | null = element; node; node = node.parentElement) if (getComputedStyle(node).display === 'none') return false
   return true

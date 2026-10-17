@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { FileText, History, ListChecks, MessageSquare, StickyNote } from 'lucide-react'
 import type { Task } from '@mes/domain'
@@ -28,6 +28,7 @@ const mobileValues: MobileTab[] = ['chat', ...panelValues]
 /** 채팅은 대화당 한 번만 마운트해 화면 폭이나 탭 변경 중 전송 상태를 유지한다. 다른 대화로 전환하면 key로 격리한다(초안은 Composer가 taskId로 보존). headerTools는 헤더의 검색·질문 목차 자리 */
 export function TaskBody({ task, assistant, headerTools }: { task: Task; assistant: Assistant; headerTools?: HTMLElement | null }) {
   const t = useT()
+  const ids = useId() // 여러 대화를 탭으로 함께 살려 두므로(S15) 보조 패널 탭·패널 id는 인스턴스마다 고유하게
   const [mobileTab, setMobileTab] = useState<MobileTab>('chat')
   const [panel, setPanel] = useState<Panel>('materials')
   const [focusMaterials, setFocusMaterials] = useState(false)
@@ -57,8 +58,8 @@ export function TaskBody({ task, assistant, headerTools }: { task: Task; assista
     <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_360px]">
       <section className={cn('min-h-0 flex-col', mobileTab === 'chat' ? 'flex' : 'hidden', 'lg:flex')} aria-label={t('task.conversation')}><ChatView key={task.id} task={task} assistant={assistant} headerTools={headerTools} onOpenMaterials={() => { setPanel('materials'); setMobileTab('materials'); setFocusMaterials(true) }} /></section>
       <aside className={cn('min-h-0 overflow-hidden p-3 lg:border-l', mobileTab === 'chat' ? 'hidden' : 'flex flex-col', 'lg:flex lg:flex-col')} aria-label={t('task.body.panel')}>
-        <div ref={panelTabsRef} role="tablist" aria-label={t('task.body.panelTabs')} data-tour="task-tabs" className="hidden w-full border-b pb-2 lg:flex" {...panelKeys.tablistProps}>{panels.map(({ value, label, icon: Icon }) => <button key={value} type="button" id={`task-tab-${value}`} aria-controls="task-panel" {...panelKeys.tabProps(value)} onClick={() => setPanel(value)} className={cn('flex flex-1 items-center justify-center gap-1 rounded-lg py-1 text-xs', panel === value && 'bg-muted font-medium')}><Icon className="size-4" />{t(label)}</button>)}</div>
-        <div role="tabpanel" id="task-panel" aria-labelledby={`task-tab-${panel}`} className="min-h-0 flex-1 overflow-y-auto pt-3">{panel === 'history' ? activity.isError ? <div role="alert" className="text-xs">{t('task.activity.loadFailed')} <button type="button" className="underline" onClick={() => void activity.refetch()}>{t('common.retry')}</button></div> : <ActivityPanel activity={activity.data ?? []} /> : panel === 'materials' ? <MaterialsPanel task={task} /> : panel === 'checklist' ? <ChecklistPanel task={task} /> : <NotesPanel task={task} />}</div>
+        <div ref={panelTabsRef} role="tablist" aria-label={t('task.body.panelTabs')} data-tour="task-tabs" className="hidden w-full border-b pb-2 lg:flex" {...panelKeys.tablistProps}>{panels.map(({ value, label, icon: Icon }) => <button key={value} type="button" id={`task-tab-${ids}-${value}`} aria-controls={`task-panel-${ids}`} {...panelKeys.tabProps(value)} onClick={() => setPanel(value)} className={cn('flex flex-1 items-center justify-center gap-1 rounded-lg py-1 text-xs', panel === value && 'bg-muted font-medium')}><Icon className="size-4" />{t(label)}</button>)}</div>
+        <div role="tabpanel" id={`task-panel-${ids}`} aria-labelledby={`task-tab-${ids}-${panel}`} className="min-h-0 flex-1 overflow-y-auto pt-3">{panel === 'history' ? activity.isError ? <div role="alert" className="text-xs">{t('task.activity.loadFailed')} <button type="button" className="underline" onClick={() => void activity.refetch()}>{t('common.retry')}</button></div> : <ActivityPanel activity={activity.data ?? []} /> : panel === 'materials' ? <MaterialsPanel task={task} /> : panel === 'checklist' ? <ChecklistPanel task={task} /> : <NotesPanel task={task} />}</div>
       </aside>
     </div>
   </div>

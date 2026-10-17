@@ -1,4 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
+import { createElement, type ReactNode } from 'react'
+import { TabActiveContext } from '@/app/tabActive'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { BudgetLevel } from '@mes/domain'
 import { BELL_SOURCES, BUBBLE_SOURCES, SLOW_REQUEST_MS, resetBubbles, useBubbleStore, useBudgetBubble, useSlowRequestBubble } from './bubbles'
@@ -137,4 +139,28 @@ it('reasoning streaming counts as progress — no slow bubble while only reasoni
   rerender({ run: { requestId: 'r5', text: '', reasoning: '이어서' } }) // 재개 시 복원된 reasoning은 기준선 — 그 뒤 아무것도 없으면 뜬다
   act(() => { vi.advanceTimersByTime(SLOW_REQUEST_MS) })
   expect(useBubbleStore.getState().current).toMatchObject({ source: 'request.slow', requestId: 'r5' })
+})
+
+it('S15: 숨은 탭에서는 예산·느린 응답 말풍선을 띄우지 않고, 숨으면 그 대화의 말풍선을 거둔다 — 다시 보이면 그때 알린다', () => {
+  vi.useFakeTimers()
+  let active = true
+  const wrapper = ({ children }: { children: ReactNode }) => createElement(TabActiveContext, { value: active }, children)
+  const budget = renderHook(({ level }) => useBudgetBubble('t9', level, () => {}), { wrapper, initialProps: { level: 'warn' as BudgetLevel } })
+  expect(sources()[0]).toBe('budget.warn')
+  active = false
+  budget.rerender({ level: 'over' })
+  expect(sources()).toEqual([undefined, undefined])
+  active = true
+  budget.rerender({ level: 'over' })
+  expect(sources()[0]).toBe('budget.over')
+  budget.unmount()
+
+  active = false
+  const slow = renderHook(({ run }) => useSlowRequestBubble(run), { wrapper, initialProps: { run: { requestId: 'r9', text: '' } } })
+  act(() => { vi.advanceTimersByTime(SLOW_REQUEST_MS + 1) })
+  expect(sources()).toEqual([undefined, undefined])
+  active = true
+  slow.rerender({ run: { requestId: 'r9', text: '' } })
+  act(() => { vi.advanceTimersByTime(SLOW_REQUEST_MS + 1) })
+  expect(sources()[0]).toBe('request.slow')
 })
