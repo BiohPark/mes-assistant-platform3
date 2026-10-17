@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
-/** 상단 탭 하나 — 위치(href = 경로+쿼리+해시)만 기억한다. 화면 상태는 살려 둔 렌더가 들고 있다 */
-export interface Tab { id: string; href: string }
+/** 상단 탭 하나 — 위치(href = 경로+쿼리+해시)만 기억한다. 화면 상태는 살려 둔 렌더가 들고 있다. title은 마지막으로 본 칩 제목(내려간 화면의 칩용) */
+export interface Tab { id: string; href: string; title?: string }
 export interface TabsState {
   userId: string | null
   tabs: Tab[]
@@ -23,8 +23,13 @@ export const pathOf = (href: string) => href.replace(/[?#].*$/, '') || '/'
 export const initialTabs = (home: string, userId: string | null = null): TabsState =>
   ({ userId, tabs: [{ id: HOME_ID, href: home }], activeId: HOME_ID, nextId: 1, seen: [] })
 
+// 다른 경로로 바뀌면 저장된 제목은 다른 화면의 것이라 버린다
 const withHref = (state: TabsState, id: string, href: string): TabsState =>
-  ({ ...state, tabs: state.tabs.map(tab => tab.id === id && tab.href !== href ? { ...tab, href } : tab) })
+  ({ ...state, tabs: state.tabs.map(tab => tab.id === id && tab.href !== href ? pathOf(tab.href) === pathOf(href) ? { ...tab, href } : { id, href } : tab) })
+
+/** 칩 제목 저장 — 화면이 내려간 탭(LRU)은 제목을 다시 조회하지 않고 이것을 보여 준다 */
+export const withTitle = (state: TabsState, id: string, title: string): TabsState =>
+  ({ ...state, tabs: state.tabs.map(tab => tab.id === id && tab.title !== title ? { ...tab, title } : tab) })
 
 function activate(state: TabsState, id: string): TabsState {
   const seen = [...state.seen.filter(item => item !== id), id]
@@ -57,8 +62,9 @@ export function retarget(state: TabsState, id: string, href: string): TabsState 
   if (id === HOME_ID) return state
   const other = state.tabs.find(item => item.id !== id && pathOf(item.href) === path)
   if (!other) return withHref(state, id, href)
-  const merged = withHref({ ...state, tabs: state.tabs.filter(item => item.id !== id), seen: state.seen.filter(item => item !== id) }, other.id, href)
-  return state.activeId === id ? activate(merged, other.id) : merged
+  const rest = { ...state, tabs: state.tabs.filter(item => item.id !== id), seen: state.seen.filter(item => item !== id) }
+  // 숨은 탭이 합쳐질 때는 대상 탭의 위치(필터 등)를 그대로 둔다 — 주소창은 그대로라 덮으면 다시 고를 때 필터를 잃는다
+  return state.activeId === id ? activate(withHref(rest, other.id, href), other.id) : rest
 }
 
 /** 주소창(라우터)의 이동을 탭에 반영한다. REPLACE는 활성 탭이 바뀐 것(홈 탭이면 새 탭), 나머지는 visit */

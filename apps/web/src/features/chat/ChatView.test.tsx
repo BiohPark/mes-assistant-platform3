@@ -7,6 +7,7 @@ import type { Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MeContext } from '@/app/auth'
+import { TabActiveContext } from '@/app/tabActive'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ChatView } from './ChatView'
 import { queueFirstRequest } from './useChat'
@@ -704,6 +705,28 @@ it('announces an automatic hold release once when retrying a failed reply, even 
   await waitFor(() => expect(retries).toBe(2))
   await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('보류를 해제했습니다', expect.objectContaining({ action: expect.objectContaining({ label: '보류' }) })))
   expect(toastSuccess.mock.calls.filter(call => call[0] === '보류를 해제했습니다')).toHaveLength(1)
+})
+
+it('S15: 숨은 탭 대화의 보류 해제 알림은 그 탭이 보일 때까지 미뤘다가 한 번 띄운다', async () => {
+  let streamed = 0
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/threads/h/requests') { streamed++; return new Response('event: started\ndata: {"requestId":"r","replyMessageId":"a","autoStarted":true}\n\nevent: completed\ndata: {}\n\n', { status: 201 }) }
+    if (url.endsWith('/estimate')) return Response.json({ inputs: [], srs: [], srCodes: [], bytes: 0, limitBytes: 100000, overLimit: false, attachmentLimit: 10 })
+    return Response.json([])
+  }))
+  queueFirstRequest('h', { content: '숨은 탭에서 끝남', attachmentIds: [], oneShotFileIds: [] })
+  const task = { id: 't', threadId: 'h', status: 'on_hold', inputs: [], tags: [] } as unknown as Task
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const view = (active: boolean) => <TabActiveContext value={active}><QueryClientProvider client={client}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ChatView task={task} /></TooltipProvider></MeContext></QueryClientProvider></TabActiveContext>
+  const { rerender } = render(view(false))
+  await waitFor(() => expect(sessionStorage.getItem('mes-chat-attempt:h')).toBeNull())
+  expect(streamed).toBe(1)
+  expect(toastSuccess).not.toHaveBeenCalled()
+  rerender(view(true))
+  await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('보류를 해제했습니다', expect.anything()))
+  rerender(view(false))
+  rerender(view(true))
+  expect(toastSuccess).toHaveBeenCalledTimes(1)
 })
 
 it('resets the search input and result position when switching tasks', async () => {

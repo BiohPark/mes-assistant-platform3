@@ -36,12 +36,13 @@ export function TabHost({ home, userId, single = false }: { home: string; userId
   }, [single, location.key, href, navigationType, userId, home, navigate, locations])
   const current = useMemo(() => ({ location, navigationType }), [location, navigationType])
 
-  // 활성 탭은 라우터의 위치(키·이동 종류 포함)를 그대로, 숨은 탭은 마지막 위치를 유지한다 — 같은 주소면 같은 객체라 화면이 다시 반응하지 않는다
+  // 활성 탭은 라우터의 위치(키·state·이동 종류 포함)를 그대로, 숨은 탭은 마지막 위치를 유지한다 — 숨은 탭은 같은 주소면 같은 객체라 화면이 다시 반응하지 않는다
   const locationOf = (tab: Tab): TabLocation => {
     const known = locations.get(tab.id)
     // 같은 경로(쿼리만 바뀜)는 탭 저장 전에 바로 따른다 — 이동과 같은 커밋에 화면이 바뀌어야 이동 뒤 포커스 같은 후속 동작이 맞는다
+    // 같은 주소라도 새 기록(뒤로가기·state만 다른 이동)이면 따른다 — 화면이 location.key·state로 초기화를 판단한다
     if (tab.id === activeId && pathOf(tab.href) === pathOf(href)) {
-      if (known?.href !== href) locations.set(tab.id, { href, value: { location, navigationType } })
+      if (known?.value.location !== location || known.value.navigationType !== navigationType) locations.set(tab.id, { href, value: current })
     } else if (known?.href !== tab.href) {
       locations.set(tab.id, { href: tab.href, value: { location: { pathname: '/', search: '', hash: '', ...parsePath(tab.href), state: null, key: `tab-${tab.id}-${tab.href}` }, navigationType: 'REPLACE' as NavigationType } })
     }

@@ -22,3 +22,13 @@ it('S15: 숨은 탭의 열린 창·시트·메뉴·팝오버는 포털로 그리
   rerender(<TabActiveContext value={true}><Opened /></TabActiveContext>)
   for (const text of ['대화상자', '시트', '항목', '팝오버 내용']) expect(screen.getByText(text)).toBeInTheDocument()
 })
+
+it('S15: 보이던 탭이 숨으면 열려 있던 창·메뉴를 내리고 화면 잠금(pointer-events)을 푼다, 다시 보이면 되살린다', () => {
+  const { rerender } = render(<TabActiveContext value={true}><Opened /></TabActiveContext>)
+  for (const text of ['대화상자', '시트', '항목', '팝오버 내용']) expect(screen.getByText(text)).toBeInTheDocument()
+  rerender(<TabActiveContext value={false}><Opened /></TabActiveContext>)
+  for (const text of ['대화상자', '시트', '항목', '팝오버 내용']) expect(screen.queryByText(text)).not.toBeInTheDocument()
+  expect(document.body.style.pointerEvents).not.toBe('none')
+  rerender(<TabActiveContext value={true}><Opened /></TabActiveContext>)
+  for (const text of ['대화상자', '시트', '항목', '팝오버 내용']) expect(screen.getByText(text)).toBeInTheDocument()
+})

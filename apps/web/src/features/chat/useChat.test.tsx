@@ -3,7 +3,8 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { claimMyRequest } from '@/features/assistant-pill/replyBubble'
-import { useChat } from './useChat'
+import { jsonResponse } from '@/test/render'
+import { STATUS_CHECK_MS, useChat } from './useChat'
 
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); localStorage.clear() })
 
@@ -151,4 +152,62 @@ describe('status check fallback', () => {
     expect(gets).toEqual(['/api/requests/r-stuck'])
     expect(result.current.run).toBeNull()
   })
+})
+
+it('S15: 화면이 내려가면(LRU 퇴거) 진행 중 스트림·확인 타이머를 정리하고, 다시 열면 같은 키로 한 번만 다시 붙는다', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  try {
+    const signals: Array<{ key: string | null; signal: AbortSignal }> = []
+    const status = vi.fn(async () => jsonResponse(200, { id: 'r-live', status: 'running' }))
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+      if (url.startsWith('/api/requests/')) return status()
+      signals.push({ key: new Headers(init.headers).get('Idempotency-Key'), signal: init.signal! })
+      return new Response(new ReadableStream<Uint8Array>({ start(controller) {
+        controller.enqueue(new TextEncoder().encode('event: started\ndata: {"requestId":"r-live","replyMessageId":"m","autoStarted":true}\n\n'))
+      } }), { status: 201 })
+    }))
+    const client = new QueryClient()
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    const autoStarted = vi.fn()
+    const first = renderHook(() => useChat('evicted-thread', autoStarted), { wrapper })
+    let sending!: Promise<void>
+    act(() => { sending = first.result.current.send('긴 작업') })
+    await vi.waitFor(() => expect(first.result.current.run?.requestId).toBe('r-live'))
+    first.unmount()
+    await act(async () => { await sending })
+    expect(signals).toHaveLength(1)
+    expect(signals[0]!.signal.aborted).toBe(true)
+    await act(async () => { await vi.advanceTimersByTimeAsync(STATUS_CHECK_MS * 3) })
+    expect(status).not.toHaveBeenCalled() // 내려간 화면은 상태 확인도 멈춘다
+    expect(signals).toHaveLength(1) // 스스로 다시 붙지 않는다
+    expect(sessionStorage.getItem('mes-chat-attempt:evicted-thread')).not.toBeNull() // 시도는 남겨 다시 열 때 이어 붙는다
+
+    const second = renderHook(() => useChat('evicted-thread', autoStarted), { wrapper })
+    await vi.waitFor(() => expect(second.result.current.run?.requestId).toBe('r-live'))
+    expect(signals).toHaveLength(2)
+    expect(signals[1]!.key).toBe(signals[0]!.key)
+    expect(signals.filter(item => !item.signal.aborted)).toHaveLength(1)
+    expect(autoStarted).toHaveBeenCalledTimes(1) // 다시 붙어도 보류 해제 알림은 한 번
+    second.unmount()
+  } finally { vi.useRealTimers() }
+})
+
+it('S15: 화면이 내려간 뒤에 시작된 전송은 스트림을 열지 않고 시도만 남겨, 다시 열면 한 번 붙는다', async () => {
+  const keys: Array<string | null> = []
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+    keys.push(new Headers(init.headers).get('Idempotency-Key'))
+    return new Response('event: started\ndata: {"requestId":"r-late","replyMessageId":"m"}\n\nevent: completed\ndata: {}\n\n', { status: 201 })
+  }))
+  const client = new QueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const first = renderHook(() => useChat('late-thread'), { wrapper })
+  const send = first.result.current.send
+  first.unmount()
+  await act(async () => { await send('늦은 전송') })
+  expect(keys).toHaveLength(0)
+  expect(sessionStorage.getItem('mes-chat-attempt:late-thread')).not.toBeNull()
+  const second = renderHook(() => useChat('late-thread'), { wrapper })
+  await act(async () => { await vi.waitFor(() => expect(sessionStorage.getItem('mes-chat-attempt:late-thread')).toBeNull()) })
+  expect(keys).toHaveLength(1)
+  second.unmount()
 })

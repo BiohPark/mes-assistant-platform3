@@ -6,7 +6,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
 import { useTablistKeys } from '@/lib/useTablistKeys'
 import { useT } from '@/i18n'
-import { close, closeOthers, HOME_ID, move, updateTabs, useTabsStore, type Tab, type TabsState } from './tabs'
+import { close, closeOthers, HOME_ID, move, updateTabs, useTabsStore, withTitle, type Tab, type TabsState } from './tabs'
 import { useTabTitle } from './useTabTitle'
 
 const DRAG_TYPE = 'application/x-mes-tab'
@@ -18,7 +18,7 @@ const focusTab = (id: string) => requestAnimationFrame(() => document.getElement
 export function TabStrip() {
   const t = useT()
   const navigate = useNavigate()
-  const { tabs, activeId } = useTabsStore(useShallow(({ tabs, activeId }) => ({ tabs, activeId })))
+  const { tabs, activeId, seen } = useTabsStore(useShallow(({ tabs, activeId, seen }) => ({ tabs, activeId, seen })))
   const ids = tabs.map(tab => tab.id)
 
   const select = (id: string) => {
@@ -40,7 +40,7 @@ export function TabStrip() {
 
   return <div className="flex h-9 shrink-0 items-end border-b bg-muted/40 px-1">
     <div role="tablist" aria-label={t('tabs.label')} {...tablistProps} className="flex h-full min-w-0 flex-1 items-end overflow-x-auto overflow-y-hidden [scrollbar-width:thin]">
-      {tabs.map((tab, index) => <TabChip key={tab.id} tab={tab} index={index} active={tab.id === activeId} count={tabs.length}
+      {tabs.map((tab, index) => <TabChip key={tab.id} tab={tab} index={index} active={tab.id === activeId} alive={seen.includes(tab.id)} count={tabs.length}
         tabProps={tabProps(tab.id)} onSelect={() => select(tab.id)}
         onClose={(refocus) => apply(state => close(state, tab.id), refocus)}
         onCloseOthers={() => apply(state => closeOthers(state, tab.id), false)} />)}
@@ -52,6 +52,8 @@ interface ChipProps {
   tab: Tab
   index: number
   active: boolean
+  /** 화면이 살아 있는지(최근 본 MAX_ALIVE개) — 내려간 탭의 칩은 제목을 조회·구독하지 않고 저장된 제목을 쓴다 */
+  alive: boolean
   /** 열린 탭 수 — 닫을 다른 탭이 없으면 '다른 탭 닫기'를 끈다 */
   count: number
   tabProps: ReturnType<ReturnType<typeof useTablistKeys>['tabProps']>
@@ -60,9 +62,10 @@ interface ChipProps {
   onCloseOthers: () => void
 }
 
-function TabChip({ tab, index, active, count, tabProps, onSelect, onClose, onCloseOthers }: ChipProps) {
+function TabChip({ tab, index, active, alive, count, tabProps, onSelect, onClose, onCloseOthers }: ChipProps) {
   const t = useT()
-  const title = useTabTitle(tab.href)
+  const title = useTabTitle(tab.href, alive, tab.title)
+  useEffect(() => { if (alive && title !== tab.title) updateTabs(state => withTitle(state, tab.id, title)) }, [alive, title, tab.id, tab.title])
   const home = tab.id === HOME_ID
   const drag = {
     draggable: !home,

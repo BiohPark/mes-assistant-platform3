@@ -7,6 +7,7 @@ import { uploadFile } from '@/api/files'
 import { estimateRequest, getRequest, isTerminalRequest, type RequestRecord } from '@/api/requests'
 import { subscribeEvent } from '@/app/useEvents'
 import { useActor, useCurrentUserId } from '@/app/hooks'
+import { useWhenVisible } from '@/app/tabActive'
 import { ReasonDialog } from '@/components/ReasonDialog'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Button } from '@/components/ui/button'
@@ -35,6 +36,7 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
   const actor = useActor()
   const selfId = useCurrentUserId()
   const query = useQueryClient()
+  const whenVisible = useWhenVisible() // 응답 흐름에서 생기는 알림은 이 대화가 보일 때(숨은 탭이면 미룸)
   const [sending, setSending] = useState(false)
   const [submissionSince, setSubmissionSince] = useState<number>()
   const [draft, setDraft] = useState(() => getDraft(task.id)?.text ?? '')
@@ -58,7 +60,7 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
   const [retryChoice, setRetryChoice] = useState<{ record: RequestRecord; mode: 'exclude' | 'inline' } | null>(null)
   const chat = useChat(task.threadId, holdReleased, (draft, error) => {
     composer.current?.restoreDraft(draft)
-    toast.error(t('chat.sendFailed'), { description: error instanceof Error ? error.message : String(error) })
+    whenVisible(() => toast.error(t('chat.sendFailed'), { description: error instanceof Error ? error.message : String(error) }))
   })
   const messages = useQuery({ queryKey: ['messages', task.threadId], queryFn: ({ signal }) => getMessages(task.threadId!, signal), enabled: !!task.threadId,
   })
@@ -121,9 +123,9 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
     markStatus('in_progress')
     refreshProgress()
     // 되돌리기 동작이 있는 알림 — 기본 4초는 읽고 누르기에 짧다
-    toast.success(t('task.progress.holdReleased'), { duration: 10_000, action: { label: t('task.header.hold'), onClick: () => {
+    whenVisible(() => toast.success(t('task.progress.holdReleased'), { duration: 10_000, action: { label: t('task.header.hold'), onClick: () => {
       void setTaskStatus(actor, task.id, 'on_hold').then(() => { markStatus('on_hold'); refreshProgress() }).catch(error => toast.error(error instanceof Error ? error.message : t('chat.sendFailed')))
-    } } })
+    } } }))
   }
   async function confirmReopen(reason: string) {
     try {
@@ -159,7 +161,7 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
         await chat.send(content)
         const same = content === stored.text && attachments.every((item) => item.uploadedId && item.uploadedTaskId === task.id && stored.attachmentIds.includes(item.uploadedId))
         if (same) return
-        toast.info(t('chat.pendingAttemptDraftKept'))
+        whenVisible(() => toast.info(t('chat.pendingAttemptDraftKept')))
         return false
       }
       const uploaded = []
@@ -191,7 +193,7 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
       if (!await beforeSend()) return
       setSending(true)
       await chat.retry(requestId, options)
-    } catch (error) { toast.error(error instanceof Error ? error.message : t('chat.retryFailed')) }
+    } catch (error) { whenVisible(() => toast.error(error instanceof Error ? error.message : t('chat.retryFailed'))) }
     finally { setSending(false); setRetryChoice(null) }
   }
   async function chooseRetry(requestId: string, mode: 'exclude' | 'inline') {

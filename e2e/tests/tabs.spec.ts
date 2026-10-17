@@ -118,3 +118,55 @@ test('좁은 화면(<768px)에서는 탭 줄 없이 지금처럼 화면 하나�
   await expect(strip(page)).toHaveCount(0)
   await expect(page.locator('[role="tabpanel"]')).toHaveCount(0)
 })
+
+test('응답 중인 대화가 화면에서 내려갔다 다시 열려도 같은 요청에 한 번만 다시 붙고 답은 하나다', async ({ page }) => {
+  test.slow() // 살려 둔 화면 9개를 병렬 부하에서 개발 빌드로 그린다
+  const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
+  const task = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id, title: 'MDI 퇴거 대화' } })).json() as { id: string; code: string; threadId: string }
+  const posts: string[] = []
+  page.on('request', request => { if (request.method() === 'POST' && request.url().endsWith(`/api/threads/${task.threadId}/requests`)) posts.push(request.headers()['idempotency-key'] ?? '') })
+  await page.goto(`/c/${task.id}`)
+  await activePanel(page).getByRole('textbox', { name: 'AI 요청 입력' }).fill('탭을 오가는 동안 답해 주세요')
+  await activePanel(page).getByRole('button', { name: '전송', exact: true }).click()
+  // 다른 화면 8개를 열어 대화 화면을 내린다(응답 중이든 끝났든). 집계가 무거운 리포트 대신 이미 열린 허브를 다시 본다
+  for (const name of ['에이전트 허브', '내 작업', 'SR 처리', '내 SR 요청', '에이전트 관리', '전역 설정', '사용자 관리', '연결 진단']) {
+    await menu(page, name).click()
+    await expect(tab(page, name)).toHaveAttribute('aria-selected', 'true') // 부하에서 연속 클릭이 이동 전에 겹치지 않게
+  }
+  await expect(page.locator('[role="tabpanel"]')).toHaveCount(8)
+  await tab(page, `${task.code} · MDI 퇴거 대화`).click()
+  await expect.poll(async () => {
+    const messages = await (await page.request.get(`/api/threads/${task.threadId}/messages`)).json() as Array<{ role: string; status: string }>
+    return messages.filter(row => row.role === 'assistant').map(row => row.status)
+  }, { timeout: 30_000 }).toEqual(['done'])
+  // 살아 있는 화면이 9개라 병렬 부하에서는 개발 빌드 렌더가 느리다 — 화면 확인은 넉넉히 기다린다
+  await expect(activePanel(page).getByTestId('chat-message-scroll').getByText('탭을 오가는 동안 답해 주세요').first()).toBeVisible({ timeout: 30_000 })
+  await expect(activePanel(page).getByRole('button', { name: '전송', exact: true })).toBeVisible({ timeout: 30_000 })
+  // 응답 중에 내려갔다면 다시 열 때 같은 시도(키)로 다시 붙는다(개발 StrictMode는 마운트 때 한 번 더 붙었다 끊는다) — 새 요청은 없다
+  expect(posts.length).toBeGreaterThanOrEqual(1)
+  expect(new Set(posts).size).toBe(1)
+})
+
+test('대화 두 개를 함께 열어도 보조 패널 탭·패널 id가 겹치지 않는다', async ({ page }) => {
+  const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
+  const create = async (title: string) => (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id, title } })).json() as Promise<{ id: string; code: string }>
+  const first = await create('MDI id 하나')
+  const second = await create('MDI id 둘')
+  await page.goto(`/c/${first.id}`)
+  await expect(tab(page, `${first.code} · MDI id 하나`)).toHaveAttribute('aria-selected', 'true')
+  await page.goto('/')
+  await page.goto(`/c/${second.id}`)
+  await tab(page, `${first.code} · MDI id 하나`).click()
+  await tab(page, `${second.code} · MDI id 둘`).click()
+  await expect(page.locator('[role="tabpanel"]').filter({ has: page.getByRole('tablist', { name: '보조 패널', includeHidden: true }) })).toHaveCount(2)
+  const ids = await page.locator('[id^="task-"]').evaluateAll(elements => elements.map(element => element.id))
+  expect(ids.length).toBeGreaterThan(0)
+  expect(new Set(ids).size).toBe(ids.length)
+  await expect(tab(page, `${second.code} · MDI id 둘`)).toHaveAttribute('aria-selected', 'true')
+  // 보이는 대화의 선택된 보조 탭이 가리키는 패널은 같은 대화 안에 있고, 그 패널은 이 탭으로 이름 붙는다
+  const linked = await activePanel(page).getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { selected: true }).evaluate(selected => {
+    const panel = document.getElementById(selected.getAttribute('aria-controls') ?? '')
+    return !!panel && panel.closest('[role="tabpanel"][data-tab-panel]') === selected.closest('[role="tabpanel"][data-tab-panel]') && panel.getAttribute('aria-labelledby') === selected.id
+  })
+  expect(linked).toBe(true)
+})

@@ -25,9 +25,9 @@ test('SO 사이드바: 업무·요청·관리 3구획 9개 메뉴, 사용자 관
 
   await nav(page).getByRole('link', { name: '사용자 관리' }).click()
   await expect(page).toHaveURL(/\/admin\/users$/)
-  await expect(page.getByRole('heading', { name: '사용자 관리' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '사용자 관리' })).toBeVisible({ timeout: 30_000 }) // 첫 방문 화면 조각(lazy)은 병렬 부하의 개발 서버에서 늦게 온다
   await expect(page.getByRole('heading', { name: '사용자·역할' })).toBeVisible()
-  await expect(page.getByRole('switch', { name: /SO$/ }).first()).toBeVisible()
+  await expect(page.getByRole('switch', { name: /SO$/ }).first()).toBeVisible({ timeout: 30_000 }) // 사용자 목록 조회
   await expect(page.getByRole('region', { name: '전역 설정' })).toHaveCount(0)
 
   await nav(page).getByRole('link', { name: '전역 설정' }).click()

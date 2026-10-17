@@ -88,6 +88,18 @@ describe('retarget(숨은 탭의 스스로 이동)', () => {
     expect(hrefs(state)).toEqual(['/', '/c/b'])
     expect(active(state)).toBe('/c/b')
   })
+  it('숨은 탭을 기존 탭에 합칠 때 그 탭의 위치(필터)는 그대로 둔다', () => {
+    const base = visit(open(initialTabs('/'), '/c/a'), '/?view=kanban&aq=abc', false).state
+    const state = retarget(base, base.tabs[1]!.id, '/')
+    expect(hrefs(state)).toEqual(['/?view=kanban&aq=abc'])
+    expect(state.activeId).toBe(HOME_ID)
+  })
+  it('다른 경로로 바뀐 탭은 저장된 제목을 버린다(같은 경로면 남긴다)', () => {
+    const base = open(initialTabs('/'), '/c/a')
+    const titled = { ...base, tabs: base.tabs.map(tab => tab.id === base.activeId ? { ...tab, title: 'WK-a · 제목' } : tab) }
+    expect(retarget(titled, titled.activeId, '/c/a?x=1').tabs[1]).toMatchObject({ href: '/c/a?x=1', title: 'WK-a · 제목' })
+    expect(retarget(titled, titled.activeId, '/c/b').tabs[1]).toEqual({ id: titled.activeId, href: '/c/b' })
+  })
   it('홈 탭은 다른 경로로 바뀌지 않는다', () => {
     expect(retarget(initialTabs('/'), HOME_ID, '/c/a')).toEqual(initialTabs('/'))
     expect(active(retarget(initialTabs('/'), HOME_ID, '/?view=kanban'))).toBe('/?view=kanban')

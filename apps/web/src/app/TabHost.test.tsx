@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createContext, use } from 'react'
-import { createMemoryRouter, Navigate, RouterProvider, useNavigate, useParams, useRoutes } from 'react-router'
+import { createMemoryRouter, Navigate, RouterProvider, useLocation, useNavigate, useParams, useRoutes } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { jsonResponse } from '@/test/render'
 import { TabHost } from './TabHost'
@@ -20,8 +20,13 @@ function Page({ name }: { name: string }) {
   return <div><h1>{label}</h1><input aria-label={`${label} 입력`} /><span>{active ? '보임' : '숨김'}</span>
     <button type="button" onClick={() => void navigate('/', { replace: true })}>{label} 되돌리기</button></div>
 }
+function StatePage() {
+  const location = useLocation()
+  return <p>상태 {String((location.state as { n?: number } | null)?.n ?? '-')}</p>
+}
 function TestPages() {
   return useRoutes([
+    { path: 'pop', element: <StatePage /> },
     { index: true, element: <Page name="홈" /> },
     { path: 'c/:id', element: <Page name="대화" /> },
     { path: 'old/:id', element: <Navigate to="/c/moved" replace /> },
@@ -38,9 +43,9 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-function renderHost(path = '/') {
+function renderHost(path = '/', client = new QueryClient()) {
   const router = createMemoryRouter([{ path: '/*', element: <TabHost home="/" userId="u" /> }], { initialEntries: [path] })
-  render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={router} /></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
   return router
 }
 const tabs = () => within(screen.getByRole('tablist', { name: '열린 화면' })).getAllByRole('tab')
@@ -118,6 +123,48 @@ it('숨은 탭의 리다이렉트는 그 탭에만 반영되고 보고 있는 �
   fireEvent.click(screen.getByText('대화 a 되돌리기'))
   expect(router.state.location.pathname).toBe('/c/b')
   expect(tabs().map(tab => tab.textContent)).toEqual(['에이전트 허브', 'WK-b · 제목 b']) // 홈과 합쳐졌다
+})
+
+it('숨은 탭이 필터 있는 홈으로 리다이렉트돼 합쳐져도 홈 탭의 위치(필터)는 그대로다', async () => {
+  const router = renderHost()
+  await act(() => router.navigate('/c/a'))
+  await act(() => router.navigate('/?view=kanban&aq=abc'))
+  fireEvent.click(screen.getByText('대화 a 되돌리기'))
+  expect(router.state.location.search).toBe('?view=kanban&aq=abc')
+  expect(useTabsStore.getState().tabs.map(tab => tab.href)).toEqual(['/?view=kanban&aq=abc'])
+  await act(() => router.navigate('/c/b'))
+  await userEvent.click(screen.getByRole('tab', { name: '에이전트 허브' }))
+  expect(router.state.location.search).toBe('?view=kanban&aq=abc')
+})
+
+it('같은 주소의 기록 사이 이동(state만 다른 PUSH·POP)도 보고 있는 화면이 따른다', async () => {
+  const router = renderHost('/pop')
+  await act(() => router.navigate('/pop', { state: { n: 1 } }))
+  expect(screen.getByText('상태 1')).toBeInTheDocument()
+  await act(() => router.navigate('/pop', { state: { n: 2 } }))
+  expect(screen.getByText('상태 2')).toBeInTheDocument()
+  await act(() => router.navigate(-1))
+  expect(router.state.historyAction).toBe('POP')
+  expect(screen.getByText('상태 1')).toBeInTheDocument()
+})
+
+it('살아 있지 않은 탭의 칩은 제목을 활성 구독하지 않고 저장된 제목을 쓴다', async () => {
+  const client = new QueryClient()
+  const router = renderHost('/', client)
+  const count = MAX_ALIVE + 2
+  for (let index = 1; index <= count; index++) {
+    await act(() => router.navigate(`/c/${index}`))
+    await screen.findByRole('tab', { name: `WK-${index} · 제목 ${index}` })
+  }
+  const watched = () => client.getQueryCache().findAll({ queryKey: ['task'] }).filter(query => query.getObserversCount() > 0).length
+  expect(watched()).toBe(MAX_ALIVE)
+  const fetches = () => vi.mocked(fetch).mock.calls.length
+  const before = fetches()
+  await act(() => client.invalidateQueries({ queryKey: ['task'] }))
+  expect(fetches() - before).toBe(MAX_ALIVE) // 살아 있는 대화만 다시 읽는다
+  act(() => client.removeQueries({ queryKey: ['task', '1'] })) // 캐시가 비워져도(GC) 저장된 제목
+  await act(() => router.navigate('/c/3'))
+  expect(screen.getByRole('tab', { name: 'WK-1 · 제목 1' })).toBeInTheDocument()
 })
 
 it('보고 있는 탭의 리다이렉트(REPLACE)는 그 탭을 새 주소로 바꾼다', async () => {
