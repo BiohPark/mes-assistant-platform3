@@ -216,6 +216,7 @@ export const ko = {
         masked: '(가림)', other: '기타', noResponse: '응답 없음', firstByte: '첫 바이트 {ms} ms', firstContent: '첫 내용 {ms} ms', total: '총 {ms} ms', elapsed: '총 소요',
         toolAccess: '도구 접근 (서비스 계정)', skillAccess: '스킬 접근 (서비스 계정)', inactive: '비활성', visible: '보이는 항목 {count}개', builtinDefault: '미지정 (모두 기본 켬)',
         urlAuto: 'URL 포함 시 자동', agentLabel: '연결 확인 에이전트', selectAgent: '에이전트를 선택하세요',
+        terminalSourcemodel: '모델 기본값 (model)', terminalSourceglobal: '전역 설정 (global)', terminalSourcesingle: '단일 터미널 자동 선택 (single)', terminalSourcenone: '보내지 않음 (none)',
         terminal: '기본 터미널', terminalSet: '설정됨', appliedByOwui: '(OpenWebUI가 적용)', account: '서비스 계정', fetchUrl: 'fetch_url 조건',
         session: '③ 세션 방식', framesSession: '③ 상태 순서', firstStatus: '첫 상태 {ms} ms', done: '완료 {ms} ms',
         cleanupOk: '채팅 정리 성공', cleanupFailed: '채팅 정리 실패', cleanupNone: '정리할 채팅 없음',
@@ -235,6 +236,7 @@ export const ko = {
       modelNoMatch: '일치하는 모델이 없습니다. 입력한 값을 그대로 씁니다.',
     },
     settings: {
+      defaultTerminal: '기본 터미널', clearDefaultTerminal: '기본 터미널 해제', terminalAuto: '자동 (접근 가능한 터미널이 하나일 때)', terminalHint: '모델 기본 터미널을 우선하고, 전역 설정이 없으면 서비스 계정의 터미널이 하나일 때 자동 선택합니다.', terminalUnavailable: '설정된 터미널 (현재 목록에 없음)', terminalLoadFailed: '터미널 목록을 불러오지 못했습니다.',
       urlReader: '질문 URL 자동 읽기',
       urlAutoFetch: '질문에 있는 웹 페이지를 자동으로 읽기',
       urlDisabledEnv: '서버 환경 설정에서 URL 자동 읽기를 껐습니다.',

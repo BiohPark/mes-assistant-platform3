@@ -1,3 +1,4 @@
+import { OwuiTerminalCatalog, validTerminalId, type OwuiTerminalFallback, type OwuiTerminalSource } from './owuiTerminals.js'
 import { randomUUID } from 'node:crypto'
 import type { LlmSettings } from '@mes/domain'
 import type { ChatMessageInput } from './provider.js'
@@ -79,8 +80,9 @@ export interface OwuiProbeMeta {
   capabilities: Record<string, boolean>
   /** 모델 편집 Builtin Tools 중 명시한 것만 — 없는 항목은 OpenWebUI 기본(켬) */
   builtinTools: Record<string, boolean>
-  /** 모델 기본 터미널(meta.terminalId) 설정 여부 — ID는 싣지 않는다 */
+  /** 모델 기본 터미널(meta.terminalId) 설정 여부 — ID는 싣지 않는다. 실제 선택은 terminalSource로 구분한다. */
   terminal: boolean
+  terminalSource?: OwuiTerminalSource
   knowledgeCount: number
   functionCalling: string | null
   error?: string
@@ -102,6 +104,7 @@ export interface OwuiProbeResult {
 export type OwuiAccessCheck = Pick<OwuiProbeResult, 'model' | 'meta' | 'access' | 'account' | 'fetchUrl' | 'ms'>
 export interface OwuiProbeOptions {
   signal?: AbortSignal
+  defaultTerminalId?: string | null
   /** 전체 시간 상한 (기본 3분) */
   deadlineMs?: number
   /** 시험 호출 하나의 응답 바이트 상한 (기본 1 MB) */
@@ -169,27 +172,41 @@ const DEFAULT_FEATURES = ['web_search', 'image_generation', 'code_interpreter', 
  * 세션 방식·도구 전달·진단이 같은 함수를 쓴다. 사용자 변수·이메일은 싣지 않고, 지식(knowledge)은 OpenWebUI가 모델 meta로 직접 붙인다(utils/tools.py 680-720).
  * - tool_ids ← toolIds, skill_ids ← skillIds(서버도 합친다, middleware.py 2839-2843), filter_ids ← defaultFilterIds(서버가 다시 거른다, utils/filter.py 115-117)
  * - features ← defaultFeatureIds ∩ 켜진 capabilities, 마지막 사용자 메시지에 HTTP(S) URL이 있으면 web_search도 켠다
- * - terminal_id ← terminalId, capabilities.terminal이 false가 아닐 때(Chat.svelte 4102-4132). 서버는 terminal_server.connections에 있는 ID만 받는다(middleware.py 2784·3122-3135)
+ * - terminal_id ← 모델 기본값·선택한 터미널, capabilities.terminal이 false가 아닐 때(OWUI 0.12.3 Chat.svelte 1064-1078·1228-1234·4295-4326).
+ *   전역 선택·단일 서비스 계정 터미널 폴백은 플랫폼에서 채운다. 터미널 목록은 routers/terminals.py 87-106.
  */
-export function owuiDefaults(meta: Record<string, unknown> | undefined, apiKey = '', messages: readonly ChatMessageInput[] = []): OwuiDefaults {
+export function owuiDefaults(meta: Record<string, unknown> | undefined, apiKey = '', messages: readonly ChatMessageInput[] = [], fallback: OwuiTerminalFallback = {}): OwuiDefaults {
   const ids = (value: unknown) => [...new Set(owuiMetaIds(value, apiKey))]
   const capabilities = isObject(meta?.capabilities) ? meta.capabilities : {}
   const featureIds = ids(meta?.defaultFeatureIds)
   const features = Object.fromEntries(DEFAULT_FEATURES.filter((id) => featureIds.includes(id) && capabilities[id] === true).map((id) => [id, true as const]))
   const userText = messages.findLast((message) => message.role === 'user')?.content ?? ''
   if (capabilities.web_search === true && /https?:\/\/[^\s<>"'`)\]]+/i.test(userText)) features.web_search = true
-  const terminalId = meta?.terminalId
+  const terminalId = owuiTerminal(meta, fallback).id
+  // MessageInput.svelte 903-906: 터미널과 기존 코드 인터프리터는 함께 켜지 않는다.
+  if (terminalId) delete features.code_interpreter
   const list = (key: 'tool_ids' | 'skill_ids' | 'filter_ids', value: string[]) => value.length ? { [key]: value } : {}
   return { ...list('tool_ids', ids(meta?.toolIds)), ...list('skill_ids', ids(meta?.skillIds)), ...list('filter_ids', ids(meta?.defaultFilterIds)),
     ...(Object.keys(features).length ? { features } : {}),
-    ...(typeof terminalId === 'string' && terminalId && terminalId.length <= 200 && capabilities.terminal !== false ? { terminal_id: terminalId } : {}) }
+    ...(terminalId ? { terminal_id: terminalId } : {}) }
+}
+
+/** 모델 기본값 → 플랫폼 전역 선택 → 정확히 한 개의 서비스 계정 터미널. OWUI처럼 알려진 목록에 없는 선택은 보내지 않는다. */
+export function owuiTerminal(meta: Record<string, unknown> | undefined, fallback: OwuiTerminalFallback = {}): { id: string | undefined; source: OwuiTerminalSource } {
+  const none = { id: undefined, source: 'none' as const }
+  if (isObject(meta?.capabilities) && meta.capabilities.terminal === false) return none
+  const available = (id: unknown): id is string => validTerminalId(id) && (fallback.terminals === undefined || fallback.terminals.some(item => item.id === id))
+  if (available(meta?.terminalId)) return { id: meta.terminalId, source: 'model' }
+  if (fallback.defaultTerminalId) return available(fallback.defaultTerminalId) ? { id: fallback.defaultTerminalId, source: 'global' } : none
+  const only = fallback.terminals?.length === 1 ? fallback.terminals[0]?.id : undefined
+  return available(only) ? { id: only, source: 'single' } : none
 }
 
 /** /api/models의 해당 모델 info.meta로 기본값을 만든다. */
-export function owuiModelTools(body: unknown, model: string, apiKey = '', messages: readonly ChatMessageInput[] = []): OwuiDefaults {
+export function owuiModelTools(body: unknown, model: string, apiKey = '', messages: readonly ChatMessageInput[] = [], fallback: OwuiTerminalFallback = {}): OwuiDefaults {
   const entry = isObject(body) && Array.isArray(body.data) ? body.data.find(item => isObject(item) && item.id === model) : undefined
   const info = modelInfo(entry)
-  return owuiDefaults(info && isObject(info.meta) ? info.meta : undefined, apiKey, messages)
+  return owuiDefaults(info && isObject(info.meta) ? info.meta : undefined, apiKey, messages, fallback)
 }
 
 /** 입력 모델이 OpenWebUI 모델 목록에 없다 — 시험 호출 전에 멈춘다(API 400) */
@@ -286,12 +303,13 @@ function probeClient(settings: LlmSettings, options: OwuiProbeOptions) {
     // JSON 파서 오류 문구는 본문 일부를 인용할 수 있다 — 고정 문구로 바꾼다
     try { return await res.json() } catch (error) { throw error instanceof LimitedFetchError ? error : new Error('응답 형식 오류') }
   }
-  return { started, remaining, headers, failure, classify, getJson }
+  return { started, remaining, headers, failure, classify, getJson, signal: options.signal }
 }
 type ProbeClient = ReturnType<typeof probeClient>
 
 /** 모델 메타·도구·스킬 접근·서비스 계정 — 읽기만 하고 모델은 부르지 않는다 */
-async function readModelAccess(settings: LlmSettings, model: string, { classify, getJson }: ProbeClient) {
+const probeTerminals = new OwuiTerminalCatalog()
+async function readModelAccess(settings: LlmSettings, model: string, { classify, getJson, signal, remaining }: ProbeClient) {
   const meta: OwuiProbeMeta = { found: false, toolIds: [], defaultFeatureIds: [], capabilities: {}, builtinTools: {}, terminal: false, knowledgeCount: 0, functionCalling: null }
   let data: unknown[] | undefined
   try {
@@ -355,7 +373,12 @@ async function readModelAccess(settings: LlmSettings, model: string, { classify,
     account.role = 'admin'
   } catch (error) { if (permissionsRead && error instanceof Error && error.message === httpError(401)) account.role = 'user' }
 
-  return { meta, info, raw, access, account }
+  let terminals
+  const terminalTimeoutMs = remaining(10_000)
+  if (terminalTimeoutMs > 0) {
+    try { terminals = await probeTerminals.list(settings, signal, terminalTimeoutMs) } catch { /* 목록 실패: 명시한 기본값은 유지하고 단일 자동 선택은 하지 않는다. */ }
+  }
+  return { meta, info, raw, access, account, terminals }
 }
 
 /** fetch_url·search_web 주입 조건 — session은 ③ 세션 시험 결과(없으면 session_id 항목을 뺀다) */
@@ -380,7 +403,8 @@ function fetchUrlConditions(found: boolean, meta: OwuiProbeMeta, account: OwuiPr
 /** 연결 진단의 접근 확인(S13-J) — 진단에서 시험 호출(①②③)과 버전 조회를 뺀 읽기 전용 확인 */
 export async function checkOpenWebUiAccess(settings: LlmSettings, model: string, options: OwuiProbeOptions = {}): Promise<OwuiAccessCheck> {
   const client = probeClient(settings, options)
-  const { meta, info, access, account } = await readModelAccess(settings, model, client)
+  const { meta, info, raw, access, account, terminals } = await readModelAccess(settings, model, client)
+  meta.terminalSource = owuiTerminal(raw, { terminals, defaultTerminalId: options.defaultTerminalId }).source
   return { model: safeModel(model), meta, access, account, fetchUrl: fetchUrlConditions(!!info, meta, account), ms: elapsed(client.started) }
 }
 
@@ -394,11 +418,12 @@ export async function probeOpenWebUi(settings: LlmSettings, model: string, optio
     if (typeof value === 'string' && VERSION.test(value) && !looksLikeSecret(value)) version = value
   } catch { /* 확인 불가 */ }
 
-  const { meta, info, raw, access, account } = await readModelAccess(settings, model, client)
+  const { meta, info, raw, access, account, terminals } = await readModelAccess(settings, model, client)
+  meta.terminalSource = owuiTerminal(raw, { terminals, defaultTerminalId: options.defaultTerminalId }).source
 
   const messages = [{ role: 'user', content: OWUI_PROBE_PROMPT }]
   // ②·③은 실제 대화 요청과 같은 모델 기본값을 싣는다
-  const defaults = owuiDefaults(raw, settings.apiKey)
+  const defaults = owuiDefaults(raw, settings.apiKey, [], { terminals, defaultTerminalId: options.defaultTerminalId })
   const bodies: Record<OwuiProbeMode, Record<string, unknown>> = {
     current: { model, messages, stream: true },
     legacy: { model, messages, stream: true, ...defaults, params: { function_calling: 'legacy' } },

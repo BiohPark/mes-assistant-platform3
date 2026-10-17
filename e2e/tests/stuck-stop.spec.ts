@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './owui-settings-fixture.js'
 
 // S14-II — 답 글이 멈춘 뒤에도 OpenWebUI가 일하면 그 단계를 보이고, 어느 경로든 응답이 끝나면 중지 버튼·진행 상태가 반드시 정리된다
 test.skip((process.env.E2E_LLM_MODE ?? process.env.LLM_MODE) !== 'live', '가짜 OpenWebUI live 환경에서 실행')

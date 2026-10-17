@@ -201,8 +201,16 @@ describe('LLM admin test API', () => {
 
     it('시간 초과는 504 TIMEOUT', async () => {
       // limitedFetch의 타이머는 자체 단위 테스트가 검증한다 — 여기서는 본문 읽기가 timeout으로 끝났을 때의 HTTP 매핑만 본다
-      const timeoutBody = new ReadableStream<Uint8Array>({ start(controller) { controller.error(new LimitedFetchError('timeout')) } })
-      vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/models') ? new Response('{"data":[]}') : new Response(timeoutBody, { status: 200 })))
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        if (url.endsWith('/models')) return Response.json({ data: [] })
+        if (url.endsWith('/terminals/')) return Response.json([])
+        if (url.endsWith('/chat/completions')) {
+          // 보조 조회와 본 요청이 본문을 공유하면 먼저 읽은 스트림의 재사용 오류가 timeout을 가린다.
+          const timeoutBody = new ReadableStream<Uint8Array>({ start(controller) { controller.error(new LimitedFetchError('timeout')) } })
+          return new Response(timeoutBody, { status: 200 })
+        }
+        throw new Error(`Unexpected fetch: ${url}`)
+      }))
       const res = await request(app.getHttpServer()).post(TEST).set('Cookie', 'mes_session=owner').send(userMessage()).expect(504)
       expect(res.body.code).toBe('TIMEOUT')
       expect(JSON.stringify(res.body)).not.toMatch(/top-secret|localhost:3101/)

@@ -96,6 +96,13 @@ describe('관리 API 서버 권한', () => {
     const result = await request(app.getHttpServer()).get('/api/settings').set('Cookie', 'mes_session=so').expect(200)
     expect(result.body).toMatchObject({ urlAutoFetch: true, urlAllowDomains: [], urlBlockDomains: [] })
   })
+  it('터미널 기본값과 서비스 계정 목록은 SO만 변경·조회한다', async () => {
+    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ owuiDefaultTerminalId: 'terminal-1' }).expect(200)
+    expect(admin.settings).toHaveBeenLastCalledWith({ owuiDefaultTerminalId: 'terminal-1' })
+    await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=member').send({ owuiDefaultTerminalId: null }).expect(403)
+    await request(app.getHttpServer()).get('/api/settings/owui-terminals').set('Cookie', 'mes_session=member').expect(403)
+    await request(app.getHttpServer()).get('/api/settings/owui-terminals').set('Cookie', 'mes_session=so').expect(200)
+  })
   it('도구 전달 설정은 auto/off만 SO가 변경하고 누락 시 다른 설정에 섞이지 않는다', async () => {
     for (const owuiTools of ['auto', 'off']) {
       await request(app.getHttpServer()).patch('/api/settings').set('Cookie', 'mes_session=so').send({ owuiTools }).expect(200)
@@ -243,5 +250,19 @@ describe('관리 API 서버 권한', () => {
     expect(forbidden.body.code).toBe('PASSWORD_CHANGE_REQUIRED')
     expect((await request(app.getHttpServer()).get('/api/me').set('Cookie', 'mes_session=forced').expect(200)).body.mustChangePassword).toBe(true)
     await request(app.getHttpServer()).post('/api/auth/password').set('Cookie', 'mes_session=forced').send({ currentPassword: 'password-1234', newPassword: 'password-5678' }).expect(204)
+  })
+})
+
+
+describe('terminal setting DTO', () => {
+  it('validates, normalizes and restricts the terminal default to system owners', async () => {
+    const controller = new (await import('./admin.controller.js')).AdminSettingsController(admin as never, config)
+    for (const invalid of [42, true, 'x'.repeat(201), 'bad\nterminal']) {
+      await expect(controller.patch({ owuiDefaultTerminalId: invalid })).rejects.toMatchObject({ status: 400 })
+    }
+    await controller.patch({ owuiDefaultTerminalId: ' terminal-1 ' })
+    expect(admin.settings).toHaveBeenLastCalledWith({ owuiDefaultTerminalId: 'terminal-1' })
+    await controller.patch({ owuiDefaultTerminalId: '' })
+    expect(admin.settings).toHaveBeenLastCalledWith({ owuiDefaultTerminalId: null })
   })
 })

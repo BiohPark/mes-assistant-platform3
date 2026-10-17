@@ -1,5 +1,7 @@
+import { OwuiTerminalCatalog, validTerminalId } from '@mes/llm'
+import { toLlmSettings } from '../llm/presets.js'
 import { UrlDomainListSchema } from '@mes/contracts'
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, Put, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common'
+import { BadGatewayException, BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, Put, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import type { Response } from 'express'
 import { z } from 'zod'
@@ -35,6 +37,7 @@ const settings = z.object({
   urlAllowDomains: UrlDomainListSchema.optional(),
   urlBlockDomains: UrlDomainListSchema.optional(),
   defaultModelOverride: z.string().trim().max(191).nullable().transform(value => value || null).optional(),
+  owuiDefaultTerminalId: z.string().trim().max(200).refine(value => value === '' || validTerminalId(value)).nullable().transform(value => value || null).optional(),
   owuiTools: z.enum(['auto', 'off']).optional(),
   owuiMode: z.enum(['auto', 'session', 'direct']).optional(),
   owuiCleanup: z.boolean().optional(),
@@ -95,6 +98,7 @@ export class AdminAssistantsController {
 
 @Controller('settings')
 export class AdminSettingsController {
+  private readonly terminals = new OwuiTerminalCatalog()
   constructor(@Inject(AdminService) private readonly admin: AdminService, @Inject(CONFIG) private readonly config: AppConfig) {}
   private view(rows: Record<string, unknown>) {
     const resolved = resolveDefaultModel(this.config, rows.defaultModelOverride)
@@ -102,6 +106,13 @@ export class AdminSettingsController {
   }
   @Get()
   async get() { return this.view(await this.admin.getSettings()) }
+  @Get('owui-terminals')
+  @Roles('system_owner')
+  async listTerminals() {
+    if (this.config.llm.mode !== 'live' || this.config.llm.preset !== 'openwebui') return []
+    try { return await this.terminals.list(toLlmSettings(this.config.llm)) }
+    catch { throw new BadGatewayException('터미널 목록을 불러오지 못했습니다.') }
+  }
   @Patch()
   @Roles('system_owner')
   async patch(@Body() body: unknown) { return this.view(await this.admin.settings(parse(settings, body))) }

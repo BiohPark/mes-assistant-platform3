@@ -63,7 +63,7 @@ describe('OpenWebUI session mode', () => {
       session_id: expect.stringMatching(/^mes-/), id: expect.any(String), parent_id: null, params: { tool_approval_mode: 'full' } })
     expect(body).not.toHaveProperty('user_message')
     expect(body).not.toHaveProperty('chat_id')
-    expect(onDispatch).toHaveBeenCalledExactlyOnceWith({ mode: 'tools', tool_ids: ['lookup'], features: { web_search: true } }, body)
+    expect(onDispatch).toHaveBeenCalledExactlyOnceWith({ mode: 'tools', tool_ids: ['lookup'], features: { web_search: true }, terminalSource: 'none' }, body)
     expect(onSession).toHaveBeenCalledExactlyOnceWith('chat-1')
     expect(calls(fetcher, 'GET', /\/v1\/chats\/chat-1$/).length).toBeGreaterThanOrEqual(4)
     expect(calls(fetcher, 'DELETE', /\/v1\/chats\/chat-1$/)).toHaveLength(1)
@@ -183,7 +183,7 @@ describe('OpenWebUI session mode', () => {
     await collect({ ...req, owuiTools: 'off', onDispatch })
     expect(bodies(fetcher)[0]).not.toHaveProperty('tool_ids')
     expect(bodies(fetcher)[0]).toMatchObject({ session_id: expect.any(String), parent_id: null })
-    expect(onDispatch.mock.calls[0]![0]).toEqual({ mode: 'basic' })
+    expect(onDispatch.mock.calls[0]![0]).toEqual({ mode: 'basic', terminalSource: 'none' })
   })
   it.each<[string, Partial<ChatRequest>]>([['direct mode', { owuiMode: 'direct' }], ['unset mode', { owuiMode: undefined }], ['app tools', { tools: [{ type: 'function', function: { name: 'f', description: '', parameters: {} } }] }],
     ['probe limits', { limits: { timeoutMs: 5_000 } }]])('keeps the direct request for %s', async (_, override) => {

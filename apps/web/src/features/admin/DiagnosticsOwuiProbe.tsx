@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { OWUI_PROBE_MASKED, OWUI_PROBE_OTHER, type OwuiAccessCheck, type OwuiProbeAccessListResult, type OwuiProbeAttemptResult, type OwuiProbeReport, type OwuiProbeSessionResult } from '@mes/contracts'
-import { probeOpenWebUi } from '@/api/admin'
+import { probeOpenWebUi, type TerminalMeta } from '@/api/admin'
 import { ModelSelect } from '@/components/ModelSelect'
 import { Button } from '@/components/ui/button'
 import { copyText } from '@/lib/clipboard'
@@ -37,14 +37,14 @@ function accessLine(list: OwuiProbeAccessListResult, t: Translator): string {
 }
 
 /** 서비스 계정 접근·권한·주입 조건 행 — 진단 카드와 에이전트 연결 확인이 같이 쓴다(S13-J). 이름·불린만 담긴다 */
-export function accessRows(result: Pick<OwuiAccessCheck, 'meta' | 'access' | 'account' | 'fetchUrl'>, t: Translator): [string, string][] {
+export function accessRows(result: Pick<OwuiAccessCheck, 'meta' | 'access' | 'account' | 'fetchUrl'> & { meta: TerminalMeta }, t: Translator): [string, string][] {
   const builtin = Object.entries(result.meta.builtinTools)
   const { account } = result
   return [
     [t('admin.diagnostics.probe.toolAccess'), accessLine(result.access.tools, t)],
     [t('admin.diagnostics.probe.skillAccess'), accessLine(result.access.skills, t)],
     ['builtinTools', builtin.length ? builtin.map(([name, on]) => `${name} ${on ? t('admin.diagnostics.probe.on') : t('admin.diagnostics.probe.off')}`).join(' · ') : t('admin.diagnostics.probe.builtinDefault')],
-    [t('admin.diagnostics.probe.terminal'), result.meta.terminal ? t('admin.diagnostics.probe.terminalSet') : t('admin.diagnostics.probe.none')],
+    [t('admin.diagnostics.probe.terminal'), result.meta.terminalSource ? t(`admin.diagnostics.probe.terminalSource${result.meta.terminalSource}`) : result.meta.terminal ? t('admin.diagnostics.probe.terminalSet') : t('admin.diagnostics.probe.none')],
     [t('admin.diagnostics.probe.knowledge'), `${t('common.items', { count: result.meta.knowledgeCount })} ${t('admin.diagnostics.probe.appliedByOwui')}`],
     [t('admin.diagnostics.probe.account'), [account.role ?? t('admin.diagnostics.probe.unknown'), ...Object.entries(account.features).map(([name, ok]) => `${name} ${mark(ok, t)}`)].join(' · ')
       + (account.error ? ` (${account.error})` : '')],
@@ -53,7 +53,7 @@ export function accessRows(result: Pick<OwuiAccessCheck, 'meta' | 'access' | 'ac
 }
 
 /** 화면 요약과 복사 텍스트가 같은 행을 쓴다 — 결과 스키마에 있는 값만 담긴다 */
-function probeRows(result: OwuiProbeReport, t: Translator): [string, string][] {
+function probeRows(result: OwuiProbeReport & { meta: TerminalMeta }, t: Translator): [string, string][] {
   // 허용 목록 밖 표기((가림)·기타)는 화면 언어로 바꿔 보여 준다
   const other = (value: string) => value.replaceAll(OWUI_PROBE_OTHER, t('admin.diagnostics.probe.other'))
   const list = (items: string[]) => items.length ? items.map((id) => maskedId(id, t)).join(', ') : t('admin.diagnostics.probe.none')
@@ -80,7 +80,7 @@ function probeRows(result: OwuiProbeReport, t: Translator): [string, string][] {
   return rows
 }
 
-export function formatOwuiProbe(result: OwuiProbeReport, t: Translator): string {
+export function formatOwuiProbe(result: OwuiProbeReport & { meta: TerminalMeta }, t: Translator): string {
   return [t('admin.diagnostics.probe.title'), ...probeRows(result, t).map(([name, value]) => `${name}: ${value}`)].join('\n')
 }
 

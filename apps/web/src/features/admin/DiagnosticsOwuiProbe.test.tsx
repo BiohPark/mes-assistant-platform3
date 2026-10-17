@@ -40,6 +40,21 @@ function stubFetch(mode: 'live' | 'mock', probe: () => Response | Promise<Respon
 }
 afterEach(() => vi.unstubAllGlobals())
 
+it.each([
+  ['model', '모델 기본값 (model)'], ['global', '전역 설정 (global)'],
+  ['single', '단일 터미널 자동 선택 (single)'], ['none', '보내지 않음 (none)'],
+])('진단은 터미널 출처 %s를 화면과 복사에 표시한다', async (source, label) => {
+  stubFetch('live', () => jsonResponse(200, { ...result, meta: { ...result.meta, terminal: source === 'model', terminalSource: source } }))
+  const writes: string[] = []
+  vi.stubGlobal('navigator', { clipboard: { writeText: async (value: string) => { writes.push(value) } } })
+  renderWithProviders(<DiagnosticsPage />)
+  const card = await screen.findByRole('region', { name: 'OpenWebUI 진단' })
+  fireEvent.click(within(card).getByRole('button', { name: 'OpenWebUI 진단' }))
+  expect(await within(card).findByRole('status')).toHaveTextContent(`기본 터미널${label}`)
+  fireEvent.click(within(card).getByRole('button', { name: '진단 결과 복사' }))
+  await waitFor(() => expect(writes[0]).toContain(`기본 터미널: ${label}`))
+})
+
 it('OpenWebUI 진단: 모델 하나로 실행 → 진행 중 → 요약 카드, 복사는 허용된 값만', async () => {
   let resolve: (response: Response) => void = () => undefined
   const fetchMock = stubFetch('live', () => new Promise<Response>((r) => { resolve = r }))

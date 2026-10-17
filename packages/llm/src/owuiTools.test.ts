@@ -14,7 +14,8 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 function upstream(reply: (init: RequestInit, count: number) => Response | Promise<Response> = () => ok(), models: unknown = meta) {
   let posts = 0
-  const fetcher = vi.fn(async (url: string, init: RequestInit) => url.endsWith('/models') ? new Response(JSON.stringify(models)) : reply(init, ++posts))
+  const fetcher = vi.fn(async (url: string, init: RequestInit) => url.endsWith('/models') ? new Response(JSON.stringify(models))
+    : url.endsWith('/terminals/') ? new Response('', { status: 404 }) : reply(init, ++posts))
   vi.stubGlobal('fetch', fetcher)
   return fetcher
 }
@@ -26,7 +27,7 @@ describe('owuiDefaults — OpenWebUI 화면이 모델을 고를 때 채우는 �
     terminalId: 'term-1', knowledge: [{ id: 'kb' }], suggestion_prompts: [{ content: 'x' }] }
   it('tool_ids·skill_ids·filter_ids는 허용 목록 ID 그대로, features는 기본 기능 ∩ 켜진 capability, terminal_id는 terminal capability가 끔이 아닐 때', () => {
     expect(owuiDefaults(full)).toEqual({ tool_ids: ['lookup', 'server:mcp:search'], skill_ids: ['skill_a'], filter_ids: ['filter_a'],
-      features: { web_search: true, code_interpreter: true, memory: true }, terminal_id: 'term-1' })
+      features: { web_search: true, memory: true }, terminal_id: 'term-1' })
   })
   it('각 필드는 따로 정해진다 — 빈 배열·빈 features는 생략', () => {
     expect(owuiDefaults({ toolIds: ['lookup'] })).toEqual({ tool_ids: ['lookup'] })
@@ -52,7 +53,7 @@ describe('OpenWebUI automatic tool delivery', () => {
       const body = bodies(fetcher).at(-1)!
       const features = { memory: true, ...(/https?:/i.test(content) ? { web_search: true } : {}) }
       expect(body.features).toEqual(features)
-      expect(onDispatch).toHaveBeenCalledExactlyOnceWith({ mode: 'tools', features }, body)
+      expect(onDispatch).toHaveBeenCalledExactlyOnceWith({ mode: 'tools', features, terminalSource: 'none' }, body)
     }
   })
   it.each([false, undefined, 'true'])('does not auto-enable web search unless capability is strictly true: %s', async capability => {
@@ -77,14 +78,14 @@ describe('OpenWebUI automatic tool delivery', () => {
     await collect(new OpenAICompatibleProvider(settings), { ...req, onDispatch })
     const body = bodies(fetcher)[0]
     expect(body).toEqual({ ...req, stream: true, tool_ids: ['lookup'], skill_ids: ['skill_a'], filter_ids: ['filter_a'], features: { web_search: true }, terminal_id: 'term-1', params: { function_calling: 'legacy' } })
-    expect(onDispatch).toHaveBeenCalledWith({ mode: 'tools', tool_ids: ['lookup'], features: { web_search: true } }, body)
+    expect(onDispatch).toHaveBeenCalledWith({ mode: 'tools', tool_ids: ['lookup'], features: { web_search: true }, terminal_id: 'term-1', terminalSource: 'model' }, body)
   })
   it('a model with no defaults is sent the basic way', async () => {
     const fetcher = upstream(undefined, { data: [{ id: 'm', info: { meta: { toolIds: [], skillIds: [], defaultFeatureIds: ['web_search'] } } }] })
     const onDispatch = vi.fn()
     await collect(new OpenAICompatibleProvider(settings), { ...req, onDispatch })
     expect(bodies(fetcher)[0]).toEqual({ ...req, stream: true })
-    expect(onDispatch.mock.calls[0]![0]).toEqual({ mode: 'basic' })
+    expect(onDispatch.mock.calls[0]![0]).toEqual({ mode: 'basic', terminalSource: 'none' })
   })
   it('meta changes reach the next request once the short model cache (5 min) expires', async () => {
     let current: Record<string, unknown> = { toolIds: ['lookup'] }
@@ -110,7 +111,7 @@ describe('OpenWebUI automatic tool delivery', () => {
     expect(await collect(provider, { ...req, onDispatch })).toEqual([{ type: 'delta', text: 'OK' }, { type: 'done' }])
     const body = bodies(fetcher)[0]
     expect(body).toEqual({ ...req, stream: true, tool_ids: ['lookup', 'server:mcp:search'], features: { web_search: true, code_interpreter: true }, params: { function_calling: 'legacy' } })
-    expect(onDispatch).toHaveBeenCalledWith({ mode: 'tools', tool_ids: body.tool_ids, features: body.features }, body)
+    expect(onDispatch).toHaveBeenCalledWith({ mode: 'tools', tool_ids: body.tool_ids, features: body.features, terminalSource: 'none' }, body)
   })
   it('sends the model default terminal (meta.terminalId) like the OpenWebUI screen unless capabilities.terminal is false (S13-J)', async () => {
     const withTerminal = (extra: Record<string, unknown>) => ({ data: [{ id: 'm', info: { meta: { toolIds: ['lookup'], ...extra } } }] })
@@ -128,8 +129,8 @@ describe('OpenWebUI automatic tool delivery', () => {
       const body = bodies(fetcher)[0]
       if (expected) expect(body).toMatchObject({ tool_ids: ['lookup'], terminal_id: expected, params: { function_calling: 'legacy' } })
       else expect(body).not.toHaveProperty('terminal_id')
-      // 전달 기록(owuiTools)은 도구·기능만 — 터미널은 snapshot이 본문에서 남긴다
-      expect(onDispatch.mock.calls[0]![0]).toEqual({ mode: 'tools', tool_ids: ['lookup'] })
+      expect(onDispatch.mock.calls[0]![0]).toEqual({ mode: 'tools', tool_ids: ['lookup'],
+        terminalSource: expected ? 'model' : 'none', ...(expected ? { terminal_id: expected } : {}) })
       vi.unstubAllGlobals()
     }
     // 터미널만 있어도 도구 전달 방식으로 보낸다
@@ -221,7 +222,7 @@ describe('OpenWebUI automatic tool delivery', () => {
     expect(await collect(new OpenAICompatibleProvider(settings), { ...req, onDispatch })).toEqual([{ type: 'delta', text: 'OK' }, { type: 'done' }])
     expect(bodies(fetcher)).toEqual([expect.objectContaining({ tool_ids: ['lookup', 'server:mcp:search'] }), { ...req, stream: true }])
     expect(onDispatch.mock.calls.map(([delivery]) => delivery.mode)).toEqual(['tools', 'fallback'])
-    expect(onDispatch.mock.calls[1]![0]).toEqual({ mode: 'fallback' })
+    expect(onDispatch.mock.calls[1]![0]).toEqual({ mode: 'fallback', terminalSource: 'none' })
   })
   it.each([401, 403, 408, 409, 429, 500, 502, 503, 504])('never retries HTTP %i when execution is not ruled out', async status => {
     const fetcher = upstream(() => new Response('private error', { status }))
