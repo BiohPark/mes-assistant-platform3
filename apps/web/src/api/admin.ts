@@ -25,9 +25,9 @@ export async function uploadImage(id: string, file: File | null) {
   return response.json() as Promise<unknown>
 }
 /** 유효 모델·출처는 읽기 전용, override는 SO가 설정·해제한다. */
-export type Settings = { owuiTools?: 'auto' | 'off'; defaultModel?: string; defaultModelSource?: 'setting' | 'env' | 'default'; defaultModelOverride?: string | null; fileDelivery?: 'inline' | 'openwebui'; requestBudgetBytes?: number; srIntakeAssistantId?: string | null; link1Rule?: string; fileMaxPerRequest?: number; assistantImageFileId?: string | null }
+export type Settings = { urlAutoFetch?: boolean; urlAutoFetchAvailable?: boolean; urlAllowDomains?: string[]; urlBlockDomains?: string[]; owuiTools?: 'auto' | 'off'; defaultModel?: string; defaultModelSource?: 'setting' | 'env' | 'default'; defaultModelOverride?: string | null; fileDelivery?: 'inline' | 'openwebui'; requestBudgetBytes?: number; srIntakeAssistantId?: string | null; link1Rule?: string; fileMaxPerRequest?: number; assistantImageFileId?: string | null }
 /** assistantImageFileId는 PATCH가 아니라 uploadAssistantImage로만 바뀐다 (U4) */
-export type SettingsPatch = Omit<Settings, 'defaultModel' | 'defaultModelSource' | 'assistantImageFileId'>
+export type SettingsPatch = Omit<Settings, 'defaultModel' | 'defaultModelSource' | 'assistantImageFileId' | 'urlAutoFetchAvailable'>
 export const getSettings = async (): Promise<Settings> => {
   const response = await fetch('/api/settings', { credentials: 'same-origin' })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)

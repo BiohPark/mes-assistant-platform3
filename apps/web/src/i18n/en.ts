@@ -201,6 +201,14 @@ export const en = {
       resultOk: 'OK · {detail} · {ms} ms', resultFail: 'Failed · {error}', testFailed: 'Could not run the connection test ({status})',
       envGuide: 'Change the address, mode and key in the server .env (LLM_MODE · LLM_PRESET · LLM_BASE_URL · LLM_API_KEY · LLM_DEFAULT_MODEL) and restart the service. This screen only shows the values and runs the test.',
       open: 'Open connection diagnostics', badge: '{mode} · Open connection diagnostics', testChat: 'Test chat',
+      sse: {
+        title: 'Live connection (SSE) check', run: 'Check', running: 'Checking…',
+        hint: 'Checks whether three signals the server sends 0.5 s apart arrive at that pace. If a proxy holds the live connection (buffering), the screen may clear late after an answer ends.',
+        result: 'Server round trip {rtt} ms · first signal {first} ms · {count} signals',
+        ok: 'No buffering — the signals arrived at their pace.',
+        buffered: 'Buffering suspected — the signals arrived bunched together (sent {sent} ms apart → received {received} ms apart). Ask for SSE buffering to be turned off on the proxy.',
+        failed: 'Could not check: {error}',
+      },
       probe: {
         title: 'OpenWebUI diagnostics', hint: 'Sends a short test question three times — ① the current way ② with tool_ids · features · function_calling legacy ③ the session way (the chat it creates is deleted afterwards). It also checks whether the agent\'s tools and skills are visible to the service account, the account role and feature permissions, and the fetch_url injection conditions (names and on/off only). Items missing from builtinTools are on by OpenWebUI default. Only models in the OpenWebUI model list can be diagnosed. The result holds no question, answer, file, key or address and is not stored. Tool, feature and model IDs and the version are shown only in the expected format; anything shaped like an address, path, file name, common secret prefix (sk-, ghp_ …) or random string of 24+ characters is masked. A secret that looks like a short identifier cannot be told apart.',
         modelLabel: 'Model to diagnose', run: 'OpenWebUI diagnostics', running: 'Diagnosing… (up to 3 min)', liveOnly: 'Available only in Live mode.',
@@ -229,6 +237,13 @@ export const en = {
       modelNoMatch: 'No matching model. The typed value is used as is.',
     },
     settings: {
+      urlReader: 'Read URLs in questions',
+      urlAutoFetch: 'Automatically read web pages linked in questions',
+      urlDisabledEnv: 'URL reading is disabled in the server environment.',
+      urlAllowDomains: 'Allowed domains',
+      urlBlockDomains: 'Blocked domains',
+      urlDomainsHint: 'Separate domains with lines or commas. Rules include subdomains; blocking takes precedence. An empty allow list permits all domains.',
+
       owuiTools: 'OpenWebUI tool delivery', owuiAuto: 'Automatic (default)', owuiOff: 'Off', owuiHint: 'Pass model tools and default features to OpenWebUI Live conversations. Rejections or connection failures before the first frame retry once with the basic request.',
       global: 'Global settings', requestBudget: 'Max request size (bytes)',
       defaultModelEnvHint: 'Saved changes apply to the next request without restarting. Clear the override to use LLM_DEFAULT_MODEL from the server .env, or the domain default when unset.',
@@ -248,6 +263,10 @@ export const en = {
     },
   },
   chat: {
+    readingPage: '🔗 Reading page ({host})',
+    webPageRead: 'Read',
+    webPageFailed: 'Could not read ({reason})',
+
     brief: {
       title: 'AI summary·suggestion', ruleBased: ' · rule-based', toggle: 'Collapse or expand the summary card', generating: 'AI is writing the summary…', refreshing: 'Updating for new messages…',
       failed: 'Could not make the AI summary. It will retry next time you open this conversation.', pending: 'The summary appears after the first AI answer.',
@@ -299,6 +318,12 @@ export const en = {
     limitLeft: '— {minutes}m {seconds}s until timeout',
     limitLeftSeconds: '— {seconds}s until timeout',
     stopElapsed: 'Stop · {seconds}s',
+    finishing: 'Finishing the answer',
+    toolRunning: 'Running tool: {name}',
+    codeRunning: 'Running code',
+    owuiWorking: 'Working in OpenWebUI',
+    workingFor: 'for {minutes}m {seconds}s',
+    workingForSeconds: 'for {seconds}s',
     responding: 'Responding…',
     typing: '{names} typing…',
     overLimitBlocked: 'Request size limit exceeded',

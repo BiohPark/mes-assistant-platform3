@@ -20,7 +20,7 @@ const ACCOUNT_PATHS = new Set(['/api/v1/tools/', '/api/v1/skills/', '/api/v1/use
 const uploads = new Map()
 const requests = []
 const captureRequests = process.env.FAKE_OWUI_E2E === '1'
-/** 세션 모드 채팅(OpenWebUI v0.12 흉내) — id → { messageId, message, stopped } */
+/** 세션 모드 채팅(OpenWebUI v0.12 흉내) — id → { messageId, message, stopped, running(진행 작업 있음 — /api/tasks/chat/{id}) } */
 const chats = new Map()
 const sessionLog = { stopped: [], deleted: [] }
 
@@ -77,10 +77,20 @@ async function completeChat(payload, res) {
     frame({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: { content: piece } }] })
   }
   frame({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
+  // [done-linger] — [DONE] 뒤에도 연결을 열어 둔다(OpenWebUI가 outlet 필터를 기다리는 동안처럼, middleware.py 6748-6760)
+  if (/\[done-linger\]/i.test(userText)) {
+    res.write('data: [DONE]\n\n')
+    const timer = setTimeout(() => res.end(), LINGER_MS)
+    res.once('close', () => clearTimeout(timer))
+    return
+  }
   res.end('data: [DONE]\n\n')
 }
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+/** [tool-slow]의 도구 실행 시간, [done-linger]의 [DONE] 뒤 연결 유지 시간 */
+const TOOL_MS = Number(process.env.FAKE_OWUI_TOOL_MS ?? 10_000)
+const LINGER_MS = 30_000
 const answerText = (payload, userText) => `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${userText} [files: ${payload.files?.length ?? 0}]`
 /** OpenWebUI 세션 모드 요청 — session_id가 있고 parent_id:null(새 채팅)일 때만 백그라운드 작업이 된다 */
 const isSessionRequest = payload => typeof payload.session_id === 'string' && 'parent_id' in payload && payload.parent_id === null && !payload.chat_id
@@ -88,9 +98,15 @@ const isSessionRequest = payload => typeof payload.session_id === 'string' && 'p
 /**
  * 세션 모드 진행 — 채팅 메시지를 시간에 따라 채운다. 본문은 output의 message 항목, 생각은 reasoning 항목, 상태는 statusHistory.
  * 시나리오(사용자 메시지): URL 포함 → fetch 상태 2개(읽기 2.5초)와 [fetched: URL], [delay] → 상태 3개(1초 간격), [reasoning] → 생각 3개(1초 간격),
- * [error] → 오류로 끝남, [replace] → '임시 답변'을 보였다가 최종 답으로 바꿈
+ * [error] → 오류로 끝남, [replace] → '임시 답변'을 보였다가 최종 답으로 바꿈,
+ * [tool-slow] → 본문을 먼저 쓰고 도구(fake_tool)를 TOOL_MS 동안 실행(결과 없는 function_call, middleware.py 5997-6005) 뒤 결과와 나머지 본문,
+ * [done-missing] → 본문을 다 쓰고 작업은 끝나지만 done을 쓰지 않음(middleware.py 4309-4312·4429-4432처럼)
  */
 async function runSession(chat, payload) {
+  try { await runSessionSteps(chat, payload) } finally { chat.running = false }
+}
+
+async function runSessionSteps(chat, payload) {
   const { message } = chat
   const alive = () => chats.get(chat.id) === chat && !chat.stopped
   const status = (description, extra = {}) => message.statusHistory.push({ description, done: false, ...extra })
@@ -131,18 +147,49 @@ async function runSession(chat, payload) {
     await wait(600)
     item.content[0].text = message.content = ''
   }
-  for (const piece of text.match(/.{1,8}/gsu) ?? []) {
-    if (!alive()) return
-    item.content[0].text += piece
-    message.content = item.content[0].text
-    await wait(30)
+  const write = async (target, value) => {
+    for (const piece of value.match(/.{1,8}/gsu) ?? []) {
+      if (!alive()) return false
+      target.content[0].text += piece
+      message.content = message.output.filter(entry => entry.type === 'message').map(entry => entry.content[0].text).join('\n')
+      await wait(30)
+    }
+    return alive()
   }
+  if (!await write(item, text)) return
+  if (/\[tool-slow\]/i.test(userText)) {
+    const callId = `call-${randomUUID()}`
+    message.output.push({ type: 'function_call', call_id: callId, name: 'fake_tool', arguments: '{}', status: 'in_progress' })
+    await wait(TOOL_MS)
+    if (!alive()) return
+    message.output.at(-1).status = 'completed'
+    message.output.push({ type: 'function_call_output', call_id: callId, output: [{ type: 'input_text', text: 'fake result' }], status: 'completed' })
+    const rest = { type: 'message', content: [{ type: 'output_text', text: '' }] }
+    message.output.push(rest)
+    if (!await write(rest, '[tool: fake_tool 완료]')) return
+  }
+  if (/\[done-missing\]/i.test(userText)) return
   if (alive()) message.done = true
 }
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost')
   if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: true })
+  // URL reader targets live on this test server; the application never fetches a public fixture site.
+  if (captureRequests && req.method === 'GET' && url.pathname.startsWith('/__e2e/pages/')) {
+    const name = url.pathname.slice('/__e2e/pages/'.length)
+    if (name === 'redirect') { res.writeHead(302, { location: '/__e2e/pages/article' }); return res.end() }
+    if (name === 'blocked') { res.writeHead(302, { location: 'http://169.254.169.254/latest/meta-data/' }); return res.end() }
+    if (name === 'json') return json(res, 200, { marker: 'URL-READER-JSON' })
+    if (name === 'text') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('URL-READER-TEXT') }
+    if (name === 'large') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('L'.repeat(2 * 1024 * 1024 + 1)) }
+    if (name === 'budget') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('B'.repeat(80_000)) }
+    if (name === 'article') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      return res.end('<html><head><title>URL Reader Test</title></head><body><nav>IGNORE-NAV</nav><article><h1>사내 문서</h1><p>URL-READER-ARTICLE</p><script>IGNORE-SCRIPT</script></article></body></html>')
+    }
+    return json(res, 404, { detail: 'fixture not found' })
+  }
   if (captureRequests && req.method === 'GET' && url.pathname === '/__e2e/requests') return json(res, 200, requests)
   if (captureRequests && req.method === 'GET' && url.pathname === '/__e2e/sessions') return json(res, 200, { active: [...chats.keys()], ...sessionLog })
   if (captureRequests && url.pathname === '/__e2e/tool-ids') {
@@ -207,7 +254,7 @@ const server = createServer(async (req, res) => {
       if (/\[session-format\]/i.test(userText)) return json(res, 200, { status: true })
       const id = randomUUID()
       const messageId = typeof payload.id === 'string' ? payload.id : randomUUID()
-      const chat = { id, messageId, stopped: false, message: { id: messageId, parentId: null, childrenIds: [], role: 'assistant', content: '', done: false, model: payload.model, output: [], statusHistory: [] } }
+      const chat = { id, messageId, stopped: false, running: true, message: { id: messageId, parentId: null, childrenIds: [], role: 'assistant', content: '', done: false, model: payload.model, output: [], statusHistory: [] } }
       chats.set(id, chat)
       void runSession(chat, payload)
       return json(res, 200, { status: true, task_ids: [randomUUID()], chat_id: id })
@@ -224,6 +271,12 @@ const server = createServer(async (req, res) => {
       return json(res, 200, true)
     }
     return json(res, 200, { id: chat.id, title: 'New Chat', chat: { id: chat.id, title: 'New Chat', history: { currentId: chat.messageId, messages: { [chat.messageId]: chat.message } }, messages: [] } })
+  }
+  // 진행 작업 목록(main.py 2171-2189) — 모르는 채팅은 빈 목록
+  const tasksMatch = /^\/api\/tasks\/chat\/([^/]+)$/.exec(url.pathname)
+  if (req.method === 'GET' && tasksMatch) {
+    const chat = chats.get(tasksMatch[1])
+    return json(res, 200, { task_ids: chat?.running && !chat.stopped ? [`task-${chat.id}`] : [] })
   }
   const stopMatch = /^\/api\/tasks\/chat\/([^/]+)\/stop$/.exec(url.pathname)
   if (req.method === 'POST' && stopMatch) {

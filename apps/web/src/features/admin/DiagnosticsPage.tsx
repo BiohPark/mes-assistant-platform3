@@ -10,6 +10,7 @@ import { ModelSelect } from '@/components/ModelSelect'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { copyText } from '@/lib/clipboard'
+import { readSse } from '@/api/requests'
 import { useT, type Translator } from '@/i18n'
 import { OwuiProbeCard } from './DiagnosticsOwuiProbe'
 import { OwuiAccessSummary } from './OwuiAccessSummary'
@@ -118,6 +119,45 @@ function AgentAccessSection({ defaultModel }: { defaultModel: string }) {
   </section>
 }
 
+export interface SseCheck { rttMs: number; firstMs: number; count: number; sentSpreadMs: number; receivedSpreadMs: number; buffered: boolean }
+/**
+ * 실시간 연결(SSE) 점검 — 서버 왕복(/api/health)과, 서버가 간격을 두고 보낸 신호가 그 간격대로 오는지(첫 신호 지연·몰림 = 프록시 버퍼링).
+ * 받은 간격이 보낸 간격의 절반도 안 되면 버퍼링으로 본다
+ */
+export async function checkSse(now: () => number = () => performance.now()): Promise<SseCheck> {
+  const pingAt = now()
+  const health = await fetch('/api/health', { credentials: 'same-origin', cache: 'no-store' })
+  await health.body?.cancel().catch(() => undefined)
+  const rttMs = Math.round(now() - pingAt)
+  const startedAt = now()
+  const response = await fetch('/api/admin/diagnostics/sse', { credentials: 'same-origin', cache: 'no-store' })
+  if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
+  const arrivals: { sentAt: number; at: number }[] = []
+  await readSse(response.body.getReader(), (event, data) => { if (event === 'ping') arrivals.push({ sentAt: Number(data.sentAt), at: now() - startedAt }) })
+  if (!arrivals.length) throw new Error('no events')
+  const first = arrivals[0]!, last = arrivals.at(-1)!
+  const sentSpreadMs = Math.round(last.sentAt - first.sentAt), receivedSpreadMs = Math.round(last.at - first.at)
+  return { rttMs, firstMs: Math.round(first.at), count: arrivals.length, sentSpreadMs, receivedSpreadMs, buffered: arrivals.length < 2 || receivedSpreadMs < sentSpreadMs / 2 }
+}
+
+function SseCheckCard() {
+  const t = useT()
+  const check = useMutation({ mutationFn: () => checkSse() })
+  return <section aria-label={t('admin.diagnostics.sse.title')} className="rounded-xl border bg-card p-4">
+    <h2 className="mb-2 font-semibold">{t('admin.diagnostics.sse.title')}</h2>
+    <p className="mb-3 text-xs text-muted-foreground">{t('admin.diagnostics.sse.hint')}</p>
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant="outline" size="sm" disabled={check.isPending} onClick={() => check.mutate()}>{check.isPending ? t('admin.diagnostics.sse.running') : t('admin.diagnostics.sse.run')}</Button>
+      {check.data && <p role="status" className="text-sm">
+        <span className="block">{t('admin.diagnostics.sse.result', { rtt: String(check.data.rttMs), first: String(check.data.firstMs), count: check.data.count })}</span>
+        <span className={check.data.buffered ? 'block text-destructive' : 'block'}>{check.data.buffered
+          ? t('admin.diagnostics.sse.buffered', { sent: String(check.data.sentSpreadMs), received: String(check.data.receivedSpreadMs) }) : t('admin.diagnostics.sse.ok')}</span>
+      </p>}
+      {check.isError && <p role="alert" className="text-sm text-destructive">{t('admin.diagnostics.sse.failed', { error: check.error.message })}</p>}
+    </div>
+  </section>
+}
+
 function TestChatSection() {
   const t = useT()
   const [model, setModel] = useState('')
@@ -139,6 +179,7 @@ export function DiagnosticsPage() {
     {query.data && <AiConnectionCard data={query.data} />}
     {query.data && <OwuiProbeCard live={query.data.llm.mode === 'live'} defaultModel={query.data.llm.defaultModel} />}
     {query.data?.llm.mode === 'live' && query.data.llm.preset === 'openwebui' && <AgentAccessSection defaultModel={query.data.llm.defaultModel} />}
+    <SseCheckCard />
     <div className="flex gap-2" data-tour="admin-diagnostics"><Button variant="outline" onClick={() => void query.refetch()}>{t('admin.diagnostics.recheck')}</Button>
       <Button disabled={!query.data} onClick={() => { if (query.data) void copyText(formatDiagnostics(query.data, t)).then((ok) => toast[ok ? 'success' : 'error'](ok ? t('admin.diagnostics.copied') : t('admin.diagnostics.copyFailed'))) }}>{t('admin.diagnostics.copyText')}</Button></div>
     {query.isError && <p role="alert">{t('admin.diagnostics.loadFailed')}</p>}

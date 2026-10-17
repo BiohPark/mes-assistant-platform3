@@ -1,14 +1,16 @@
 import { newId } from '@/lib/ids'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { cancelRequest, streamRequest } from '@/api/requests'
+import { cancelRequest, getRequest, isTerminalRequest, streamRequest } from '@/api/requests'
 import { useSlowRequestBubble } from '@/features/assistant-pill/bubbles'
 import { rememberMyRequest } from '@/features/assistant-pill/replyBubble'
 import { getDraft, setDraft, type ComposerDraft } from './drafts'
 import { useT } from '@/i18n'
 
-/** firstTokenMs·idleMs: 서버가 알린 이 요청의 첫 응답·무응답 제한(ms) */
-export interface ChatRun { requestId: string; replyId: string; text: string; reasoning?: string; phase?: string; startedAt?: number; firstTokenMs?: number; idleMs?: number }
+/** firstTokenMs·idleMs·maxMs: 서버가 알린 이 요청의 첫 응답·무응답·최대 처리 제한(ms) */
+export interface ChatRun { requestId: string; replyId: string; text: string; reasoning?: string; phase?: string; startedAt?: number; firstTokenMs?: number; idleMs?: number; maxMs?: number }
+/** 실행 중 이만큼 응답 스트림 이벤트가 없으면 서버 요청 상태를 직접 확인한다 — 프록시가 SSE를 붙잡거나 조용히 끊어도 끝을 놓치지 않게 */
+export const STATUS_CHECK_MS = 5_000
 interface Attempt { key: string; threadId: string; requestId?: string; startedAt?: number; text: string; attachmentIds: string[]; path: string; body: unknown; autoStartNotified?: boolean }
 interface FirstDraft { taskId: string; draft: ComposerDraft }
 const firstDrafts = new Map<string, FirstDraft>()
@@ -58,8 +60,29 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
       setSending(true)
       try {
         for (let number = 0; number < 2 && !terminal; number++) {
+          const controller = new AbortController()
+          let lastEventAt = Date.now(), checking: Promise<void> | undefined
+          // 서버 기록이 끝 상태면 그것으로 끝낸다(멈춘 스트림은 중단). 아직 진행 중이면 단계만 맞춘다
+          const settle = (): Promise<void> => {
+            const requestId = attempt.requestId
+            if (!requestId || terminal) return Promise.resolve()
+            return checking ??= (async () => { try {
+              const record = await getRequest(requestId)
+              if (terminal) return
+              if (isTerminalRequest(record.status)) {
+                terminal = true
+                if (record.status !== 'succeeded') failed = record.error ?? record.status
+                controller.abort()
+              } else if (record.phase) setRun((current) => current && current.requestId === record.id && current.phase !== record.phase ? { ...current, phase: record.phase! } : current)
+            } catch { /* 다음 확인 때 다시 */ } finally { lastEventAt = Date.now(); checking = undefined } })()
+          }
+          const tick = setInterval(() => { if (Date.now() - lastEventAt >= STATUS_CHECK_MS) void settle() }, 1_000)
+          const wake = () => { if (document.visibilityState !== 'hidden') void settle() }
+          window.addEventListener('focus', wake)
+          document.addEventListener('visibilitychange', wake)
           try {
             await streamRequest(attempt.path, attempt.body, (event, data) => {
+              lastEventAt = Date.now()
               if (event === 'started') {
                 started.current?.()
                 // 재시도는 처음부터 requestId가 있으므로 요청 ID가 아니라 시도별 표시로 알림 중복(재연결 재생)을 막는다
@@ -71,7 +94,8 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
                 if (notify) autoStarted.current?.()
                 setRun({ requestId: attempt.requestId, replyId: String(data.replyMessageId), text: String(data.resumedText ?? ''), reasoning: String(data.resumedReasoning ?? ''),
                   startedAt: typeof data.createdAt === 'string' ? Date.parse(data.createdAt) : attempt.startedAt,
-                  firstTokenMs: typeof data.firstTokenMs === 'number' ? data.firstTokenMs : undefined, idleMs: typeof data.idleMs === 'number' ? data.idleMs : undefined })
+                  firstTokenMs: typeof data.firstTokenMs === 'number' ? data.firstTokenMs : undefined, idleMs: typeof data.idleMs === 'number' ? data.idleMs : undefined,
+                  maxMs: typeof data.maxMs === 'number' ? data.maxMs : undefined })
                 void query.invalidateQueries({ queryKey: ['messages', attempt.threadId] })
               } else if (event === 'phase') {
                 setRun((current) => current ? { ...current, phase: String(data.text) } : current)
@@ -87,10 +111,18 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
                 failed = String(data.error)
                 terminal = true
               } else if (event === 'completed') terminal = true
-            }, attempt.key)
+            }, attempt.key, controller.signal)
+            // 끝 이벤트 없이 닫혔다 — 서버가 이미 끝냈을 수 있으니 다시 붙기 전에 묻는다
+            if (!terminal) await settle()
             if (!terminal) throw new Error(t('chat.streamDisconnected'))
           } catch (error) {
-            if (terminal || number === 1) throw error
+            if (!terminal) await settle()
+            // 끝이 확인됐으면(이벤트·상태 확인) 스트림 오류는 무시한다 — 실패는 아래에서 failed로 알린다
+            if (!terminal && number === 1) throw error
+          } finally {
+            clearInterval(tick)
+            window.removeEventListener('focus', wake)
+            document.removeEventListener('visibilitychange', wake)
           }
         }
         if (failed) throw new Error(failed)

@@ -10,12 +10,13 @@ const created = (chatId = 'chat-1') => new Response(JSON.stringify({ status: tru
 const provider = () => new OpenAICompatibleProvider(settings, undefined, { sessionPollMs: 1 })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
-interface State { content?: string; reasoning?: string; statuses?: string[]; done?: boolean; error?: boolean; raw?: unknown; message?: Record<string, unknown> }
+/** tasks: 그 폴링 차례의 /api/tasks/chat/{id} 진행 작업(없으면 404 — 엔드포인트 없는 OpenWebUI) */
+interface State { content?: string; reasoning?: string; statuses?: string[]; done?: boolean; error?: boolean; raw?: unknown; message?: Record<string, unknown>; tasks?: string[]; output?: Record<string, unknown>[] }
 /** OpenWebUI v0.12 채팅 메시지 모양 — 본문은 output의 message 항목, 생각은 reasoning 항목 */
 function message(id: string, state: State) {
   return { id, role: 'assistant', content: state.content ?? '', done: state.done ?? false,
     output: [...(state.reasoning ? [{ type: 'reasoning', content: [{ type: 'output_text', text: state.reasoning }] }] : []),
-      ...(state.content ? [{ type: 'message', content: [{ type: 'output_text', text: state.content }] }] : [])],
+      ...(state.content ? [{ type: 'message', content: [{ type: 'output_text', text: state.content }] }] : []), ...(state.output ?? [])],
     ...(state.statuses ? { statusHistory: state.statuses.map(description => ({ description, done: false })) } : {}),
     ...(state.error ? { error: { content: 'private upstream detail https://internal.example' } } : {}) }
 }
@@ -36,6 +37,10 @@ function upstream(states: State[], create: (body: Record<string, unknown>, count
     }
     if (chat && init.method === 'DELETE') return new Response('true')
     if (/^\/api\/tasks\/chat\/[^/]+\/stop$/.test(path) && init.method === 'POST') return new Response('{"status":true}')
+    if (/^\/api\/tasks\/chat\/[^/]+$/.test(path) && (init.method ?? 'GET') === 'GET') {
+      const tasks = states[Math.min(polls, states.length - 1)]!.tasks
+      return tasks ? new Response(JSON.stringify({ task_ids: tasks })) : new Response('', { status: 404 })
+    }
     return new Response('', { status: 404 })
   })
   vi.stubGlobal('fetch', fetcher)
@@ -191,5 +196,79 @@ describe('OpenWebUI session mode', () => {
     const fetcher = upstream([], () => sse())
     await collect(req, new OpenAICompatibleProvider({ ...settings, preset: 'openai-compatible' }, undefined, { sessionPollMs: 1 }))
     expect(bodies(fetcher)[0]).not.toHaveProperty('session_id')
+  })
+})
+
+/** 본문이 멈춘 뒤 OpenWebUI가 하는 일(도구·코드·후처리)을 단계로 알리고, done이 끝내 오지 않아도 작업이 끝나면 정리한다 */
+describe('OpenWebUI session mode — work after the text stops', () => {
+  const settled = () => new OpenAICompatibleProvider(settings, undefined, { sessionPollMs: 1, sessionSettleMs: 0 })
+  const tool = (name: string, callId = 'c1') => ({ type: 'function_call', call_id: callId, name, arguments: '{}', status: 'in_progress' })
+  const toolOutput = (callId = 'c1') => ({ type: 'function_call_output', call_id: callId, output: [], status: 'completed' })
+
+  it('says the answer is being finished when the text stops but the chat is not done (once per stall)', async () => {
+    upstream([{ content: '답변' }, { content: '답변' }, { content: '답변' }, { content: '답변 끝', done: true }])
+    expect(await collect(req, settled())).toEqual([{ type: 'delta', text: '답변' }, { type: 'status', text: '답변 마무리 중' },
+      { type: 'delta', text: ' 끝' }, { type: 'done' }])
+  })
+  it('names the running tool (function_call without output — middleware.py 5997-6005, 6158-6168), then resumes the answer', async () => {
+    upstream([{ content: '앞부분' }, { content: '앞부분', output: [tool('search_docs')] }, { content: '앞부분', output: [tool('search_docs')] },
+      { content: '앞부분', output: [{ ...tool('search_docs'), status: 'completed' }, toolOutput()] },
+      { message: { done: true, output: [{ type: 'message', content: [{ type: 'output_text', text: '앞부분' }] }, { ...tool('search_docs'), status: 'completed' }, toolOutput(),
+        { type: 'message', content: [{ type: 'output_text', text: '뒷부분' }] }] } }])
+    expect(await collect(req, settled())).toEqual([{ type: 'delta', text: '앞부분' }, { type: 'status', text: '도구 실행 중: search_docs' },
+      { type: 'status', text: '답변 마무리 중' }, { type: 'delta', text: '\n뒷부분' }, { type: 'done' }])
+  })
+  it('reports a running tool even before any text, without the finishing label', async () => {
+    upstream([{ output: [tool('lookup')] }, { output: [tool('lookup')] }, { content: 'OK', done: true }])
+    expect(await collect(req, settled())).toEqual([{ type: 'status', text: '도구 실행 중: lookup' }, { type: 'delta', text: 'OK' }, { type: 'done' }])
+  })
+  it('reports code execution (open_webui:code_interpreter in progress — middleware.py 4645-4658)', async () => {
+    const running = { type: 'open_webui:code_interpreter', status: 'in_progress', code: 'print(1)', output: null }
+    upstream([{ content: '계산합니다', output: [running] }, { content: '계산합니다 결과 1', output: [{ ...running, status: 'completed', output: {} }], done: true }])
+    expect(await collect(req, settled())).toEqual([{ type: 'delta', text: '계산합니다' }, { type: 'status', text: '코드 실행 중' },
+      { type: 'delta', text: ' 결과 1' }, { type: 'done' }])
+  })
+  it('an OpenWebUI status shown in the same poll wins over a derived label', async () => {
+    upstream([{ content: '답' }, { content: '답', statuses: ['웹 검색 중'] }, { content: '답', statuses: ['웹 검색 중'] }, { content: '답', done: true, statuses: ['웹 검색 중'] }])
+    expect(await collect(req, settled())).toEqual([{ type: 'delta', text: '답' }, { type: 'status', text: '웹 검색 중' }, { type: 'done' }])
+  })
+  it('finishes when the OpenWebUI task has ended even though done never came (main.py 1755-1759, middleware.py 4309-4312)', async () => {
+    const fetcher = upstream([{ content: '완성된 답', tasks: ['t1'] }, { content: '완성된 답', tasks: ['t1'] }, { content: '완성된 답', tasks: [] }])
+    expect(await collect(req, settled())).toEqual([{ type: 'delta', text: '완성된 답' }, { type: 'status', text: '답변 마무리 중' }, { type: 'done' }])
+    expect(calls(fetcher, 'POST', /\/stop$/)).toHaveLength(0)
+    expect(calls(fetcher, 'DELETE', /\/v1\/chats\/chat-1$/)).toHaveLength(1)
+  })
+  it('turns an ended task with no answer and no done into an error', async () => {
+    upstream([{ tasks: ['t1'] }, { tasks: [] }])
+    expect(await collect(req, settled())).toEqual([{ type: 'error', message: 'LLM 서비스 응답 없음 (OpenWebUI 작업이 답 없이 끝남)' }])
+  })
+  it('does not finish early while the task list still shows the task, and ignores an OpenWebUI without the task endpoint', async () => {
+    const fetcher = upstream([{ content: 'A', tasks: ['t1'] }, { content: 'A', tasks: ['t1'] }, { content: 'A', tasks: ['t1'] }, { content: 'AB', done: true, tasks: ['t1'] }])
+    expect(await collect(req, settled())).toEqual([{ type: 'delta', text: 'A' }, { type: 'status', text: '답변 마무리 중' },
+      { type: 'status', text: 'OpenWebUI에서 작업 중 · 답변 마무리 중' }, { type: 'delta', text: 'B' }, { type: 'done' }])
+    expect(calls(fetcher, 'GET', /\/api\/tasks\/chat\/chat-1$/).length).toBeGreaterThan(0)
+    const missing = upstream([{ content: 'A' }, { content: 'A' }, { content: 'A' }, { content: 'AB', done: true }])
+    expect(await collect(req, settled())).toEqual([{ type: 'delta', text: 'A' }, { type: 'status', text: '답변 마무리 중' }, { type: 'delta', text: 'B' }, { type: 'done' }])
+    expect(calls(missing, 'GET', /\/api\/tasks\/chat\/chat-1$/)).toHaveLength(1)
+  })
+  it('waits for the settle window before calling the text finished', async () => {
+    upstream([{ content: '답변' }, { content: '답변' }, { content: '답변', done: true }])
+    expect(await collect(req, provider())).toEqual([{ type: 'delta', text: '답변' }, { type: 'done' }])
+  })
+  it('while the task stays active and nothing changes, repeats the working phase on every check (liveness) — tool before any text', async () => {
+    const running = { output: [tool('slow_tool')], tasks: ['t1'] }
+    upstream([running, running, running, running, running, running, { content: '도구 결과로 답', done: true }])
+    expect(await collect(req, settled())).toEqual([{ type: 'status', text: '도구 실행 중: slow_tool' },
+      ...Array.from({ length: 4 }, () => ({ type: 'status', text: 'OpenWebUI에서 작업 중 · 도구 실행 중: slow_tool' })),
+      { type: 'delta', text: '도구 결과로 답' }, { type: 'done' }])
+  })
+  it('treats an output change (tool result) without new text as progress and re-sends the phase', async () => {
+    upstream([{ content: '앞' }, { content: '앞', output: [tool('t')] }, { content: '앞', output: [{ ...tool('t'), arguments: '{"q":1}' }] }, { content: '앞뒤', done: true }])
+    expect(await collect(req, settled())).toEqual([{ type: 'delta', text: '앞' }, { type: 'status', text: '도구 실행 중: t' }, { type: 'status', text: '도구 실행 중: t' },
+      { type: 'delta', text: '뒤' }, { type: 'done' }])
+  })
+  it('keeps the shown answer when the ended task leaves an empty stored message (stream text lived only in response_streams)', async () => {
+    upstream([{ content: '보인 답', tasks: ['t1'] }, { content: '보인 답', tasks: ['t1'] }, { content: '', tasks: [] }])
+    expect(await collect(req, settled())).toEqual([{ type: 'delta', text: '보인 답' }, { type: 'status', text: '답변 마무리 중' }, { type: 'done' }])
   })
 })

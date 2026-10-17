@@ -98,6 +98,21 @@ describe('OpenAICompatibleProvider limits', () => {
     expect(chunks[0]).toMatchObject({ type: 'error' })
     expect(JSON.stringify(chunks)).not.toMatch(/evil|top-secret|302/)
   })
+  it('[DONE] 뒤 연결이 열려 있어도(OpenWebUI outlet 필터 대기) 바로 끝낸다 — middleware.py 6748-6760', async () => {
+    const encoder = new TextEncoder()
+    const cancel = vi.fn()
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"끝"}}]}\n\n'))
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"f","arguments":"{}"}}]}}]}\n\ndata: [DONE]\n\n'))
+      },
+      cancel,
+    })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })))
+    const chunks = await collect(provider.stream({ model: 'm', messages: [{ role: 'user', content: 'hi' }] }))
+    expect(chunks).toEqual([{ type: 'delta', text: '끝' }, { type: 'tool_call', call: { id: 'c1', name: 'f', arguments: '{}' } }, { type: 'done' }])
+    expect(cancel).toHaveBeenCalled()
+  })
   it('stream 기본 동작은 그대로다 — 델타·툴콜·done', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => sseResponse(['data: {"choices":[{"delta":{"content":"안녕"}}]}\n\n', 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"f","arguments":"{}"}}]}}]}\n\n', 'data: [DONE]\n\n'])))
     const chunks = await collect(provider.stream({ model: 'm', messages: [{ role: 'user', content: 'hi' }] }))

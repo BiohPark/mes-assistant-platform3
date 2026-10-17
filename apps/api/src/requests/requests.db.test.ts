@@ -54,6 +54,37 @@ describe('RequestService DB', () => {
   })
   afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); await rm(root, { recursive: true, force: true }) })
 
+  it('URL 결과를 추정·전송·스냅샷·자료 조회에 기록하고 한도 초과 시 전송하지 않는다', async () => {
+    const webPages = [{ url: 'https://intra.test/doc', finalUrl: 'https://intra.test/doc', bytes: 42, status: 'read' as const, text: 'URL-DB-BODY' }]
+    const read = vi.spyOn(DbLlmPorts.prototype, 'readWebPages').mockImplementation(async (_text, options) => { options.onProgress?.('intra.test'); return webPages })
+    const events = new EventsService()
+    const publish = vi.spyOn(events, 'publish')
+    const sent: unknown[] = []
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), {
+      ...provider, async *stream(request) { sent.push(request); yield { type: 'delta', text: '응답' }; yield { type: 'done' } },
+    }, events)
+    try {
+      const created = await tasks.create('member', { assistantId })
+      const estimate = await runner.estimate('member', created.thread.id, { draft: 'https://intra.test/doc' })
+      const started = await runner.start('member', created.thread.id, { content: 'https://intra.test/doc' }, 'url-db-test')
+      await started.done
+      const record = await runner.get(started.id)
+      expect(record).toMatchObject({ status: 'succeeded', bytes: estimate.bytes, webPages: [{ url: 'https://intra.test/doc', bytes: 42, status: 'read' }] })
+      expect(record.webPages?.[0]).not.toHaveProperty('text')
+      expect(await runner.snapshot(started.id)).toMatchObject({ webPages: record.webPages })
+      expect(JSON.stringify(await runner.snapshot(started.id))).toContain('URL-DB-BODY')
+      expect(publish.mock.calls.some(([, data]) => 'phase' in data && data.phase === '🔗 페이지 읽는 중(intra.test)')).toBe(true)
+      const over = await tasks.create('member', { assistantId })
+      read.mockResolvedValue([{ ...webPages[0]!, bytes: 400_000, text: 'X'.repeat(400_000) }])
+      const preview = await runner.estimate('member', over.thread.id, { draft: 'https://intra.test/doc' })
+      expect(preview.overLimit).toBe(true)
+      const blocked = await runner.start('member', over.thread.id, { content: 'https://intra.test/doc' }, 'url-db-over')
+      await blocked.done
+      expect(await runner.get(blocked.id)).toMatchObject({ status: 'failed', bytes: preview.bytes, webPages: [{ bytes: 400_000 }] })
+      expect(sent).toHaveLength(1)
+    } finally { read.mockRestore(); runner.onModuleDestroy() }
+  })
+
   it('SR 본문은 원자적으로 한 번 소비하고 재시도는 기록을 쓰며 다음 선택을 보존한다', async () => {
     const sr = new SrService(db, tasks, new EventsService())
     const draft = await sr.create('member')
@@ -321,7 +352,7 @@ describe('RequestService DB', () => {
   const sessionStatusMs = sessionWaitMs * 3
 
   /** OpenWebUI v0.12 세션 모드 대역 — 생성은 chat_id만 돌려주고, 채팅 GET이 진행 상태를 보여 준다(S12) */
-  async function sessionUpstream(poll: (elapsedMs: number, count: number) => Record<string, unknown>, create?: (body: Record<string, unknown>) => { status: number; body: string; type?: string } | undefined, options: { defaultFeatureIds?: string[]; mode?: 'direct' | 'session' } = {}) {
+  async function sessionUpstream(poll: (elapsedMs: number, count: number) => Record<string, unknown>, create?: (body: Record<string, unknown>) => { status: number; body: string; type?: string } | undefined, options: { defaultFeatureIds?: string[]; mode?: 'direct' | 'session'; tasks?: (elapsedMs: number) => string[]; settleMs?: number; env?: Record<string, string> } = {}) {
     const bodies: Record<string, unknown>[] = [], deleted: string[] = [], stopped: string[] = []
     let messageId = '', createdAt = 0, polls = 0
     const server = createServer((req, res) => {
@@ -333,6 +364,8 @@ describe('RequestService DB', () => {
         res.end(JSON.stringify({ id: 'owui-chat-1', chat: { history: { messages: { [messageId]: { id: messageId, role: 'assistant', ...poll(Date.now() - createdAt, ++polls) } } } } }))
         return
       }
+      // OpenWebUI 진행 작업 목록(main.py 2171-2189) — tasks를 주지 않으면 엔드포인트 없음(404)
+      if (req.method === 'GET' && req.url === '/api/tasks/chat/owui-chat-1' && options.tasks) { res.end(JSON.stringify({ task_ids: options.tasks(Date.now() - createdAt) })); return }
       if (req.method === 'DELETE' && req.url?.startsWith('/api/v1/chats/')) { deleted.push(req.url.slice('/api/v1/chats/'.length)); res.end('true'); return }
       if (req.method === 'POST' && req.url?.startsWith('/api/tasks/chat/')) { stopped.push(req.url); res.end('{}'); return }
       if (req.method !== 'POST' || req.url !== '/api/chat/completions') { res.writeHead(404); res.end(); return }
@@ -351,9 +384,9 @@ describe('RequestService DB', () => {
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
     const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root,
       LLM_MODE: 'live', LLM_PRESET: 'openwebui', LLM_OWUI_MODE: options.mode ?? 'auto', LLM_API_KEY: 'test-key', LLM_BASE_URL: `http://127.0.0.1:${(server.address() as { port: number }).port}`, LLM_DEFAULT_MODEL: 'fake-general',
-      REQUEST_FIRST_TOKEN_MS: String(sessionWaitMs), REQUEST_IDLE_MS: String(sessionWaitMs) })
+      REQUEST_FIRST_TOKEN_MS: String(sessionWaitMs), REQUEST_IDLE_MS: String(sessionWaitMs), ...options.env })
     const events = new EventsService()
-    const runner = new RequestsService(db, config, new OpenAICompatibleProvider(toLlmSettings(config.llm), undefined, { sessionPollMs }), events)
+    const runner = new RequestsService(db, config, new OpenAICompatibleProvider(toLlmSettings(config.llm), undefined, { sessionPollMs, ...(options.settleMs ? { sessionSettleMs: options.settleMs } : {}) }), events)
     const { thread } = await tasks.create('member', { assistantId, title: 'Session test' })
     await db.update(threadTable).set({ modelId: 'fake-general' }).where(eq(threadTable.id, thread.id))
     const close = async () => { runner.onModuleDestroy(); await new Promise<void>(resolve => server.close(() => resolve())) }
@@ -366,7 +399,7 @@ describe('RequestService DB', () => {
   it.each(['direct', 'session'] as const)('%s: URL automatically enables web search without a default; estimate equals send and snapshot records actual features', async mode => {
     const upstream = await sessionUpstream(() => sessionMessage([], '', '답변', true), undefined, { defaultFeatureIds: [], mode })
     try {
-      for (const [index, content] of ['https://example.com 읽어 줘', 'URL 없는 다음 질문'].entries()) {
+      for (const [index, content] of ['http://127.0.0.1/url-reader-fixture 읽어 줘', 'URL 없는 다음 질문'].entries()) {
         const estimate = await upstream.runner.estimate('member', upstream.thread.id, { draft: content })
         const started = await upstream.runner.start('member', upstream.thread.id, { content }, `url-auto-${mode}-${index}`)
         await started.done
@@ -439,14 +472,14 @@ describe('RequestService DB', () => {
     })
     const published = vi.spyOn(upstream.events, 'publish')
     try {
-      const estimate = await upstream.runner.estimate('member', upstream.thread.id, { draft: 'https://example.com 읽어 줘' })
-      const started = await upstream.runner.start('member', upstream.thread.id, { content: 'https://example.com 읽어 줘' }, 'owui-session')
+      const estimate = await upstream.runner.estimate('member', upstream.thread.id, { draft: 'http://127.0.0.1/url-reader-fixture 읽어 줘' })
+      const started = await upstream.runner.start('member', upstream.thread.id, { content: 'http://127.0.0.1/url-reader-fixture 읽어 줘' }, 'owui-session')
       const seen: Array<{ event: string; data: Record<string, unknown> }> = []
       const unsubscribe = upstream.runner.subscribe(started.id, event => seen.push(event))
       await started.done
       unsubscribe()
       expect(await upstream.runner.get(started.id)).toMatchObject({ status: 'succeeded', bytes: estimate.bytes, owuiTools: { mode: 'tools', tool_ids: ['lookup'], features: { web_search: true } } })
-      expect(seen.filter(event => event.event === 'phase').map(event => event.data.text)).toEqual(['URL 읽는 중', 'URL 읽음', '생각 중', '답변 중'])
+      expect(seen.filter(event => event.event === 'phase').map(event => event.data.text)).toEqual(['🔗 페이지 읽는 중(127.0.0.1)', 'URL 읽는 중', 'URL 읽음', '생각 중', '답변 중'])
       expect(published).toHaveBeenCalledWith('request.updated', expect.objectContaining({ requestId: started.id, status: 'streaming', phase: 'URL 읽는 중' }))
       const [reply] = await db.select().from(message).where(eq(message.id, started.replyMessageId))
       expect(reply).toMatchObject({ content: '세션 답변', reasoning: '검토', status: 'done' })
@@ -470,6 +503,46 @@ describe('RequestService DB', () => {
       expect(await upstream.runner.get(started.id)).toMatchObject({ status: 'failed', code: 'TIMEOUT', error: expect.stringMatching(/시간 초과/) })
       await vi.waitFor(() => expect(upstream.stopped).toEqual(['/api/tasks/chat/owui-chat-1/stop']), { timeout: 5000 })
       await vi.waitFor(() => expect(upstream.deleted).toEqual(['owui-chat-1']), { timeout: 5000 })
+    } finally { await upstream.close() }
+  })
+
+  const slowTool = { type: 'function_call', call_id: 'c1', name: 'slow_tool', arguments: '{}', status: 'in_progress' }
+  it('OpenWebUI session mode: an active OpenWebUI task keeps a silent tool run alive past the idle limit, then succeeds', async () => {
+    // 무응답 제한(2초)의 3배 동안 본문·상태 변화 없이 도구만 실행 중 — 작업 목록이 살아 있으면 제한을 다시 건다
+    const upstream = await sessionUpstream(elapsed => elapsed < sessionStatusMs ? { done: false, content: '', output: [slowTool] }
+      : { ...sessionMessage([], '', '도구 결과 답변', true) }, undefined, { tasks: elapsed => elapsed < sessionStatusMs ? ['task-1'] : [], settleMs: sessionPollMs * 3 })
+    try {
+      const started = await upstream.runner.start('member', upstream.thread.id, { content: '오래 걸리는 도구' }, 'owui-alive')
+      const seen: Array<{ event: string; data: Record<string, unknown> }> = []
+      const unsubscribe = upstream.runner.subscribe(started.id, event => seen.push(event))
+      await started.done
+      unsubscribe()
+      expect(await upstream.runner.get(started.id)).toMatchObject({ status: 'succeeded', maxMs: 1_800_000 })
+      expect(seen.filter(event => event.event === 'phase').map(event => event.data.text))
+        .toEqual(['도구 실행 중: slow_tool', 'OpenWebUI에서 작업 중 · 도구 실행 중: slow_tool', '답변 중'])
+      const [reply] = await db.select().from(message).where(eq(message.id, started.replyMessageId))
+      expect(reply).toMatchObject({ content: '도구 결과 답변', status: 'done' })
+      expect(upstream.stopped).toEqual([])
+    } finally { await upstream.close() }
+  })
+  it('OpenWebUI session mode: the hard cap (REQUEST_MAX_MS) ends a task that stays active forever', async () => {
+    const upstream = await sessionUpstream(() => ({ done: false, content: '', output: [slowTool] }), undefined,
+      { tasks: () => ['task-1'], settleMs: sessionPollMs * 3, env: { REQUEST_MAX_MS: String(sessionWaitMs * 2) } })
+    try {
+      const started = await upstream.runner.start('member', upstream.thread.id, { content: '끝나지 않는 도구' }, 'owui-cap')
+      await started.done
+      expect(await upstream.runner.get(started.id)).toMatchObject({ status: 'failed', code: 'TIMEOUT', error: '응답 시간 초과 — 최대 처리 시간(4초)을 넘었습니다.' })
+      await vi.waitFor(() => expect(upstream.stopped).toEqual(['/api/tasks/chat/owui-chat-1/stop']), { timeout: 5000 })
+    } finally { await upstream.close() }
+  })
+  it('OpenWebUI session mode: an ended OpenWebUI task without done or answer fails at once instead of waiting for the idle limit', async () => {
+    const upstream = await sessionUpstream(() => ({ done: false, content: '', output: [] }), undefined, { tasks: () => [], settleMs: sessionPollMs * 3 })
+    try {
+      const startedAt = Date.now()
+      const started = await upstream.runner.start('member', upstream.thread.id, { content: '응답 없이 끝남' }, 'owui-ended')
+      await started.done
+      expect(await upstream.runner.get(started.id)).toMatchObject({ status: 'failed', error: 'LLM 서비스 응답 없음 (OpenWebUI 작업이 답 없이 끝남)' })
+      expect(Date.now() - startedAt).toBeLessThan(sessionWaitMs)
     } finally { await upstream.close() }
   })
 

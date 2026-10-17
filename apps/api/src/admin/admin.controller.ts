@@ -1,3 +1,4 @@
+import { UrlDomainListSchema } from '@mes/contracts'
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, Put, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import type { Response } from 'express'
@@ -30,6 +31,9 @@ const patchAssistant = assistantFields.partial().refine(input => !input.classifi
   [input.level1, input.level2, input.level1CodeId, input.level2CodeId].every(value => value === undefined))
 /** 새 override만 쓰기 허용. 유효 모델·출처 및 알 수 없는 키는 strict로 거부한다. */
 const settings = z.object({
+  urlAutoFetch: z.boolean().optional(),
+  urlAllowDomains: UrlDomainListSchema.optional(),
+  urlBlockDomains: UrlDomainListSchema.optional(),
   defaultModelOverride: z.string().trim().max(191).nullable().transform(value => value || null).optional(),
   owuiTools: z.enum(['auto', 'off']).optional(),
   owuiMode: z.enum(['auto', 'session', 'direct']).optional(),
@@ -94,7 +98,7 @@ export class AdminSettingsController {
   constructor(@Inject(AdminService) private readonly admin: AdminService, @Inject(CONFIG) private readonly config: AppConfig) {}
   private view(rows: Record<string, unknown>) {
     const resolved = resolveDefaultModel(this.config, rows.defaultModelOverride)
-    return { ...rows, defaultModel: resolved.model, defaultModelSource: resolved.source }
+    return { urlAutoFetch: true, urlAllowDomains: [], urlBlockDomains: [], ...rows, urlAutoFetchAvailable: this.config.urlAutoFetch !== false, defaultModel: resolved.model, defaultModelSource: resolved.source }
   }
   @Get()
   async get() { return this.view(await this.admin.getSettings()) }

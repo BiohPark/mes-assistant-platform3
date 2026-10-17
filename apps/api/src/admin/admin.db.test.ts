@@ -93,6 +93,16 @@ describe('SR 접수 에이전트 보호 (데모 테스트 4건)', () => {
     expect(await admin.getSettings()).not.toHaveProperty('defaultModel')
     expect(await db.select().from(appSetting).where(eq(appSetting.key, 'defaultModel'))).toHaveLength(1) // 행은 지우지 않고 무시만 한다
   })
+  it('URL 정책은 전역 설정 키로 저장되며 환경 변수 false가 관리자 설정보다 우선한다', async () => {
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' })
+    try {
+      await admin.settings({ urlAutoFetch: true, urlAllowDomains: ['intra.test'], urlBlockDomains: ['bad.intra.test'] })
+      expect(await new DbLlmPorts(db, config, 'owner').getSettings()).toMatchObject({ urlAutoFetch: true, urlAllowDomains: ['intra.test'], urlBlockDomains: ['bad.intra.test'] })
+      expect(await new DbLlmPorts(db, { ...config, urlAutoFetch: false }, 'owner').getSettings()).toMatchObject({ urlAutoFetch: false })
+      await admin.settings({ urlAutoFetch: false })
+      expect(await new DbLlmPorts(db, config, 'owner').readWebPages('https://intra.test', { scope: 'test' })).toEqual([])
+    } finally { for (const key of ['urlAutoFetch', 'urlAllowDomains', 'urlBlockDomains']) await db.delete(appSetting).where(eq(appSetting.key, key)) }
+  })
   it('override 설정·교체·해제는 같은 LLM 포트에 즉시 반영되고 구형 행은 유지된다', async () => {
     const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', LLM_DEFAULT_MODEL: 'env-model' })
     const ports = new DbLlmPorts(db, config, 'owner')
