@@ -87,12 +87,14 @@
       ]
     },
     "gemini": {
-      "model": "gemini-3.1-pro-high",
+      "model": "gemini-4-argon-high",
       "call_type": "cli",
       "brief_mode": "content",
       "cli": {
         "command": "agy",
         "args_template": [
+          "--model",
+          "gemini-4-argon-high",
           "--prompt",
           "@brief_content"
         ]

@@ -286,7 +286,7 @@ reply 도구는 없다(플러그인 미탑재). 첨부는 "첨부 파일(다운�
 
 ### 워커 실행 규칙 (이 프로젝트)
 - 디스패처를 우회해 워커를 직접 실행하면 출력을 `tasks/<task>/artifacts/<role>.stdout.log`에 남기고, 시작·종료를 디스코드 채널에 한 줄씩 알린다(agentlayer에 안 보이므로).
-- gemini(agy) 모델: 전역 기본 `gemini-3.8-flash-high`. 긴 문서·제3자 검토처럼 Pro가 필요한 호출은 `--model gemini-3.1-pro-high`를 호출별로 붙인다(최신 agy는 `--model` 지원 — `_shared/routing.md`의 "per-call 핀 불가·전역 pro-high"는 옛 정보, 이 규칙이 우선).
+- gemini(agy) 모델: 디스패처 기본 `gemini-4-argon-high`(backends.json `--model` 핀, 2026-10-17 Argon 전환). 가벼운 호출만 `--model gemini-3.8-flash-high`로 내려도 된다.
 
 ### 진행 방식
 - 스프린트 = architecture §9의 S0–S5. 태스크 폴더는 `tasks/s<N>-<주제>/`. 각 스프린트의 **완료 기준**이 Verification의 기준이다.
