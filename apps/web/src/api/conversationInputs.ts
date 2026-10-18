@@ -8,7 +8,9 @@ export interface LoadedConversationInput {
   messageCount: number
   newMessages: number
   detached: boolean
+  /** 참고 대화로 보낼 크기 — bytes: 생각·답변만, bytesFull: 도구까지 전체 */
   bytes: number
+  bytesFull?: number
 }
 export interface SelectConversation { mode: 'full' | 'messages' | 'summary'; weight?: 'main' | 'reference'; messageIds?: string[];
   summary?: { text: string; source: 'ai' | 'rule'; model?: string; messageIds: string[] } }
