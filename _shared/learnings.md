@@ -141,3 +141,9 @@ codex-critic은 커밋 뒤에 부른다. 리뷰 brief가 `git diff main...HEAD`�
 - 원인: 두 worktree의 검증 스크립트가 같은 시각에 `pnpm install --frozen-lockfile`을 실행 → 공유 store 하드링크/심링크가 뒤섞여 React 훅 디스패처가 깨짐. 코드 문제가 아님.
 - 조치: 해당 worktree `node_modules`(루트·apps·packages·e2e) 삭제 후 재설치 → 전부 통과.
 - 규칙: worktree별 install은 **직렬**로(또는 worktree 생성 직후 한 번만), 검증 스크립트에서 install을 빼고 미리 끝낸다. 대량 실패가 나면 코드보다 먼저 node_modules 손상을 의심한다.
+
+## 2026-10-18 — 개발 DB 누적이 E2E 병렬 플레이크의 원인
+- 증상: 전체 E2E를 병렬로 돌리면 실행마다 다른 1~4건이 60초 타임아웃·포커스·가시성으로 실패, 같은 spec 직렬은 통과. 며칠간 "부하 플레이크"로 테스트만 보강했으나 재발.
+- 원인: E2E·규모 시드가 매 실행 개발 MariaDB에 데이터를 쌓아(users 11,588·tasks 14,024·messages 15,047) 목록·후보 조회와 렌더가 느려짐. CI는 매번 빈 DB라 재현 안 됨.
+- 조치: `docker compose down -v && up -d --wait && pnpm db:migrate` 뒤 전체 E2E mock 119/119·live 123/123, 실행 시간 절반.
+- 규칙: E2E 전체 실행 전 DB 행 수를 확인(`select count(*) from task`)하고 수천 건이면 볼륨 초기화. 플레이크 보강보다 먼저 환경(DB 누적·node_modules·dev 서버 재사용)을 의심한다.
