@@ -20,6 +20,7 @@ async function setup(page: Page) {
   const created = await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id } })
   expect(created.ok()).toBe(true)
   const task = await created.json() as { id: string; threadId: string }
+  expect((await page.request.patch(`/api/tasks/${task.id}`, { data: { modelId: 'fake-general' } })).ok()).toBe(true)
   await page.goto(`/c/${task.id}`)
   await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: `${id}-original.txt`, mimeType: 'text/plain', buffer: Buffer.from('원래 첨부') })
   await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill(question)
@@ -55,7 +56,7 @@ test('프리필은 일반 입력과 추정·전송 경로가 같고 원래 문�
   await expect(input).toBeFocused()
   await expect(page.getByText('현재 자료·모델로 새 요청, 이전 문답 포함')).toBeVisible()
   expect(await chips.innerText()).toBe(manualChips)
-  await expect(page.getByRole('button', { name: /첨부 (제거|취소)$/ })).toHaveCount(1) // 현재 첨부 대기 유지
+  await expect(page.getByRole('button', { name: /첨부 빼기$/ })).toHaveCount(1) // 현재 첨부 대기 유지
   const sentPromise = page.waitForRequest(request => request.url().endsWith(`/threads/${task.threadId}/requests`) && request.method() === 'POST')
   const estimatePromise = page.waitForRequest(request => request.url().endsWith('/requests/estimate') && !!request.postDataJSON()?.attachmentIds)
   await page.getByRole('button', { name: '전송', exact: true }).click()
@@ -83,7 +84,7 @@ test('팀 의견 모드·현재 첨부는 프리필 뒤에도 유지되며 AI �
   await prefill(page, original.id)
   await expect(page.getByRole('textbox', { name: '팀 의견 입력' })).toHaveValue(question)
   await expect(page.getByText('team-current.txt', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: /첨부 (제거|취소)$/ })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /첨부 빼기$/ })).toHaveCount(1)
   await expect(page.getByRole('button', { name: /입력으로 고정|이번 메시지만/ })).toHaveCount(0)
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByRole('textbox', { name: '팀 의견 입력' })).toBeEmpty()
@@ -106,15 +107,21 @@ test('409 충돌과 중복 조작은 초안을 보존하고 동일 키로 재전
   await page.route(`**/api/threads/${task.threadId}/requests`, async route => {
     attempts.push({ key: route.request().headers()['idempotency-key'], body: route.request().postDataJSON() })
     if (attempts.length === 1) await gate
-    await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ message: '이미 응답 중입니다' }) })
+    await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'REQUEST_ACTIVE', message: '이미 응답 중입니다' }) })
   })
   const input = page.getByRole('textbox', { name: 'AI 요청 입력' })
-  await input.press('Enter')
+  // Enter has no actionability wait: a background estimate refetch can block it even
+  // immediately after toBeEnabled. Retry until the gated first POST is observed.
+  await expect(async () => {
+    if (attempts.length === 0) await input.press('Enter')
+    expect(attempts).toHaveLength(1)
+  }).toPass({ timeout: 15_000 })
   await input.dispatchEvent('keydown', { key: 'Enter' })
-  await expect.poll(() => attempts.length).toBe(1)
+  expect(attempts).toHaveLength(1)
   await expect(bubble(page, original.id).getByRole('button', { name: '다시 묻기' })).toBeDisabled()
   release()
   await expect(page.getByText('전송하지 못했습니다.', { exact: true })).toBeVisible()
+  await page.getByRole('listitem').filter({ hasText: '전송하지 못했습니다.' }).getByRole('button', { name: 'Close toast', exact: true }).click()
   expect(attempts).toHaveLength(2) // 기존 useChat의 네트워크 재시도 1회
   expect(attempts[0]).toEqual(attempts[1])
   expect(attempts[0]!.key).toBeTruthy()

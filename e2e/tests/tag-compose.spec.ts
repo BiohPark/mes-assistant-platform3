@@ -60,7 +60,7 @@ test('estimate equals send after add — 패널에서 대화 본문·파일을 �
   await attachConversation.click()
   await page.getByTestId('materials-shared').getByRole('button', { name: materialToggleName(`${fileName}`), exact: true }).click()
   await expect(attachConversation).toHaveAttribute('aria-pressed', 'true')
-  await expect(attachConversation).toHaveText('담김 ✓')
+  await expect(attachConversation).toHaveText('첨부됨 ✓')
 
   const draft = '담은 자료로 답해 줘 U2'
   await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill(draft)

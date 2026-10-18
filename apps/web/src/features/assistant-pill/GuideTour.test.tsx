@@ -312,7 +312,7 @@ it('S14: 좁은 화면에서 자료 탭이 열린 채 첨부 단계가 오면 �
   act(() => { useTourStore.getState().start('conversation', 'staged-user'); vi.advanceTimersByTime(1500) })
   act(() => useTourStore.getState().goToSection(1)) // 자료함 섹션
   for (let step = 0; step < 3; step++) fireEvent.keyDown(dialog(), { key: 'Enter' }) // linked-materials → library → conversations → staged
-  expect(within(dialog()).getByText(/붙인 자료는 입력창 위 칩으로 보여요/)).toBeInTheDocument()
+  expect(within(dialog()).getByText(/이번 질문에 보낼 자료만 칩으로 보여요/)).toBeInTheDocument()
   expect(document.querySelector('[data-tour="materials-staged"]')).toBeNull()
   act(() => { vi.advanceTimersByTime(32) })
   expect(document.querySelector('[data-tour="materials-staged"]')).not.toBeNull()

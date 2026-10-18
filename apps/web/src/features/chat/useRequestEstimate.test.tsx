@@ -12,7 +12,7 @@ beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }) })
 afterEach(() => { vi.useRealTimers(); estimateRequest.mockReset() })
 
 const estimate = (bytes: number): RequestEstimate => ({ at: '2026-09-28T00:00:00.000Z', provider: 'mock', transport: 'inline', model: 'mock',
-  bytes, limitBytes: 1000, inputs: [], srCodes: [], srs: [], overLimit: false, attachmentLimit: 10 })
+  bytes, limitBytes: 1000, inputs: [], srCodes: [], srs: [], overLimit: false, attachmentLimit: 10, inputSignature: 'a'.repeat(64) })
 const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>
 
 function mount(initial: { draft: string; revision: string }) {

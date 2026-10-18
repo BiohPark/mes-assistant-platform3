@@ -75,5 +75,5 @@ test('T-01/T-03 공유 자료함은 출처를 대화 코드·제목으로 보여
   // S14: 첨부는 입력창 위 칩 하나로 보이고 ×로 뺀다
   const chips = page.getByRole('list', { name: '첨부', exact: true })
   await expect(chips).toContainText('알람_이력_0901.csv')
-  await expect(chips.getByRole('button', { name: '알람_이력_0901.csv 첨부 취소' })).toBeVisible()
+  await expect(chips.getByRole('button', { name: '알람_이력_0901.csv 첨부 빼기' })).toBeVisible()
 })

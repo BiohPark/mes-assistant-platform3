@@ -54,6 +54,128 @@ describe('RequestService DB', () => {
   })
   afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); if (root) await rm(root, { recursive: true, force: true }) })
 
+  it('rejects a stale estimate before writes or selection consumption, then accepts a fresh signature and replays the same key', async () => {
+    const { task: owner, thread } = await tasks.create('member', { assistantId })
+    const storage = new FileStorageService(root)
+    const fileId = crypto.randomUUID()
+    const stored = `test/${fileId}.txt`
+    await storage.write(stored, new Uint8Array(Buffer.from('ORIGINAL')))
+    await db.insert(fileObject).values({ id: fileId, kind: 'task_file', originTaskId: owner.id, originalName: 'race.txt', mime: 'text/plain', sizeBytes: 8, sha256: 'a'.repeat(64), storageKey: stored, source: 'upload', version: 1, uploadedBy: 'member' })
+    const old = await service.estimate('member', thread.id, { draft: '경쟁 질문' })
+    await db.insert(taskInput).values({ taskId: owner.id, fileId, weight: 'reference', sortOrder: 0, selectedBy: 'member' })
+    await expect(service.start('member', thread.id, { content: '경쟁 질문', inputSignature: old.inputSignature }, 'signature-race'))
+      .rejects.toMatchObject({ status: 409, response: { code: 'INPUT_SELECTION_CHANGED' } })
+    expect(await db.select().from(message).where(eq(message.threadId, thread.id))).toEqual([])
+    expect(await db.select().from(chatRequest).where(eq(chatRequest.threadId, thread.id))).toEqual([])
+    expect(await db.select().from(taskInput).where(eq(taskInput.taskId, owner.id))).toHaveLength(1)
+    const fresh = await service.estimate('member', thread.id, { draft: '경쟁 질문' })
+    expect(fresh.inputSignature).not.toBe(old.inputSignature)
+    const started = await service.start('member', thread.id, { content: '경쟁 질문', inputSignature: fresh.inputSignature }, 'signature-race')
+    await started.done
+    expect(await service.get(started.id)).toMatchObject({ status: 'succeeded', bytes: fresh.bytes })
+    expect(await db.select().from(taskInput).where(eq(taskInput.taskId, owner.id))).toEqual([])
+    expect((await service.start('member', thread.id, { content: '경쟁 질문', inputSignature: fresh.inputSignature }, 'signature-race')).id).toBe(started.id)
+  })
+
+  it('rejects the same signature when the selected model changes the estimate by five bytes', async () => {
+    const { thread } = await tasks.create('member', { assistantId })
+    await db.update(threadTable).set({ modelId: 'model-1080' }).where(eq(threadTable.id, thread.id))
+    const old = await service.estimate('member', thread.id, { draft: '모델 경쟁' })
+    await db.update(threadTable).set({ modelId: 'm1075' }).where(eq(threadTable.id, thread.id))
+    const fresh = await service.estimate('member', thread.id, { draft: '모델 경쟁' })
+    expect(old.bytes - fresh.bytes).toBe(5)
+    expect(fresh.inputSignature).not.toBe(old.inputSignature)
+    await expect(service.start('member', thread.id, { content: '모델 경쟁', inputSignature: old.inputSignature }, 'model-race'))
+      .rejects.toMatchObject({ status: 409, response: { code: 'INPUT_SELECTION_CHANGED' } })
+    expect(await db.select().from(message).where(eq(message.threadId, thread.id))).toEqual([])
+    const started = await service.start('member', thread.id, { content: '모델 경쟁', inputSignature: fresh.inputSignature }, 'model-race')
+    await started.done
+    expect(await service.get(started.id)).toMatchObject({ status: 'succeeded', bytes: fresh.bytes })
+  })
+
+  it('executes the validated assembly even if model, task metadata and budget change after acceptance', async () => {
+    const created = await tasks.create('member', { assistantId, title: '검증한 제목' })
+    const sent: import('@mes/llm').ChatRequest[] = []
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), {
+      ...provider, async *stream(request) { sent.push(request); yield { type: 'done' } },
+    })
+    const executable = runner as unknown as { run: (...args: unknown[]) => Promise<void> }
+    const execute = executable.run.bind(runner)
+    let release!: () => void
+    const barrier = new Promise<void>(resolve => { release = resolve })
+    vi.spyOn(executable, 'run').mockImplementation(async (...args) => { await barrier; return execute(...args) })
+    const [budget] = await db.select().from(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
+    try {
+      const preview = await runner.estimate('member', created.thread.id, { draft: '수락 후 경쟁' })
+      expect(preview).not.toHaveProperty('built')
+      const started = await runner.start('member', created.thread.id, { content: '수락 후 경쟁', inputSignature: preview.inputSignature }, 'accepted-snapshot')
+      await db.update(threadTable).set({ modelId: 'changed-after-acceptance' }).where(eq(threadTable.id, created.thread.id))
+      await db.update(task).set({ title: '수락 뒤 바뀐 제목' }).where(eq(task.id, created.task.id))
+      await db.insert(appSetting).values({ key: 'requestBudgetBytes', value: 1 }).onDuplicateKeyUpdate({ set: { value: 1 } })
+      release()
+      await started.done
+      expect(await runner.get(started.id)).toMatchObject({ status: 'succeeded', bytes: preview.bytes, limitBytes: preview.limitBytes, model: preview.model })
+      expect(sent).toHaveLength(1)
+      expect(sent[0]!.model).toBe(preview.model)
+      expect(JSON.stringify(sent[0]!.messages)).toContain('검증한 제목')
+      expect(JSON.stringify(sent[0]!.messages)).not.toContain('수락 뒤 바뀐 제목')
+    } finally {
+      release()
+      if (budget) await db.update(appSetting).set({ value: budget.value }).where(eq(appSetting.key, budget.key))
+      else await db.delete(appSetting).where(eq(appSetting.key, 'requestBudgetBytes'))
+      runner.onModuleDestroy()
+    }
+  })
+
+  it('validates against the committed selection after waiting for its task lock', async () => {
+    const { task: owner, thread } = await tasks.create('member', { assistantId })
+    const old = await service.estimate('member', thread.id, { draft: '잠금 경쟁' })
+    let locked!: () => void, release!: () => void
+    const taken = new Promise<void>(resolve => { locked = resolve })
+    const released = new Promise<void>(resolve => { release = resolve })
+    const changing = db.transaction(async tx => {
+      await tx.select().from(task).where(eq(task.id, owner.id)).for('update')
+      await tx.update(task).set({ title: '다른 참여자가 변경한 제목', titleSource: 'manual' }).where(eq(task.id, owner.id))
+      locked()
+      await released
+    })
+    let locking!: () => void
+    const lockReached = new Promise<void>(resolve => { locking = resolve })
+    type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
+    const reader = service as unknown as { lockedOwner: (tx: Tx, threadId: string, candidate?: typeof threadTable.$inferSelect) => Promise<typeof threadTable.$inferSelect> }
+    const readOwner = reader.lockedOwner.bind(service)
+    const spy = vi.spyOn(reader, 'lockedOwner').mockImplementation((tx, threadId, candidate) => {
+      const select = tx.select.bind(tx)
+      const instrumented = new Proxy(tx, { get(target, key) {
+        if (key !== 'select') { const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value }
+        return (...args: unknown[]) => {
+          const builder = Reflect.apply(select, tx, args)
+          const from = builder.from.bind(builder)
+          builder.from = (table: unknown) => {
+            const query = from(table)
+            if (table === task) {
+              const lock = query.for.bind(query)
+              query.for = (...args: unknown[]) => { locking(); return Reflect.apply(lock, query, args) }
+            }
+            return query
+          }
+          return builder
+        }
+      } })
+      return readOwner(instrumented, threadId, candidate)
+    })
+    try {
+      await taken
+      const starting = service.start('member', thread.id, { content: '잠금 경쟁', inputSignature: old.inputSignature }, 'task-lock-race')
+      const rejected = expect(starting).rejects.toMatchObject({ status: 409, response: { code: 'INPUT_SELECTION_CHANGED' } })
+      await lockReached
+      release()
+      await changing
+      await rejected
+      expect(await db.select().from(message).where(eq(message.threadId, thread.id))).toEqual([])
+    } finally { spy.mockRestore(); release(); await changing }
+  })
+
   it('persists ordered tool steps, compatible fields and resumes the full indexed snapshot after restart', async () => {
     const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root })
     const steps: import('@mes/domain').AnswerStep[] = [

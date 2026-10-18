@@ -1,3 +1,5 @@
+import { saveInputSelection } from './inputSelection'
+import type { MaterialCandidateCount } from '@mes/contracts'
 import type { TaskInput } from '@mes/domain'
 import { toast } from 'sonner'
 import { HttpError } from '@/app/auth'
@@ -47,13 +49,15 @@ async function request<T>(path: string, method = 'GET', body?: unknown): Promise
   if (!response.ok) throw new Error((await response.json().catch(() => null))?.message ?? `HTTP ${response.status}`)
   return response.status === 204 ? undefined as T : response.json() as Promise<T>
 }
-function refresh(taskId?: string) {
-  void queryClient.invalidateQueries({ queryKey: ['files'] })
-  void queryClient.invalidateQueries({ queryKey: ['candidates'] })
-  void queryClient.invalidateQueries({ queryKey: ['tasks'] })
-  void queryClient.invalidateQueries({ queryKey: ['task'] })
-  void queryClient.invalidateQueries({ queryKey: ['estimate'] })
-  if (taskId) void queryClient.invalidateQueries({ queryKey: ['task', taskId] })
+async function refresh(_taskId?: string) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['files'] }),
+    queryClient.invalidateQueries({ queryKey: ['candidate-count'] }),
+    queryClient.invalidateQueries({ queryKey: ['candidates'] }),
+    queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+    queryClient.invalidateQueries({ queryKey: ['task'] })
+  ])
+  await queryClient.invalidateQueries({ queryKey: ['estimate'], refetchType: 'none' })
 }
 
 export async function uploadFile(_actor: Actor, origin: { taskId: string }, file: File): Promise<FileMeta> {
@@ -83,12 +87,16 @@ export const fileVersions = (fileId: string) => request<FileMeta[]>(`/files/${en
 export const filesForTask = (taskId: string) => request<FileMeta[]>(`/tasks/${encodeURIComponent(taskId)}/files`)
 export const getCandidates = (taskId: string) => request<Candidates>(`/tasks/${encodeURIComponent(taskId)}/candidates`)
 export async function setInput(_actor: Actor, taskId: string, fileId: string, weight: TaskInput['weight'] | null): Promise<void> {
-  await request(`/tasks/${encodeURIComponent(taskId)}/inputs/${encodeURIComponent(fileId)}`, weight ? 'PUT' : 'DELETE', weight ? { weight } : undefined)
-  refresh(taskId)
+  return saveInputSelection(taskId, async () => {
+    await request(`/tasks/${encodeURIComponent(taskId)}/inputs/${encodeURIComponent(fileId)}`, weight ? 'PUT' : 'DELETE', weight ? { weight } : undefined)
+    await refresh(taskId)
+  })
 }
 export async function switchInputVersion(_actor: Actor, taskId: string, fromFileId: string, toFileId: string): Promise<void> {
-  await request(`/tasks/${encodeURIComponent(taskId)}/inputs/${encodeURIComponent(fromFileId)}/switch-version`, 'POST', { toFileId })
-  refresh(taskId)
+  return saveInputSelection(taskId, async () => {
+    await request(`/tasks/${encodeURIComponent(taskId)}/inputs/${encodeURIComponent(fromFileId)}/switch-version`, 'POST', { toFileId })
+    await refresh(taskId)
+  })
 }
 /** 다운로드 피드백은 여기 한 곳 — 목록·미리보기·버전 기록이 모두 이 함수를 부른다 */
 export async function downloadBlob(file: FileMeta, t: Translator): Promise<void> {
@@ -117,3 +125,5 @@ export function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
+
+export const getCandidateCount = (taskId: string) => request<MaterialCandidateCount>(`/tasks/${encodeURIComponent(taskId)}/candidate-count`)

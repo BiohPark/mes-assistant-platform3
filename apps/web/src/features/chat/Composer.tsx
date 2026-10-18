@@ -82,13 +82,15 @@ interface ComposerProps {
   tools?: ReactNode
   /** 자료함에서 첨부한 것 — 직접 올린 파일 칩 앞에 같은 줄로 보인다 */
   attachments?: AttachmentChip[]
+  attachmentControl?: ReactNode
+  emptyMaterials?: ReactNode
   /** 칩 아래·입력창 위 안내 — 업무 채팅의 요청 크기(한도 근처에서만) */
   notice?: ReactNode
   /** 안쪽(칩·입력창) 폭 — 업무 채팅은 메시지 열과 같은 최대 폭 */
   contentClassName?: string
 }
 
-export function Composer({ ref, disabled, streaming, placeholder, inputLabel, inputLabels = false, maxAttachments, stagedAttachmentCount = 0, onSend, beforeSend, onStop, startedAt, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey, tools, attachments = [], notice, contentClassName }: ComposerProps) {
+export function Composer({ ref, disabled, streaming, placeholder, inputLabel, inputLabels = false, maxAttachments, stagedAttachmentCount = 0, onSend, beforeSend, onStop, startedAt, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey, tools, attachments = [], attachmentControl, emptyMaterials, notice, contentClassName }: ComposerProps) {
   const t = useT()
   const whenVisible = useWhenVisible()
   const [now, setNow] = useState(Date.now)
@@ -202,6 +204,8 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, in
           ))}
         </div>
       )}
+      {attachmentControl && <div data-tour={chipCount ? undefined : 'materials-staged'} className="mb-1 text-xs font-medium">{t('task.materials.trayHeader', { count: chipCount })}</div>}
+      {attachmentControl && chipCount === 0 && emptyMaterials}
       {chipCount > 0 && (
         <ul aria-label={t('chat.attachments')} data-tour="materials-staged" data-testid="composer-attachments" className="mb-1.5 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
           {attachments.map((chip) => {
@@ -248,7 +252,8 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, in
         />
         {/* 아래 줄: 왼쪽에 첨부·도구(모델), 오른쪽에 팀 의견·전송 */}
         <div className="flex items-center gap-1">
-          {allowAttachments && (
+          {attachmentControl}
+          {allowAttachments && !attachmentControl && (
             <Button type="button" variant="ghost" size="icon-sm" aria-label={t('chat.attachFile')} data-tour={chipCount ? undefined : 'materials-staged'} onClick={() => inputRef.current?.click()} disabled={disabled}>
               <Paperclip />
             </Button>

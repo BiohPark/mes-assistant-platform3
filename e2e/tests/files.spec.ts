@@ -1,4 +1,4 @@
-import { materialToggleName, revealMaterials } from './materials.js'
+import { linkedMaterialsToggle, materialToggleName, revealMaterials } from './materials.js'
 import { expect, test } from '@playwright/test'
 
 const password = 'e2e-password-1234'
@@ -59,6 +59,8 @@ test('S4 직접 공유 파일의 주 입력과 참고 입력이 순서대로 표
   await page.request.post('/api/files', { multipart: { originTaskId: source.id, file: { name: 'reference.txt', mimeType: 'text/plain', buffer: Buffer.from('reference') } } })
   const consumer = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id, tags: [tag] } })).json() as { id: string }
   await page.goto(`/c/${consumer.id}`)
+  // S4는 메시지 0건: 2B에 따라 태그 자료 패널이 처음부터 열려야 한다.
+  await expect(linkedMaterialsToggle(page)).toHaveAttribute('aria-expanded', 'true')
   await openMaterials(page)
   await expect(page.getByTestId('materials-shared')).toContainText('main.txt')
   // 자료함에서 [첨부]하고 ★는 입력창 칩에서 바꾼다 — 칩은 전송과 같은 조립 순서(주 입력 먼저)
@@ -77,12 +79,14 @@ test('S3 같은 산출물 이름으로 두 번 저장하면 v2가 된다', async
   await signUp(page)
   const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
   const task = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id } })).json() as { id: string; threadId: string; code: string }
+  // llm-admin edits the global default concurrently; this test covers output versioning.
+  expect((await page.request.patch(`/api/tasks/${task.id}`, { data: { modelId: 'fake-general' } })).ok()).toBe(true)
   await page.goto(`/c/${task.id}`)
   let defaultName = ''
   for (let version = 1; version <= 2; version++) {
     await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill(`산출물 답변 ${version}`)
     await page.getByRole('button', { name: '전송', exact: true }).click()
-    await expect(page.getByRole('button', { name: '이 대화 파일로 저장' }).last()).toBeVisible({ timeout: 15_000 }) // 답변 완료까지 — 병렬 부하에서 5초를 넘긴다
+    await expect(page.getByRole('button', { name: '이 대화 파일로 저장' })).toHaveCount(version) // Save the new answer, including the second iteration.
     await page.getByRole('button', { name: '이 대화 파일로 저장' }).last().click()
     const dialog = page.getByRole('dialog')
     const name = await dialog.getByLabel('파일 이름').inputValue()
@@ -93,6 +97,9 @@ test('S3 같은 산출물 이름으로 두 번 저장하면 v2가 된다', async
   }
   await openMaterials(page)
   await expect(page.getByTestId('materials-own')).toContainText(defaultName)
+  const outputs = await (await page.request.get(`/api/tasks/${task.id}/files`)).json() as Array<{ name: string; version: number; isOutput: boolean }>
+  expect(outputs.filter(file => file.name === defaultName).map(file => file.version).sort()).toEqual([1, 2])
+  expect(outputs.filter(file => file.isOutput && file.name === defaultName).map(file => file.version)).toEqual([2])
   await page.getByTestId('materials-own').getByRole('button', { name: '버전 기록' }).last().click()
   await expect(page.getByRole('dialog')).toContainText(`${task.code}.md v1`)
   await expect(page.getByRole('dialog')).toContainText(defaultName)

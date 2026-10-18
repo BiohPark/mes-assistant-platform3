@@ -20,5 +20,5 @@ export async function openWorkTool(page: Page, name: '체크리스트' | '메모
 /** 두 표시 상태에서 같은 항목을 추적한다. */
 export function materialToggleName(label: string) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`^(?:\\+ 입력창에 담기|담김 ✓) · ${escaped}$`)
+  return new RegExp(`^(?:\\+ 첨부|첨부됨 ✓) · ${escaped}$`)
 }

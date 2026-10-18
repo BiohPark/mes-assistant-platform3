@@ -1,3 +1,4 @@
+import { saveInputSelection } from './inputSelection'
 import type { ContextSnapshot, ConversationInput } from '@mes/domain'
 import { queryClient } from './queryClient'
 
@@ -12,7 +13,7 @@ export interface LoadedConversationInput {
   bytes: number
   bytesFull?: number
 }
-export interface SelectConversation { mode: 'full' | 'messages' | 'summary'; weight?: 'main' | 'reference'; messageIds?: string[];
+export interface SelectConversation { mode: 'full' | 'messages' | 'summary'; snapshotId?: string; weight?: 'main' | 'reference'; messageIds?: string[];
   summary?: { text: string; source: 'ai' | 'rule'; model?: string; messageIds: string[] } }
 const path = (taskId: string, sourceTaskId?: string) => `/api/tasks/${encodeURIComponent(taskId)}/conversation-inputs${sourceTaskId ? `/${encodeURIComponent(sourceTaskId)}` : ''}`
 async function request<T>(url: string, method = 'GET', body?: unknown): Promise<T> {
@@ -20,24 +21,34 @@ async function request<T>(url: string, method = 'GET', body?: unknown): Promise<
   if (!response.ok) throw new Error((await response.json().catch(() => null))?.message ?? `HTTP ${response.status}`)
   return response.status === 204 ? undefined as T : response.json() as Promise<T>
 }
-function refresh(taskId: string) {
-  void queryClient.invalidateQueries({ queryKey: ['conversation-inputs', taskId] })
-  void queryClient.invalidateQueries({ queryKey: ['candidates', taskId] })
-  void queryClient.invalidateQueries({ queryKey: ['task', taskId] })
-  void queryClient.invalidateQueries({ queryKey: ['estimate'] })
+async function refresh(taskId: string) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['conversation-inputs', taskId] }),
+    queryClient.invalidateQueries({ queryKey: ['candidates', taskId] }),
+    queryClient.invalidateQueries({ queryKey: ['task', taskId] })
+  ])
+  await queryClient.invalidateQueries({ queryKey: ['estimate'], refetchType: 'none' })
 }
 export const listConversationInputs = (taskId: string) => request<LoadedConversationInput[]>(path(taskId))
 export async function selectConversation(taskId: string, sourceTaskId: string, body: SelectConversation) {
-  const result = await request<LoadedConversationInput>(path(taskId, sourceTaskId), 'PUT', body); refresh(taskId); return result
+  return saveInputSelection(taskId, async () => {
+    const result = await request<LoadedConversationInput>(path(taskId, sourceTaskId), 'PUT', body); await refresh(taskId); return result
+  })
 }
 export async function setConversationWeight(taskId: string, sourceTaskId: string, weight: 'main' | 'reference') {
-  await request(path(taskId, sourceTaskId), 'PATCH', { weight }); refresh(taskId)
+  return saveInputSelection(taskId, async () => {
+    await request(path(taskId, sourceTaskId), 'PATCH', { weight }); await refresh(taskId)
+  })
 }
 export async function removeConversationInput(taskId: string, sourceTaskId: string) {
-  await request(path(taskId, sourceTaskId), 'DELETE'); refresh(taskId)
+  return saveInputSelection(taskId, async () => {
+    await request(path(taskId, sourceTaskId), 'DELETE'); await refresh(taskId)
+  })
 }
 export async function refreshConversationInput(taskId: string, sourceTaskId: string) {
-  const result = await request<LoadedConversationInput>(`${path(taskId, sourceTaskId)}/refresh`, 'POST'); refresh(taskId); return result
+  return saveInputSelection(taskId, async () => {
+    const result = await request<LoadedConversationInput>(`${path(taskId, sourceTaskId)}/refresh`, 'POST'); await refresh(taskId); return result
+  })
 }
 export const draftConversationSummary = (taskId: string, sourceTaskId: string, messageIds?: string[]) =>
   request<{ text: string; source: 'ai' | 'rule'; model?: string }>(`${path(taskId, sourceTaskId)}/summary-draft`, 'POST', { messageIds })

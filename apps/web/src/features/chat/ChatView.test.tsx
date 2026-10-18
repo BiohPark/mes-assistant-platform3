@@ -1,14 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import type { Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
 import { afterEach, expect, it, vi } from 'vitest'
+import { emitEvent } from '@/app/useEvents'
 import { MeContext } from '@/app/auth'
 import { TabActiveContext } from '@/app/tabActive'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { inputSelection } from '@/api/inputSelection'
 import { ChatView } from './ChatView'
 import { queueFirstRequest } from './useChat'
 import { queryClient } from '@/api/queryClient'
@@ -19,7 +21,7 @@ const toastError = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
 const toastInfo = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({ toast: { error: toastError, success: toastSuccess, info: toastInfo, warning: vi.fn() } }))
-afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear(); toastSuccess.mockClear(); toastInfo.mockClear(); queryClient.clear(); clearDrafts() })
+afterEach(() => { cleanup(); inputSelection.setState({ byTask: {} }); vi.unstubAllGlobals(); sessionStorage.clear(); toastError.mockClear(); toastSuccess.mockClear(); toastInfo.mockClear(); queryClient.clear(); clearDrafts() })
 
 it('records task activity while viewing, including own activity, and waits until a hidden tab is visible', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.endsWith('/estimate')
@@ -119,6 +121,7 @@ it('keeps a discussion draft and shows an error when the message API fails', asy
   const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
   fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(input, { target: { value: '남길 의견' } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(toastError).toHaveBeenCalled())
   expect(input).toHaveValue('남길 의견')
@@ -139,6 +142,7 @@ it.each([false, true])('stores a discussion attachment without pinning it (attac
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
   if (!attachedInDiscussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   expect(screen.queryByRole('button', { name: /입력으로 고정|이번 메시지만/ })).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(calls.some((call) => call.url === '/api/threads/h/messages' && call.method === 'POST')).toBe(true))
   expect(calls.some((call) => call.url === '/api/tasks/t/inputs/f' && call.method === 'PUT')).toBe(false)
@@ -160,6 +164,7 @@ it.each([false, true])('sends AI attachments through SSE for server pinning (att
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
   if (attachedInDiscussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '질문' } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(calls.some((call) => call.url === '/api/threads/h/requests')).toBe(true))
   expect(calls.some((call) => call.url === '/api/tasks/t/inputs/f')).toBe(false)
@@ -188,8 +193,10 @@ it.each(['over-limit', 'estimate failure'] as const)('reuses the uploaded draft 
   const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'note.txt', { type: 'text/plain' })] } })
   fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '질문' } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(toastError).toHaveBeenCalled())
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(calls.some((call) => call.url === '/api/threads/h/requests')).toBe(true))
   expect(calls.filter((call) => call.url === '/api/files')).toHaveLength(1)
@@ -246,20 +253,21 @@ it('disables AI send when the estimate exceeds the request budget', async () => 
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '길어진 초안' } })
   await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeDisabled())
-  expect(screen.getByRole('alert')).toHaveTextContent('요청 크기 한도')
+  expect(await screen.findByRole('alert')).toHaveTextContent('요청 크기 한도')
 })
 
-it.each([false, true])('allows send after a smaller draft estimate fails and retains the pre-send guard (overLimit=%s)', async (preSendOverLimit) => {
+it.each([false, true])('locks after a failed estimate until explicit retry succeeds and retains the pre-send guard (overLimit=%s)', async (preSendOverLimit) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.setQueryData(['messages', 'h'], [])
   const sent: unknown[] = []
   const previews: unknown[] = []
+  let shortFailed = false
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/threads/h/requests/estimate') {
       const body = JSON.parse(String(init?.body)) as { draft: string; attachmentIds?: string[] }
       if (body.attachmentIds) previews.push(body)
-      else if (body.draft === '짧음') return Response.json({ message: '추정 실패' }, { status: 500 })
-      const overLimit = body.attachmentIds ? preSendOverLimit : true
+      else if (body.draft === '짧음' && !shortFailed) { shortFailed = true; return Response.json({ message: '추정 실패' }, { status: 500 }) }
+      const overLimit = body.attachmentIds ? preSendOverLimit : body.draft !== '짧음'
       return Response.json({ at: '2026-09-28T00:00:00.000Z', provider: 'mock', transport: 'inline', model: 'mock',
         bytes: overLimit ? 1200 : 100, limitBytes: 1000, inputs: [], srCodes: [], srs: [], overLimit, attachmentLimit: 10 })
     }
@@ -274,13 +282,17 @@ it.each([false, true])('allows send after a smaller draft estimate fails and ret
   const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
   fireEvent.change(input, { target: { value: '한도를 초과한 긴 초안' } })
   await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeDisabled())
+  await screen.findByRole('alert')
   fireEvent.change(input, { target: { value: '짧음' } })
-  expect(screen.getByRole('button', { name: '전송' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: '전송' })).toBeDisabled()
   expect(screen.getByText('계산 중')).toBeVisible()
   await waitFor(() => expect(client.getQueryCache().findAll({ queryKey: ['estimate'] }).some((query) => query.state.status === 'error')).toBe(true))
   expect(screen.queryByText('계산 중')).not.toBeInTheDocument()
-  expect(screen.getByRole('alert')).toHaveTextContent('요청 크기 한도')
-  expect(screen.getByRole('button', { name: '전송' })).toBeEnabled()
+  expect(await screen.findByRole('alert')).toHaveTextContent('요청 크기 한도')
+  expect(screen.getByRole('button', { name: '전송' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: '자료 용량 다시 확인' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   if (preSendOverLimit) {
     await waitFor(() => expect(toastError).toHaveBeenCalled())
@@ -315,12 +327,13 @@ it.each(['star', 'remove'] as const)('keeps the reference chip mounted and dimme
   const chip = (await screen.findByText('C-1')).closest('li')!
   // 한도에서 먼 크기는 보이지 않는다
   expect(screen.queryByRole('meter')).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: action === 'star' ? 'C-1 주 입력 전환' : 'C-1 첨부 취소' }))
+  fireEvent.click(screen.getByRole('button', { name: action === 'star' ? 'C-1 주 입력 전환' : 'C-1 첨부 빼기' }))
   await waitFor(() => expect(chip).toHaveClass('opacity-60'))
   expect(screen.getByText('C-1').closest('li')).toBe(chip)
-  expect(screen.getByRole('button', { name: 'C-1 주 입력 전환' })).toBeEnabled()
-  expect(screen.getByRole('button', { name: 'C-1 첨부 취소' })).toBeEnabled()
-  expect(screen.getByRole('button', { name: '전송' })).toBeEnabled()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'C-1 주 입력 전환' })).toBeEnabled())
+  await waitFor(() => expect(screen.getByRole('button', { name: 'C-1 첨부 빼기' })).toBeEnabled())
+  expect(screen.getByRole('button', { name: '전송' })).toBeDisabled()
+  await waitFor(() => expect(finishRefetch).toBeTypeOf('function'))
   await act(async () => finishRefetch(Response.json({ ...info, bytes: 100,
     inputs: action === 'star' ? [{ ...info.inputs[0], weight: 'main' }] : [] })))
   if (action === 'star') {
@@ -329,7 +342,7 @@ it.each(['star', 'remove'] as const)('keeps the reference chip mounted and dimme
   } else await waitFor(() => expect(screen.queryByText('C-1')).not.toBeInTheDocument())
 })
 
-const emptyHint = '📎나 연결 자료에서 파일·대화를 입력창에 담을 수 있어요.'
+const emptyHint = '[+ 첨부]에서 이번 질문에 보낼 파일·대화를 고를 수 있어요.'
 
 it('offers materials only after messages load empty and opening adds no requests or selections', async () => {
   let finish!: (response: Response) => void
@@ -350,7 +363,7 @@ it('offers materials only after messages load empty and opening adds no requests
   fireEvent.click(screen.getByRole('button', { name: '자료 열기' }))
   expect(open).toHaveBeenCalledOnce()
   expect(calls).toEqual(before)
-  expect(calls.some(({ url }) => /candidates|inputs/.test(url))).toBe(false)
+  expect(calls.some(({ url, method }) => /inputs/.test(url) && method === 'PUT')).toBe(false)
 })
 
 it.each(['error', 'nonempty'] as const)('does not offer empty-conversation materials for %s messages', async (result) => {
@@ -477,6 +490,7 @@ it('confirms draft replacement, preserves current attachments and sends prefill 
   expect(screen.getByText('현재 자료·모델로 새 요청, 이전 문답 포함')).toBeVisible()
   await waitFor(() => expect(requests.some(r => r.url.endsWith('/estimate') && r.body.draft === originalQuestion.content)).toBe(true))
   expect(requests.some(r => r.url === '/api/threads/h/requests')).toBe(false)
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(requests.some(r => r.url === '/api/threads/h/requests')).toBe(true))
   expect(requests.find(r => r.url === '/api/threads/h/requests')?.body).toEqual({ content: originalQuestion.content, attachmentIds: ['current-file'], oneShotFileIds: [] })
@@ -485,7 +499,7 @@ it('confirms draft replacement, preserves current attachments and sends prefill 
   expect(requests.some(r => r.url.includes('/retry'))).toBe(false)
 })
 
-it('blocks reasking while a failed attempt is stored and resends that attempt unchanged', async () => {
+it.each([undefined, 'REQUEST_ACTIVE'])('preserves a 409 attempt with code %s and resends it unchanged', async code => {
   const requests: Array<{ key?: string; body: Record<string, unknown> }> = []
   let status = 409
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -494,7 +508,7 @@ it('blocks reasking while a failed attempt is stored and resends that attempt un
     if (url.endsWith('/estimate')) return Response.json({ bytes: 100, limitBytes: 1000, inputs: [], srCodes: [], srs: [], overLimit: false })
     if (url === '/api/threads/h/requests') {
       requests.push({ key: (init?.headers as Record<string, string> | undefined)?.['Idempotency-Key'], body: JSON.parse(String(init?.body)) })
-      if (status === 409) return Response.json({ message: '이미 응답 중입니다' }, { status })
+      if (status === 409) return Response.json({ message: '이미 응답 중입니다', ...(code ? { code } : {}) }, { status })
       return new Response('event: started\ndata: {"requestId":"new","replyMessageId":"new-answer"}\n\nevent: completed\ndata: {}\n\n', { status })
     }
     return Response.json([])
@@ -504,6 +518,7 @@ it('blocks reasking while a failed attempt is stored and resends that attempt un
   const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
   fireEvent.change(input, { target: { value: '실패할 새 질문' } })
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'a.txt')] } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(toastError).toHaveBeenCalled())
   expect(requests).toHaveLength(2)
@@ -515,6 +530,7 @@ it('blocks reasking while a failed attempt is stored and resends that attempt un
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(input).toHaveValue('실패할 새 질문')
   status = 201
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(requests).toHaveLength(3))
   expect(requests[2]).toEqual(requests[0])
@@ -563,7 +579,7 @@ it('keeps the staged attachment and draft across a task refetch and a chat remou
   fireEvent.click(await screen.findByRole('button', { name: '텍스트 바꾸기' }))
   await waitFor(() => expect(input).toHaveValue(originalQuestion.content))
   expect(screen.getByText('current.txt')).toBeVisible()
-  expect(screen.getByRole('button', { name: /첨부 취소$/ })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /첨부 빼기$/ })).toBeInTheDocument()
 })
 
 function progressView(status: Task['status']) {
@@ -587,6 +603,7 @@ it.each([false, true])('asks before reopening and sends the preserved draft afte
   const input = screen.getByRole('textbox', { name: discussion ? '팀 의견 입력' : 'AI 요청 입력' })
   fireEvent.change(input, { target: { value: '재개 후 보낼 내용' } })
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'resume.txt', { type: 'text/plain' })] } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   expect(await screen.findByRole('dialog', { name: '재개할까요?' })).toBeVisible()
   expect(calls.filter(call => !call.url.endsWith('/estimate'))).toHaveLength(0)
@@ -613,6 +630,7 @@ it('keeps text and attachments when reopening is cancelled, and sends nothing', 
   const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
   fireEvent.change(input, { target: { value: '보존할 내용' } })
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'preserved.txt', { type: 'text/plain' })] } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await screen.findByRole('dialog', { name: '재개할까요?' })
   fireEvent.click(screen.getByRole('button', { name: '취소' }))
@@ -635,6 +653,7 @@ it.each([false, true])('announces an automatic hold release with a one-click hol
   progressView('on_hold')
   if (discussion) fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(screen.getByRole('textbox', { name: discussion ? '팀 의견 입력' : 'AI 요청 입력' }), { target: { value: '보류 해제' } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('보류를 해제했습니다', expect.objectContaining({ action: expect.objectContaining({ label: '보류' }) })))
   const options = toastSuccess.mock.calls.find(call => call[0] === '보류를 해제했습니다')![1] as { action: { onClick: () => void } }
@@ -648,6 +667,7 @@ it('keeps the draft when navigating away during the reopen confirmation', async 
   const { container, unmount } = progressView('done')
   fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '다시 방문할 초안' } })
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'saved.txt', { type: 'text/plain' })] } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await screen.findByRole('dialog', { name: '재개할까요?' })
   expect(getDraft('t')).toMatchObject({ text: '다시 방문할 초안', pending: [{ file: expect.any(File) }] })
@@ -655,7 +675,7 @@ it('keeps the draft when navigating away during the reopen confirmation', async 
   expect(getDraft('t')?.text).toBe('다시 방문할 초안')
 })
 
-it('resends only the stored attempt after reopening and keeps the new draft that was not sent', async () => {
+it('resends only the stored attempt despite current estimate failure and keeps the new draft after reopening', async () => {
   const bodies: unknown[] = []
   let reopened = false
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -665,7 +685,7 @@ it('resends only the stored attempt after reopening and keeps the new draft that
       return reopened ? new Response('event: started\ndata: {"requestId":"r","replyMessageId":"a"}\n\nevent: completed\ndata: {}\n\n', { status: 201 })
         : Response.json({ message: '완료된 대화입니다' }, { status: 409 })
     }
-    if (url.endsWith('/estimate')) return Response.json({ inputs: [], srs: [], srCodes: [], bytes: 0, limitBytes: 100000, overLimit: false, attachmentLimit: 10 })
+    if (url.endsWith('/estimate')) return Response.json({ message: '추정 실패' }, { status: 500 })
     return Response.json([])
   }))
   queueFirstRequest('h', { content: 'OLD', attachmentIds: [], oneShotFileIds: [] })
@@ -676,6 +696,7 @@ it('resends only the stored attempt after reopening and keeps the new draft that
   const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
   fireEvent.change(input, { target: { value: 'NEW' } })
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['n'], 'NEW.txt', { type: 'text/plain' })] } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   const dialog = await screen.findByRole('dialog', { name: '재개할까요?' })
   expect(dialog).toHaveTextContent('전송하지 못한 이전 요청')
@@ -762,6 +783,7 @@ it.each([409, 500])('clears Enter immediately, waits through upload and restores
   const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
   fireEvent.change(input, { target: { value: '복원할 질문' } })
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['a'], 'restore.txt')] } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
   await waitFor(() => expect(input).toHaveValue(''))
   expect(screen.queryByText('restore.txt')).not.toBeInTheDocument()
@@ -813,8 +835,102 @@ it('S14: 요청이 끝나면 자료함의 사용됨·첨부됨을 SSE와 무관�
   const task = { id: 't', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
   render(<QueryClientProvider client={client}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><ChatView task={task} /></MeContext></QueryClientProvider>)
   fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: '질문' } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(client.getQueryState(['candidates', 't'])?.isInvalidated).toBe(true))
   expect(client.getQueryState(['sr-inputs', 't'])?.isInvalidated).toBe(true)
   expect(client.getQueryState(['conversation-inputs', 't'])?.isInvalidated).toBe(true)
+})
+
+
+it('blocks sending and refreshes the estimate when linked SR content changes', async () => {
+  let estimates = 0
+  let finish!: (value: Response) => void
+  const info = { inputs: [], srs: [], srCodes: [], bytes: 10, limitBytes: 1000, overLimit: false }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url.endsWith('/estimate')) {
+      if (++estimates > 1) return new Promise<Response>(resolve => { finish = resolve })
+      return Response.json(info)
+    }
+    return Response.json([])
+  }))
+  actionView()
+  fireEvent.change(screen.getByRole('textbox', { name: 'AI 요청 입력' }), { target: { value: 'SR 확인' } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
+  act(() => emitEvent({ event: 'sr.updated', data: { srId: 'sr' } }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeDisabled())
+  await waitFor(() => expect(estimates).toBe(2))
+  await act(async () => finish(Response.json({ ...info, bytes: 100 })))
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
+})
+it('restores focus to the permanent attach button when the empty-tray opener disappears after attaching', async () => {
+  let selected = false
+  const info = () => ({ inputs: selected ? [{ kind: 'sr', srId: 'sr', code: 'SR-1', title: 'Pump', bytes: 10 }] : [], srs: [], srCodes: [], bytes: 10, limitBytes: 1000, overLimit: false })
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url.endsWith('/estimate')) return Response.json(info())
+    if (url.endsWith('/candidates')) return Response.json({ files: [], conversations: [] })
+    if (url.endsWith('/sr-inputs')) return Response.json([{ srId: 'sr', code: 'SR-1', title: 'Pump', selected }])
+    if (url.endsWith('/sr-inputs/sr')) { selected = true; return new Response(null, { status: 204 }) }
+    return Response.json([])
+  }))
+  actionView()
+  const empty = screen.getByRole('button', { name: '연결 자료는 아직 첨부하지 않았습니다.' })
+  empty.focus()
+  fireEvent.click(empty)
+  fireEvent.click(await screen.findByRole('button', { name: '+ 첨부 · SR-1' }))
+  await waitFor(() => expect(empty).not.toBeInTheDocument())
+  await userEvent.keyboard('{Escape}')
+  await waitFor(() => expect(screen.getByRole('button', { name: /^\+ 첨부(?: · 후보 \d+)?$/ })).toHaveFocus())
+})
+it('reads only the count until the picker is entered', async () => {
+  const fetcher = vi.fn(async (url: string) => {
+    if (url.endsWith('/candidate-count')) return Response.json({ count: 7 })
+    if (url.endsWith('/candidates')) return Response.json({ files: [], conversations: [] })
+    return Response.json([])
+  })
+  vi.stubGlobal('fetch', fetcher)
+  actionView()
+  const button = await screen.findByRole('button', { name: '+ 첨부 · 후보 7' })
+  expect(fetcher.mock.calls.filter(([url]) => /\/(candidates|files|sr-inputs)$/.test(url))).toHaveLength(0)
+  fireEvent.click(button)
+  await screen.findByRole('dialog')
+  await waitFor(() => expect(fetcher.mock.calls.filter(([url]) => /\/(candidates|files|sr-inputs)$/.test(url))).toHaveLength(3))
+})
+
+it('forwards the pre-send signature and restores the draft after a stale selection without replaying it', async () => {
+  const posts: Array<{ inputSignature?: string; content?: string }> = []
+  let estimates = 0
+  let freshEstimate!: () => void
+  const fresh = new Promise<void>(resolve => { freshEstimate = resolve })
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/estimate')) {
+      estimates++
+      if (posts.length === 1) await fresh
+      return Response.json({ inputSignature: posts.length ? 'b'.repeat(64) : 'a'.repeat(64), bytes: 100, limitBytes: 1000, inputs: [], srCodes: [], srs: [], overLimit: false })
+    }
+    if (url === '/api/threads/h/requests') {
+      posts.push(JSON.parse(String(init?.body)))
+      if (posts.length === 1) return Response.json({ code: 'INPUT_SELECTION_CHANGED' }, { status: 409 })
+      return new Response('event: started\ndata: {"requestId":"r-fresh","replyMessageId":"reply"}\n\nevent: completed\ndata: {}\n\n', { status: 201 })
+    }
+    return Response.json([])
+  }))
+  actionView()
+  const text = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  fireEvent.change(text, { target: { value: '경쟁 질문' } })
+  const send = screen.getByRole('button', { name: '전송' })
+  await waitFor(() => expect(send).toBeEnabled())
+  fireEvent.click(send)
+  await waitFor(() => expect(toastError).toHaveBeenCalled())
+  expect(posts).toEqual([{ content: '경쟁 질문', attachmentIds: [], oneShotFileIds: [], inputSignature: 'a'.repeat(64) }])
+  expect(text).toHaveValue('경쟁 질문')
+  expect(sessionStorage.getItem('mes-chat-attempt:h')).toBeNull()
+  expect(toastError.mock.calls.at(-1)?.[1]).toMatchObject({ description: '첨부 자료가 변경되었습니다. 자료 용량을 다시 확인한 뒤 전송하세요.' })
+  expect(send).toBeDisabled()
+  freshEstimate()
+  await waitFor(() => expect(send).toBeEnabled())
+  fireEvent.click(send)
+  await waitFor(() => expect(posts).toHaveLength(2))
+  expect(posts[1]?.inputSignature).toBe('b'.repeat(64))
+  expect(estimates).toBeGreaterThan(2)
 })

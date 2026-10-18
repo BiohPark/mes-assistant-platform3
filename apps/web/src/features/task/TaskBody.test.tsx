@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Task } from '@mes/domain'
@@ -10,12 +10,13 @@ import { jsonResponse, renderWithProviders } from '@/test/render'
 import { TaskBody } from './TaskBody'
 import { useTaskChatActions } from './chatActions'
 import { TaskHeader } from './TaskHeader'
+import { inputSelection } from '@/api/inputSelection'
 import { useMaterialsDrawer } from './materialsDrawer'
 import { useTagShareStore } from './tagShare'
 
 const task = { id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: [], checklist: [], inputs: [], outputFileIds: [], threadId: 'h', createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z' } satisfies Task
 
-afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); useMaterialsDrawer.setState({ byTask: {} }); useTagShareStore.setState({ openSeq: {}, consumedSeq: {} }) })
+afterEach(() => { cleanup(); inputSelection.setState({ byTask: {} }); vi.unstubAllGlobals(); sessionStorage.clear(); useMaterialsDrawer.setState({ byTask: {} }); useTagShareStore.setState({ openSeq: {}, consumedSeq: {} }) })
 
 function stub() {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -33,7 +34,7 @@ it('맥락 없는 대화는 닫히고 자료 열기는 패널에 초점을 주�
   stub()
   renderWithProviders(view(task))
   expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
-  const toggle = screen.getByRole('button', { name: /^연결 자료/ })
+  const toggle = screen.getByRole('button', { name: /^연결 자료(?:\(\d+\))?$/ })
   expect(toggle).toHaveAttribute('aria-expanded', 'false')
   const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
   fireEvent.change(input, { target: { value: '유지할 입력' } })
@@ -47,19 +48,19 @@ it('맥락 없는 대화는 닫히고 자료 열기는 패널에 초점을 주�
   expect(fetch).not.toHaveBeenCalledWith(expect.stringMatching(/inputs/), expect.objectContaining({ method: 'PUT' }))
 })
 
-it.each([{ tags: ['A'] }, { linkedSrCodes: ['SR-2026-0001'] }])('태그/SR 자동 열림, 수동 닫힘 유지, 새 태그 추가만 다시 연다: %j', async context => {
+it.each([{ tags: ['A'] }, { linkedSrCodes: ['SR-2026-0001'] }])('태그/SR 자동 열림, 수동 닫힘 유지, 새 태그 추가에도 닫힘 유지: %j', async context => {
   stub()
   let update: (value: Task) => void = () => {}
   function Harness() { const [value, setValue] = useState<Task>({ ...task, ...context }); update = setValue; return view(value) }
   renderWithProviders(<Harness />)
-  const toggle = screen.getByRole('button', { name: /^연결 자료/ })
-  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  const toggle = screen.getByRole('button', { name: /^연결 자료(?:\(\d+\))?$/ })
+  await waitFor(() => expect(toggle).toHaveAttribute('aria-expanded', 'true'))
   await userEvent.click(toggle)
   expect(sessionStorage.getItem('mes-hub:panel-state:t')).toBe('closed')
   act(() => update({ ...task, ...context, title: '갱신' }))
   expect(toggle).toHaveAttribute('aria-expanded', 'false')
   act(() => update({ ...task, ...context, tags: [...(context.tags ?? []), 'B'] }))
-  await waitFor(() => expect(toggle).toHaveAttribute('aria-expanded', 'true'))
+  await waitFor(() => expect(toggle).toHaveAttribute('aria-expanded', 'false'))
 })
 
 it('대화별 수동 선택은 재마운트/MDI 전환에도 유지되고 보조 도구는 메뉴와 키보드로 열린다', async () => {
@@ -74,13 +75,14 @@ it('대화별 수동 선택은 재마운트/MDI 전환에도 유지되고 보조
   expect(screen.getByText('보조 도구').closest('details')).toHaveAttribute('open')
   unmount()
   renderWithProviders(view(task))
-  expect(screen.getByRole('complementary')).toBeInTheDocument()
+  expect(await screen.findByRole('complementary')).toBeInTheDocument()
   expect(screen.getByText('보조 도구').closest('details')).not.toHaveAttribute('open')
 })
 
 it('MDI 두 대화의 패널 id와 수동 선택은 겹치지 않는다', async () => {
   stub()
   renderWithProviders(<>{view({ ...task, tags: ['A'] })}{view({ ...task, id: 't2', threadId: 'h2', tags: ['A'] })}</>)
+  await waitFor(() => expect(screen.getAllByRole('complementary')).toHaveLength(2))
   const panels = screen.getAllByRole('complementary')
   expect(new Set(panels.map(panel => panel.id)).size).toBe(2)
   const toggles = screen.getAllByRole('button', { name: '연결 자료(0)' })
@@ -115,6 +117,7 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
   const composer = input.parentElement!.parentElement!
   const draft = '응답을 기다리는 AI 요청'
   fireEvent.change(input, { target: { value: draft } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
   fireEvent.keyDown(input, { key: 'Enter' })
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/threads/h-pending/requests', expect.objectContaining({ method: 'POST' })))
 
@@ -149,12 +152,12 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
 
   // 패널·보조 도구를 열고 닫는 동안에도 입력·전송 상태는 같은 인스턴스다.
   for (let i = 0; i < 2; i++) {
-    fireEvent.click(screen.getByRole('button', { name: /^연결 자료/ }))
-    fireEvent.click(screen.getByText('보조 도구'))
+    fireEvent.click(screen.getByRole('button', { name: /^연결 자료(?:\(\d+\))?$/ }))
+    fireEvent.click(await screen.findByText('보조 도구'))
     expectComposerPreserved()
-    fireEvent.click(screen.getByText('보조 도구'))
+    fireEvent.click(await screen.findByText('보조 도구'))
     expectComposerPreserved()
-    fireEvent.click(screen.getByRole('button', { name: /^연결 자료/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^연결 자료(?:\(\d+\))?$/ }))
     expectComposerPreserved()
   }
 })
@@ -192,7 +195,7 @@ it('자동 상태에서 마지막 태그가 빠지면 패널이 닫힌다', asyn
   let update: (value: Task) => void = () => {}
   function Harness() { const [value, setValue] = useState<Task>({ ...task, tags: ['A'] }); update = setValue; return view(value) }
   renderWithProviders(<Harness />)
-  expect(screen.getByRole('complementary')).toBeInTheDocument()
+  expect(await screen.findByRole('complementary')).toBeInTheDocument()
   act(() => update(task))
   expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
 })
@@ -212,18 +215,18 @@ it('더 보기 방향키·Space로 메모를 열고 해당 보조 영역에 초�
 })
 
 
-it('태그 추가→제거는 자동 규칙을 따르고, 수동 닫힘 뒤 맥락 추가도 override를 지운다', async () => {
+it('태그 추가→제거는 자동 규칙을 따르고, 수동 닫힘 뒤 맥락 추가에도 닫힘을 유지한다', async () => {
   stub()
   let update!: (value: Task) => void
   function Harness() { const [value, setValue] = useState<Task>(task); update = setValue; return view(value) }
   renderWithProviders(<Harness />)
   act(() => update({ ...task, tags: ['A'] }))
-  expect(screen.getByRole('complementary')).toBeInTheDocument()
+  expect(await screen.findByRole('complementary')).toBeInTheDocument()
   expect(sessionStorage.getItem('mes-hub:panel-state:t')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: /^연결 자료/ }))
+  fireEvent.click(screen.getByRole('button', { name: /^연결 자료(?:\(\d+\))?$/ }))
   act(() => update({ ...task, tags: ['A', 'B'] }))
-  await waitFor(() => expect(screen.getByRole('complementary')).toBeInTheDocument())
-  expect(sessionStorage.getItem('mes-hub:panel-state:t')).toBeNull()
+  await waitFor(() => expect(screen.queryByRole('complementary')).not.toBeInTheDocument())
+  expect(sessionStorage.getItem('mes-hub:panel-state:t')).toBe('closed')
   act(() => update(task))
   expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
 })
@@ -232,13 +235,13 @@ it('공유 안내로 연 뒤 수동 닫힘은 LRU에 해당하는 언마운트�
   stub()
   const first = renderWithProviders(view(task))
   act(() => useTagShareStore.getState().openMaterials('t'))
-  await waitFor(() => expect(screen.getByRole('complementary')).toBeInTheDocument())
-  fireEvent.click(screen.getByRole('button', { name: /^연결 자료/ }))
+  expect(await screen.findByRole('complementary')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: /^연결 자료(?:\(\d+\))?$/ }))
   first.unmount()
   renderWithProviders(view(task))
   expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
   act(() => useTagShareStore.getState().openMaterials('t'))
-  await waitFor(() => expect(screen.getByRole('complementary')).toBeInTheDocument())
+  expect(await screen.findByRole('complementary')).toBeInTheDocument()
 })
 
 it('패널 접기→펼치기는 메모 본문·첨부와 진행 중 체크리스트 검토를 보존한다', async () => {
@@ -255,7 +258,7 @@ it('패널 접기→펼치기는 메모 본문·첨부와 진행 중 체크리�
     return jsonResponse(200, [])
   }))
   renderWithProviders(view({ ...task, tags: ['A'], checklist: [{ id: 'c', label: '근거', required: false, checked: false }] }))
-  fireEvent.click(screen.getByText('보조 도구'))
+  fireEvent.click(await screen.findByText('보조 도구'))
   const memo = screen.getByRole('textbox', { name: '메모 본문' })
   fireEvent.change(memo, { target: { value: '보존할 메모' } })
   const attachment = await screen.findByRole('checkbox', { name: '메모.txt v1' })
@@ -263,7 +266,7 @@ it('패널 접기→펼치기는 메모 본문·첨부와 진행 중 체크리�
   fireEvent.click(screen.getByRole('button', { name: 'AI 달성도 점검' }))
   await waitFor(() => expect(stream).toBeDefined())
   await act(async () => stream.enqueue(new TextEncoder().encode('event: item\ndata: {"itemId":"c","met":true,"note":"진행 중 판단"}\n\n')))
-  const toggle = screen.getByRole('button', { name: /^연결 자료/ })
+  const toggle = screen.getByRole('button', { name: /^연결 자료(?:\(\d+\))?$/ })
   fireEvent.click(toggle)
   expect(signal.aborted).toBe(false)
   fireEvent.click(toggle)
@@ -278,9 +281,9 @@ it('좁은 화면 자동 열림은 접힌 바이며 펼친 다음에만 50% 자�
   stub()
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('max-width'), media: query, addListener() {}, removeListener() {} }))
   renderWithProviders(view({ ...task, tags: ['A'] }))
-  const toggle = screen.getByRole('button', { name: /^연결 자료/ })
+  const toggle = screen.getByRole('button', { name: /^연결 자료(?:\(\d+\))?$/ })
   expect(toggle).toHaveAttribute('aria-expanded', 'false')
-  const bar = screen.getByRole('complementary').querySelector('summary')!
+  const bar = (await screen.findByRole('complementary')).querySelector('summary')!
   expect(bar.closest('details')).not.toHaveAttribute('open')
   fireEvent.click(bar)
   await waitFor(() => expect(toggle).toHaveAttribute('aria-expanded', 'true'))
@@ -325,11 +328,11 @@ it('같은 화면 인스턴스에서 대화 ID가 바뀌면 이전 대화의 메
   let update!: (value: Task) => void
   function Harness() { const [value, setValue] = useState<Task>({ ...task, tags: ['A'] }); update = setValue; return view(value) }
   renderWithProviders(<Harness />)
-  fireEvent.click(screen.getByText('보조 도구'))
+  fireEvent.click(await screen.findByText('보조 도구'))
   fireEvent.change(screen.getByRole('textbox', { name: '메모 본문' }), { target: { value: '첫 대화 메모' } })
   fireEvent.click(await screen.findByRole('checkbox', { name: '공통.txt v1' }))
   act(() => update({ ...task, id: 'second', threadId: 'second-thread', tags: ['A'] }))
-  if (!screen.getByText('보조 도구').closest('details')!.open) fireEvent.click(screen.getByText('보조 도구'))
+  if (!(await screen.findByText('보조 도구')).closest('details')!.open) fireEvent.click(await screen.findByText('보조 도구'))
   expect(screen.getByRole('textbox', { name: '메모 본문' })).toHaveValue('')
   expect(await screen.findByRole('checkbox', { name: '공통.txt v1' })).not.toBeChecked()
 })

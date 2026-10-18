@@ -1,3 +1,4 @@
+import { inputSelection } from '@/api/inputSelection'
 import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle } from 'lucide-react'
@@ -27,7 +28,8 @@ async function run(action: Promise<unknown>) {
 export function useRequestAttachments(task: Task, estimate: RequestEstimateState): AttachmentChip[] {
   const t = useT()
   const actor = useActor()
-  const disabled = task.status === 'done'
+  const selectionBusy = inputSelection(state => !!state.byTask[task.id]?.sending || (state.byTask[task.id]?.pending ?? 0) > 0)
+  const disabled = task.status === 'done' || selectionBusy
   const busy = estimate.revisionChanged
   return (estimate.data?.inputs ?? []).map((input: RequestInput): AttachmentChip => {
     if (input.kind === 'file') return { key: `file:${input.fileId}`, kind: 'file', label: input.name, title: `${input.name} v${input.version} · ${t(delivery[input.delivery])}`,
@@ -64,7 +66,7 @@ export function RequestSizeNotice({ task, estimate }: { task: Task; estimate: Re
   const inputs = info.inputs
   const largest = inputs.filter((item) => item.kind === 'conversation').sort((a, b) => b.bytes - a.bytes)[0]
   const current = selected.data?.find((item) => item.input.sourceTaskId === adjust?.taskId)
-  const candidate = candidates.data?.conversations.find((item) => item.taskId === adjust?.taskId) ?? (current ? {
+  const candidate = candidates.data?.conversations?.find((item) => item.taskId === adjust?.taskId) ?? (current ? {
     taskId: current.source.taskId, code: current.source.code, title: current.source.title, status: '', assistant: current.source.assistant,
     sharedTags: [], messageCount: current.messageCount, bytes: current.bytes, lastActivityAt: '',
   } : undefined)

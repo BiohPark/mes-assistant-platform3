@@ -18,7 +18,7 @@ const config = loadConfig({ DATABASE_URL: 'mysql://u:p@localhost:1/none', SESSIO
 describe('conversation inputs HTTP API', () => {
   let app: INestApplication
   const context = {
-    list: vi.fn(async () => []), candidates: vi.fn(async () => [{ taskId: 's' }]), preview: vi.fn(async () => [{ id: 'm', content: '질문', role: 'user', status: 'done' }]),
+    previousMaterials: vi.fn(async () => []), list: vi.fn(async () => []), candidates: vi.fn(async () => [{ taskId: 's' }]), preview: vi.fn(async () => [{ id: 'm', content: '질문', role: 'user', status: 'done' }]),
     select: vi.fn(async () => ({ input: { mode: 'messages' } })), setWeight: vi.fn(async () => undefined), remove: vi.fn(async () => undefined), refresh: vi.fn(async () => ({ input: { mode: 'full' } })),
   }
   const requests = { draftConversationSummary: vi.fn(async () => ({ text: '요약', source: 'rule' })) }
@@ -45,6 +45,14 @@ describe('conversation inputs HTTP API', () => {
     await request(app.getHttpServer()).patch('/api/tasks/t/conversation-inputs/s').set(auth()).send({ weight: 'reference' }).expect(204)
     await request(app.getHttpServer()).delete('/api/tasks/t/conversation-inputs/s').set(auth()).expect(204)
     await request(app.getHttpServer()).post('/api/tasks/t/conversation-inputs/s/refresh').set(auth()).expect(201)
+  })
+
+  it('lists only the previous request materials and accepts a snapshot restore through the selection API', async () => {
+    await request(app.getHttpServer()).get('/api/tasks/t/conversation-inputs/previous-materials').expect(401)
+    await request(app.getHttpServer()).get('/api/tasks/t/conversation-inputs/previous-materials').set(auth()).expect(200, [])
+    expect(context.previousMaterials).toHaveBeenCalledWith('u', 't')
+    await request(app.getHttpServer()).put('/api/tasks/t/conversation-inputs/s').set(auth()).send({ mode: 'messages', snapshotId: 'snap', weight: 'main' }).expect(200)
+    expect(context.select).toHaveBeenCalledWith('u', 't', 's', { mode: 'messages', snapshotId: 'snap', weight: 'main' })
   })
 
   it('validates summary IDs before calling the sole auxiliary provider entry point', async () => {
