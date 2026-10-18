@@ -13,6 +13,7 @@ import { TaskHeader } from './TaskHeader'
 import { inputSelection } from '@/api/inputSelection'
 import { useMaterialsDrawer } from './materialsDrawer'
 import { useTagShareStore } from './tagShare'
+import { emitEvent } from '@/app/useEvents'
 
 const task = { id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: [], checklist: [], inputs: [], outputFileIds: [], threadId: 'h', createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z' } satisfies Task
 
@@ -29,6 +30,31 @@ function stub() {
 const assistant = { id: 'a', name: '도우미' } as Assistant
 const me = { id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
 function view(value: Task) { return <MeContext value={me}><TooltipProvider><TaskHeader task={value} assistant={assistant} /><TaskBody task={value} assistant={assistant} /></TooltipProvider></MeContext> }
+
+it('접힌 헤더와 선택기는 같은 경량 후보 수를 표시하고 변경도 함께 반영한다', async () => {
+  let count = 2
+  const fetcher = vi.fn(async (url: string) => {
+    if (url.endsWith('/candidate-count')) return jsonResponse(200, { count })
+    if (url.endsWith('/candidates')) return jsonResponse(200, { files: [], conversations: [] })
+    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
+    return jsonResponse(200, [])
+  })
+  vi.stubGlobal('fetch', fetcher)
+  sessionStorage.setItem('mes-hub:panel-state:t', 'closed')
+  renderWithProviders(view({ ...task, tags: ['same-tag'] }))
+  expect(await screen.findByRole('button', { name: '+ 첨부 · 후보 2' })).toBeVisible()
+  const header = screen.getByRole('button', { name: '연결 자료(2)' })
+  expect(header).toHaveAttribute('aria-expanded', 'false')
+  expect(fetcher.mock.calls.filter(([url]) => url.endsWith('/candidate-count'))).toHaveLength(1)
+  expect(fetcher.mock.calls.filter(([url]) => /\/(candidates|files|sr-inputs)$/.test(url))).toHaveLength(0)
+  count = 3
+  act(() => emitEvent({ event: 'task.updated', data: { taskId: 'source' } }))
+  expect(await screen.findByRole('button', { name: '연결 자료(3)' })).toBeVisible()
+  expect(screen.getByRole('button', { name: '+ 첨부 · 후보 3' })).toBeVisible()
+  fireEvent.click(header)
+  expect(header).toHaveAttribute('aria-expanded', 'true')
+  expect(header).toHaveTextContent('연결 자료(3)')
+})
 
 it('맥락 없는 대화는 닫히고 자료 열기는 패널에 초점을 주며 입력·선택을 보존한다', async () => {
   stub()

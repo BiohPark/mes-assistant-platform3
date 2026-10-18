@@ -20,8 +20,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { PriorityBadge, TaskStatusBadge } from '@/components/StatusBadges'
 import { PRIORITY_KEY } from '@/lib/labels'
 import { copyText } from '@/lib/clipboard'
-import { listSrInputs } from '@/api/srInputs'
-import { filesForTask, getCandidates } from '@/api/files'
+import { useMaterialCandidates } from '@/features/chat/useMaterialCandidates'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem } from '@/components/ui/dropdown-menu'
 import { useT } from '@/i18n'
@@ -40,12 +39,7 @@ export function TaskHeader({ task, assistant, toolsRef }: { task: Task; assistan
   const choosePanel = useMaterialsDrawer(s => s.choose)
   const chatActions = useTaskChatActions(s => s.byTask[task.id])
   const contextual = hasContext(task)
-  const countEnabled = contextual && panelOpen
-  const candidates = useQuery({ queryKey: ['candidates', task.id], queryFn: () => getCandidates(task.id), enabled: countEnabled })
-  const ownFiles = useQuery({ queryKey: ['files', task.id], queryFn: () => filesForTask(task.id), enabled: countEnabled })
-  const srBodies = useQuery({ queryKey: ['sr-inputs', task.id], queryFn: () => listSrInputs(task.id), retry: false, enabled: countEnabled })
-  const shared = (candidates.data?.files ?? []).filter(item => item.sourceTaskId !== task.id && item.viaTags.length && (!item.newerVersionId || task.inputs.some(input => input.fileId === item.file.id)))
-  const count = new Set([...(ownFiles.data ?? []).map(file => file.id), ...shared.map(item => item.file.id), ...(candidates.data?.srFiles ?? []).map(item => item.file.id)]).size + (candidates.data?.conversations?.length ?? 0) + (srBodies.data?.length ?? 0)
+  const { count } = useMaterialCandidates(task.id, false)
   const actor = useActor()
   const t = useT()
   const query = useQueryClient()
@@ -88,7 +82,7 @@ export function TaskHeader({ task, assistant, toolsRef }: { task: Task; assistan
         {task.status === 'done' ? <Button size="sm" variant="outline" onClick={() => setReopen(true)}><PlayCircle data-icon="inline-start" />{t('task.header.reopen')}</Button> : <>
           <Button size="sm" data-tour="task-complete" onClick={() => setComplete(true)}><CheckCircle2 data-icon="inline-start" />{t('task.header.complete')}</Button>
         </>}
-        <Button variant="outline" size="sm" data-tour="linked-materials" aria-expanded={panelOpen} aria-controls={drawerId(task.id)} onClick={() => choosePanel(task.id, panelOpen ? 'closed' : 'open')}>{contextual ? t('task.header.materials', { count }) : t('task.body.materials')}</Button>
+        <Button variant="outline" size="sm" data-tour="linked-materials" aria-expanded={panelOpen} aria-controls={drawerId(task.id)} onClick={() => choosePanel(task.id, panelOpen ? 'closed' : 'open')}>{contextual || count ? t('task.header.materials', { count }) : t('task.body.materials')}</Button>
         {chatActions?.issue && <>
           <Button size="sm" variant="outline" disabled={!chatActions.info} onClick={chatActions.info}>{t('task.header.requestHistory')}</Button>
           <Button size="sm" variant="outline" disabled={!chatActions.exclude} onClick={chatActions.exclude}>{t('chat.retryWithoutFiles')}</Button>

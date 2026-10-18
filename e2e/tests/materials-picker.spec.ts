@@ -45,6 +45,27 @@ async function send(page: Page, text: string, threadId: string) {
   await expect(page.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('')
 }
 
+test('같은 태그 대화 2개의 후보 수는 접힌 헤더·선택기에서 일치하고 갱신된다', async ({ page }) => {
+  const { create } = await setup(page)
+  const tag = `count-${crypto.randomUUID()}`
+  const task = await create([tag])
+  await create([tag])
+  await create([tag])
+  await answered(page, task.threadId, '패널 자동 열림 없이 후보 확인')
+  await page.goto(`/c/${task.id}`)
+  const header = linkedMaterialsToggle(page)
+  const attach = page.locator('[data-tour="materials-picker"]')
+  await expect(header).toHaveAttribute('aria-expanded', 'false')
+  await expect(header).toHaveText('연결 자료(2)')
+  await expect(attach).toHaveText('+ 첨부 · 후보 2')
+  await revealMaterials(page)
+  await expect(header).toHaveText('연결 자료(2)')
+  await header.click()
+  await create([tag])
+  await expect(header).toHaveText('연결 자료(3)')
+  await expect(attach).toHaveText('+ 첨부 · 후보 3')
+})
+
 test('1A·2B: 첫 질문은 무첨부, SR 본문만 선택하고 추정과 전송이 일치한다', async ({ page }) => {
   const { create } = await setup(page)
   const draft = await (await page.request.post('/api/service-requests')).json() as { id: string }

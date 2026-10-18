@@ -180,15 +180,15 @@ it('메뉴의 우선순위 변경은 기존 PATCH 경로에 고른 값만 보낸
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/tasks/t', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ priority: 'urgent' }) })))
 })
 
-it('연결 자료 개수는 중복 파일과 숨긴 이전 버전을 제외하고 표시할 SR 본문·대화를 센다', async () => {
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(
-    url.endsWith('/candidates') ? { files: [{ file: { id: 'shared' }, sourceTaskId: 'other', viaTags: ['A'] }, { file: { id: 'old' }, sourceTaskId: 'other', viaTags: ['A'], newerVersionId: 'shared' }], srFiles: [{ file: { id: 'mine' } }], conversations: [{ taskId: 'other' }] }
-      : url.endsWith('/files') ? [{ id: 'mine' }] : url.endsWith('/sr-inputs') ? [{ srId: 'sr' }] : []), { status: 200 })))
+it('연결 자료 개수는 상세 목록 조회 없이 경량 집계 결과를 표시한다', async () => {
+  const fetcher = vi.fn(async (url: string) => Response.json(url.endsWith('/candidate-count') ? { count: 4 } : []))
+  vi.stubGlobal('fetch', fetcher)
   render(wrap({ ...task, tags: ['A'] }))
   expect(await screen.findByRole('button', { name: '연결 자료(4)' })).toBeInTheDocument()
+  expect(fetcher.mock.calls.filter(([url]) => /\/(candidates|files|sr-inputs)$/.test(url))).toHaveLength(0)
 })
 
-it('맥락 없는 닫힌 패널은 숫자와 count용 조회 3종을 생략한다', async () => {
+it('후보가 없는 닫힌 패널은 숫자와 상세 조회 3종을 생략한다', async () => {
   const calls: string[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string) => { calls.push(url); return new Response('[]', { status: 200 }) }))
   render(wrap(task))
@@ -198,13 +198,14 @@ it('맥락 없는 닫힌 패널은 숫자와 count용 조회 3종을 생략한�
 })
 
 
-it('맥락이 있어도 수동으로 닫힌 패널은 헤더 count 쿼리를 보내지 않는다', async () => {
+it('수동으로 닫힌 패널도 경량 후보 수를 표시하고 상세 조회는 생략한다', async () => {
   sessionStorage.setItem('mes-hub:panel-state:t', 'closed')
   const calls: string[] = []
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => { calls.push(url); return new Response('[]', { status: 200 }) }))
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => { calls.push(url); return Response.json(url.endsWith('/candidate-count') ? { count: 2 } : []) }))
   try {
     render(wrap({ ...task, tags: ['A'] }))
     expect(screen.getByRole('button', { name: /^연결 자료/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(await screen.findByRole('button', { name: '연결 자료(2)' })).toBeVisible()
     await waitFor(() => expect(calls).toContain('/api/settings'))
     expect(calls.filter(url => /\/tasks\/t\/(candidates|files|sr-inputs)$/.test(url))).toEqual([])
   } finally { sessionStorage.removeItem('mes-hub:panel-state:t') }
