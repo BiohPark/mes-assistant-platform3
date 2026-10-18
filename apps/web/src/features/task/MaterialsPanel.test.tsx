@@ -15,7 +15,7 @@ const liveListeners = vi.hoisted(() => new Set<(event: { event: string; data: Re
 vi.mock('@/app/useEvents', async (original) => ({ ...await original<typeof import('@/app/useEvents')>(),
   subscribeEvent: (listener: (event: { event: string; data: Record<string, unknown> }) => void) => { liveListeners.add(listener); return () => { liveListeners.delete(listener) } } }))
 
-it('S13: 연결된 SR 첨부 구역 — 같은 파일을 보이고 미리보기·내려받기·선택 해제를 하며 SR 변경을 실시간 반영한다', async () => {
+it('S13: 첨부 구역 — 같은 파일을 보이고 미리보기·내려받기·선택 해제를 하며 SR 변경을 실시간 반영한다', async () => {
   const calls: Array<[string, RequestInit | undefined]> = []
   const srFile = { id: 'sf', originSrId: 'sr1', name: 'spec.txt', mime: 'text/plain', size: 4, sha256: 'x', version: 1, source: 'upload', isOutput: false, uploadedBy: 'r', uploadedAt: '2026-01-01T00:00:00.000Z' }
   let srFiles: Array<Record<string, unknown>> = [{ file: srFile, srId: 'sr1', srCode: 'SR-2026-0001', srTitle: '알람', selected: 'reference' }]
@@ -33,25 +33,25 @@ it('S13: 연결된 SR 첨부 구역 — 같은 파일을 보이고 미리보기�
   const task = { ...baseTask, id: 't', tags: ['SR-2026-0001'], inputs: [{ fileId: 'sf', weight: 'reference' as const, selectedAt: '2026-01-01T00:00:00.000Z', selectedBy: 'u' }] } satisfies Task
   renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={task} /></MeContext>)
   const section = await screen.findByTestId('materials-sr-files')
-  expect(section).toHaveTextContent('연결된 SR 첨부')
+  expect(section).toHaveTextContent('첨부')
   expect(section).toHaveTextContent('SR-2026-0001')
-  expect(within(section).getByTestId('sr-file-sf')).toHaveTextContent('spec.txt v1')
+  expect(within(section).getByTestId('sr-file-sf')).toHaveTextContent('spec.txt')
   // 첨부 중인 SR 파일은 '첨부됨'으로 보인다
-  expect(within(section).getByRole('button', { name: 'spec.txt 첨부' })).toHaveAttribute('aria-pressed', 'true')
+  expect(within(section).getByRole('button', { name: /(?:\+ 입력창에 담기|담김 ✓) · spec.txt$/ })).toHaveAttribute('aria-pressed', 'true')
   // 내려받기
   fireEvent.click(within(section).getByRole('button', { name: '다운로드' }))
   await waitFor(() => expect(calls.some(([url]) => url === '/api/files/sf/content')).toBe(true))
   // 미리보기
-  fireEvent.click(within(section).getByRole('button', { name: 'spec.txt v1' }))
+  fireEvent.click(within(section).getByRole('button', { name: 'spec.txt' }))
   expect(await screen.findByText('본문')).toBeInTheDocument()
   fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
   // '첨부됨'을 다시 누르면 첨부에서 뺀다(같은 setInput 경로)
-  fireEvent.click(within(section).getByRole('button', { name: 'spec.txt 첨부' }))
+  fireEvent.click(within(section).getByRole('button', { name: /(?:\+ 입력창에 담기|담김 ✓) · spec.txt$/ }))
   await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t/inputs/sf' && init?.method === 'DELETE')).toBe(true))
   // SR이 바뀌면(sr.updated) 다시 읽는다
   srFiles = [...srFiles, { file: { ...srFile, id: 'sf2', name: 'more.txt' }, srId: 'sr1', srCode: 'SR-2026-0001', srTitle: '알람' }]
   act(() => { for (const listener of liveListeners) listener({ event: 'sr.updated', data: { srId: 'sr1' } }) })
-  expect(await screen.findByTestId('sr-file-sf2')).toHaveTextContent('more.txt v1')
+  expect(await screen.findByTestId('sr-file-sf2')).toHaveTextContent('more.txt')
 })
 
 it('S13: 연결 SR 첨부가 없으면 구역을 그리지 않는다', async () => {
@@ -80,14 +80,14 @@ it('shows a selected older version, offers an explicit switch, and keeps indirec
   renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={task} /></MeContext>)
   // 첨부 중인 이전 버전은 자료함에 남아 '첨부됨'과 새 버전 전환을 보인다
   const staged = await screen.findByTestId('candidate-file-v1')
-  expect(within(staged).getByRole('button', { name: 'report.md 첨부' })).toHaveAttribute('aria-pressed', 'true')
+  expect(within(staged).getByRole('button', { name: /(?:\+ 입력창에 담기|담김 ✓) · report.md$/ })).toHaveAttribute('aria-pressed', 'true')
   // 출처는 내부 ID가 아니라 대화 코드·제목으로 보인다
   expect(staged).toHaveTextContent('WK-2026-0002 · 원본 대화')
   expect(staged).not.toHaveTextContent(/·\s*source/)
   fireEvent.click(within(staged).getByText('새 버전 있음 · 바꾸기'))
   await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t/inputs/v1/switch-version' && init?.method === 'POST')).toBe(true))
   const latest = screen.getByTestId('candidate-file-v2')
-  expect(latest).toHaveTextContent('report.md v2')
+  expect(latest).toHaveTextContent('report.md')
   expect(within(latest).queryByText('새 버전 있음 · 바꾸기')).not.toBeInTheDocument()
   expect(within(latest).getByRole('link', { name: 'WK-2026-0002' })).toHaveAttribute('href', '/c/source')
   expect(latest).toHaveTextContent('업로드 · WK-2026-0002 · 원본 대화 · direct')
@@ -111,7 +111,7 @@ it('previews directly shared conversations before staging and shows count, recen
   const task = { id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: ['direct'], checklist: [], inputs: [], outputFileIds: [], createdAt: '2026-01-01T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-01-01T00:00:00.000Z' } satisfies Task
   renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MaterialsPanel task={task} /></MeContext>)
   expect(await screen.findByTestId('conversation-source')).toHaveTextContent('WK-2026-0002 · 원본')
-  expect(screen.getByText('같은 태그 대화 1개')).toBeInTheDocument()
+  expect(screen.getByText('#태그 공유 대화 1개')).toBeInTheDocument()
   expect(screen.getByTestId('conversation-source')).toHaveTextContent('사용됨')
   // 상태 원문(done)이 아니라 라벨로 보인다
   expect(screen.getByTestId('conversation-source')).toHaveTextContent('완료')
@@ -124,7 +124,7 @@ it('previews directly shared conversations before staging and shows count, recen
   fireEvent.click(screen.getByRole('button', { name: '취소' }))
   expect(calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
   // [첨부] 한 번에 대화 전체(전체 원문) — 창 없이 바로
-  const attach = screen.getByRole('button', { name: 'WK-2026-0002 첨부' })
+  const attach = screen.getByRole('button', { name: /(?:\+ 입력창에 담기|담김 ✓) · WK-2026-0002$/ })
   expect(attach).toHaveAttribute('aria-pressed', 'false')
   fireEvent.click(attach)
   await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t/conversation-inputs/source' && init?.method === 'PUT' && JSON.parse(String(init.body)).mode === 'full')).toBe(true))
@@ -177,7 +177,7 @@ it('shows loading, no-results with a clear button, and the library caption in th
   expect(shared).toHaveTextContent('불러오는 중…')
   expect(shared).not.toHaveTextContent('같은 태그 대화의 파일이 없습니다.')
   // 긴 설명은 화면 대신 툴팁(도움말 아이콘)에 둔다
-  expect(within(screen.getByTestId('materials-library')).getByRole('button', { name: /^\[첨부\]를 누르면/ })).toBeInTheDocument()
+  expect(within(screen.getByTestId('materials-library')).getByRole('button', { name: /^\[\+ 입력창에 담기\]를 누르면 입력창에 칩으로/ })).toBeInTheDocument()
   expect(screen.getByTestId('materials-library')).not.toHaveTextContent('다음 질문에 한 번만')
   release(jsonResponse(200, { files: [{ file: fileMeta, sourceTaskId: 'source', sourceCode: 'WK-2', sourceTitle: '원본', viaTags: ['shared'], role: 'output' }], conversations: [] }))
   await screen.findByTestId('candidate-file-out')
@@ -185,11 +185,11 @@ it('shows loading, no-results with a clear button, and the library caption in th
   // 산출물 배지는 행 텍스트 순서를 유지한 채 토큰 색으로 보인다
   expect(screen.getByTestId('candidate-file-out')).toHaveTextContent('산출물 · WK-2 · 원본 · shared')
   expect(screen.getByText('산출물')).toHaveClass('bg-tone-violet-bg', 'text-tone-violet-fg')
-  fireEvent.change(screen.getByLabelText('공유 자료함 검색'), { target: { value: 'zzz' } })
+  fireEvent.change(screen.getByLabelText('연결 자료 검색'), { target: { value: 'zzz' } })
   expect(shared).toHaveTextContent('"zzz"에 맞는 파일이 없습니다.')
   expect(shared).not.toHaveTextContent('같은 태그 대화의 파일이 없습니다.')
   fireEvent.click(screen.getByRole('button', { name: '검색 지우기' }))
-  expect(screen.getByLabelText('공유 자료함 검색')).toHaveValue('')
+  expect(screen.getByLabelText('연결 자료 검색')).toHaveValue('')
   expect(screen.getByTestId('candidate-file-out')).toBeInTheDocument()
   expect(screen.getByTestId('materials-shared').innerHTML).not.toMatch(/(?:bg|text|border|fill)-(?:amber|violet|sky)-\d/)
 })
@@ -212,8 +212,8 @@ it('hides cached shared candidates and their toggles after a 403 refetch until r
   }))
   renderWithProviders(<QueryClientProvider client={client}><MeContext value={me}><MaterialsPanel task={baseTask} /></MeContext></QueryClientProvider>)
   const row = await screen.findByTestId('candidate-file-out')
-  expect(within(row).getByRole('button', { name: 'result.md 첨부' })).toBeEnabled()
-  fireEvent.change(screen.getByLabelText('공유 자료함 검색'), { target: { value: 'result' } })
+  expect(within(row).getByRole('button', { name: /(?:\+ 입력창에 담기|담김 ✓) · result.md$/ })).toBeEnabled()
+  fireEvent.change(screen.getByLabelText('연결 자료 검색'), { target: { value: 'result' } })
 
   forbidden = true
   await act(async () => { await client.refetchQueries({ queryKey: ['candidates', 't'] }) })
@@ -224,16 +224,16 @@ it('hides cached shared candidates and their toggles after a 403 refetch until r
   expect(screen.queryByTestId('candidate-file-out')).not.toBeInTheDocument()
   expect(screen.queryByTestId('shared-group-a1')).not.toBeInTheDocument()
   const shared = screen.getByTestId('materials-shared')
-  expect(within(shared).queryByRole('button', { name: 'result.md 첨부' })).not.toBeInTheDocument()
+  expect(within(shared).queryByRole('button', { name: /(?:\+ 입력창에 담기|담김 ✓) · result.md$/ })).not.toBeInTheDocument()
   expect(shared).not.toHaveTextContent('불러오는 중…')
-  fireEvent.change(screen.getByLabelText('공유 자료함 검색'), { target: { value: 'missing' } })
+  fireEvent.change(screen.getByLabelText('연결 자료 검색'), { target: { value: 'missing' } })
   expect(shared).not.toHaveTextContent('"missing"에 맞는 파일이 없습니다.')
-  fireEvent.change(screen.getByLabelText('공유 자료함 검색'), { target: { value: '' } })
+  fireEvent.change(screen.getByLabelText('연결 자료 검색'), { target: { value: '' } })
   expect(shared).not.toHaveTextContent('같은 태그 대화의 파일이 없습니다.')
 
   forbidden = false
   fireEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))
-  expect(within(await screen.findByTestId('candidate-file-out')).getByRole('button', { name: 'result.md 첨부' })).toBeEnabled()
+  expect(within(await screen.findByTestId('candidate-file-out')).getByRole('button', { name: /(?:\+ 입력창에 담기|담김 ✓) · result.md$/ })).toBeEnabled()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
 
@@ -286,16 +286,16 @@ it('S14: 자료 패널은 자료함만 — [첨부]로 붙이고 다시 눌러 �
   expect(within(screen.getByTestId('file-theirs')).queryByRole('button', { name: '삭제' })).not.toBeInTheDocument()
   // [첨부] = 담기, '첨부됨' 다시 누르기 = 빼기 (같은 setInput 경로). 자료함에는 ★가 없다
   expect(within(library).queryByRole('button', { name: /주 입력/ })).not.toBeInTheDocument()
-  fireEvent.click(within(library).getByRole('button', { name: 'mine.txt 첨부' }))
+  fireEvent.click(within(library).getByRole('button', { name: /(?:\+ 입력창에 담기|담김 ✓) · mine.txt$/ }))
   await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t/inputs/mine' && init?.method === 'PUT' && JSON.parse(String(init.body)).weight === 'reference')).toBe(true))
-  const attached = within(library).getByRole('button', { name: 'theirs.txt 첨부' })
+  const attached = within(library).getByRole('button', { name: /(?:\+ 입력창에 담기|담김 ✓) · theirs.txt$/ })
   expect(attached).toHaveAttribute('aria-pressed', 'true')
-  expect(attached).toHaveTextContent('첨부됨')
+  expect(attached).toHaveTextContent('담김 ✓')
   fireEvent.click(attached)
   await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t/inputs/theirs' && init?.method === 'DELETE')).toBe(true))
 })
 
-it('S14: 연결된 SR 본문을 자료함 항목으로 보이고 [첨부]·빼기를 하며, 요청 시작(input.updated)에 다시 읽고, 목록을 못 읽으면 구역만 숨긴다', async () => {
+it('S14: 본문을 자료함 항목으로 보이고 [첨부]·빼기를 하며, 요청 시작(input.updated)에 다시 읽고, 목록을 못 읽으면 구역만 숨긴다', async () => {
   const calls: Array<[string, RequestInit | undefined]> = []
   let srInputs: Response | null = null
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -310,12 +310,12 @@ it('S14: 연결된 SR 본문을 자료함 항목으로 보이고 [첨부]·빼�
   }))
   const view = renderWithProviders(<MeContext value={me}><MaterialsPanel task={baseTask} /></MeContext>)
   const section = await screen.findByTestId('materials-sr-bodies')
-  expect(section).toHaveTextContent('연결된 SR 본문')
+  expect(section).toHaveTextContent('본문')
   expect(within(section).getByTestId('sr-body-sr1')).toHaveTextContent('SR-2026-0001 · 알람 필터')
   expect(within(section).getByTestId('sr-body-sr1')).toHaveTextContent('사용됨')
-  fireEvent.click(within(section).getByRole('button', { name: 'SR-2026-0001 첨부' }))
+  fireEvent.click(within(section).getByRole('button', { name: /(?:\+ 입력창에 담기|담김 ✓) · SR-2026-0001$/ }))
   await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t/sr-inputs/sr1' && init?.method === 'PUT')).toBe(true))
-  const attached = within(section).getByRole('button', { name: 'SR-2026-0002 첨부' })
+  const attached = within(section).getByRole('button', { name: /(?:\+ 입력창에 담기|담김 ✓) · SR-2026-0002$/ })
   expect(attached).toHaveAttribute('aria-pressed', 'true')
   fireEvent.click(attached)
   await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t/sr-inputs/sr2' && init?.method === 'DELETE')).toBe(true))

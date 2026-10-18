@@ -21,7 +21,7 @@ it('requires a reason when reopening a completed task', async () => {
   const calls: Array<[string, RequestInit | undefined]> = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push([url, init])
-    return new Response(url === '/api/tasks' ? '[]' : JSON.stringify({}), { status: 200 })
+    return new Response(url.endsWith('/status') ? JSON.stringify({}) : '[]', { status: 200 })
   }))
   render(wrap({ ...task, status: 'done' }))
   fireEvent.click(screen.getByRole('button', { name: '다시 열기' }))
@@ -49,7 +49,7 @@ it('keeps metadata and actions in one row that scrolls on mobile, without the du
   const name = screen.getByText('아주 긴 이름을 가진 도우미')
   expect(name).toHaveClass('truncate')
   const row = name.closest('a')!.parentElement!
-  expect(row).toHaveClass('overflow-x-auto', 'sm:flex-wrap', 'sm:overflow-visible')
+  expect(row).toHaveClass('overflow-x-auto', 'flex-nowrap')
   expect(row).not.toHaveClass('flex-col')
   const actions = screen.getByRole('button', { name: '업무 완료' }).parentElement!
   expect(actions.parentElement).toBe(row)
@@ -61,10 +61,10 @@ it('keeps metadata and actions in one row that scrolls on mobile, without the du
   expect(row).toContainElement(screen.getByRole('button', { name: '태그 추가' }))
   expect(screen.queryByRole('combobox', { name: '태그 입력' })).not.toBeInTheDocument()
   // 제목·코드는 상단 바(TaskTitle) 하나만 — 헤더 둘째 줄에서는 뺀다
-  expect(screen.queryByText('기본 제목')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '기본 제목' })).toBeInTheDocument()
   expect(screen.queryByText(task.code)).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '대화 삭제' })).not.toBeInTheDocument()
-  expect(screen.getByText('요약 한 줄')).toHaveClass('truncate')
+  expect(screen.queryByText('요약 한 줄')).not.toBeInTheDocument()
 })
 
 it('새 창으로 띄우기 — /c/:id?popout=1 을 작은 창으로 열고, 막히면 같은 탭으로 가지 않고 토스트로 알린다; 팝업 안에서는 숨긴다', () => {
@@ -153,4 +153,59 @@ it('S14: SR 태그 칩과 태그가 없는 시작 SR 칩은 SR 처리 상세로,
   await waitFor(() => expect(screen.getByLabelText('경로')).toHaveTextContent('/sr/manage?id=sr-1'))
   await userEvent.click(screen.getByRole('button', { name: '일반' }))
   await waitFor(() => expect(screen.getByLabelText('경로')).toHaveTextContent('/?view=kanban&tag=%EC%9D%BC%EB%B0%98'))
+})
+
+it('코드·우선순위·보류·보조 도구·전송 기록·파일 재시도를 더 보기 안에 수납하고 Esc로 돌아온다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
+  render(wrap(task))
+  expect(screen.queryByRole('button', { name: '보류' })).not.toBeInTheDocument()
+  const user = userEvent.setup()
+  const trigger = screen.getByRole('button', { name: '더 보기' })
+  await user.click(trigger)
+  for (const name of ['체크리스트 열기', '메모 열기', '활동 이력 열기']) expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
+  for (const name of ['전송 기록', '파일 빼고 다시', '텍스트로 보내기']) expect(screen.queryByRole('menuitem', { name })).not.toBeInTheDocument()
+  expect(screen.getByText(task.code)).toBeInTheDocument()
+  expect(screen.getByRole('menuitemradio', { name: '보통' })).toHaveAttribute('aria-checked', 'true')
+  await user.keyboard('{Escape}')
+  expect(trigger).toHaveFocus()
+})
+
+it('메뉴의 우선순위 변경은 기존 PATCH 경로에 고른 값만 보낸다', async () => {
+  const fetchMock = vi.fn(async () => new Response('[]', { status: 200 }))
+  vi.stubGlobal('fetch', fetchMock)
+  render(wrap(task))
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: '더 보기' }))
+  await user.click(screen.getByRole('menuitemradio', { name: '긴급' }))
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/tasks/t', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ priority: 'urgent' }) })))
+})
+
+it('연결 자료 개수는 중복 파일과 숨긴 이전 버전을 제외하고 표시할 SR 본문·대화를 센다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(
+    url.endsWith('/candidates') ? { files: [{ file: { id: 'shared' }, sourceTaskId: 'other', viaTags: ['A'] }, { file: { id: 'old' }, sourceTaskId: 'other', viaTags: ['A'], newerVersionId: 'shared' }], srFiles: [{ file: { id: 'mine' } }], conversations: [{ taskId: 'other' }] }
+      : url.endsWith('/files') ? [{ id: 'mine' }] : url.endsWith('/sr-inputs') ? [{ srId: 'sr' }] : []), { status: 200 })))
+  render(wrap({ ...task, tags: ['A'] }))
+  expect(await screen.findByRole('button', { name: '연결 자료(4)' })).toBeInTheDocument()
+})
+
+it('맥락 없는 닫힌 패널은 숫자와 count용 조회 3종을 생략한다', async () => {
+  const calls: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => { calls.push(url); return new Response('[]', { status: 200 }) }))
+  render(wrap(task))
+  expect(screen.getByRole('button', { name: '연결 자료' })).toHaveAttribute('aria-expanded', 'false')
+  await waitFor(() => expect(calls).toContain('/api/settings'))
+  expect(calls.filter(url => /\/tasks\/t\/(candidates|files|sr-inputs)$/.test(url))).toEqual([])
+})
+
+
+it('맥락이 있어도 수동으로 닫힌 패널은 헤더 count 쿼리를 보내지 않는다', async () => {
+  sessionStorage.setItem('mes-hub:panel-state:t', 'closed')
+  const calls: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => { calls.push(url); return new Response('[]', { status: 200 }) }))
+  try {
+    render(wrap({ ...task, tags: ['A'] }))
+    expect(screen.getByRole('button', { name: /^연결 자료/ })).toHaveAttribute('aria-expanded', 'false')
+    await waitFor(() => expect(calls).toContain('/api/settings'))
+    expect(calls.filter(url => /\/tasks\/t\/(candidates|files|sr-inputs)$/.test(url))).toEqual([])
+  } finally { sessionStorage.removeItem('mes-hub:panel-state:t') }
 })

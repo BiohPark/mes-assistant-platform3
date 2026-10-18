@@ -27,19 +27,22 @@ test('E4 추정 한도 초과는 전송을 막고 입력 조절 동작을 보여
   await expect(page.getByRole('link', { name: '새 대화로 이어가기' })).toHaveAttribute('href', new RegExp(`/new/.+ref=${task.id}`))
 })
 
-test('E6 요청 기록에서 사용한 자료와 원본 JSON을 연다', async ({ page }) => {
+// live에서는 선언 단계에서 건너뛴다 — 본문 안 test.skip은 page fixture를 띄운 뒤 건너뛰어, 병렬 live 실행에서 0ms 실패로 잡혔다
+test.describe(() => {
   test.skip((process.env.E2E_LLM_MODE ?? process.env.LLM_MODE) === 'live', 'Mock 전용 기록 검사')
-  await signup(page, 'info')
-  const task = await createTask(page)
-  await page.goto(`/c/${task.id}`)
-  await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: `tray-${Date.now()}.txt`, mimeType: 'text/plain', buffer: Buffer.from('자료') })
-  await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('자료로 답변해 줘')
-  await page.getByRole('button', { name: '전송', exact: true }).click()
-  await expect(page.getByRole('button', { name: '사용한 자료' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '중지' })).toBeHidden()
-  await page.getByRole('button', { name: '사용한 자료' }).click()
-  await expect(page.getByRole('dialog')).toContainText('tray-')
-  await expect(page.getByRole('link', { name: '원본 JSON 다운로드' })).toHaveAttribute('href', /\/snapshot$/)
+  test('E6 요청 기록에서 사용한 자료와 원본 JSON을 연다', async ({ page }) => {
+    await signup(page, 'info')
+    const task = await createTask(page)
+    await page.goto(`/c/${task.id}`)
+    await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: `tray-${Date.now()}.txt`, mimeType: 'text/plain', buffer: Buffer.from('자료') })
+    await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('자료로 답변해 줘')
+    await page.getByRole('button', { name: '전송', exact: true }).click()
+    await expect(page.getByRole('button', { name: '사용한 자료' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '중지' })).toBeHidden()
+    await page.getByRole('button', { name: '사용한 자료' }).click()
+    await expect(page.getByRole('dialog')).toContainText('tray-')
+    await expect(page.getByRole('link', { name: '원본 JSON 다운로드' })).toHaveAttribute('href', /\/snapshot$/)
+  })
 })
 
 test('다른 사용자 화면에 팀 의견과 입력 중 상태가 실시간 표시된다', async ({ page, browser }) => {

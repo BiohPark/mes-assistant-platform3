@@ -25,6 +25,7 @@ import { getDraft } from './drafts'
 import { toast } from 'sonner'
 import { useConversationViewed } from '@/lib/conversationRead'
 import { useT } from '@/i18n'
+import { useTaskChatActions } from '@/features/task/chatActions'
 import { ChatBrief } from '@/features/task/ChatBrief'
 
 /** 대화 열 최대 폭 — 1440 이하에서는 열 전체, 1920 같은 넓은 화면에서만 가운데로 모은다 */
@@ -200,6 +201,20 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
     try { setRetryChoice({ record: await getRequest(requestId), mode }) }
     catch { toast.error(t('chat.requestLoadFailed')) }
   }
+  const lastRequest = messages.data?.findLast(item => !!item.requestId)
+  const lastRequestId = lastRequest?.requestId
+  const requestInFlight = sending || chat.sending || !!chat.run || remoteStreaming
+  const requestIssue = !requestInFlight && (lastRequest?.status === 'error' || !!estimate.currentData?.overLimit || pendingAttempt)
+  useEffect(() => {
+    const enabled = !!lastRequestId && !sending && !chat.sending && !remoteStreaming
+    useTaskChatActions.getState().set(task.id, {
+      issue: requestIssue,
+      info: lastRequestId ? () => setInfoId(lastRequestId) : undefined,
+      exclude: enabled ? () => { void chooseRetry(lastRequestId, 'exclude') } : undefined,
+      inline: enabled ? () => { void chooseRetry(lastRequestId, 'inline') } : undefined,
+    })
+    return () => useTaskChatActions.getState().set(task.id)
+  }, [task.id, lastRequestId, requestIssue, sending, chat.sending, remoteStreaming, t])
   return <><FileDropZone data-testid="chat-dropzone" className="flex min-h-0 flex-1 flex-col" label={t('dropzone.toAttach')} disabled={sending || chat.sending} onFiles={(files) => composer.current?.dropFiles(files)}>
     <ChatBrief taskId={task.id} />
     <div ref={setToolbar} data-testid="chat-question-toolbar" className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b px-4 py-2 empty:hidden" />
@@ -218,7 +233,7 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
   </div></div>{Object.values(typing).some((item) => item.until > Date.now()) && <p className="px-4 py-1 text-xs text-muted-foreground">{t('chat.typing', { names: Object.values(typing).filter((item) => item.until > Date.now()).map((item) => item.name).join(', ') })}</p>}
   {prefilled && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.askAgainHint')}</p>}
   {pendingAttempt && !sending && !chat.sending && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">{t('chat.pendingAttemptHint')}</p>}
-  <Composer ref={composer} clearOnSubmit disabled={(sending || chat.sending) && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowDiscussion
+  <Composer inputLabels ref={composer} clearOnSubmit disabled={(sending || chat.sending) && !chat.run} streaming={!!chat.run || remoteStreaming} allowAttachments allowDiscussion
     attachments={attachments} notice={<RequestSizeNotice task={task} estimate={estimate} />} contentClassName={CHAT_COLUMN}
     blockedReason={task.status !== 'done' && estimate.currentData?.overLimit ? t('chat.overLimitBlocked') : undefined} onDraftChange={setDraft} onTyping={notifyTyping} draftKey={task.id}
     placeholder={assistant ? t('chat.composerPlaceholderFor', { assistant: assistant.name }) : undefined}

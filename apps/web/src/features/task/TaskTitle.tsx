@@ -6,7 +6,7 @@ import { setTaskTitle } from '@/api/tasks'
 import { Input } from '@/components/ui/input'
 import { useT } from '@/i18n'
 
-/** 상단 바의 제목 — 코드 · 제목 한 줄. 누르면 그 자리에서 고친다(완료된 업무는 잠금). 헤더에는 제목을 다시 적지 않는다 */
+/** 대화 헤더의 제목 한 줄. 누르면 그 자리에서 고친다(완료된 업무는 잠금). 코드는 더 보기 메뉴에 둔다 */
 export function TaskTitle({ task }: { task: Task }) {
   const t = useT()
   const query = useQueryClient()
@@ -31,6 +31,6 @@ export function TaskTitle({ task }: { task: Task }) {
 
   if (editing) return <Input aria-label={t('task.header.titleLabel')} value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => void commit()} onKeyDown={(event) => { if (event.key === 'Enter') void commit(); if (event.key === 'Escape') { setTitle(task.title); setEditing(false) } }} autoFocus className="h-8 max-w-xl text-base font-semibold" />
   return <button type="button" className="flex max-w-full items-baseline gap-1.5 truncate text-left hover:underline disabled:no-underline" disabled={task.status === 'done'} title={t('task.header.titleLabel')} onClick={() => { setTitle(task.title); setEditing(true) }}>
-    <span className="shrink-0 font-mono text-sm font-normal text-muted-foreground">{task.code}</span>{' '}<span className="truncate">{task.title}</span>
+<span className="truncate">{task.title}</span>
   </button>
 }

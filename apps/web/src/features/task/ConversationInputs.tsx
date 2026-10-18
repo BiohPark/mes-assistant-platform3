@@ -36,7 +36,7 @@ export function ConversationInputs({ taskId, candidates, disabled, fresh }: { ta
           <span className="font-mono text-muted-foreground">{candidate.code}</span> · {candidate.title}</button>
           {isFresh && <span className="shrink-0 text-[11px] text-tone-info-fg">{t('task.materials.fresh')}</span>}
           {candidate.used && <UsedMark />}
-          <AttachToggle attached={!!current} label={candidate.code} disabled={disabled || (!current && !candidate.messageCount)}
+          <AttachToggle inputLabels attached={!!current} label={candidate.code} disabled={disabled || (!current && !candidate.messageCount)}
             onToggle={() => void run(current ? removeConversationInput(taskId, candidate.taskId) : selectConversation(taskId, candidate.taskId, { mode: 'full' }))} /></div>
         <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground"><span className="rounded-full border px-1.5" style={{ borderColor: candidate.assistant.color }}>{candidate.assistant.name}</span>
           {TASK_STATUSES.includes(candidate.status) && <span>· {t(`status.task.${candidate.status as TaskStatus}`)}</span>}<span>{t('task.inputs.messages', { count: current?.messageCount ?? candidate.messageCount })}</span><span>· {formatSize(current?.bytes ?? candidate.bytes)}</span>

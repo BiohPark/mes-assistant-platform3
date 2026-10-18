@@ -10,7 +10,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: toastSuccess } }))
 afterEach(() => { vi.useRealTimers(); toastSuccess.mockClear() })
 
 function renderComposer(props: React.ComponentProps<typeof Composer>) {
-  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Composer {...props} /></QueryClientProvider>)
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Composer inputLabels {...props} /></QueryClientProvider>)
 }
 
 it('sends text to AI by default while team and file controls are unavailable', async () => {
@@ -69,7 +69,7 @@ it('sends AI attachments without a pinning toggle', async () => {
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [file] } })
   expect(screen.getByText('note.txt')).toBeVisible()
   expect(screen.queryByRole('button', { name: /입력으로 고정|이번 메시지만/ })).not.toBeInTheDocument()
-  expect(screen.getAllByRole('button', { name: '첨부 제거' })).toHaveLength(1)
+  expect(screen.getByRole('button', { name: 'note.txt 첨부 취소' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(send).toHaveBeenCalledWith('', [{ file }], false))
 })
@@ -186,7 +186,7 @@ function RaceHarness({ composer }: { composer: React.RefObject<ComposerHandle | 
   return <>
     <button type="button" onClick={() => { composer.current?.dropFiles([new File(['x'], 'race.txt', { type: 'text/plain' })]); setEpoch((value) => value + 1) }}>첨부와 재마운트</button>
     <span data-testid="epoch">{epoch}</span>
-    <Composer key={epoch} ref={composer} draftKey="draft-race" streaming={false} onSend={noop} onStop={() => undefined} allowAttachments allowDiscussion />
+    <Composer inputLabels key={epoch} ref={composer} draftKey="draft-race" streaming={false} onSend={noop} onStop={() => undefined} allowAttachments allowDiscussion />
   </>
 }
 
@@ -200,9 +200,9 @@ it('keeps a staged attachment when the composer remounts in the same batch as th
   expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('보호할 초안')
   act(() => composer.current!.setText('**기존 질문**')) // 프리필
   expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('**기존 질문**')
-  expect(screen.getByRole('button', { name: '첨부 제거' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /첨부 취소$/ })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '첨부와 재마운트' }))
-  expect(screen.getAllByRole('button', { name: '첨부 제거' })).toHaveLength(2) // 두 번째 첨부도 유지
+  expect(screen.getAllByRole('button', { name: /첨부 취소$/ })).toHaveLength(2) // 두 번째 첨부도 유지
   expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('**기존 질문**')
   clearDrafts()
 })
@@ -219,11 +219,11 @@ it('clears only what was sent: text and attachments staged while the send was st
   // 응답이 화면에서 끝난 뒤에도 onSend 약속은 조금 늦게 풀린다 — 그 사이 사용자가 다음 메시지를 준비한다
   fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
   fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['b'], 'next.txt', { type: 'text/plain' })] } })
-  expect(screen.getAllByRole('button', { name: '첨부 제거' })).toHaveLength(2)
+  expect(screen.getAllByRole('button', { name: /첨부 취소$/ })).toHaveLength(2)
   await act(async () => { finish() })
   expect(screen.queryByText('sent.txt')).not.toBeInTheDocument()
   expect(screen.getByText('next.txt')).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '첨부 제거' })).toBeVisible()
+  expect(screen.getByRole('button', { name: /첨부 취소$/ })).toBeVisible()
   expect(input()).toHaveValue('') // 보낸 텍스트는 그대로였으니 비운다
   fireEvent.change(input(), { target: { value: '다음 질문' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
@@ -287,11 +287,11 @@ it('S14: 자료함 첨부와 직접 올린 파일이 입력창 위 한 줄의 �
   expect(screen.getByRole('button', { name: '파일 첨부' })).not.toHaveAttribute('data-tour')
   expect(Array.from(row.children).map(item => item.textContent)).toEqual(['spec.txt', 'WK-2026-0002', 'SR-2026-0001', 'direct.txt'])
   expect(row.children[0]).toHaveAttribute('title', 'spec.txt v1 · 첨부')
-  // 직접 올린 파일의 ×는 '첨부 제거', 자료함 첨부의 ×는 '{이름} 첨부 빼기'
-  expect(screen.getAllByRole('button', { name: '첨부 제거' })).toHaveLength(1)
-  fireEvent.click(screen.getByRole('button', { name: 'spec.txt 첨부 빼기' }))
-  fireEvent.click(screen.getByRole('button', { name: 'WK-2026-0002 첨부 빼기' }))
-  fireEvent.click(screen.getByRole('button', { name: 'SR-2026-0001 첨부 빼기' }))
+  // 직접 올린 파일과 자료함 항목 모두 이름을 포함한 취소 레이블이다.
+  expect(screen.getByRole('button', { name: 'direct.txt 첨부 취소' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'spec.txt 첨부 취소' }))
+  fireEvent.click(screen.getByRole('button', { name: 'WK-2026-0002 첨부 취소' }))
+  fireEvent.click(screen.getByRole('button', { name: 'SR-2026-0001 첨부 취소' }))
   expect([removeFile, removeConversation, removeSr].map(fn => fn.mock.calls.length)).toEqual([1, 1, 1])
   fireEvent.click(screen.getByRole('button', { name: 'spec.txt 주 입력 전환' }))
   expect(toggleMain).toHaveBeenCalledOnce()
@@ -307,7 +307,7 @@ it('S14: 비활성 칩은 ★·×를 막고 실패 칩은 경고색이다', () =
   ] })
   expect(screen.getByRole('button', { name: 'bad.bin 주 입력 전환' })).toBeDisabled()
   expect(screen.getByRole('button', { name: 'bad.bin 주 입력 전환' })).toHaveAttribute('aria-pressed', 'true')
-  expect(screen.getByRole('button', { name: 'bad.bin 첨부 빼기' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'bad.bin 첨부 취소' })).toBeDisabled()
   expect(screen.getByRole('listitem')).toHaveClass('text-destructive')
 })
 

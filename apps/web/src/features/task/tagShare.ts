@@ -26,10 +26,17 @@ interface TagShareState {
   byTask: Record<string, { fresh: string[]; gone: ShareItem[] }>
   /** 말풍선을 누르면 그 대화의 자료 탭을 연다 — TaskBody가 이 번호 변화를 본다 */
   openSeq: Record<string, number>
+  consumeOpen: (taskId: string, seq: number) => boolean
+  consumedSeq: Record<string, number>
   openMaterials: (taskId: string) => void
 }
-export const useTagShareStore = create<TagShareState>()((set) => ({
-  byTask: {}, openSeq: {},
+export const useTagShareStore = create<TagShareState>()((set, get) => ({
+  byTask: {}, openSeq: {}, consumedSeq: {},
+  consumeOpen: (taskId, seq) => {
+    if (!seq || seq <= (get().consumedSeq[taskId] ?? 0)) return false
+    set(state => ({ consumedSeq: { ...state.consumedSeq, [taskId]: seq } }))
+    return true
+  },
   openMaterials: (taskId) => set((state) => ({ openSeq: { ...state.openSeq, [taskId]: (state.openSeq[taskId] ?? 0) + 1 } })),
 }))
 const timers = new Map<string, ReturnType<typeof setTimeout>>()

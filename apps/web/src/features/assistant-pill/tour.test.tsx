@@ -34,7 +34,7 @@ it('every page has sections with unique ids and ends with the assistant section 
 it('conversation sections cover basics, materials, discussion, tags, brief and status; the kanban section lives on the hub route', () => {
   expect(TOUR_SECTIONS.conversation.map(section => section.id)).toEqual(['basics', 'materials', 'discussion', 'tags', 'brief', 'status', 'assistant'])
   expect(TOUR_SECTIONS.conversation[0]!.steps.map(step => step.target)).toEqual(['composer', 'model', 'chat-search', 'chat-toc', 'quick-switch', 'popout'])
-  expect(TOUR_SECTIONS.conversation[1]!.steps.map(step => step.target)).toEqual(['task-tabs', 'materials-library', 'materials-conversations', 'materials-staged'])
+  expect(TOUR_SECTIONS.conversation[1]!.steps.map(step => step.target)).toEqual(['linked-materials', 'materials-library', 'materials-conversations', 'materials-staged'])
   expect(TOUR_SECTIONS.conversation[1]!.steps.find(step => step.target === 'materials-conversations')).toEqual({ target: 'materials-conversations', text: 'tour.steps.materialsConversations', opens: 'materials' })
   // S14: 첨부 단계의 앵커는 입력창 칩 줄(없으면 📎) — 좁은 화면에서는 대화 탭을 열어야 보인다
   expect(TOUR_SECTIONS.conversation[1]!.steps.at(-1)).toEqual({ target: 'materials-staged', text: 'tour.steps.materialsStaged', opens: 'chat' })
@@ -43,30 +43,30 @@ it('conversation sections cover basics, materials, discussion, tags, brief and s
 
 it('a step that opens the materials panel counts as available while the panel tab exists, and is dropped with it', () => {
   target('composer'); target('pill')
-  const tabs = target('task-tabs')
+  const tabs = target('linked-materials')
   begin('conversation') // 다른 대화 대상(요약 카드 등)이 없어 대기 뒤 확정
-  expect(stepIds()).toEqual(['composer', 'task-tabs', 'materials-library', 'materials-conversations', 'materials-staged', 'pill']) // 자료 패널은 아직 안 열렸지만 탭이 있다
+  expect(stepIds()).toEqual(['composer', 'linked-materials', 'materials-library', 'materials-conversations', 'materials-staged', 'pill']) // 자료 패널은 아직 안 열렸지만 탭이 있다
   state().close(); tabs.remove()
   begin('conversation')
   expect(stepIds()).toEqual(['composer', 'pill'])
 })
 
 it('picks the first shown target — hidden duplicates (display:none, e.g. the other breakpoint tablist) are ignored', () => {
-  const hidden = target('task-tabs', 'none')
-  const shown = target('task-tabs')
-  expect(tourTarget('task-tabs')).toBe(shown)
+  const hidden = target('linked-materials', 'none')
+  const shown = target('linked-materials')
+  expect(tourTarget('linked-materials')).toBe(shown)
   hidden.remove(); shown.remove()
-  expect(tourTarget('task-tabs')).toBeUndefined()
+  expect(tourTarget('linked-materials')).toBeUndefined()
 })
 
 it('S15: 숨은 탭(inert) 안의 대상은 고르지 않는다', () => {
   const panel = document.createElement('div')
   panel.setAttribute('inert', '')
   document.body.append(panel)
-  const hidden = target('task-tabs')
+  const hidden = target('linked-materials')
   panel.append(hidden)
-  const shown = target('task-tabs')
-  expect(tourTarget('task-tabs')).toBe(shown)
+  const shown = target('linked-materials')
+  expect(tourTarget('linked-materials')).toBe(shown)
   panel.remove(); shown.remove()
 })
 
@@ -110,14 +110,14 @@ it('waits for late conversation targets without exposing a pill-only tour, then 
   vi.advanceTimersByTime(300)
   expect(state().sections).toEqual([])
   target('composer')
-  const tabs = target('task-tabs', 'none')
+  const tabs = target('linked-materials', 'none')
   vi.advanceTimersByTime(300)
   tabs.style.display = ''
   vi.advanceTimersByTime(899)
   expect(state().sections).toEqual([])
   vi.advanceTimersByTime(1)
   expect(sectionIds()).toEqual(['basics', 'materials', 'assistant'])
-  expect(stepIds()).toEqual(['composer', 'task-tabs', 'materials-library', 'materials-conversations', 'materials-staged', 'pill']) // 자료 패널 단계는 탭이 있으면 센다(보일 때 탭을 연다)
+  expect(stepIds()).toEqual(['composer', 'linked-materials', 'materials-library', 'materials-conversations', 'materials-staged', 'pill']) // 자료 패널 단계는 탭이 있으면 센다(보일 때 탭을 연다)
   target('related')
   vi.advanceTimersByTime(100)
   expect(stepIds()).toHaveLength(6) // 확정 후 total은 그대로

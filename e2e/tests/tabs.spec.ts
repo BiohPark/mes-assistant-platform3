@@ -1,4 +1,6 @@
+/// <reference lib="dom" />
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { linkedMaterialsToggle } from './materials.js'
 
 // S15 상단 탭 MDI — 메뉴·대화를 탭으로 열고, 탭을 바꿔도 각 화면(입력·스크롤)이 그대로 남는다
 const password = 'e2e-password-1234'
@@ -23,13 +25,28 @@ async function scrollActive(panel: Locator, top: number) {
   }, top)
 }
 
-test.beforeEach(async ({ page }) => { await owner(page) })
+test.beforeEach(async ({ page }) => {
+  await owner(page)
+  // 이 spec은 탭 이동/LRU를 검증한다. 누적 가입자 전체(직렬 실패 trace: 10,832행)의
+  // 관리 폼 렌더가 이동을 막지 않도록, 실제 응답 중 한 화면 분량만 제공한다.
+  await page.route('**/api/users', async route => {
+    const response = await route.fetch()
+    expect(response.ok()).toBe(true)
+    const users = await response.json() as unknown[]
+    await route.fulfill({ response, json: users.slice(0, 10) })
+  })
+})
+// 테스트가 끝날 때 아직 진행 중인 위 route.fetch는 'Test ended'로 거부되어 이 테스트(또는 같은 워커의 다음 테스트) 실패로 잡힌다
+test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: 'ignoreErrors' }) })
 
 test('메뉴를 탭으로 열고, 전환해도 입력·스크롤이 그대로다. 같은 메뉴는 기존 탭을 연다', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 420 }) // 허브가 넘치도록
   await page.goto('/')
   await expect(strip(page).getByRole('tab')).toHaveText(['에이전트 허브'])
   await expect(activePanel(page).getByRole('heading', { name: '에이전트 허브' })).toBeVisible()
+  // 제목은 목록 로드 전에 그려진다. 부하에서 아직 '불러오는 중…'이면 넘치는 영역이 없거나(-1), 위쪽 '이어하기' 줄이 로드되며
+  // 높아져 스크롤 앵커링이 위치를 옮긴다(160→170) — 허브의 두 목록 로드가 끝난 뒤 스크롤한다
+  await expect(activePanel(page).getByText('불러오는 중…', { exact: true })).toHaveCount(0)
   const scrolled = await scrollActive(activePanel(page), 160)
   expect(scrolled).toBeGreaterThan(0)
 
@@ -97,10 +114,17 @@ test('뒤로·앞으로가기는 탭을 오가고, ×·가운데 클릭·우클�
   await expect(page).toHaveURL(/\/reports$/)
 
   await menu(page, '내 작업').click()
+  await tab(page, '리포트').focus()
   await tab(page, '리포트').click({ button: 'right' })
   await page.getByRole('menuitem', { name: '다른 탭 닫기' }).click()
+  // Radix FocusScope는 메뉴가 닫히면 setTimeout(0)으로 열기 전 포커스(리포트)를 복원한다. 이미 리포트에 포커스가 있어
+  // toBeFocused로는 복원 완료를 알 수 없으므로, 메뉴가 사라진 뒤 그 뒤 순번의 0ms 타이머를 기다려 복원이 끝났음을 보장한다
+  // (안 그러면 아래 ArrowLeft가 옮긴 포커스를 늦은 복원이 다시 리포트로 빼앗는다)
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)))
   await expect(strip(page).getByRole('tab')).toHaveText(['에이전트 허브', '리포트'])
   await expect(page).toHaveURL(/\/reports$/)
+  await expect(tab(page, '리포트')).toBeFocused()
 
   await tab(page, '리포트').press('ArrowLeft')
   await expect(page).toHaveURL(/\/$/)
@@ -128,12 +152,14 @@ test('응답 중인 대화가 화면에서 내려갔다 다시 열려도 같은 
   await page.goto(`/c/${task.id}`)
   await activePanel(page).getByRole('textbox', { name: 'AI 요청 입력' }).fill('탭을 오가는 동안 답해 주세요')
   await activePanel(page).getByRole('button', { name: '전송', exact: true }).click()
+  const taskPanelId = await tab(page, `${task.code} · MDI 퇴거 대화`).getAttribute('aria-controls')
   // 다른 화면 8개를 열어 대화 화면을 내린다(응답 중이든 끝났든). 집계가 무거운 리포트 대신 이미 열린 허브를 다시 본다
   for (const name of ['에이전트 허브', '내 작업', 'SR 처리', '내 SR 요청', '에이전트 관리', '전역 설정', '사용자 관리', '연결 진단']) {
     await menu(page, name).click()
     await expect(tab(page, name)).toHaveAttribute('aria-selected', 'true') // 부하에서 연속 클릭이 이동 전에 겹치지 않게
   }
   await expect(page.locator('[role="tabpanel"]')).toHaveCount(8)
+  await expect(page.locator(`[id="${taskPanelId}"]`)).toHaveCount(0) // 실제 퇴거 뒤 재마운트해야 한다
   await tab(page, `${task.code} · MDI 퇴거 대화`).click()
   await expect.poll(async () => {
     const messages = await (await page.request.get(`/api/threads/${task.threadId}/messages`)).json() as Array<{ role: string; status: string }>
@@ -149,7 +175,7 @@ test('응답 중인 대화가 화면에서 내려갔다 다시 열려도 같은 
 
 test('대화 두 개를 함께 열어도 보조 패널 탭·패널 id가 겹치지 않는다', async ({ page }) => {
   const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
-  const create = async (title: string) => (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id, title } })).json() as Promise<{ id: string; code: string }>
+  const create = async (title: string) => (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id, title, tags: ['MDI-context'] } })).json() as Promise<{ id: string; code: string }>
   const first = await create('MDI id 하나')
   const second = await create('MDI id 둘')
   await page.goto(`/c/${first.id}`)
@@ -158,15 +184,56 @@ test('대화 두 개를 함께 열어도 보조 패널 탭·패널 id가 겹치�
   await page.goto(`/c/${second.id}`)
   await tab(page, `${first.code} · MDI id 하나`).click()
   await tab(page, `${second.code} · MDI id 둘`).click()
-  await expect(page.locator('[role="tabpanel"]').filter({ has: page.getByRole('tablist', { name: '보조 패널', includeHidden: true }) })).toHaveCount(2)
+  await expect(page.locator('[role="tabpanel"]').filter({ has: page.getByRole('complementary', { name: '#태그·SR 연결 자료', includeHidden: true }) })).toHaveCount(2)
   const ids = await page.locator('[id^="task-"]').evaluateAll(elements => elements.map(element => element.id))
   expect(ids.length).toBeGreaterThan(0)
   expect(new Set(ids).size).toBe(ids.length)
   await expect(tab(page, `${second.code} · MDI id 둘`)).toHaveAttribute('aria-selected', 'true')
   // 보이는 대화의 선택된 보조 탭이 가리키는 패널은 같은 대화 안에 있고, 그 패널은 이 탭으로 이름 붙는다
-  const linked = await activePanel(page).getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { selected: true }).evaluate(selected => {
-    const panel = document.getElementById(selected.getAttribute('aria-controls') ?? '')
-    return !!panel && panel.closest('[role="tabpanel"][data-tab-panel]') === selected.closest('[role="tabpanel"][data-tab-panel]') && panel.getAttribute('aria-labelledby') === selected.id
+  const linked = await linkedMaterialsToggle(activePanel(page)).evaluate(toggle => {
+    const panel = document.getElementById(toggle.getAttribute('aria-controls') ?? '')
+    return !!panel && panel.closest('[role="tabpanel"][data-tab-panel]') === toggle.closest('[role="tabpanel"][data-tab-panel]')
   })
   expect(linked).toBe(true)
+})
+
+test('공유 안내 처리→수동 닫힘→다른 화면 8개로 LRU 퇴거→복귀해도 닫힘을 유지한다', async ({ page }) => {
+  test.slow()
+  const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
+  const tagName = `LRU-share-${Date.now()}`
+  const source = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id, tags: [tagName] } })).json() as { id: string }
+  const target = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id, title: '공유 안내 LRU' } })).json() as { id: string; code: string }
+  expect((await page.request.post('/api/files', { multipart: { originTaskId: source.id, file: { name: 'lru.txt', mimeType: 'text/plain', buffer: Buffer.from('공유 자료') } } })).ok()).toBe(true)
+  await page.goto(`/c/${target.id}`)
+  const taskTab = tab(page, `${target.code} · 공유 안내 LRU`)
+  await expect(taskTab).toHaveAttribute('aria-selected', 'true')
+  await activePanel(page).getByRole('button', { name: '태그 추가' }).click()
+  // 태그 팝오버는 활성 tabpanel의 자식이 아니라 body 포털에 열린다.
+  const input = page.getByRole('dialog', { name: '태그 추가' }).getByRole('combobox', { name: '태그 입력' })
+  await input.fill(tagName)
+  await input.press('Enter')
+  await expect(input).toHaveAttribute('aria-busy', 'false')
+  await expect(activePanel(page).getByRole('button', { name: `${tagName} 태그 제거`, exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(input).toBeHidden()
+  const bubble = page.getByRole('status', { name: 'AI 도우미 말풍선' })
+  await bubble.getByRole('button', { name: /연결 자료에 들어왔어요/ }).click()
+  const toggle = linkedMaterialsToggle(activePanel(page))
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  // 자동 개폐로 이미 열려 있어도 공유 안내의 열기 처리가 끝난 뒤 수동으로 닫는다.
+  await expect(activePanel(page).getByRole('complementary', { name: '#태그·SR 연결 자료' })).toBeFocused()
+  await expect(activePanel(page).getByTestId('materials-shared')).toContainText('lru.txt')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  const panelId = await taskTab.getAttribute('aria-controls')
+  for (const name of ['에이전트 허브', '내 작업', 'SR 처리', '내 SR 요청', '에이전트 관리', '전역 설정', '사용자 관리', '연결 진단']) {
+    await menu(page, name).click()
+    await expect(tab(page, name)).toHaveAttribute('aria-selected', 'true')
+  }
+  await expect(page.locator(`[id="${panelId}"]`)).toHaveCount(0)
+  await taskTab.click()
+  await expect(taskTab).toHaveAttribute('aria-selected', 'true')
+  await expect(activePanel(page).getByRole('textbox', { name: 'AI 요청 입력' })).toBeVisible()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(activePanel(page).getByRole('complementary', { name: '#태그·SR 연결 자료' })).toHaveCount(0)
 })

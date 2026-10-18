@@ -1,3 +1,4 @@
+import { materialToggleName, revealMaterials } from './materials.js'
 import { expect, test, type Page } from '@playwright/test'
 
 // S8 파일 시나리오 중 브라우저가 필요한 것 — 표: tasks/s8-file-scenarios/artifacts/file-scenarios.md (U-06·U-07·T-01·T-03)
@@ -17,7 +18,7 @@ async function createTask(page: Page, body: Record<string, unknown> = {}) {
   return (await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id, ...body } })).json()) as { id: string; code: string; threadId: string }
 }
 async function openMaterials(page: Page) {
-  await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
+  await revealMaterials(page)
 }
 
 test('U-06/U-07 한글·공백·이모지 파일 이름이 업로드·목록·내려받기 헤더에서 그대로 유지된다', async ({ page }) => {
@@ -28,10 +29,10 @@ test('U-06/U-07 한글·공백·이모지 파일 이름이 업로드·목록·�
   const names = ['알람_이력_0901.csv', '설비 점검표.txt', '메모 🙂.md']
   // 브라우저 경로: 자료 탭 업로드 (multipart 파일 이름은 UTF-8 원시 바이트로 간다)
   await page.getByTestId('materials-own').locator('input[type="file"]').setInputFiles(names.map((name) => ({ name, mimeType: 'text/plain', buffer: Buffer.from(name) })))
-  for (const name of names) await expect(page.getByTestId('materials-own')).toContainText(`${name} v1`)
+  for (const name of names) await expect(page.getByTestId('materials-own')).toContainText(name)
   // API 경로: Playwright multipart
   await page.request.post('/api/files', { multipart: { originTaskId: task.id, file: { name: '점검 결과 ✔.txt', mimeType: 'text/plain', buffer: Buffer.from('api') } } })
-  await expect(page.getByTestId('materials-own')).toContainText('점검 결과 ✔.txt v1')
+  await expect(page.getByTestId('materials-own')).toContainText('점검 결과 ✔.txt')
   const files = await (await page.request.get(`/api/tasks/${task.id}/files`)).json() as Array<{ id: string; name: string }>
   expect(files.map((file) => file.name)).toEqual([...names, '점검 결과 ✔.txt'])
   // 내려받기: RFC 5987 filename* 에 UTF-8 이름, ASCII 대체 이름도 함께
@@ -57,12 +58,16 @@ test('T-01/T-03 공유 자료함은 출처를 대화 코드·제목으로 보여
   await page.getByRole('button', { name: '태그 추가' }).click()
   await page.getByRole('combobox', { name: '태그 입력' }).fill(tag)
   await page.getByRole('combobox', { name: '태그 입력' }).press('Enter')
-  await expect(page.getByTestId('materials-shared')).toContainText('알람_이력_0901.csv v1')
+  await expect(page.getByRole('combobox', { name: '태그 입력' })).toHaveAttribute('aria-busy', 'false')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: '태그 추가' })).toBeHidden()
+  await expect(page.getByTestId('materials-shared')).toContainText('알람_이력_0901.csv')
   const row = page.getByTestId('materials-shared').locator('[data-testid^="candidate-file-"]').first()
   await expect(row).toContainText(`업로드 · ${source.code} · 알람 이력 분석 · ${tag}`)
   await expect(row).not.toContainText(source.id) // 내부 ID는 화면에 보이지 않는다
   await expect(row.getByRole('link', { name: source.code })).toHaveAttribute('href', `/c/${source.id}`)
-  const attach = row.getByRole('button', { name: '알람_이력_0901.csv 첨부', exact: true })
+  const attach = row.getByRole('button', { name: materialToggleName('알람_이력_0901.csv') })
+  await expect(attach).toBeVisible()
   // 조작 영역은 32px 이상(S8 A6 ⑩)
   expect((await attach.boundingBox())!.height).toBeGreaterThanOrEqual(32)
   await attach.click()
@@ -70,5 +75,5 @@ test('T-01/T-03 공유 자료함은 출처를 대화 코드·제목으로 보여
   // S14: 첨부는 입력창 위 칩 하나로 보이고 ×로 뺀다
   const chips = page.getByRole('list', { name: '첨부', exact: true })
   await expect(chips).toContainText('알람_이력_0901.csv')
-  await expect(chips.getByRole('button', { name: '알람_이력_0901.csv 첨부 빼기' })).toBeVisible()
+  await expect(chips.getByRole('button', { name: '알람_이력_0901.csv 첨부 취소' })).toBeVisible()
 })

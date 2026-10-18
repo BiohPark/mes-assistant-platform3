@@ -23,7 +23,7 @@ it('offers a materials action after saving that waits for the user before openin
     message={{ content: '분석 결과' } as Message} task={{ id: 't', code: 'WK-1' } as Task} assistant={{ level2: '분석' } as Assistant}
     onClose={onClose} onOpenMaterials={onOpenMaterials} /></MeContext>)
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
-  await waitFor(() => expect(success).toHaveBeenCalledWith('산출물로 저장했습니다 (분석_WK-1.md v1).', expect.objectContaining({ action: expect.objectContaining({ label: '자료에서 보기', onClick: expect.any(Function) }) })))
+  await waitFor(() => expect(success).toHaveBeenCalledWith('이 대화 파일로 저장했습니다 (분석_WK-1.md v1).', expect.objectContaining({ action: expect.objectContaining({ label: '자료에서 보기', onClick: expect.any(Function) }) })))
   expect(onClose).toHaveBeenCalledOnce()
   expect(onOpenMaterials).not.toHaveBeenCalled()
   const before = [...calls]

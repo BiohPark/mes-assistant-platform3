@@ -1,4 +1,5 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { useState } from 'react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Task } from '@mes/domain'
@@ -7,104 +8,85 @@ import { MeContext } from '@/app/auth'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { TaskBody } from './TaskBody'
+import { useTaskChatActions } from './chatActions'
+import { TaskHeader } from './TaskHeader'
+import { useMaterialsDrawer } from './materialsDrawer'
+import { useTagShareStore } from './tagShare'
 
 const task = { id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: [], checklist: [], inputs: [], outputFileIds: [], threadId: 'h', createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z' } satisfies Task
-afterEach(() => { vi.unstubAllGlobals(); sessionStorage.removeItem('mes-chat-attempt:h-pending') })
 
-it.each(['narrow', 'wide'] as const)('moves keyboard focus to the visible materials tab when opening materials (%s)', async (layout) => {
+afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); useMaterialsDrawer.setState({ byTask: {} }); useTagShareStore.setState({ openSeq: {}, consumedSeq: {} }) })
+
+function stub() {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
+    if (url.endsWith('/candidates')) return jsonResponse(200, { files: [], conversations: [] })
+    if (url.endsWith('/activity')) return jsonResponse(200, [{ id: 'event', taskId: 't', userId: 'u', type: 'task.reopened', payload: { reason: '추가 확인' }, at: task.createdAt }])
+    return jsonResponse(200, [])
+  }))
+}
+const assistant = { id: 'a', name: '도우미' } as Assistant
+const me = { id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
+function view(value: Task) { return <MeContext value={me}><TooltipProvider><TaskHeader task={value} assistant={assistant} /><TaskBody task={value} assistant={assistant} /></TooltipProvider></MeContext> }
+
+it('맥락 없는 대화는 닫히고 자료 열기는 패널에 초점을 주며 입력·선택을 보존한다', async () => {
+  stub()
+  renderWithProviders(view(task))
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+  const toggle = screen.getByRole('button', { name: /^연결 자료/ })
+  expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  fireEvent.change(input, { target: { value: '유지할 입력' } })
+  await userEvent.click(await screen.findByRole('button', { name: '자료 열기' }))
+  const panel = screen.getByRole('complementary', { name: '#태그·SR 연결 자료' })
+  await waitFor(() => expect(panel).toHaveFocus())
+  expect(toggle).toHaveAttribute('aria-controls', panel.id)
+  expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toBe(input)
+  expect(input).toHaveValue('유지할 입력')
+  expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+  expect(fetch).not.toHaveBeenCalledWith(expect.stringMatching(/inputs/), expect.objectContaining({ method: 'PUT' }))
+})
+
+it.each([{ tags: ['A'] }, { linkedSrCodes: ['SR-2026-0001'] }])('태그/SR 자동 열림, 수동 닫힘 유지, 새 태그 추가만 다시 연다: %j', async context => {
+  stub()
+  let update: (value: Task) => void = () => {}
+  function Harness() { const [value, setValue] = useState<Task>({ ...task, ...context }); update = setValue; return view(value) }
+  renderWithProviders(<Harness />)
+  const toggle = screen.getByRole('button', { name: /^연결 자료/ })
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await userEvent.click(toggle)
+  expect(sessionStorage.getItem('mes-hub:panel-state:t')).toBe('closed')
+  act(() => update({ ...task, ...context, title: '갱신' }))
+  expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  act(() => update({ ...task, ...context, tags: [...(context.tags ?? []), 'B'] }))
+  await waitFor(() => expect(toggle).toHaveAttribute('aria-expanded', 'true'))
+})
+
+it('대화별 수동 선택은 재마운트/MDI 전환에도 유지되고 보조 도구는 메뉴와 키보드로 열린다', async () => {
+  stub()
+  sessionStorage.setItem('mes-hub:panel-state:t', 'closed')
+  const { unmount } = renderWithProviders(view({ ...task, tags: ['A'] }))
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
   const user = userEvent.setup()
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
-    if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [], conversations: [] })
-    return jsonResponse(200, [])
-  }))
-  // jsdom does not load Tailwind: model the tablist and chat visibility at each breakpoint.
-  renderWithProviders(<><style>{layout === 'narrow'
-    ? '[role="tablist"][aria-label="보조 패널"], section.hidden { display: none; }'
-    : '[role="tablist"][aria-label="대화 화면 탭"] { display: none; }'}</style><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext></>)
-  const opener = await screen.findByRole('button', { name: '자료 열기' })
-  opener.focus()
-  await user.keyboard('{Enter}')
-  const tabs = within(screen.getByRole('tablist', { name: layout === 'narrow' ? '대화 화면 탭' : '보조 패널' }))
-  expect(tabs.getByRole('tab', { name: '자료' })).toHaveAttribute('aria-selected', 'true')
-  expect(tabs.getByRole('tab', { name: '자료' })).toHaveFocus()
-  if (layout === 'narrow') expect(opener).not.toBeVisible()
-})
-
-it('constrains the chat column on narrow screens and flags the header tools hidden outside the chat tab', async () => {
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
-    return jsonResponse(200, [])
-  }))
-  const headerTools = document.body.appendChild(document.createElement('div')) // 헤더의 도구 자리(포털 대상)
-  try {
-    renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} headerTools={headerTools} /></TooltipProvider></MeContext>)
-    // 모바일도 minmax(0,1fr) — auto 열이면 입력창 아래 줄 최소 폭만큼 가로로 넘친다
-    expect(screen.getByRole('region', { name: '대화' }).parentElement).toHaveClass('grid-cols-[minmax(0,1fr)]', 'lg:grid-cols-[minmax(0,1fr)_360px]')
-    expect(within(headerTools).getByRole('button', { name: '대화 내 검색' })).toBeInTheDocument()
-    expect(headerTools.dataset.chatHidden).toBe('false')
-    const mobileTabs = within(screen.getByRole('tablist', { name: '대화 화면 탭' }))
-    fireEvent.click(mobileTabs.getByRole('tab', { name: '자료' }))
-    expect(headerTools.dataset.chatHidden).toBe('true')
-    fireEvent.click(mobileTabs.getByRole('tab', { name: '대화' }))
-    expect(headerTools.dataset.chatHidden).toBe('false')
-  } finally { headerTools.remove() }
-})
-
-it('offers narrow-screen tabs, placeholders, and the activity panel', async () => {
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-    if (url === '/api/tasks/t/activity') return jsonResponse(200, [{ id: 'event', taskId: 't', userId: 'u', type: 'task.reopened', payload: { reason: '추가 확인' }, at: '2026-09-28T00:00:00.000Z' }])
-    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
-    return jsonResponse(200, [])
-  }))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
-  const mobileTabs = within(screen.getByRole('tablist', { name: '대화 화면 탭' }))
-  fireEvent.click(mobileTabs.getByRole('tab', { name: '자료' }))
-  expect(screen.getByTestId('materials-library')).toBeInTheDocument()
-  fireEvent.click(mobileTabs.getByRole('tab', { name: '이력' }))
+  await user.click(screen.getByRole('button', { name: '더 보기' }))
+  await user.click(screen.getByRole('menuitem', { name: '활동 이력 열기' }))
   expect(await screen.findByText('사유: 추가 확인')).toBeInTheDocument()
+  expect(screen.getByText('보조 도구').closest('details')).toHaveAttribute('open')
+  unmount()
+  renderWithProviders(view(task))
+  expect(screen.getByRole('complementary')).toBeInTheDocument()
+  expect(screen.getByText('보조 도구').closest('details')).not.toHaveAttribute('open')
 })
 
-it('방향키로 보조 패널 탭을 옮기고 단일 tabpanel이 활성 탭을 가리킨다', async () => {
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-    if (url === '/api/tasks/t/activity') return jsonResponse(200, [])
-    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
-    return jsonResponse(200, [])
-  }))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
-  const panelTabs = within(screen.getByRole('tablist', { name: '보조 패널' }))
-  const history = panelTabs.getByRole('tab', { name: '이력' })
-  const materials = panelTabs.getByRole('tab', { name: '자료' })
-  // 기본 탭은 자료(S14)
-  expect(materials).toHaveAttribute('tabindex', '0')
-  expect(history).toHaveAttribute('tabindex', '-1')
-  const panel = screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })
-  expect(materials.id).toBeTruthy()
-  expect(panel).toHaveAttribute('aria-labelledby', materials.id)
-  expect(materials).toHaveAttribute('aria-controls', panel.id)
-
-  materials.focus()
-  fireEvent.keyDown(materials, { key: 'End' })
-  expect(history).toHaveAttribute('aria-selected', 'true')
-  expect(history).toHaveFocus()
-  expect(screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })).toHaveAttribute('aria-labelledby', history.id)
-  fireEvent.keyDown(history, { key: 'ArrowRight' })
-  expect(materials).toHaveAttribute('aria-selected', 'true')
-  expect(materials).toHaveFocus()
-  expect(screen.getAllByRole('tabpanel')).toHaveLength(1)
-
-  // 좁은 화면 탭도 같은 훅 — 대화에서 → 는 자료로 가고 채팅 영역은 계속 마운트돼 있다
-  const mobileTabs = within(screen.getByRole('tablist', { name: '대화 화면 탭' }))
-  const chat = mobileTabs.getByRole('tab', { name: '대화' })
-  chat.focus()
-  fireEvent.keyDown(chat, { key: 'ArrowRight' })
-  expect(mobileTabs.getByRole('tab', { name: '자료' })).toHaveAttribute('aria-selected', 'true')
-  expect(mobileTabs.getByRole('tab', { name: '자료' })).toHaveFocus()
-  expect(screen.getByRole('tabpanel', { name: /^(이력|자료)$/ })).toHaveAttribute('aria-labelledby', materials.id)
-  expect(screen.getByRole('region', { name: '대화' })).toBeInTheDocument()
-  fireEvent.keyDown(mobileTabs.getByRole('tab', { name: '자료' }), { key: 'Home' })
-  expect(chat).toHaveAttribute('aria-selected', 'true')
-  expect(chat).toHaveFocus()
+it('MDI 두 대화의 패널 id와 수동 선택은 겹치지 않는다', async () => {
+  stub()
+  renderWithProviders(<>{view({ ...task, tags: ['A'] })}{view({ ...task, id: 't2', threadId: 'h2', tags: ['A'] })}</>)
+  const panels = screen.getAllByRole('complementary')
+  expect(new Set(panels.map(panel => panel.id)).size).toBe(2)
+  const toggles = screen.getAllByRole('button', { name: '연결 자료(0)' })
+  fireEvent.click(toggles[0]!)
+  expect(toggles[0]).toHaveAttribute('aria-expanded', 'false')
+  expect(toggles[1]).toHaveAttribute('aria-expanded', 'true')
 })
 
 it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환이 Composer와 입력·전송 상태를 유지한다 (%s)', async (waitingFor) => {
@@ -127,7 +109,7 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
     return jsonResponse(200, [])
   })
   vi.stubGlobal('fetch', fetchMock)
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><TaskBody task={{ ...task, threadId: 'h-pending' }} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
+  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><TaskHeader task={task} assistant={assistant} /><TaskBody task={{ ...task, threadId: 'h-pending' }} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
   const chat = () => within(screen.getByRole('region', { name: '대화' }))
   const input = chat().getByRole('textbox')
   const composer = input.parentElement!.parentElement!
@@ -154,70 +136,200 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
     }
   }
   await waitFor(expectComposerPreserved)
+  expect(screen.queryByRole('button', { name: '전송 기록' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '파일 빼고 다시' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '텍스트로 보내기' })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '더 보기' }))
+  for (const label of ['전송 기록', '파일 빼고 다시', '텍스트로 보내기']) expect(screen.queryByRole('menuitem', { name: label })).not.toBeInTheDocument()
+  await userEvent.keyboard('{Escape}')
   if (waitingFor === 'stream') {
     expectedDraft = '응답 중 작성한 다음 질문'
     fireEvent.change(input, { target: { value: expectedDraft } })
   }
 
-  // jsdom에서는 반응형 CSS 대신 두 tablist의 실제 키보드 핸들러를 실행한다.
-  const panelTabs = within(screen.getByRole('tablist', { name: '보조 패널' }))
-  const mobileTabs = within(screen.getByRole('tablist', { name: '대화 화면 탭' }))
-  for (const [tabs, steps] of [
-    [panelTabs, [['자료', 'End', '이력'], ['이력', 'ArrowRight', '자료'], ['자료', 'ArrowLeft', '이력'], ['이력', 'Home', '자료']]],
-    [mobileTabs, [['대화', 'ArrowRight', '자료'], ['자료', 'ArrowRight', '체크'], ['체크', 'ArrowLeft', '자료'], ['자료', 'Home', '대화'], ['대화', 'End', '이력'], ['이력', 'Home', '대화']]],
-  ] as const) {
-    for (const [from, key, to] of steps) {
-      const tab = tabs.getByRole('tab', { name: from })
-      tab.focus()
-      fireEvent.keyDown(tab, { key })
-      const selected = tabs.getByRole('tab', { name: to })
-      expect(selected).toHaveAttribute('aria-selected', 'true')
-      expect(selected).toHaveFocus()
-      expectComposerPreserved()
-    }
+  // 패널·보조 도구를 열고 닫는 동안에도 입력·전송 상태는 같은 인스턴스다.
+  for (let i = 0; i < 2; i++) {
+    fireEvent.click(screen.getByRole('button', { name: /^연결 자료/ }))
+    fireEvent.click(screen.getByText('보조 도구'))
+    expectComposerPreserved()
+    fireEvent.click(screen.getByText('보조 도구'))
+    expectComposerPreserved()
+    fireEvent.click(screen.getByRole('button', { name: /^연결 자료/ }))
+    expectComposerPreserved()
   }
 })
 
-it('defaults to materials and opens materials on both layouts without remounting chat or selecting inputs', async () => {
-  const calls: Array<{ url: string; method?: string }> = []
-  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
-    calls.push({ url, method: init?.method })
+it.each(['done', 'error'] as const)('헤더 메뉴에서 기존 기록·파일 재시도 대화상자를 열고 오류 때만 임시 노출한다 (%s)', async status => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
-    if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [], conversations: [] })
+    if (url.endsWith('/candidates')) return jsonResponse(200, { files: [], conversations: [] })
+    if (url === '/api/threads/h/messages') return jsonResponse(200, [{ id: 'm', threadId: 'h', seq: 1, role: 'assistant', content: '답변', status, requestId: 'r', attachmentIds: [], createdAt: task.createdAt }])
+    if (url === '/api/requests/r') return jsonResponse(200, { id: 'r', threadId: 'h', status: status === 'done' ? 'succeeded' : 'failed', model: 'mock', bytes: 3, limitBytes: 100, hasSnapshot: true, inputs: [{ kind: 'file', fileId: 'f', sourceLabel: '근거.txt', weight: 'reference', bytes: 3 }] })
     return jsonResponse(200, [])
   }))
-  renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
-  const desktop = within(screen.getByRole('tablist', { name: '보조 패널' }))
-  const mobile = within(screen.getByRole('tablist', { name: '대화 화면 탭' }))
-  expect(desktop.getByRole('tab', { name: '자료' })).toHaveAttribute('aria-selected', 'true')
-  expect(screen.getByTestId('materials-panel')).toBeInTheDocument()
-  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
-  fireEvent.change(input, { target: { value: '유지할 입력' } })
-  fireEvent.click(await screen.findByRole('button', { name: '자료 열기' }))
-  expect(desktop.getByRole('tab', { name: '자료' })).toHaveAttribute('aria-selected', 'true')
-  expect(mobile.getByRole('tab', { name: '자료' })).toHaveAttribute('aria-selected', 'true')
-  expect(screen.getByTestId('materials-panel')).toBeInTheDocument()
-  expect(screen.getByRole('textbox', { name: 'AI 요청 입력', hidden: true })).toBe(input)
-  expect(input).toHaveValue('유지할 입력')
-  await waitFor(() => expect(calls.filter(({ url }) => url === '/api/tasks/t/candidates')).toHaveLength(1))
-  expect(calls.some(({ url }) => /\/(?:conversation-)?inputs(?:\/|$)/.test(url) && calls.find(call => call.url === url)?.method !== 'GET')).toBe(false)
-  expect(task.inputs).toEqual([])
+  renderWithProviders(view(task))
+  await waitFor(() => expect(useTaskChatActions.getState().byTask.t?.info).toBeTypeOf('function'))
+  expect(screen.queryByRole('button', { name: '전송 기록' }) !== null).toBe(status === 'error')
+  const user = userEvent.setup()
+  if (status === 'done') {
+    await user.click(screen.getByRole('button', { name: '더 보기' }))
+    expect(screen.queryByRole('menuitem', { name: '전송 기록' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: '파일 빼고 다시' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: '텍스트로 보내기' })).not.toBeInTheDocument()
+    return
+  }
+  for (const [label, title] of [['전송 기록', '사용한 자료'], ['파일 빼고 다시', '다시 보낼 때 뺄 파일'], ['텍스트로 보내기', '본문으로 보낼 텍스트 파일']] as const) {
+    await user.click(screen.getByRole('button', { name: '더 보기' }))
+    await user.click(screen.getByRole('menuitem', { name: label }))
+    expect(await screen.findByRole('dialog', { name: title })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  }
 })
 
-it('S15: 대화 두 개를 함께 살려 둬도 보조 패널 탭·패널 id가 겹치지 않는다', () => {
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/llm/models' ? jsonResponse(200, { models: [] }) : jsonResponse(200, [])))
-  const me = { id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
-  renderWithProviders(<MeContext value={me}><TooltipProvider>
-    <TaskBody task={task} assistant={{ id: 'a', name: '도우미' } as Assistant} />
-    <TaskBody task={{ ...task, id: 't2', threadId: 'h2' }} assistant={{ id: 'a', name: '도우미' } as Assistant} />
-  </TooltipProvider></MeContext>)
-  const ids = [...document.querySelectorAll('[id]')].map(element => element.id).filter(id => id.startsWith('task-'))
-  expect(ids.length).toBeGreaterThan(0)
-  expect(new Set(ids).size).toBe(ids.length)
-  for (const tablist of screen.getAllByRole('tablist', { name: '보조 패널' })) {
-    const selected = within(tablist).getByRole('tab', { selected: true })
-    const panel = document.getElementById(selected.getAttribute('aria-controls')!)!
-    expect(panel.getAttribute('aria-labelledby')).toBe(selected.id)
-    expect(tablist.parentElement!.contains(panel)).toBe(true)
-  }
+it('자동 상태에서 마지막 태그가 빠지면 패널이 닫힌다', async () => {
+  stub()
+  let update: (value: Task) => void = () => {}
+  function Harness() { const [value, setValue] = useState<Task>({ ...task, tags: ['A'] }); update = setValue; return view(value) }
+  renderWithProviders(<Harness />)
+  expect(screen.getByRole('complementary')).toBeInTheDocument()
+  act(() => update(task))
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+})
+
+it('더 보기 방향키·Space로 메모를 열고 해당 보조 영역에 초점을 옮긴다', async () => {
+  stub()
+  renderWithProviders(view(task))
+  const user = userEvent.setup()
+  screen.getByRole('button', { name: '더 보기' }).focus()
+  await user.keyboard('{ArrowDown}')
+  expect(screen.getByRole('menuitem', { name: '체크리스트 열기' })).toHaveFocus()
+  await user.keyboard('{ArrowDown}')
+  expect(screen.getByRole('menuitem', { name: '메모 열기' })).toHaveFocus()
+  await user.keyboard(' ')
+  await waitFor(() => expect(screen.getByRole('region', { name: '메모' })).toHaveFocus())
+  expect(screen.getByText('보조 도구').closest('details')).toHaveAttribute('open')
+})
+
+
+it('태그 추가→제거는 자동 규칙을 따르고, 수동 닫힘 뒤 맥락 추가도 override를 지운다', async () => {
+  stub()
+  let update!: (value: Task) => void
+  function Harness() { const [value, setValue] = useState<Task>(task); update = setValue; return view(value) }
+  renderWithProviders(<Harness />)
+  act(() => update({ ...task, tags: ['A'] }))
+  expect(screen.getByRole('complementary')).toBeInTheDocument()
+  expect(sessionStorage.getItem('mes-hub:panel-state:t')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /^연결 자료/ }))
+  act(() => update({ ...task, tags: ['A', 'B'] }))
+  await waitFor(() => expect(screen.getByRole('complementary')).toBeInTheDocument())
+  expect(sessionStorage.getItem('mes-hub:panel-state:t')).toBeNull()
+  act(() => update(task))
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+})
+
+it('공유 안내로 연 뒤 수동 닫힘은 LRU에 해당하는 언마운트→복귀에도 유지하고 새 안내는 처리한다', async () => {
+  stub()
+  const first = renderWithProviders(view(task))
+  act(() => useTagShareStore.getState().openMaterials('t'))
+  await waitFor(() => expect(screen.getByRole('complementary')).toBeInTheDocument())
+  fireEvent.click(screen.getByRole('button', { name: /^연결 자료/ }))
+  first.unmount()
+  renderWithProviders(view(task))
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+  act(() => useTagShareStore.getState().openMaterials('t'))
+  await waitFor(() => expect(screen.getByRole('complementary')).toBeInTheDocument())
+})
+
+it('패널 접기→펼치기는 메모 본문·첨부와 진행 중 체크리스트 검토를 보존한다', async () => {
+  let signal!: AbortSignal
+  let stream!: ReadableStreamDefaultController<Uint8Array>
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/checklist/review')) {
+      signal = init!.signal!
+      return new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller } }))
+    }
+    if (url.endsWith('/files')) return jsonResponse(200, [{ id: 'f', name: '메모.txt', version: 1 }])
+    if (url.endsWith('/candidates')) return jsonResponse(200, { files: [], conversations: [] })
+    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(view({ ...task, tags: ['A'], checklist: [{ id: 'c', label: '근거', required: false, checked: false }] }))
+  fireEvent.click(screen.getByText('보조 도구'))
+  const memo = screen.getByRole('textbox', { name: '메모 본문' })
+  fireEvent.change(memo, { target: { value: '보존할 메모' } })
+  const attachment = await screen.findByRole('checkbox', { name: '메모.txt v1' })
+  fireEvent.click(attachment)
+  fireEvent.click(screen.getByRole('button', { name: 'AI 달성도 점검' }))
+  await waitFor(() => expect(stream).toBeDefined())
+  await act(async () => stream.enqueue(new TextEncoder().encode('event: item\ndata: {"itemId":"c","met":true,"note":"진행 중 판단"}\n\n')))
+  const toggle = screen.getByRole('button', { name: /^연결 자료/ })
+  fireEvent.click(toggle)
+  expect(signal.aborted).toBe(false)
+  fireEvent.click(toggle)
+  expect(screen.getByRole('textbox', { name: '메모 본문' })).toBe(memo)
+  expect(memo).toHaveValue('보존할 메모')
+  expect(screen.getByRole('checkbox', { name: '메모.txt v1' })).toBeChecked()
+  expect(screen.getByText('진행 중 판단')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'AI 달성도 점검' })).toBeDisabled()
+})
+
+it('좁은 화면 자동 열림은 접힌 바이며 펼친 다음에만 50% 자료 영역을 쓴다', async () => {
+  stub()
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('max-width'), media: query, addListener() {}, removeListener() {} }))
+  renderWithProviders(view({ ...task, tags: ['A'] }))
+  const toggle = screen.getByRole('button', { name: /^연결 자료/ })
+  expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  const bar = screen.getByRole('complementary').querySelector('summary')!
+  expect(bar.closest('details')).not.toHaveAttribute('open')
+  fireEvent.click(bar)
+  await waitFor(() => expect(toggle).toHaveAttribute('aria-expanded', 'true'))
+  expect(bar.closest('details')).toHaveAttribute('open')
+  expect(screen.getByRole('complementary')).toHaveClass('max-lg:max-h-[50%]')
+})
+
+it('초안 크기 정상→한도 초과→정상 전환에서만 헤더·메뉴 오류 도구를 노출한다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/requests/estimate')) {
+      const over = JSON.parse(String(init?.body)).draft === '초과'
+      return jsonResponse(200, { at: task.createdAt, provider: 'mock', transport: 'inline', model: 'mock', bytes: over ? 200 : 10, limitBytes: 100,
+        inputs: [], srCodes: [], srs: [], overLimit: over, attachmentLimit: 20 })
+    }
+    if (url.endsWith('/candidates')) return jsonResponse(200, { files: [], conversations: [] })
+    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(view(task))
+  const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  fireEvent.change(input, { target: { value: '정상' } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
+  expect(screen.queryByRole('button', { name: '전송 기록' })).not.toBeInTheDocument()
+  fireEvent.change(input, { target: { value: '초과' } })
+  expect(await screen.findByRole('button', { name: '전송 기록' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '전송' })).toBeDisabled()
+  await userEvent.click(screen.getByRole('button', { name: '더 보기' }))
+  expect(screen.getByRole('menuitem', { name: '파일 빼고 다시' })).toBeInTheDocument()
+  await userEvent.keyboard('{Escape}')
+  fireEvent.change(input, { target: { value: '정상' } })
+  await waitFor(() => expect(screen.queryByRole('button', { name: '전송 기록' })).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
+})
+
+it('같은 화면 인스턴스에서 대화 ID가 바뀌면 이전 대화의 메모 초안·첨부를 섞지 않는다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url.endsWith('/files')) return jsonResponse(200, [{ id: 'f', name: '공통.txt', version: 1 }])
+    if (url.endsWith('/candidates')) return jsonResponse(200, { files: [], conversations: [] })
+    if (url === '/api/llm/models') return jsonResponse(200, { models: [] })
+    return jsonResponse(200, [])
+  }))
+  let update!: (value: Task) => void
+  function Harness() { const [value, setValue] = useState<Task>({ ...task, tags: ['A'] }); update = setValue; return view(value) }
+  renderWithProviders(<Harness />)
+  fireEvent.click(screen.getByText('보조 도구'))
+  fireEvent.change(screen.getByRole('textbox', { name: '메모 본문' }), { target: { value: '첫 대화 메모' } })
+  fireEvent.click(await screen.findByRole('checkbox', { name: '공통.txt v1' }))
+  act(() => update({ ...task, id: 'second', threadId: 'second-thread', tags: ['A'] }))
+  if (!screen.getByText('보조 도구').closest('details')!.open) fireEvent.click(screen.getByText('보조 도구'))
+  expect(screen.getByRole('textbox', { name: '메모 본문' })).toHaveValue('')
+  expect(await screen.findByRole('checkbox', { name: '공통.txt v1' })).not.toBeChecked()
 })

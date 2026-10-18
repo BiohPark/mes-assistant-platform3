@@ -1,3 +1,4 @@
+import { revealMaterials } from './materials.js'
 import { expect, test, type JSHandle, type Locator, type Page } from '@playwright/test'
 
 const password = 'e2e-password-1234'
@@ -51,7 +52,7 @@ test('SR 접수에 끌어 놓은 파일은 전송 후에도 SR 첨부로 남는�
   await expect(page.getByText('놓으면 첨부 대기에 추가')).toBeVisible()
   await drop(zone, data)
   await expect(page.getByText('sr-dnd.txt', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '첨부 제거' })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /첨부 (제거|취소)$/ })).toHaveCount(1)
   await page.getByRole('textbox', { name: '접수 메시지' }).fill('드롭 첨부 요청')
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect.poll(() => new URL(page.url()).searchParams.get('id')).toBeTruthy()
@@ -83,14 +84,14 @@ test('초안 화면에 끌어다 놓으면 첨부 대기 칩이 되고 첫 전�
   await expect(page.getByText('2개 파일을 첨부 대기에 추가했습니다.')).toBeVisible()
   await expect(page.getByText('dnd-one.txt')).toBeVisible()
   await expect(page.getByText('dnd-two.txt')).toBeVisible()
-  await expect(page.getByRole('button', { name: '첨부 제거' })).toHaveCount(2)
+  await expect(page.getByRole('button', { name: /첨부 (제거|취소)$/ })).toHaveCount(2)
   await expect(page.getByRole('button', { name: /입력으로 고정|이번 메시지만/ })).toHaveCount(0)
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page).toHaveURL(/\/c\/[^/]+$/)
-  await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
+  await revealMaterials(page)
   // 첨부는 자료함에 남고 첫 요청에만 갔다(D54 개정) — '사용됨', 입력창 첨부 칩은 비었다
-  await expect(page.getByTestId('materials-own')).toContainText('dnd-one.txt v1')
-  await expect(page.getByTestId('materials-own')).toContainText('dnd-two.txt v1')
+  await expect(page.getByTestId('materials-own')).toContainText('dnd-one.txt')
+  await expect(page.getByTestId('materials-own')).toContainText('dnd-two.txt')
   await expect(page.getByTestId('materials-own').getByText('사용됨')).toHaveCount(2)
   await expect(page.getByRole('list', { name: '첨부', exact: true })).toHaveCount(0)
 })
@@ -100,13 +101,13 @@ test('대화 화면: 자료 패널에 놓으면 저장, 팀 의견 첨부는 AI 
   const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
   const task = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id } })).json() as { id: string }
   await page.goto(`/c/${task.id}`)
-  await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
+  await revealMaterials(page)
   const own = page.getByTestId('materials-own')
   await own.dispatchEvent('dragenter', { dataTransfer: await dataTransfer(page, [{ name: 'dnd-own.txt', content: 'own' }]) })
   await expect(page.getByText('놓으면 이 대화 파일로 저장')).toBeVisible()
   await drop(own, await dataTransfer(page, [{ name: 'dnd-own.txt', content: 'own' }]))
   await expect(page.getByText('1개 파일을 업로드했습니다.')).toBeVisible()
-  await expect(own).toContainText('dnd-own.txt v1')
+  await expect(own).toContainText('dnd-own.txt')
   await expect(page.getByText('놓으면 이 대화 파일로 저장')).toBeHidden()
 
   const chat = page.getByTestId('chat-dropzone')
@@ -117,11 +118,11 @@ test('대화 화면: 자료 패널에 놓으면 저장, 팀 의견 첨부는 AI 
   await page.getByRole('button', { name: '팀 의견 (AI 미전송)' }).click()
   await drop(chat, await dataTransfer(page, [{ name: 'dnd-note.txt', content: 'note' }]))
   await expect(page.getByText('dnd-note.txt')).toBeVisible()
-  await expect(page.getByRole('button', { name: '첨부 제거' })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /첨부 (제거|취소)$/ })).toHaveCount(1)
   await expect(page.getByRole('button', { name: /입력으로 고정|이번 메시지만/ })).toHaveCount(0)
   await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('끌어다 놓은 파일 공유')
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByText('끌어다 놓은 파일 공유')).toBeVisible()
-  await expect(own).toContainText('dnd-note.txt v1')
+  await expect(own).toContainText('dnd-note.txt')
   await expect(page.getByRole('list', { name: '첨부', exact: true })).toHaveCount(0)
 })
