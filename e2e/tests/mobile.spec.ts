@@ -1,3 +1,4 @@
+import { linkedMaterialsToggle, revealMaterials } from './materials.js'
 /// <reference lib="dom" />
 import { expect, test, type Page } from '@playwright/test'
 
@@ -40,7 +41,7 @@ test('390px 허브는 분류 팝오버에서 고른 것만 칩으로 보이고 �
   await expectNoHorizontalOverflow(page)
 })
 
-test('390px 대화 헤더는 한 줄로 가로 스크롤하고 모델창과 관련 대화 펼침이 뷰포트 안에 들어간다', async ({ page }) => {
+test('390px 대화 헤더는 한 줄로 가로 스크롤하고 모델창과 연결 자료가 뷰포트 안에 들어간다', async ({ page }) => {
   await signUp(page)
   const assistantsResponse = await page.request.get('/api/assistants')
   expect(assistantsResponse.ok()).toBe(true)
@@ -60,8 +61,8 @@ test('390px 대화 헤더는 한 줄로 가로 스크롤하고 모델창과 관�
   const complete = page.getByRole('button', { name: '업무 완료' })
   await expect(complete).toBeVisible()
   await expectNoHorizontalOverflow(page)
-  // 제목·코드는 상단 바 하나뿐. 헤더 둘째 줄은 에이전트 칩부터 완료 버튼까지 같은 줄에서 가로 스크롤한다
-  await expect(page.getByRole('heading', { level: 1 }).getByText(task.code, { exact: true })).toBeVisible()
+  // 제목은 헤더 한 줄에 있고 코드는 더 보기 메뉴에 있다.
+  await expect(page.getByRole('button', { name: '모바일 대화', exact: true })).toBeVisible()
   const row = complete.locator('..').locator('..')
   await expect(row).toHaveCSS('overflow-x', 'auto')
   const agentBox = await row.locator(':scope > a').first().boundingBox()
@@ -78,11 +79,18 @@ test('390px 대화 헤더는 한 줄로 가로 스크롤하고 모델창과 관�
   await expect(trigger.getByText(modelId)).toHaveCSS('text-overflow', 'ellipsis')
   // 좁은 화면에서 대화 탭이 아니면 헤더의 검색·질문 목차 아이콘은 숨는다
   const searchToggle = page.getByRole('button', { name: '대화 내 검색' })
-  const mobileTabs = page.getByRole('tablist', { name: '대화 화면 탭' }) // 자료 패널 안의 '대화'·'이 대화 파일' 탭과 구분
   await expect(searchToggle).toBeVisible()
-  await mobileTabs.getByRole('tab', { name: '자료', exact: true }).click()
-  await expect(searchToggle).toBeHidden()
-  await mobileTabs.getByRole('tab', { name: '대화', exact: true }).click()
+  const materialsToggle = linkedMaterialsToggle(page)
+  await expect(materialsToggle).toHaveAttribute('aria-expanded', 'false')
+  const bar = page.getByRole('complementary', { name: '#태그·SR 연결 자료' })
+  await expect(bar.locator(':scope > details')).not.toHaveAttribute('open')
+  const collapsedBox = await bar.boundingBox()
+  expect(collapsedBox!.height).toBeLessThan(100)
+  await bar.locator(':scope > details > summary').click()
+  await expect(materialsToggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('complementary', { name: '#태그·SR 연결 자료' })).toBeVisible()
+  await expect(searchToggle).toBeVisible()
+  await linkedMaterialsToggle(page).click()
   await expect(searchToggle).toBeVisible()
   await trigger.click()
   const popup = page.getByRole('dialog', { name: 'AI 모델' })
@@ -96,14 +104,15 @@ test('390px 대화 헤더는 한 줄로 가로 스크롤하고 모델창과 관�
   await expectNoHorizontalOverflow(page)
   await page.keyboard.press('Escape')
   await expect(popup).toHaveCount(0)
-  const related = page.locator('summary').filter({ hasText: '같은 태그 대화 5' })
-  await expect(related).toContainText('+2')
-  await related.click()
-  const relatedPopup = related.locator('..').locator(':scope > div')
-  await expect(relatedPopup.getByRole('link')).toHaveCount(5)
-  const relatedBox = await relatedPopup.boundingBox()
-  expect(relatedBox).not.toBeNull()
-  expect(relatedBox!.x).toBeGreaterThanOrEqual(0)
-  expect(relatedBox!.x + relatedBox!.width).toBeLessThanOrEqual(390)
+  await revealMaterials(page)
+  const conversations = page.locator('[data-tour="materials-conversations"]')
+  await conversations.scrollIntoViewIfNeeded()
+  await expect(conversations).toContainText('#태그 공유 대화 5개')
+  await expect(page.getByTestId('conversation-candidates').locator('[data-testid^="conversation-"]')).toHaveCount(5)
+  const materialsBox = await page.getByRole('complementary', { name: '#태그·SR 연결 자료' }).boundingBox()
+  expect(materialsBox).not.toBeNull()
+  expect(materialsBox!.height).toBeLessThanOrEqual(844 / 2)
+  expect(materialsBox!.x).toBeGreaterThanOrEqual(0)
+  expect(materialsBox!.x + materialsBox!.width).toBeLessThanOrEqual(390)
   await expectNoHorizontalOverflow(page)
 })

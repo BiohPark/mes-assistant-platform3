@@ -95,10 +95,10 @@ it('S14-DD: 태그 공유 말풍선은 들어오고 빠진 같은 태그 대화�
   renderWithProviders(<AssistantBubble pillRef={{ current: null }} pos={null} />)
   const onOpen = vi.fn()
   push({ source: 'share.in', key: 't', counts: { conversations: 1, files: 3 }, onOpen })
-  fireEvent.click(screen.getByText('같은 태그 대화 1개·파일 3개가 자료함에 들어왔어요. 눌러서 확인하세요'))
+  fireEvent.click(screen.getByText('같은 태그 대화 1개·파일 3개가 연결 자료에 들어왔어요. 눌러서 확인하세요'))
   expect(onOpen).toHaveBeenCalledOnce()
   push({ source: 'share.out', key: 't', counts: { conversations: 0, files: 2 } })
-  expect(screen.getByText('같은 태그 대화 0개·파일 2개가 자료함에서 빠졌어요')).toBeVisible()
+  expect(screen.getByText('같은 태그 대화 0개·파일 2개가 연결 자료에서 빠졌어요')).toBeVisible()
 })
 
 it('S14-HH: 가이드가 진행되는 동안 말풍선은 미뤄 두고(시간도 멈춤), 가이드가 끝나면 그때 보인다 — 실제로 보인 것만 알림 이력에 남는다', () => {

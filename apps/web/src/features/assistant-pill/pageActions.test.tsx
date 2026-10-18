@@ -9,36 +9,25 @@ it('every page, including other, starts with the guide action and My work has it
   expect(pageRoute('/my-info')).toBe('other')
 })
 
-it.each(['ko', 'en'] as const)('focuses existing %s search and opens the same-tag panel without toggling it closed', locale => {
+it.each(['ko', 'en'] as const)('opens the current %s materials panel without closing it and focuses the input', locale => {
   const t = createT(locale)
-  render(<><input aria-label={t('hub.searchAssistants')} /><details><summary>{t('task.related.linked', { count: 2 })}</summary><p>linked conversations</p></details></>)
+  render(<><input aria-label={t('hub.searchAssistants')} /><button data-tour="linked-materials" aria-expanded="false" onClick={event => event.currentTarget.setAttribute('aria-expanded', 'true')}>materials</button><div data-tour="composer"><textarea /></div></>)
   focusPageTarget('search', t)
-  expect(screen.getByRole('textbox')).toHaveFocus()
+  expect(screen.getByRole('textbox', { name: t('hub.searchAssistants') })).toHaveFocus()
   focusPageTarget('related', t)
-  const summary = pageTarget('related', t)!
-  expect(summary.parentElement).toHaveAttribute('open')
-  expect(summary).toHaveFocus()
-  focusPageTarget('related', t)
-  expect(summary.parentElement).toHaveAttribute('open')
-})
-
-it('opens and focuses the visible materials tab at either layout breakpoint', () => {
-  const t = createT('ko')
-  render(<><div role="tablist" style={{ display: 'none' }}><button role="tab">{t('task.body.materials')}</button></div><div role="tablist"><button role="tab" onClick={event => event.currentTarget.setAttribute('aria-selected', 'true')}>{t('task.body.materials')}</button></div></>)
+  const toggle = pageTarget('materials', t)!
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  expect(toggle).toHaveFocus()
   focusPageTarget('materials', t)
-  const tabs = screen.getAllByRole('tab', { hidden: true })
-  expect(tabs[0]).not.toHaveAttribute('aria-selected', 'true')
-  expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
-  expect(tabs[1]).toHaveFocus()
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  focusPageTarget('chat', t)
+  expect(document.querySelector('textarea')).toHaveFocus()
 })
 
-it('S14: 좁은 화면의 보이는 대화 탭을 연다(투어의 첨부 단계가 입력창을 짚도록)', () => {
+it('skips hidden and inert controls', () => {
   const t = createT('ko')
-  render(<><div role="tablist" style={{ display: 'none' }}><button role="tab">{t('task.conversation')}</button></div><div role="tablist"><button role="tab" onClick={event => event.currentTarget.setAttribute('aria-selected', 'true')}>{t('task.conversation')}</button></div></>)
-  focusPageTarget('chat', t)
-  const tabs = screen.getAllByRole('tab', { hidden: true })
-  expect(tabs[0]).not.toHaveAttribute('aria-selected', 'true')
-  expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
+  render(<><div style={{ display: 'none' }}><button data-tour="linked-materials">hidden</button></div><button data-tour="linked-materials">visible</button></>)
+  expect(pageTarget('materials', t)).toBe(screen.getByRole('button', { name: 'visible' }))
 })
 
 it('S15: 숨은 탭(inert)의 같은 검색창은 건너뛴다', () => {
@@ -51,4 +40,11 @@ it('S15: 숨은 탭(inert)의 같은 검색창은 건너뛴다', () => {
   document.body.append(hidden, shown)
   expect(pageTarget('search', t)).toBe(shown)
   hidden.remove(); shown.remove()
+})
+
+it.each(['ko', 'en'] as const)('draft %s shared chat shortcut expands its existing preview summary', locale => {
+  render(<details data-tour="related"><summary>preview</summary><div>shared chats</div></details>)
+  focusPageTarget('related', createT(locale))
+  expect(screen.getByText('preview').closest('details')).toHaveAttribute('open')
+  expect(screen.getByText('preview')).toHaveFocus()
 })

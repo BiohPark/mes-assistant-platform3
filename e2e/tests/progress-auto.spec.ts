@@ -25,11 +25,13 @@ for (const discussion of [false, true]) {
     await page.getByRole('button', { name: '전송', exact: true }).click()
     const toast = page.locator('[data-sonner-toast]').filter({ hasText: '보류를 해제했습니다' })
     await expect(toast).toBeVisible()
-    await expect(page.getByRole('button', { name: '보류', exact: true })).toHaveCount(2)
+    await expect(page.getByRole('button', { name: '보류', exact: true })).toHaveCount(1)
     const activity = await (await page.request.get(`/api/tasks/${task.id}/activity`)).json() as Array<{ type: string; payload: Record<string, unknown> }>
     expect(activity.filter(item => item.type === 'task.started' && item.payload.auto === true)).toHaveLength(1)
     await toast.getByRole('button', { name: '보류', exact: true }).click()
-    await expect(page.getByRole('button', { name: '재개', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: '더 보기', exact: true }).click()
+    await expect(page.getByRole('menuitem', { name: '재개', exact: true })).toBeVisible()
+    await page.keyboard.press('Escape')
     expect((await (await page.request.get(`/api/tasks/${task.id}`)).json()).status).toBe('on_hold')
   })
 

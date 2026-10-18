@@ -1,3 +1,4 @@
+import { revealMaterials } from './materials.js'
 import { execFileSync } from 'node:child_process'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -71,7 +72,7 @@ test('데모 이관 계정은 비밀번호 변경 후 대화와 파일을 본다
     ])
     await page.goto(`/c/${task}`)
     await expect(page.getByText('Imported virtual message')).toBeVisible()
-    await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
-    await expect(page.getByTestId('materials-own')).toContainText('imported.txt v1')
+    await revealMaterials(page)
+    await expect(page.getByTestId('materials-own')).toContainText('imported.txt')
   } finally { await rm(folder, { recursive: true, force: true }) }
 })

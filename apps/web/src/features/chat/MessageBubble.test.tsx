@@ -36,7 +36,7 @@ it('labels an assistant reply as assistant when it offers output saving', async 
   renderWithProviders(<TooltipProvider><MessageBubble message={message} onSaveAsOutput={() => undefined} /></TooltipProvider>)
   expect(screen.getByText('에이전트')).toBeInTheDocument()
   expect(screen.queryByText('팀 의견 · AI 미전송')).not.toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '산출물로 저장' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '이 대화 파일로 저장' })).toBeInTheDocument()
 })
 
 it('shows attached file names below a team message and marks deleted files', async () => {

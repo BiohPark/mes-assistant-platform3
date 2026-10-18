@@ -55,7 +55,7 @@ test('프리필은 일반 입력과 추정·전송 경로가 같고 원래 문�
   await expect(input).toBeFocused()
   await expect(page.getByText('현재 자료·모델로 새 요청, 이전 문답 포함')).toBeVisible()
   expect(await chips.innerText()).toBe(manualChips)
-  await expect(page.getByRole('button', { name: '첨부 제거' })).toHaveCount(1) // 현재 첨부 대기 유지
+  await expect(page.getByRole('button', { name: /첨부 (제거|취소)$/ })).toHaveCount(1) // 현재 첨부 대기 유지
   const sentPromise = page.waitForRequest(request => request.url().endsWith(`/threads/${task.threadId}/requests`) && request.method() === 'POST')
   const estimatePromise = page.waitForRequest(request => request.url().endsWith('/requests/estimate') && !!request.postDataJSON()?.attachmentIds)
   await page.getByRole('button', { name: '전송', exact: true }).click()
@@ -83,7 +83,7 @@ test('팀 의견 모드·현재 첨부는 프리필 뒤에도 유지되며 AI �
   await prefill(page, original.id)
   await expect(page.getByRole('textbox', { name: '팀 의견 입력' })).toHaveValue(question)
   await expect(page.getByText('team-current.txt', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '첨부 제거' })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /첨부 (제거|취소)$/ })).toHaveCount(1)
   await expect(page.getByRole('button', { name: /입력으로 고정|이번 메시지만/ })).toHaveCount(0)
   await page.getByRole('button', { name: '전송', exact: true }).click()
   await expect(page.getByRole('textbox', { name: '팀 의견 입력' })).toBeEmpty()

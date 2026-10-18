@@ -1,65 +1,73 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FileText, History, ListChecks, MessageSquare, StickyNote } from 'lucide-react'
 import type { Task } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
 import { getActivity } from '@/api/tasks'
 import { ChatView } from '@/features/chat/ChatView'
 import { cn } from '@/lib/utils'
-import { useTablistKeys } from '@/lib/useTablistKeys'
-import { useT, type TranslationKey } from '@/i18n'
+import { useT } from '@/i18n'
 import { ActivityPanel } from './ActivityPanel'
 import { MaterialsPanel } from './MaterialsPanel'
 import { ChecklistPanel } from './ChecklistPanel'
 import { NotesPanel } from './NotesPanel'
 import { useTagShareStore } from './tagShare'
+import { drawerId, useDrawerBar, useDrawerOpen, useMaterialsDrawer } from './materialsDrawer'
 
-type Panel = 'materials' | 'checklist' | 'notes' | 'history'
-type MobileTab = 'chat' | Panel
-const panels: { value: Panel; label: Extract<TranslationKey, `task.body.${string}`>; icon: typeof FileText }[] = [
-  { value: 'materials', label: 'task.body.materials', icon: FileText },
-  { value: 'checklist', label: 'task.body.checklist', icon: ListChecks },
-  { value: 'notes', label: 'task.body.notes', icon: StickyNote },
-  { value: 'history', label: 'task.body.history', icon: History },
-]
-const panelValues = panels.map(({ value }) => value)
-const mobileValues: MobileTab[] = ['chat', ...panelValues]
+type TaskBodyProps = { task: Task; assistant: Assistant; headerTools?: HTMLElement | null }
 
-/** 채팅은 대화당 한 번만 마운트해 화면 폭이나 탭 변경 중 전송 상태를 유지한다. 다른 대화로 전환하면 key로 격리한다(초안은 Composer가 taskId로 보존). headerTools는 헤더의 검색·질문 목차 자리 */
-export function TaskBody({ task, assistant, headerTools }: { task: Task; assistant: Assistant; headerTools?: HTMLElement | null }) {
+/** 접기에는 인스턴스를 유지하고 대화 전환에는 로컬 작성·검토 상태를 분리한다. */
+export function TaskBody(props: TaskBodyProps) {
+  return <ConversationBody key={props.task.id} {...props} />
+}
+
+function ConversationBody({ task, assistant, headerTools }: TaskBodyProps) {
   const t = useT()
-  const ids = useId() // 여러 대화를 탭으로 함께 살려 두므로(S15) 보조 패널 탭·패널 id는 인스턴스마다 고유하게
-  const [mobileTab, setMobileTab] = useState<MobileTab>('chat')
-  const [panel, setPanel] = useState<Panel>('materials')
-  const [focusMaterials, setFocusMaterials] = useState(false)
-  const mobileTabsRef = useRef<HTMLDivElement>(null)
-  const panelTabsRef = useRef<HTMLDivElement>(null)
+  const ids = useId()
+  const open = useDrawerOpen(task)
+  const bar = useDrawerBar(task)
+  const [visited, setVisited] = useState(open)
+  useEffect(() => { if (open) setVisited(true) }, [open])
+  const state = useMaterialsDrawer(s => s.byTask[task.id])
+  const choose = useMaterialsDrawer(s => s.choose)
+  const [toolsOpen, setToolsOpen] = useState(false)
+  const lastFocus = useRef(state?.focusSeq ?? 0)
+  const aside = useRef<HTMLElement>(null)
+  const tools = useRef<HTMLDetailsElement>(null)
+  const syncContext = useMaterialsDrawer(s => s.syncContext)
+  useEffect(() => { syncContext(task) }, [task.id, task.tags, task.linkedSrCodes, syncContext])
   useEffect(() => {
-    if (!focusMaterials) return
-    const tabs = mobileTabsRef.current && getComputedStyle(mobileTabsRef.current).display !== 'none' ? mobileTabsRef.current : panelTabsRef.current
-    tabs?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
-    setFocusMaterials(false)
-  }, [focusMaterials])
-  const activity = useQuery({ queryKey: ['activity', task.id], queryFn: () => getActivity(task.id) })
-  // 태그 공유 말풍선을 누르면 자료 탭으로 — 들어오고 빠진 표시가 거기 있다
-  const openSeq = useTagShareStore((state) => state.openSeq[task.id] ?? 0)
-  useEffect(() => { if (openSeq) { setPanel('materials'); setMobileTab('materials') } }, [openSeq])
-  // 좁은 화면에서 대화 탭이 아니면 헤더의 검색·질문 목차 아이콘을 숨긴다 — 분기점(lg)은 TaskHeader의 CSS가 맡으므로 데스크톱은 영향 없음
-  useEffect(() => { if (headerTools) headerTools.dataset.chatHidden = String(mobileTab !== 'chat') }, [headerTools, mobileTab])
-  const selectMobileTab = (value: MobileTab) => { setMobileTab(value); if (value !== 'chat') setPanel(value) }
-  const mobileKeys = useTablistKeys(mobileValues, mobileTab, selectMobileTab)
-  const panelKeys = useTablistKeys(panelValues, panel, setPanel)
-  return <div className="flex min-h-0 flex-1 flex-col">
-    <div ref={mobileTabsRef} role="tablist" aria-label={t('task.body.tabs')} data-tour="task-tabs" className="flex overflow-x-auto border-b px-3 py-2 lg:hidden" {...mobileKeys.tablistProps}>
-      <button type="button" {...mobileKeys.tabProps('chat')} onClick={() => selectMobileTab('chat')} className={cn('inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs', mobileTab === 'chat' && 'bg-muted font-medium')}><MessageSquare className="size-4" />{t('task.conversation')}</button>
-      {panels.map(({ value, label, icon: Icon }) => <button key={value} type="button" {...mobileKeys.tabProps(value)} onClick={() => selectMobileTab(value)} className={cn('inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs', mobileTab === value && 'bg-muted font-medium')}><Icon className="size-4" />{t(label)}</button>)}
-    </div>
-    {/* 좁은 화면도 minmax(0,1fr) — auto 열이면 입력창 아래 줄(모델 pill)의 최소 폭만큼 문서가 가로로 넘친다 */}
-    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_360px]">
-      <section className={cn('min-h-0 flex-col', mobileTab === 'chat' ? 'flex' : 'hidden', 'lg:flex')} aria-label={t('task.conversation')}><ChatView key={task.id} task={task} assistant={assistant} headerTools={headerTools} onOpenMaterials={() => { setPanel('materials'); setMobileTab('materials'); setFocusMaterials(true) }} /></section>
-      <aside className={cn('min-h-0 overflow-hidden p-3 lg:border-l', mobileTab === 'chat' ? 'hidden' : 'flex flex-col', 'lg:flex lg:flex-col')} aria-label={t('task.body.panel')}>
-        <div ref={panelTabsRef} role="tablist" aria-label={t('task.body.panelTabs')} data-tour="task-tabs" className="hidden w-full border-b pb-2 lg:flex" {...panelKeys.tablistProps}>{panels.map(({ value, label, icon: Icon }) => <button key={value} type="button" id={`task-tab-${ids}-${value}`} aria-controls={`task-panel-${ids}`} {...panelKeys.tabProps(value)} onClick={() => setPanel(value)} className={cn('flex flex-1 items-center justify-center gap-1 rounded-lg py-1 text-xs', panel === value && 'bg-muted font-medium')}><Icon className="size-4" />{t(label)}</button>)}</div>
-        <div role="tabpanel" id={`task-panel-${ids}`} aria-labelledby={`task-tab-${ids}-${panel}`} className="min-h-0 flex-1 overflow-y-auto pt-3">{panel === 'history' ? activity.isError ? <div role="alert" className="text-xs">{t('task.activity.loadFailed')} <button type="button" className="underline" onClick={() => void activity.refetch()}>{t('common.retry')}</button></div> : <ActivityPanel activity={activity.data ?? []} /> : panel === 'materials' ? <MaterialsPanel task={task} /> : panel === 'checklist' ? <ChecklistPanel task={task} /> : <NotesPanel task={task} />}</div>
+    if (!open || !state?.focusSeq || state.focusSeq === lastFocus.current) return
+    if (state.tool && !toolsOpen) { setToolsOpen(true); return }
+    lastFocus.current = state.focusSeq
+    // Radix 메뉴의 포커스 트랩이 해제된 다음 프레임에 페이지 영역으로 옮긴다.
+    const frame = requestAnimationFrame(() => {
+      const target = state.tool ? tools.current?.querySelector<HTMLElement>(`[data-work-tool="${state.tool}"]`) : aside.current
+      target?.focus()
+      if (state.tool) target?.scrollIntoView?.({ block: 'nearest' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [open, state?.focusSeq, state?.tool, toolsOpen])
+  const activity = useQuery({ queryKey: ['activity', task.id], queryFn: () => getActivity(task.id), enabled: open && toolsOpen })
+  const openSeq = useTagShareStore(s => s.openSeq[task.id] ?? 0)
+  useEffect(() => { if (useTagShareStore.getState().consumeOpen(task.id, openSeq)) choose(task.id, 'open', undefined, true) }, [openSeq, task.id, choose])
+  return <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)]" data-testid="task-body">
+    <div className={cn('flex min-h-0 min-w-0', (open || bar) && 'max-lg:flex-col')}>
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label={t('task.conversation')}><ChatView key={task.id} task={task} assistant={assistant} headerTools={headerTools} onOpenMaterials={() => choose(task.id, 'open', undefined, true)} /></section>
+      <aside hidden={!open && !bar} ref={aside} id={drawerId(task.id)} tabIndex={-1} className={cn('min-h-0 overflow-y-auto border-t p-3 lg:w-[360px] lg:shrink-0 lg:border-t-0 lg:border-l', open && 'max-lg:max-h-[50%]')} aria-label={t('task.materials.linkedLibrary')}>
+        <details open={open}>
+          <summary className="cursor-pointer text-sm font-medium lg:hidden" onClick={event => { event.preventDefault(); choose(task.id, open ? 'closed' : 'open') }}>{t('task.materials.linkedLibrary')}</summary>
+          {(open || visited) && <>
+            <MaterialsPanel task={task} embedded />
+            <details ref={tools} tabIndex={-1} open={toolsOpen} onToggle={event => setToolsOpen(event.currentTarget.open)} className="mt-3 shrink-0 border-t pt-3" data-tour="work-tools">
+              <summary className="cursor-pointer text-xs font-medium">{t('task.body.tools')}</summary>
+              <div className="space-y-4 pt-3">
+                <section data-work-tool="checklist" tabIndex={-1} id={`task-checklist-${ids}`} aria-label={t('task.body.checklist')}><ChecklistPanel task={task} /></section>
+                <section data-work-tool="notes" tabIndex={-1} id={`task-notes-${ids}`} aria-label={t('task.body.notes')}><NotesPanel task={task} /></section>
+                <section data-work-tool="history" tabIndex={-1} id={`task-history-${ids}`} aria-label={t('task.body.history')}><h3 className="mb-2 text-sm font-medium">{t('task.body.history')}</h3>{activity.isError ? <div role="alert" className="text-xs">{t('task.activity.loadFailed')} <button type="button" className="underline" onClick={() => void activity.refetch()}>{t('common.retry')}</button></div> : <ActivityPanel activity={activity.data ?? []} />}</section>
+              </div>
+            </details>
+          </>}
+        </details>
       </aside>
     </div>
   </div>

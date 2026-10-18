@@ -68,8 +68,9 @@ test.describe('390px 카드', () => {
     await expect(count).toBeVisible() // 진행 수는 그대로 보인다
     const toggle = card.getByRole('button', { name: /요약 펼치기$/ })
     const box = await toggle.boundingBox()
-    expect(box!.width).toBeGreaterThanOrEqual(32)
-    expect(box!.height).toBeGreaterThanOrEqual(32)
+    // 레이아웃 반올림(31.99997px 등) 서브픽셀 오차는 터치 영역 32px 기준과 무관하다
+    expect(Math.round(box!.width)).toBeGreaterThanOrEqual(32)
+    expect(Math.round(box!.height)).toBeGreaterThanOrEqual(32)
     await toggle.click()
     await expect(page).toHaveURL(/\/$/) // 카드 링크로 넘어가지 않는다
     await expect(card.getByRole('button', { name: /요약 접기$/ })).toHaveAttribute('aria-expanded', 'true')

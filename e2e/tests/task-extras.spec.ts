@@ -1,3 +1,4 @@
+import { openWorkTool } from './materials.js'
 import { expect, test } from '@playwright/test'
 
 test('체크리스트 점검, 첨부 노트, 완료 리포트와 재개', async ({ page }) => {
@@ -17,7 +18,7 @@ test('체크리스트 점검, 첨부 노트, 완료 리포트와 재개', async 
   expect((await page.request.put(`/api/tasks/${task.id}/inputs/${uploaded.id}`, { data: { weight: 'main' } })).ok()).toBe(true)
 
   await page.goto(`/c/${task.id}`)
-  await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '체크' }).click()
+  await openWorkTool(page, '체크리스트')
   const checklist = page.getByTestId('checklist-panel')
   const addItem = checklist.locator('form button[type="submit"]')
   await checklist.getByRole('textbox', { name: '체크리스트 새 항목' }).fill('근거 확인')
@@ -38,13 +39,13 @@ test('체크리스트 점검, 첨부 노트, 완료 리포트와 재개', async 
   await expect(checklist.getByRole('checkbox', { name: '근거 확인' })).toBeChecked()
   await expect(checklist.getByRole('checkbox', { name: '승인 확인' })).not.toBeChecked()
 
-  await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '노트' }).click()
+  await openWorkTool(page, '메모')
   const notes = page.getByTestId('notes-panel')
-  await notes.getByRole('textbox', { name: '노트 본문' }).fill('완료 근거 메모')
+  await notes.getByRole('textbox', { name: '메모 본문' }).fill('완료 근거 메모')
   await expect(notes.getByRole('checkbox', { name: /s4-evidence.txt/ })).toBeVisible()
   await notes.getByRole('checkbox', { name: /s4-evidence.txt/ }).click()
   await expect(notes.getByRole('checkbox', { name: /s4-evidence.txt/ })).toBeChecked()
-  await notes.getByRole('button', { name: '노트 추가' }).click()
+  await notes.getByRole('button', { name: '메모 추가' }).click()
   await expect(notes.getByText('완료 근거 메모')).toBeVisible()
   await expect(notes.getByText('s4-evidence.txt', { exact: true })).toBeVisible()
 

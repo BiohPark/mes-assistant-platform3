@@ -1,3 +1,4 @@
+import { openWorkTool } from './materials.js'
 import { randomUUID } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
 
@@ -36,7 +37,7 @@ test('ActivityPanel groups one request into one row', async ({ page }) => {
     { id: 'sent', userId: 'u', type: 'message.sent', at: '2026-10-01T00:00:00Z', payload: { requestId: 'request-one' } },
   ] }))
   await page.goto(`/c/${task.id}`)
-  await page.getByRole('tab', { name: '이력', exact: true }).click()
+  await openWorkTool(page, '활동 이력')
   const row = page.locator('[data-request-id="request-one"]:visible')
   await expect(row).toHaveCount(1)
   await expect(row.locator('details')).not.toHaveAttribute('open', '')

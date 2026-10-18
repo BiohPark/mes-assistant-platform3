@@ -88,7 +88,11 @@ test.describe('빠른 전환 (390px)', () => {
     await expect(menu.getByRole('menuitem').filter({ hasText: first.code })).toHaveAttribute('aria-current', 'page')
     await menu.getByRole('menuitem').filter({ hasText: second.code }).click()
     await expect(page).toHaveURL(new RegExp(`/c/${second.id}$`))
-    await expect(page.getByText(second.code, { exact: true })).toBeVisible() // 상단 바 제목(TaskTitle)의 코드 span
+    // 업무 코드는 ⋯로 수납됐다. 도착한 대화의 코드까지 확인하고 초안 검증을 계속한다.
+    await page.getByRole('button', { name: '더 보기', exact: true }).click()
+    await expect(page.getByRole('menuitem', { name: new RegExp(second.code) })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('menu')).toBeHidden()
     await expect(input).toHaveValue('')
     await expect(page.getByText('draft-keep.txt')).toHaveCount(0)
     await input.fill('둘째 대화 초안')
@@ -123,13 +127,13 @@ test.describe('빠른 전환 (390px)', () => {
     await page.getByRole('menu').getByRole('menuitem').filter({ hasText: first.code }).click()
     await expect(page).toHaveURL(new RegExp(`/c/${first.id}$`))
     await expect(input).toHaveValue('') // 보낸 질문이 되살아나지 않는다
-    await expect(page.getByRole('button', { name: '첨부 제거' })).toHaveCount(0) // 첨부 대기 칩도 없다
+    await expect(page.getByRole('button', { name: /첨부 (제거|취소)$/ })).toHaveCount(0) // 첨부 대기 칩도 없다
     // 응답 종료는 서버 기준으로 기다린다(재마운트 직후엔 '중지'가 잠깐 숨겨져 보일 수 있다)
     const messages = async () => (await (await page.request.get(`/api/threads/${first.threadId}/messages`)).json()) as Array<{ role: string; status: string }>
     await expect.poll(async () => (await messages()).map((item) => `${item.role}:${item.status}`).join(','), { timeout: 30_000 }).toBe('user:done,assistant:done')
     await expect(page.getByRole('button', { name: '중지' })).toBeHidden()
     await expect(input).toHaveValue('')
-    await expect(page.getByRole('button', { name: '첨부 제거' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /첨부 (제거|취소)$/ })).toHaveCount(0)
     await input.press('Enter') // 빈 입력은 보내지 않는다
     await page.waitForTimeout(500)
     expect((await messages()).filter((item) => item.role === 'user')).toHaveLength(1) // 중복 요청 없음
