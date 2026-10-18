@@ -37,7 +37,7 @@ export interface FileCandidate {
 /** 연결 SR(SR에서 시작한 업무)의 접수 첨부 정본 — 복사본이 아니라 같은 파일 */
 export interface SrFileCandidate { file: FileMeta; srId: string; srCode: string; srTitle: string; selected?: TaskInput['weight'] }
 export interface ConversationCandidate { taskId: string; code: string; title: string; status: string; assistant: { id: string; name: string; color: string };
-  sharedTags: string[]; messageCount: number; bytes: number; lastActivityAt: string; used?: boolean;
+  sharedTags: string[]; messageCount: number; bytes: number; bytesFull?: number; lastActivityAt: string; used?: boolean;
   selected?: { weight: 'main' | 'reference'; mode: 'full' | 'messages' | 'summary'; snapshotId: string; newMessages: number; detached: boolean } }
 /** usedFileIds: 이 대화의 요청 기록에 실린 파일('쓴 적 있음') */
 export interface Candidates { files: FileCandidate[]; srFiles?: SrFileCandidate[]; conversations: ConversationCandidate[]; usedFileIds?: string[] }

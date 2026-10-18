@@ -7,6 +7,7 @@ import { formatSize } from '@/api/files'
 import { listConversationInputs, refreshConversationInput, removeConversationInput, selectConversation } from '@/api/conversationInputs'
 import { useLocale, useT } from '@/i18n'
 import { cn } from '@/lib/utils'
+import { useAnswerDetail } from '@/features/chat/useAnswerDetail'
 import { AttachToggle, UsedMark } from './AttachToggle'
 import { ConversationPickerDialog } from './ConversationPickerDialog'
 
@@ -19,6 +20,7 @@ const TASK_STATUSES: readonly string[] = ['todo', 'in_progress', 'on_hold', 'don
 export function ConversationInputs({ taskId, candidates, disabled, fresh }: { taskId: string; candidates: ConversationCandidate[]; disabled: boolean; fresh?: ReadonlySet<string> }) {
   const t = useT()
   const locale = useLocale()
+  const { detail } = useAnswerDetail()
   const selected = useQuery({ queryKey: ['conversation-inputs', taskId], queryFn: () => listConversationInputs(taskId) })
   const [target, setTarget] = useState<ConversationCandidate | null>(null)
   const selectedBySource = new Map((selected.data ?? []).map((item) => [item.input.sourceTaskId, item]))
@@ -39,7 +41,7 @@ export function ConversationInputs({ taskId, candidates, disabled, fresh }: { ta
           <AttachToggle inputLabels attached={!!current} label={candidate.code} disabled={disabled || (!current && !candidate.messageCount)}
             onToggle={() => void run(current ? removeConversationInput(taskId, candidate.taskId) : selectConversation(taskId, candidate.taskId, { mode: 'full' }))} /></div>
         <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground"><span className="rounded-full border px-1.5" style={{ borderColor: candidate.assistant.color }}>{candidate.assistant.name}</span>
-          {TASK_STATUSES.includes(candidate.status) && <span>· {t(`status.task.${candidate.status as TaskStatus}`)}</span>}<span>{t('task.inputs.messages', { count: current?.messageCount ?? candidate.messageCount })}</span><span>· {formatSize(current?.bytes ?? candidate.bytes)}</span>
+          {TASK_STATUSES.includes(candidate.status) && <span>· {t(`status.task.${candidate.status as TaskStatus}`)}</span>}<span>{t('task.inputs.messages', { count: current?.messageCount ?? candidate.messageCount })}</span><span>· {formatSize(detail === 'full' ? current?.bytesFull ?? candidate.bytesFull ?? current?.bytes ?? candidate.bytes : current?.bytes ?? candidate.bytes)}</span>
           {candidate.lastActivityAt && <time dateTime={candidate.lastActivityAt}>{new Date(candidate.lastActivityAt).toLocaleString(locale)}</time>}
           {candidate.sharedTags.map((value) => <span key={value} className="rounded-full bg-muted px-1">{value}</span>)}
           {current?.detached && <span>{t('task.inputs.detached')}</span>}

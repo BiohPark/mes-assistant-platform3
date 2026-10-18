@@ -300,7 +300,7 @@ it('copies fenced code without controls or inline code and preserves raw Markdow
   fireEvent.click(screen.getByRole('button', { name: '코드 복사' }))
   await waitFor(() => expect(copy).toHaveBeenCalledWith('const x = 1\n'))
   fireEvent.click(within(screen.getByRole('group', { name: '메시지 동작' })).getByRole('button', { name: '복사' }))
-  await waitFor(() => expect(copy).toHaveBeenCalledWith(content))
+  await waitFor(() => expect(copy).toHaveBeenCalledWith('[생각 과정]\n검토 중\n\n' + content))
 })
 
 it('shows reasoning text as received from the model', () => {
@@ -332,3 +332,86 @@ it('opens a persisted answer image in the existing file preview and blocks remot
   expect(await screen.findByRole('dialog', { name: 'generated.png' })).toBeInTheDocument()
   await waitFor(() => expect(within(screen.getByRole('dialog')).getByRole('img')).toHaveAttribute('src', 'blob:preview'))
 })
+
+it('shows ordered steps, hides tools in brief mode, and copies the visible mode', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  const { useUiStore } = await import('@/app/uiStore')
+  useUiStore.setState({ answerDetails: { anonymous: 'full' } })
+  onTestFinished(() => { useUiStore.setState({ answerDetails: {} }) })
+  copy.mockResolvedValue(true)
+  const message: Message = { id: 'steps', threadId: 'h', role: 'assistant', content: '먼저\n나중', reasoning: '검토', status: 'done', createdAt: '2026-01-01', attachmentIds: [], steps: [
+    { type: 'reasoning', text: '검토' }, { type: 'text', text: '먼저' },
+    { type: 'tool', name: 'lookup', input: '도구 원문 입력', output: '도구 원문 결과', status: 'done' }, { type: 'text', text: '나중' },
+  ] }
+  const { container } = renderWithProviders(<TooltipProvider><MessageBubble message={message} /></TooltipProvider>)
+  expect([...container.querySelectorAll('[data-answer-step]')].map(el => el.getAttribute('data-answer-step'))).toEqual(['reasoning', 'text', 'tool', 'text'])
+  await userEvent.click(screen.getByText(/도구 사용.*lookup/))
+  expect(screen.getByText('도구 원문 입력')).toBeVisible()
+  await userEvent.click(screen.getAllByRole('button', { name: '복사' })[0]!)
+  expect(copy.mock.calls.at(-1)?.[0]).toContain('도구 원문 결과')
+  act(() => useUiStore.getState().setAnswerDetail('anonymous', 'brief'))
+  expect(container.querySelector('[data-answer-step="tool"]')).toBeNull()
+  await userEvent.click(screen.getAllByRole('button', { name: '복사' })[0]!)
+  expect(copy.mock.calls.at(-1)?.[0]).not.toContain('도구 원문 결과')
+  expect(copy.mock.calls.at(-1)?.[0]).toContain('검토')
+})
+
+it('summarizes each tool, code and source block on one line and exposes the expanded state', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  const { useUiStore } = await import('@/app/uiStore')
+  useUiStore.setState({ answerDetails: { anonymous: 'full' } })
+  onTestFinished(() => { useUiStore.setState({ answerDetails: {} }) })
+  const message: Message = { id: 'summary', threadId: 'h', role: 'assistant', content: '', status: 'done', createdAt: '2026-01-01', attachmentIds: [], steps: [
+    { type: 'tool', name: 'lookup', input: '{"query":"raw step input","limit":5}', output: '도구 결과값', status: 'done' },
+    { type: 'tool', name: 'long', input: 'x'.repeat(80), output: '', status: 'running' },
+    { type: 'code', code: '\nimport os\nprint(1)', output: '1', status: 'error' },
+    { type: 'tool', name: 'kb', input: '', output: '{}', status: 'done', source: true },
+  ] }
+  const { container } = renderWithProviders(<TooltipProvider><MessageBubble message={message} /></TooltipProvider>)
+  const summaries = [...container.querySelectorAll('[data-answer-step] summary')]
+  expect(summaries.map(item => item.textContent)).toEqual([
+    '도구 사용 · lookup · raw step input, 5 · 완료', `도구 사용 · long · ${'x'.repeat(59)}… · 실행 중`, '코드 실행 · import os · 오류', '참고 출처 · kb',
+  ])
+  expect(summaries[0]).toHaveAttribute('aria-expanded', 'false')
+  await userEvent.click(summaries[0]!)
+  expect(summaries[0]).toHaveAttribute('aria-expanded', 'true')
+  expect(screen.getByText('도구 결과값')).toBeVisible()
+})
+
+it('previews only the reasoning step that is streaming now, even after earlier answer text', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  const message: Message = { id: 'later-thought', threadId: 'h', role: 'assistant', content: '먼저', reasoning: '처음 생각\n다음 생각', status: 'streaming', createdAt: '2026-01-01', attachmentIds: [], steps: [
+    { type: 'reasoning', text: '처음 생각' }, { type: 'text', text: '먼저' }, { type: 'reasoning', text: '다음 생각' },
+  ] }
+  const { container } = renderWithProviders(<TooltipProvider><MessageBubble message={message} /></TooltipProvider>)
+  const previews = [...container.querySelectorAll('[data-reasoning-preview]')]
+  expect(previews).toHaveLength(1)
+  expect(previews[0]).toHaveTextContent('다음 생각')
+})
+
+it('reveals streaming answer steps with the typewriter and only animates the last step', async () => {
+  vi.useFakeTimers()
+  const base: Message = { id: 'typing', threadId: 'h', role: 'assistant', content: '', status: 'streaming', createdAt: '2026-01-01', attachmentIds: [], steps: [{ type: 'text', text: '앞 단계' }] }
+  const view = renderThinking(base)
+  const started = { ...base, steps: [{ type: 'text' as const, text: '앞 단계' }, { type: 'text' as const, text: '새' }] }
+  view.rerender(<MessageBubble message={started} />)
+  const next = { ...base, steps: [{ type: 'text' as const, text: '앞 단계' }, { type: 'text' as const, text: '새로 들어온 긴 본문입니다' }] }
+  view.rerender(<MessageBubble message={next} />)
+  const texts = () => [...view.container.querySelectorAll('[data-answer-step="text"]')].map(item => item.textContent)
+  expect(texts()[0]).toBe('앞 단계')
+  expect(texts()[1]).not.toBe('새로 들어온 긴 본문입니다')
+  await act(async () => { vi.advanceTimersByTime(2000) })
+  expect(texts()[1]).toBe('새로 들어온 긴 본문입니다')
+})
+
+it('copies with labels in the viewer language', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  localStorage.setItem('mes-locale', 'en')
+  onTestFinished(() => localStorage.removeItem('mes-locale'))
+  copy.mockResolvedValue(true)
+  const message: Message = { id: 'en-copy', threadId: 'h', role: 'assistant', content: 'answer', reasoning: 'checking', status: 'done', createdAt: '2026-01-01', attachmentIds: [] }
+  renderWithProviders(<TooltipProvider><MessageBubble message={message} /></TooltipProvider>)
+  await userEvent.click(within(screen.getByRole('group', { name: 'Message actions' })).getByRole('button', { name: 'Copy' }))
+  expect(copy).toHaveBeenCalledWith('[Thinking process]\nchecking\n\nanswer')
+})
+

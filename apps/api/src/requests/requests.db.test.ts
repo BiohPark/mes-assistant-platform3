@@ -54,6 +54,67 @@ describe('RequestService DB', () => {
   })
   afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); if (root) await rm(root, { recursive: true, force: true }) })
 
+  it('persists ordered tool steps, compatible fields and resumes the full indexed snapshot after restart', async () => {
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root })
+    const steps: import('@mes/domain').AnswerStep[] = [
+      { type: 'reasoning', text: '검토' }, { type: 'text', text: '먼저' },
+      { type: 'tool', name: 'lookup', input: '{"q":1}', output: 'raw result', status: 'done' }, { type: 'text', text: '나중' },
+    ]
+    const runner = new RequestsService(db, config, { ...provider, async *stream(req) {
+      for (const [index, step] of steps.entries()) req.onStep?.(index, step, steps.length)
+      yield { type: 'delta', text: '먼저\n나중' }
+      yield { type: 'done' }
+    } })
+    const restarted = new RequestsService(db, config, provider)
+    try {
+      const { thread } = await tasks.create('member', { assistantId })
+      const started = await runner.start('member', thread.id, { content: '단계 기록' }, 'ordered-steps')
+      const events: import('./requests.service.js').RequestEvent[] = []
+      const unsubscribe = runner.subscribe(started.id, event => events.push(event))
+      await started.done
+      unsubscribe()
+      const [saved] = await db.select().from(message).where(eq(message.id, started.replyMessageId))
+      expect(saved).toMatchObject({ steps, content: '먼저\n나중', reasoning: '검토', status: 'done' })
+      expect(events.filter(e => e.event === 'delta').map(e => e.data.stepIndex)).toEqual([0, 1, 2, 3])
+      await restarted.start('member', thread.id, { content: '단계 기록' }, 'ordered-steps')
+      const replay: import('./requests.service.js').RequestEvent[] = []
+      restarted.subscribe(started.id, e => replay.push(e))()
+      expect(replay[0]).toMatchObject({ event: 'started', data: { resumedSteps: steps, resumedText: '먼저\n나중', resumedReasoning: '검토' } })
+      expect((await tasks.messages(thread.id)).at(-1)).toMatchObject({ steps })
+    } finally { runner.onModuleDestroy(); restarted.onModuleDestroy() }
+  })
+
+  it('streams text growth as small indexed appends (not whole snapshots) and caps tool payloads per message', async () => {
+    const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root })
+    const { STEP_PAYLOAD_MAX_BYTES, STEPS_PAYLOAD_TOTAL_MAX_BYTES } = await import('@mes/domain')
+    const big = 'r'.repeat(STEP_PAYLOAD_MAX_BYTES)
+    const tools = STEPS_PAYLOAD_TOTAL_MAX_BYTES / STEP_PAYLOAD_MAX_BYTES + 1
+    const runner = new RequestsService(db, config, { ...provider, async *stream(req) {
+      let text = ''
+      for (let i = 0; i < 2000; i++) { text += `토큰${i} `; req.onStep?.(0, { type: 'text', text }, 1) }
+      for (let i = 0; i < tools; i++) req.onStep?.(1 + i, { type: 'tool', name: `t${i}`, input: '', output: big, status: 'done' }, 2 + i)
+      req.onStep?.(1 + tools, { type: 'code', code: 'print(1)', output: '1', status: 'done' }, 2 + tools)
+      yield { type: 'done' }
+    } })
+    try {
+      const { thread } = await tasks.create('member', { assistantId })
+      const started = await runner.start('member', thread.id, { content: '긴 답변' }, 'append-steps')
+      const events: import('./requests.service.js').RequestEvent[] = []
+      const unsubscribe = runner.subscribe(started.id, event => events.push(event))
+      await started.done
+      unsubscribe()
+      const textEvents = events.filter(e => e.event === 'delta' && e.data.stepIndex === 0)
+      expect(textEvents).toHaveLength(2000)
+      expect(Math.max(...textEvents.map(e => Buffer.byteLength(JSON.stringify(e))))).toBeLessThan(120)
+      expect(textEvents.slice(1).every(e => e.data.step === undefined)).toBe(true)
+      const [saved] = await db.select({ steps: message.steps, content: message.content }).from(message).where(eq(message.id, started.replyMessageId))
+      expect(saved?.content).toBe(textEvents.map(e => e.data.step ? (e.data.step as { text: string }).text : e.data.text).join(''))
+      expect(saved?.steps?.at(-2)).toMatchObject({ type: 'tool', output: { bytes: STEP_PAYLOAD_MAX_BYTES } })
+      expect(saved?.steps?.at(-1)).toMatchObject({ type: 'code', code: { bytes: 8 }, output: { bytes: 1 } })
+      expect(saved?.steps?.slice(1, tools).every(step => step.type === 'tool' && step.output === big)).toBe(true)
+    } finally { runner.onModuleDestroy() }
+  })
+
   it('persists reply images as conversation files and preserves original AI resend text', async () => {
     const original = '![generated](/cache/generated.png) plain /cache/generated.png'
     const sent: import('@mes/llm').ChatRequest[] = []
@@ -66,13 +127,26 @@ describe('RequestService DB', () => {
     } }, new EventsService())
     const created = await tasks.create('member', { assistantId })
     const first = await runner.start('member', created.thread.id, { content: 'draw' }, 'image-persist-first')
+    const seen: import('./requests.service.js').RequestEvent[] = []
+    const unsubscribe = runner.subscribe(first.id, event => seen.push(event))
     await first.done
+    unsubscribe()
+    expect(seen.find(event => event.event === 'replace')?.data.steps).toEqual([{ type: 'text', text: `![generated](/api/files/${(await db.select().from(fileObject).where(eq(fileObject.originTaskId, created.task.id)))[0]!.id}/content) plain /cache/generated.png` }])
     const [reply] = await db.select().from(message).where(eq(message.id, first.replyMessageId))
     const files = await db.select().from(fileObject).where(eq(fileObject.originTaskId, created.task.id))
     expect(files).toHaveLength(1)
     expect(files[0]).toMatchObject({ kind: 'ai_output', source: 'assistant', mime: 'image/png', uploadedBy: 'member' })
     expect(await new FileStorageService(root).read(files[0]!.storageKey)).toEqual(new Uint8Array([1, 2, 3]))
     expect(reply?.content).toBe(`![generated](/api/files/${files[0]!.id}/content) plain /cache/generated.png`)
+    expect(reply?.steps).toMatchObject([{ type: 'text', text: reply?.content, originalText: original }])
+    expect(JSON.stringify(seen)).not.toContain('originalText')
+    // 같은 키로 다시 붙으면(재연결) 바뀐 누적 본문에서 다시 시작한다 — 그 스냅샷에도 원문은 없다
+    await runner.start('member', created.thread.id, { content: 'draw' }, 'image-persist-first')
+    const replay: import('./requests.service.js').RequestEvent[] = []
+    runner.subscribe(first.id, event => replay.push(event))()
+    expect(JSON.stringify(replay)).not.toContain('originalText')
+    expect(replay[0]?.data.resumedSteps).toEqual([{ type: 'text', text: reply?.content }])
+    expect(JSON.stringify(await tasks.messages(created.thread.id))).not.toContain('originalText')
     expect(await runner.snapshot(first.id)).toMatchObject({ responseImages: { saved: [{ fileId: files[0]!.id }], failures: [{ source: '/cache/missing.png' }] } })
     const estimate = await runner.estimate('member', created.thread.id, { draft: 'again' })
     const second = await runner.start('member', created.thread.id, { content: 'again' }, 'image-persist-second')
@@ -589,9 +663,11 @@ describe('RequestService DB', () => {
       await started.done
       unsubscribe()
       expect(seen.find(event => event.event === 'replace')?.data).toEqual({ field: 'content', text: '최종 답변' })
-      await vi.waitFor(() => expect(seen.find(event => event.event === 'resumed')?.data).toMatchObject({ resumedText: '최종 답변' }), { timeout: 5000 })
+      await vi.waitFor(() => expect(seen.find(event => event.event === 'resumed')?.data).toMatchObject({
+        resumedText: '최종 답변', resumedSteps: [{ type: 'text', text: '최종 답변' }],
+      }), { timeout: 5000 })
       const [reply] = await db.select().from(message).where(eq(message.id, started.replyMessageId))
-      expect(reply).toMatchObject({ content: '최종 답변', status: 'done' })
+      expect(reply).toMatchObject({ content: '최종 답변', steps: [{ type: 'text', text: '최종 답변' }], status: 'done' })
     } finally { await upstream.close() }
   })
 
@@ -653,7 +729,7 @@ describe('RequestService DB', () => {
       await started.done
       unsubscribe()
       expect(await runner.get(started.id)).toMatchObject({ status: 'succeeded' })
-      expect(events).toContainEqual({ event: 'reasoning', data: { text: 'PRIVATE_REASONING' } })
+      expect(events).toContainEqual({ event: 'reasoning', data: { text: 'PRIVATE_REASONING', stepIndex: 0 } })
       expect(events).toContainEqual({ event: 'phase', data: { text: '생각 중' } })
       expect(events).toContainEqual({ event: 'phase', data: { text: '답변 중' } })
       const saved = (await tasks.messages(thread.id)).find(row => row.id === started.replyMessageId)!
@@ -1376,6 +1452,20 @@ describe('RequestService DB', () => {
     const restarted = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), provider)
     expect(await restarted.recoverOnStartup()).toBe(1)
     expect((await restarted.get(run.id)).status).toBe('interrupted')
+  })
+
+  it('marks steps that were still running as errored when a restart interrupts the request', async () => {
+    const { thread } = await tasks.create('member', { assistantId })
+    const run = await service.start('member', thread.id, { content: '재시작 단계' }, 'restart-steps-key')
+    await run.done
+    await db.update(chatRequest).set({ status: 'streaming', leaseUntil: sql`timestampadd(second, 30, current_timestamp(6))` }).where(eq(chatRequest.id, run.id))
+    await db.update(message).set({ status: 'streaming', steps: [{ type: 'text', text: '앞' },
+      { type: 'tool', name: 'lookup', input: '{}', output: '', status: 'running' }, { type: 'code', code: 'print(1)', output: '', status: 'running' },
+      { type: 'tool', name: 'done', input: '{}', output: 'ok', status: 'done' }] }).where(eq(message.id, run.replyMessageId))
+    const restarted = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), provider)
+    expect(await restarted.recoverOnStartup()).toBe(1)
+    const [reply] = await db.select({ steps: message.steps }).from(message).where(eq(message.id, run.replyMessageId))
+    expect(reply?.steps?.map(step => 'status' in step ? step.status : step.type)).toEqual(['text', 'error', 'error', 'done'])
   })
 
   it('rejects completion while a reply runs and permits it after final storage', async () => {

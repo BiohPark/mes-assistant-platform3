@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common'
-import { byteLength, eligibleMessages, newMessagesSince, type ContextSnapshot, type ConversationInput, type Message } from '@mes/domain'
+import { byteLength, eligibleMessages, newMessagesSince, renderAnswer, type AnswerDetail, type AnswerStep, type ContextSnapshot, type ConversationInput, type Message } from '@mes/domain'
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { EventsService } from '../events/events.service.js'
@@ -14,9 +14,13 @@ export interface SelectConversation { mode: Mode; weight?: Weight; messageIds?: 
 const id = () => randomUUID()
 const badIds = () => new BadRequestException({ code: 'INVALID_MESSAGE_IDS' })
 const eligible = (rows: (typeof message.$inferSelect)[]): Message[] => eligibleMessages(rows.map((row) => ({
-  id: row.id, threadId: row.threadId, seq: row.seq, role: row.role as Message['role'], kind: row.kind as Message['kind'], content: row.content,
+  id: row.id, threadId: row.threadId, seq: row.seq, role: row.role as Message['role'], kind: row.kind as Message['kind'], content: row.content, reasoning: row.reasoning, steps: row.steps,
   status: row.status as Message['status'], authorId: row.authorId ?? undefined, createdAt: row.createdAt.toISOString(), attachmentIds: [],
 })))
+
+/** 참고 대화로 보낼 때 이 메시지가 차지하는 크기 — renderConversation과 같은 규칙(사용자는 본문, AI 답변은 표시 모드의 단계 렌더) */
+const messageBytes = (m: { role: string; content: string; reasoning?: string | null; steps?: AnswerStep[] | null }, detail: AnswerDetail) =>
+  byteLength(m.role === 'user' ? m.content : renderAnswer(m, detail))
 
 @Injectable()
 export class DbConversationInputsService {
@@ -65,11 +69,15 @@ export class DbConversationInputsService {
       try { await assertTaskAccess(this.db, actor, item.source.id); return item }
       catch (error) { if (error instanceof ForbiddenException) return null; throw error }
     }))).filter((item): item is (typeof sources)[number] => item !== null) : sources
-    const counts = visibleSources.length ? await this.db.select({ taskId: thread.taskId, count: sql<number>`count(*)`, bytes: sql<number>`coalesce(sum(octet_length(${message.content})), 0)` })
+    const rows = visibleSources.length ? await this.db.select({ taskId: thread.taskId, role: message.role, content: message.content, reasoning: message.reasoning, steps: message.steps })
       .from(thread).innerJoin(message, eq(message.threadId, thread.id))
       .where(and(inArray(thread.taskId, visibleSources.map((item) => item.source.id)), inArray(message.role, ['user', 'assistant']),
-        eq(message.status, 'done'), isNull(message.kind), sql`trim(${message.content}) <> ''`)).groupBy(thread.taskId) : []
-    const countsByTask = new Map(counts.map((row) => [row.taskId, row]))
+        eq(message.status, 'done'), isNull(message.kind), sql`trim(${message.content}) <> ''`)) : []
+    const countsByTask = new Map<string | null, { count: number; bytes: number; bytesFull: number }>()
+    for (const row of rows) {
+      const count = countsByTask.get(row.taskId) ?? { count: 0, bytes: 0, bytesFull: 0 }
+      countsByTask.set(row.taskId, { count: count.count + 1, bytes: count.bytes + messageBytes(row, 'brief'), bytesFull: count.bytesFull + messageBytes(row, 'full') })
+    }
     const used = await this.db.select({ sourceTaskId: chatRequestInput.sourceTaskId }).from(chatRequestInput)
       .innerJoin(chatRequest, eq(chatRequestInput.requestId, chatRequest.id)).innerJoin(thread, eq(chatRequest.threadId, thread.id))
       .where(and(eq(thread.taskId, taskId), eq(chatRequestInput.kind, 'conversation')))
@@ -82,7 +90,7 @@ export class DbConversationInputsService {
       const detail = choice && loaded.find((row) => row.input.sourceTaskId === source.id)
       return { taskId: source.id, used: usedSources.has(source.id), code: source.code, title: source.title, status: source.status,
         assistant: { id: agent.id, name: agent.name, color: agent.color }, sharedTags: tags.get(source.id)!,
-        messageCount: Number(count?.count ?? 0), bytes: Number(count?.bytes ?? 0), lastActivityAt: source.lastActivityAt.toISOString(),
+        messageCount: count?.count ?? 0, bytes: count?.bytes ?? 0, bytesFull: count?.bytesFull ?? 0, lastActivityAt: source.lastActivityAt.toISOString(),
         ...(detail && { selected: { weight: detail.input.weight, mode: detail.input.mode, snapshotId: detail.snapshot.id, newMessages: detail.newMessages, detached: detail.detached } }) }
     })
   }
@@ -112,7 +120,8 @@ export class DbConversationInputsService {
         assistant: { id: source.assistant.id, name: source.assistant.name, color: source.assistant.color } },
         messages: selectedMessages, messageCount: selectedMessages.length, newMessages: newMessagesSince(view, all),
         detached: !(await this.shared(taskId, row.sourceTaskId)),
-        bytes: snapshot.mode === 'summary' ? byteLength(snapshot.summaryText ?? '') : selectedMessages.reduce((n, item) => n + byteLength(item.content), 0) }
+        bytes: snapshot.mode === 'summary' ? byteLength(snapshot.summaryText ?? '') : selectedMessages.reduce((n, item) => n + messageBytes(item, 'brief'), 0),
+        bytesFull: snapshot.mode === 'summary' ? byteLength(snapshot.summaryText ?? '') : selectedMessages.reduce((n, item) => n + messageBytes(item, 'full'), 0) }
     }))
   }
   async list(taskId: string, actor?: string) { return (await this.load(taskId, actor)).map(({ messages: _messages, ...row }) => row) }

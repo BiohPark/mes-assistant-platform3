@@ -107,3 +107,19 @@ it('레벨이 오를 때 도우미 말풍선을 한 번 띄우고, 누르면 크
   rerender({ data: { ...data, bytes: 1200 }, pending: false, revisionChanged: false }) // over — 한 번 더
   expect(useBubbleStore.getState().queued).toMatchObject({ source: 'budget.over' })
 })
+
+it('shows the full-mode size of attached conversations and points to the brief mode when over the limit', async () => {
+  const { useUiStore } = await import('@/app/uiStore')
+  useUiStore.setState({ answerDetails: { u: 'full' } })
+  try {
+    const full = { ...conversation, mode: 'full' as const, bytes: 2048 }
+    const { rerender } = mount({ data: { ...data, inputs: [full] }, pending: false, revisionChanged: false })
+    expect(screen.getByTestId('answer-detail-notice')).toHaveTextContent('전체 모드 — 도구 원문 포함 2.0 KB')
+    rerender({ data: { ...data, inputs: [full], bytes: 2000, overLimit: true }, pending: false, revisionChanged: false })
+    expect(screen.getByRole('alert')).toHaveTextContent('생각·답변만 모드로 전환하면 도구 입출력을 제외해 용량을 줄일 수 있습니다')
+    act(() => useUiStore.setState({ answerDetails: { u: 'brief' } }))
+    expect(screen.queryByTestId('answer-detail-notice')).not.toBeInTheDocument()
+    expect(screen.getByRole('alert')).not.toHaveTextContent('생각·답변만 모드로 전환하면')
+  } finally { act(() => useUiStore.setState({ answerDetails: {} })) }
+})
+

@@ -211,3 +211,73 @@ it('S15: 화면이 내려간 뒤에 시작된 전송은 스트림을 열지 않�
   expect(keys).toHaveLength(1)
   second.unmount()
 })
+
+it('restores indexed steps, adds only emitted indices and replaces a shortened output without stale blocks', async () => {
+  let stream!: ReadableStreamDefaultController<Uint8Array>
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller } }))))
+  const client = new QueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useChat('steps-thread'), { wrapper })
+  let sending!: Promise<void>
+  await act(async () => { sending = result.current.send('steps') })
+  const event = (name: string, data: unknown) => new TextEncoder().encode(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`)
+  await act(async () => {
+    stream.enqueue(event('started', { requestId: 'r', replyMessageId: 'm', resumedSteps: [{ type: 'reasoning', text: '검토' }], resumedReasoning: '검토' }))
+    stream.enqueue(event('delta', { text: '', stepIndex: 1, stepCount: 4, step: { type: 'text', text: '먼저' } }))
+  })
+  expect(result.current.run).toMatchObject({ text: '먼저', reasoning: '검토', steps: [{ type: 'reasoning', text: '검토' }, { type: 'text', text: '먼저' }] })
+  await act(async () => {
+    stream.enqueue(event('delta', { text: '', stepIndex: 2, stepCount: 4, step: { type: 'tool', name: 'lookup', input: '{}', output: '결과', status: 'done' } }))
+    stream.enqueue(event('delta', { text: '', stepIndex: 3, stepCount: 4, step: { type: 'text', text: '나중' } }))
+  })
+  expect(result.current.run?.text).toBe('먼저\n나중')
+  expect(result.current.run?.steps?.map(s => s.type)).toEqual(['reasoning', 'text', 'tool', 'text'])
+  await act(async () => { stream.enqueue(event('delta', { text: '', stepIndex: 1, stepCount: 2, step: { type: 'text', text: '최종' } })) })
+  expect(result.current.run).toMatchObject({ text: '최종', steps: [{ type: 'reasoning', text: '검토' }, { type: 'text', text: '최종' }] })
+  await act(async () => { stream.enqueue(event('completed', {})); stream.close(); await sending })
+})
+
+it('sends the mode captured with an estimate even when the user toggles during upload or estimation', async () => {
+  const { useUiStore } = await import('@/app/uiStore')
+  useUiStore.setState({ answerDetails: {} })
+  const sent: Record<string, unknown>[] = []
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+    sent.push(JSON.parse(String(init.body)))
+    return new Response('event: started\ndata: {"requestId":"r","replyMessageId":"m"}\n\nevent: completed\ndata: {}\n\n')
+  }))
+  const client = new QueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useChat('detail-race'), { wrapper })
+  // ChatView retains this callback across its upload and estimate awaits.
+  const capturedBriefSend = result.current.send
+  act(() => useUiStore.getState().setAnswerDetail('anonymous', 'full'))
+  try {
+    await act(async () => { await capturedBriefSend('estimated in brief mode') })
+    expect(sent[0]?.detail ?? 'brief').toBe('brief')
+  } finally { act(() => useUiStore.setState({ answerDetails: {} })) }
+})
+
+it('appends indexed text and reasoning pieces to their own step without a whole-step snapshot', async () => {
+  let stream!: ReadableStreamDefaultController<Uint8Array>
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller } }))))
+  const client = new QueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useChat('append-thread'), { wrapper })
+  let sending!: Promise<void>
+  await act(async () => { sending = result.current.send('append') })
+  const event = (name: string, data: unknown) => new TextEncoder().encode(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`)
+  await act(async () => {
+    stream.enqueue(event('started', { requestId: 'r', replyMessageId: 'm' }))
+    stream.enqueue(event('reasoning', { text: '검', stepIndex: 0 }))
+    stream.enqueue(event('reasoning', { text: '토', stepIndex: 0 }))
+    stream.enqueue(event('delta', { text: '먼', stepIndex: 1 }))
+    stream.enqueue(event('delta', { text: '저', stepIndex: 1 }))
+    stream.enqueue(event('delta', { text: '', stepIndex: 2, stepCount: 4, step: { type: 'tool', name: 'lookup', input: '{}', output: '', status: 'running' } }))
+    stream.enqueue(event('delta', { text: '나중', stepIndex: 3 }))
+  })
+  expect(result.current.run).toMatchObject({ text: '먼저\n나중', reasoning: '검토', steps: [
+    { type: 'reasoning', text: '검토' }, { type: 'text', text: '먼저' }, { type: 'tool', name: 'lookup' }, { type: 'text', text: '나중' },
+  ] })
+  await act(async () => { stream.enqueue(event('completed', {})); stream.close(); await sending })
+})
+

@@ -57,3 +57,16 @@ it('uses original content for checklist transmission', async () => {
   expect(sent[0]).toContain(original)
   expect(sent[0]).not.toContain('/api/files/')
 })
+
+it('restores per-step original image text for reference prompts while retaining tool order', async () => {
+  const { messagesForAi } = await import('./responseContent.js')
+  const displayed: Message = { id: 'reply', threadId: 'h', role: 'assistant', status: 'done', content: '![image](/api/files/f/content)\n끝', createdAt: '', attachmentIds: [], steps: [
+    { type: 'text', text: '![image](/api/files/f/content)', originalText: '![image](/cache/original.png)' },
+    { type: 'tool', name: 'lookup', input: '', output: 'result', status: 'done' }, { type: 'text', text: '끝' },
+  ] }
+  const db = { select: () => ({ from: () => ({ where: async () => [{ id: 'reply', originalContent: '![image](/cache/original.png)\n끝', steps: displayed.steps }] }) }) } as unknown as Db
+  const rows = await messagesForAi(db, [displayed])
+  expect(rows[0]?.steps?.[0]).toMatchObject({ text: '![image](/cache/original.png)' })
+  expect(rows[0]?.steps?.map(s => s.type)).toEqual(['text', 'tool', 'text'])
+  expect(displayed.steps?.[0]).toMatchObject({ text: '![image](/api/files/f/content)' })
+})

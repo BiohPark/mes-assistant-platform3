@@ -174,13 +174,13 @@ async function runSessionSteps(chat, payload) {
     return alive()
   }
   if (!await write(item, text)) return
-  if (/\[tool-slow\]/i.test(userText)) {
+  if (/\[tool-slow\]|\[steps\]/i.test(userText)) {
     const callId = `call-${randomUUID()}`
-    message.output.push({ type: 'function_call', call_id: callId, name: 'fake_tool', arguments: '{}', status: 'in_progress' })
-    await wait(TOOL_MS)
+    message.output.push({ type: 'function_call', call_id: callId, name: 'fake_tool', arguments: /\[steps\]/i.test(userText) ? '{"query":"raw step input"}' : '{}', status: 'in_progress' })
+    await wait(/\[steps\]/i.test(userText) ? 150 : TOOL_MS)
     if (!alive()) return
     message.output.at(-1).status = 'completed'
-    message.output.push({ type: 'function_call_output', call_id: callId, output: [{ type: 'input_text', text: 'fake result' }], status: 'completed' })
+    message.output.push({ type: 'function_call_output', call_id: callId, output: [{ type: 'input_text', text: /\[steps\]/i.test(userText) ? 'raw step result' : 'fake result' }], status: 'completed' })
     const rest = { type: 'message', content: [{ type: 'output_text', text: '' }] }
     message.output.push(rest)
     if (!await write(rest, '[tool: fake_tool 완료]')) return

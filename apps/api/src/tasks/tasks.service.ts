@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { resumeHeldTask } from './resume-held-task.js'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common'
-import { applyTaskStatus, eligibleMessages, isSrTag, normalizeTag, tagKey, countedTagSuggestions, type Message, type TagSuggestion, type Task, type TaskPage, type TaskSummary, type TaskAiRequestStatus, type TaskStatus, type Thread } from '@mes/domain'
+import { applyTaskStatus, publicSteps, eligibleMessages, isSrTag, normalizeTag, tagKey, countedTagSuggestions, type Message, type TagSuggestion, type Task, type TaskPage, type TaskSummary, type TaskAiRequestStatus, type TaskStatus, type Thread } from '@mes/domain'
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { alias, unionAll } from 'drizzle-orm/mysql-core'
 import { DB, type Db } from '../db/db.module.js'
@@ -401,7 +401,7 @@ export class DbTasksService {
     const requests = await this.db.select({ id: chatRequest.id, replyMessageId: chatRequest.replyMessageId }).from(chatRequest).where(eq(chatRequest.threadId, threadId))
     return rows.map((row) => ({
       id: row.id, threadId: row.threadId, seq: row.seq, role: row.role, kind: row.kind,
-      content: row.content, reasoning: row.reasoning, authorId: row.authorId, status: row.status, error: row.error, createdAt: row.createdAt.toISOString(), attachmentIds: attachments.filter((item) => item.messageId === row.id).map((item) => item.fileId),
+      content: row.content, reasoning: row.reasoning, steps: publicSteps(row.steps), authorId: row.authorId, status: row.status, error: row.error, createdAt: row.createdAt.toISOString(), attachmentIds: attachments.filter((item) => item.messageId === row.id).map((item) => item.fileId),
       ...(requests.find((item) => item.replyMessageId === row.id) ? { requestId: requests.find((item) => item.replyMessageId === row.id)!.id } : {}),
     }))
   }

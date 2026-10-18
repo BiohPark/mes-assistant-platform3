@@ -1,3 +1,5 @@
+import { boundStepPayload, type AnswerStep } from '@mes/domain'
+import { sessionSteps } from './answerSteps.js'
 import { collectResponseImages } from './responseImages.js'
 import { randomUUID } from 'node:crypto'
 import type { ChatChunk, ChatProvider, ChatRequest } from './provider.js'
@@ -200,12 +202,32 @@ export class OpenAICompatibleProvider implements ChatProvider {
   /** SSE 응답 본문 → 청크. 끝나면 done, 실패하면 error 하나로 끝낸다. */
   private async *readSse(req: ChatRequest, body: ReadableStream<Uint8Array>, maxFrameBytes: number): AsyncGenerator<ChatChunk> {
     const reader = body.getReader()
+    const steps: AnswerStep[] = []
+    const toolSteps = new Map<number, number>()
+    const finishTools = (status: 'done' | 'error') => {
+      for (const index of toolSteps.values()) {
+        const current = steps[index]
+        if (current?.type === 'tool') {
+          const step: AnswerStep = { ...current, status }
+          steps[index] = step
+          req.onStep?.(index, step, steps.length)
+        }
+      }
+    }
     try {
       const decoder = new TextDecoder()
       const encoder = new TextEncoder()
       let buffer = '', content = ''
       const think = new ThinkSplitter()
       const toolAcc = new Map<number, ToolCallFragment>()
+      const pushText = (type: 'text' | 'reasoning', text: string) => {
+        if (!text) return
+        const last = steps.at(-1)
+        const index = last?.type === type ? steps.length - 1 : steps.length
+        const step: AnswerStep = { type, text: (last?.type === type ? last.text : '') + text }
+        steps[index] = step
+        req.onStep?.(index, step, steps.length)
+      }
       // [DONE]이 끝이다 — OpenWebUI는 [DONE]을 보낸 뒤 outlet 필터를 기다리느라 연결을 더 열어 둔다(middleware.py 6748-6760)
       let ended = false
       while (!ended) {
@@ -218,6 +240,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
           if (ev === '[DONE]') { ended = true; break }
           if (Number.isFinite(maxFrameBytes) && encoder.encode(ev).byteLength > maxFrameBytes) {
             await reader.cancel().catch(() => undefined)
+            finishTools('error')
             yield { type: 'error', message: FRAME_TOO_LARGE }
             return
           }
@@ -227,9 +250,18 @@ export class OpenAICompatibleProvider implements ChatProvider {
           } catch {
             continue
           }
+          if (isObject(parsed) && Array.isArray(parsed.sources)) {
+            for (const source of parsed.sources) {
+              const name = isObject(source) && isObject(source.source) && typeof source.source.name === 'string' ? source.source.name : 'sources'
+              const step: AnswerStep = { type: 'tool', name, input: '', output: boundStepPayload(JSON.stringify(source)), status: 'done', source: true }
+              const index = steps.length
+              steps.push(step)
+              req.onStep?.(index, step, steps.length)
+            }
+          }
           const { text, reasoning, toolCalls } = extractDelta(parsed)
-          if (reasoning) yield { type: 'reasoning', text: reasoning }
-          for (const chunk of think.push(text)) { if (chunk.type === 'delta') content += chunk.text; yield chunk }
+          if (reasoning) { pushText('reasoning', reasoning); yield { type: 'reasoning', text: reasoning } }
+          for (const chunk of think.push(text)) { pushText(chunk.type === 'delta' ? 'text' : 'reasoning', chunk.text); if (chunk.type === 'delta') content += chunk.text; yield chunk }
           for (const tc of toolCalls) {
             const prev = toolAcc.get(tc.index)
             toolAcc.set(tc.index, {
@@ -238,15 +270,23 @@ export class OpenAICompatibleProvider implements ChatProvider {
               name: tc.name ?? prev?.name,
               arguments: (prev?.arguments ?? '') + tc.arguments,
             })
+            let index = toolSteps.get(tc.index)
+            if (index === undefined) { index = steps.length; toolSteps.set(tc.index, index) }
+            const call = toolAcc.get(tc.index)!
+            const step: AnswerStep = { type: 'tool', name: call.name ?? '?', input: boundStepPayload(call.arguments), output: '', status: 'running' }
+            steps[index] = step
+            req.onStep?.(index, step, steps.length)
           }
         }
         if (Number.isFinite(maxFrameBytes) && encoder.encode(buffer).byteLength > maxFrameBytes) {
           await reader.cancel().catch(() => undefined)
+          finishTools('error')
           yield { type: 'error', message: FRAME_TOO_LARGE }
           return
         }
       }
-      for (const chunk of think.finish()) { if (chunk.type === 'delta') content += chunk.text; yield chunk }
+      for (const chunk of think.finish()) { pushText(chunk.type === 'delta' ? 'text' : 'reasoning', chunk.text); if (chunk.type === 'delta') content += chunk.text; yield chunk }
+      finishTools(req.signal?.aborted ? 'error' : 'done')
       for (const tc of toolAcc.values()) {
         if (tc.name) yield { type: 'tool_call', call: { id: tc.id ?? `call_${tc.index}`, name: tc.name, arguments: tc.arguments } }
       }
@@ -255,6 +295,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
       if (req.signal?.aborted) { yield { type: 'error', message: req.signal.reason === 'timeout' ? '응답 시간 초과' : CANCELLED }; return }
       yield { type: 'done' }
     } catch (e) {
+      finishTools('error')
       yield { type: 'error', message: errorMessage(e) }
     } finally {
       await reader.cancel().catch(() => undefined)
@@ -334,6 +375,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
     }
     try {
       await req.onSession?.(chatId)
+      let previousSteps: AnswerStep[] = []
       let content = '', reasoning = '', output = '', statusCount = 0, failures = 0
       // changedAt: 마지막 변화(본문·생각·상태·output) 시각. shown: 이 폴링이 마지막으로 알린 단계(본문이 자라면 서버가 '답변 중'으로 바꾸므로 비운다).
       // lastStatus: 본문이 자란 뒤 마지막 OpenWebUI 상태. tasksKnown: 작업 목록 엔드포인트가 있는지. working: 멈춘 동안 작업이 살아 있다고 확인됨
@@ -369,6 +411,14 @@ export class OpenAICompatibleProvider implements ChatProvider {
         changed = false
         if (message) {
           const next = readSessionMessage(message)
+          const steps = sessionSteps(message)
+          // Final empty output sometimes omits in-flight content; retain the last visible steps.
+          if (steps.length) {
+            steps.forEach((step, index) => {
+              if (JSON.stringify(step) !== JSON.stringify(previousSteps[index]) || (steps.length < previousSteps.length && index === steps.length - 1)) req.onStep?.(index, step, steps.length)
+            })
+            previousSteps = steps
+          }
           const statused = next.statuses.length > statusCount
           if (statused) {
             // 새 상태를 모두 낸다. 새 항목이 숨김뿐이면 마지막 보이는 상태로 생존 신호만 준다

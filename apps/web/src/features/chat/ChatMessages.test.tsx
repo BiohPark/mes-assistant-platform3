@@ -331,3 +331,16 @@ it('S14: keeps following the bottom while typed-out text grows the conversation,
   act(() => observers.forEach((callback) => callback()))
   expect(scrollIntoView).not.toHaveBeenCalled()
 })
+
+it('names the answer detail toggle by its visible mode, describes what it hides separately and reports the pressed state', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  const { useUiStore } = await import('@/app/uiStore')
+  onTestFinished(() => { useUiStore.setState({ answerDetails: {} }) })
+  render(view([question, answer]))
+  const toggle = screen.getByRole('button', { name: '생각·답변만' })
+  expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  expect(toggle).toHaveAccessibleDescription(/도구·코드 블록/)
+  await userEvent.click(toggle)
+  expect(screen.getByRole('button', { name: '도구까지 전체' })).toHaveAttribute('aria-pressed', 'true')
+})
+

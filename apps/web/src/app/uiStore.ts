@@ -1,3 +1,4 @@
+import type { AnswerDetail } from '@mes/domain'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
@@ -13,6 +14,8 @@ export interface PillPos { x: number; y: number }
 export const emptyHomeFilters = (): HomeFilters => ({ q: '', level1CodeIds: [], level2CodeIds: [], showRetired: false })
 
 interface UiState {
+  answerDetails: Record<string, AnswerDetail>
+  setAnswerDetail: (userId: string, detail: AnswerDetail) => void
   homeFilters: HomeFilters
   setHomeFilters: (patch: Partial<HomeFilters>) => void
   /** 칸반에서 대화 없는 열을 좁게 접기 */
@@ -29,6 +32,8 @@ interface UiState {
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
+      answerDetails: {},
+      setAnswerDetail: (userId, detail) => set(s => ({ answerDetails: { ...s.answerDetails, [userId]: detail } })),
       homeFilters: emptyHomeFilters(),
       setHomeFilters: (patch) => set((s) => ({ homeFilters: { ...s.homeFilters, ...patch } })),
       kanbanCollapseEmpty: false,
@@ -49,6 +54,11 @@ export const useUiStore = create<UiState>()(
           level1CodeIds: old?.level1CodeIds ?? (old?.level1CodeId ? [old.level1CodeId] : []),
           level2CodeIds: old?.level2CodeIds ?? (old?.level2CodeId ? [old.level2CodeId] : []),
         } }
-      }, partialize: (s) => ({ homeFilters: s.homeFilters, kanbanCollapseEmpty: s.kanbanCollapseEmpty, pillPos: s.pillPos, kanbanCompleted: s.kanbanCompleted }) },
+      }, partialize: (s) => ({ answerDetails: s.answerDetails, homeFilters: s.homeFilters, kanbanCollapseEmpty: s.kanbanCollapseEmpty, pillPos: s.pillPos, kanbanCompleted: s.kanbanCompleted }) },
   ),
 )
+
+// 같은 브라우저의 다른 창(팝아웃)이 저장한 설정을 따른다 — 답변 표시 모드가 창마다 어긋나지 않게
+if (typeof window !== 'undefined') window.addEventListener('storage', (event) => {
+  if (event.key === 'mes-hub-ui') void useUiStore.persist.rehydrate()
+})

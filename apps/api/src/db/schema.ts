@@ -289,6 +289,7 @@ export const message = mysqlTable(
     // 표시용 URL 치환 전 원문 — AI 재전송은 이 값을 쓴다. 기존 메시지는 null.
     originalContent: longtext('original_content'),
     reasoning: text('reasoning'),
+    steps: jsonObject('steps').$type<import('@mes/domain').AnswerStep[]>(),
     authorId: varchar('author_id', { length: 191 }).references((): AnyMySqlColumn => appUser.id),
     status: text('status').notNull(),
     error: longtext('error'),

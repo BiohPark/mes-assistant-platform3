@@ -1,3 +1,4 @@
+import { boundSteps, publicSteps, stepProjection, type AnswerStep, type AnswerDetail } from '@mes/domain'
 import { aiMessageContent, messagesForAi } from '../llm/responseContent.js'
 import { linkedTaskSrs } from '../tasks/sr-inputs.service.js'
 import { randomUUID } from 'node:crypto'
@@ -22,9 +23,9 @@ type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 type EventName = 'started' | 'phase' | 'delta' | 'reasoning' | 'replace' | 'completed' | 'failed'
 export type RequestEvent = { event: EventName; data: Record<string, unknown> }
 type Listener = (event: RequestEvent) => void
-export interface StartBody { content: string; attachmentIds?: string[]; oneShotFileIds?: string[] }
-export interface RetryBody { excludeFileIds?: string[]; forceInlineFileIds?: string[] }
-export interface EstimateBody { draft?: string; attachmentIds?: string[]; oneShotFileIds?: string[] }
+export interface StartBody { detail?: AnswerDetail; content: string; attachmentIds?: string[]; oneShotFileIds?: string[] }
+export interface RetryBody { detail?: AnswerDetail; excludeFileIds?: string[]; forceInlineFileIds?: string[] }
+export interface EstimateBody { detail?: AnswerDetail; draft?: string; attachmentIds?: string[]; oneShotFileIds?: string[] }
 export interface StartedRequest { id: string; replyMessageId: string; userMessageId: string; done: Promise<void> }
 /** SR 자동작성·다듬기 스트리밍 훅 — onStart는 슬롯 확보 뒤, onDelta는 받은 조각마다 */
 export interface SrAiStreamOptions { signal?: AbortSignal; onStart?: () => void; onDelta?: (text: string) => void }
@@ -64,7 +65,10 @@ export class RequestsService implements OnModuleDestroy {
   private readonly runs = new Map<string, AbortController>()
   private readonly listeners = new Map<string, Set<Listener>>()
   private readonly events = new Map<string, RequestEvent[]>()
+  /** 재생 기록의 직렬화 크기 합 — 이벤트마다 기록 전체를 다시 직렬화하지 않는다 */
+  private readonly eventBytes = new Map<string, number>()
   private readonly truncated = new Set<string>()
+  private readonly streamSteps = new Map<string, AnswerStep[]>()
   private readonly streamText = new Map<string, string>()
   private readonly streamReasoning = new Map<string, string>()
   /** 요청별 첫 응답·무응답·최대 처리 제한(ms) — 화면의 '제한까지 남은 시간'용. 없으면(다른 인스턴스·재시작) 기록된 파일 자료로 다시 계산한다 */
@@ -198,9 +202,10 @@ export class RequestsService implements OnModuleDestroy {
   }
   private emit(id: string, event: RequestEvent) {
     const history = this.events.get(id) ?? []
+    if (!this.events.has(id)) this.eventBytes.set(id, 0)
     history.push(event)
+    let bytes = (this.eventBytes.get(id) ?? 0) + Buffer.byteLength(JSON.stringify(event))
     if (event.event === 'delta' || event.event === 'reasoning' || event.event === 'replace' || event.event === 'phase') {
-      let bytes = history.reduce((sum, item) => sum + Buffer.byteLength(JSON.stringify(item)), 0)
       while (history.length > 2001 || bytes > 256 * 1024) {
         const first = history.findIndex((item) => item.event !== 'started')
         if (first < 0) break
@@ -209,10 +214,11 @@ export class RequestsService implements OnModuleDestroy {
         history.splice(first, 1)
       }
     }
+    this.eventBytes.set(id, bytes)
     this.events.set(id, history)
     for (const listener of this.listeners.get(id) ?? []) listener(event)
     if (event.event === 'completed' || event.event === 'failed') {
-      const timer = setTimeout(() => { this.events.delete(id); this.truncated.delete(id); this.streamText.delete(id); this.streamReasoning.delete(id); this.limits.delete(id) }, 60_000)
+      const timer = setTimeout(() => { this.events.delete(id); this.eventBytes.delete(id); this.truncated.delete(id); this.streamSteps.delete(id); this.streamText.delete(id); this.streamReasoning.delete(id); this.limits.delete(id) }, 60_000)
       timer.unref?.()
     }
   }
@@ -288,7 +294,7 @@ export class RequestsService implements OnModuleDestroy {
       createdAt: new Date().toISOString(), attachmentIds: attachments, status: 'done' })
     const domainThread: Thread = { id: owner.id, ...(owner.taskId ? { taskId: owner.taskId } : { srId: owner.srId! }), title: owner.title,
       createdBy: owner.createdBy, createdAt: owner.createdAt.toISOString(), archived: false, ...(owner.modelId ? { modelId: owner.modelId } : {}) }
-    const { info } = await buildChatRequest(scope, domainThread, history, { dryRun: true, oneShotFileIds: attachments }, ports)
+    const { info } = await buildChatRequest(scope, domainThread, history, { dryRun: true, oneShotFileIds: attachments, detail: body.detail }, ports)
     return { ...publicInfo(info)!, overLimit: info.bytes > info.limitBytes, attachmentLimit }
   }
 
@@ -297,8 +303,10 @@ export class RequestsService implements OnModuleDestroy {
     const started = { event: 'started', data: { requestId: row.id, replyMessageId: row.replyMessageId, userMessageId: row.userMessageId, createdAt: row.createdAt.toISOString(),
       firstTokenMs: record.firstTokenMs, idleMs: record.idleMs, maxMs: record.maxMs } } as const
     if (this.truncated.has(row.id) || !this.events.has(row.id)) {
-      const [reply] = await this.db.select({ content: message.content, reasoning: message.reasoning }).from(message).where(eq(message.id, row.replyMessageId))
-      this.events.set(row.id, [{ event: 'started', data: { ...started.data, resumedText: this.streamText.get(row.id) ?? reply?.content ?? '', resumedReasoning: this.streamReasoning.get(row.id) ?? reply?.reasoning ?? '' } }])
+      const [reply] = await this.db.select({ content: message.content, reasoning: message.reasoning, steps: message.steps }).from(message).where(eq(message.id, row.replyMessageId))
+      const resumed: RequestEvent = { event: 'started', data: { ...started.data, resumedText: this.streamText.get(row.id) ?? reply?.content ?? '', resumedReasoning: this.streamReasoning.get(row.id) ?? reply?.reasoning ?? '', resumedSteps: publicSteps(this.streamSteps.get(row.id) ?? reply?.steps ?? []) } }
+      this.events.set(row.id, [resumed])
+      this.eventBytes.set(row.id, Buffer.byteLength(JSON.stringify(resumed)))
       if (record.phase) this.emit(row.id, { event: 'phase', data: { text: record.phase } })
       if (record.status === 'succeeded') this.emit(row.id, { event: 'completed', data: { requestInfo: record } })
       if (['failed', 'cancelled', 'interrupted'].includes(record.status)) this.emit(row.id, { event: 'failed', data: { error: record.error ?? '요청 실패', code: record.code, requestInfo: record } })
@@ -409,7 +417,7 @@ export class RequestsService implements OnModuleDestroy {
     const limits = { firstTokenMs: acquired.firstTokenMs!, idleMs: this.config.request.idleMs, maxMs: this.config.request.maxMs }
     this.limits.set(acquired.id, limits)
     this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString(), autoStarted: acquired.autoStarted ?? false, ...limits } })
-    const done = this.run(acquired.id, acquired.staged ?? [], [], acquired.deadlineAt!)
+    const done = this.run(acquired.id, acquired.staged ?? [], [], acquired.deadlineAt!, body.detail)
     return { ...acquired, done }
   }
 
@@ -482,7 +490,7 @@ export class RequestsService implements OnModuleDestroy {
     const limits = { firstTokenMs: acquired.firstTokenMs!, idleMs: this.config.request.idleMs, maxMs: this.config.request.maxMs }
     this.limits.set(acquired.id, limits)
     this.emit(acquired.id, { event: 'started', data: { requestId: acquired.id, replyMessageId: acquired.replyMessageId, userMessageId: acquired.userMessageId, createdAt: new Date().toISOString(), autoStarted: acquired.autoStarted ?? false, ...limits } })
-    return { ...acquired, done: this.run(acquired.id, acquired.staged, inline, acquired.deadlineAt!) }
+    return { ...acquired, done: this.run(acquired.id, acquired.staged, inline, acquired.deadlineAt!, body.detail) }
   }
 
   /** 첫 응답 제한 — 파일 자료가 있으면 업로드·처리 시간을 감안해 더 길다 */
@@ -557,9 +565,13 @@ export class RequestsService implements OnModuleDestroy {
           originSrId: owner?.srId ?? null, source: 'assistant', version: 1, uploadedBy: row.requestedBy })))
         await tx.insert(messageAttachment).values(images.map(image => ({ messageId: row.replyMessageId, fileId: image.id })))
       }
+      // 재시작·만료로 끝나 메모리에 단계가 없으면 저장된 단계에서 진행 중이던 도구·코드를 오류로 닫는다
+      const steps = this.streamSteps.get(id) ?? (status === 'succeeded' ? undefined
+        : (await tx.select({ steps: message.steps }).from(message).where(eq(message.id, row.replyMessageId)))[0]?.steps ?? undefined)
       const reply = await tx.update(message).set({ status: status === 'succeeded' ? 'done' : 'error', error: error ?? null,
         ...(content !== undefined ? { content: content || (error ? `⚠️ ${error}` : '') } : {}),
         ...(originalContent !== undefined ? { originalContent } : {}),
+        ...(steps ? { steps: steps.map(step => (step.type === 'tool' || step.type === 'code') && step.status === 'running' && status !== 'succeeded' ? { ...step, status: 'error' as const } : step) } : {}),
         ...(this.streamReasoning.has(id) ? { reasoning: this.streamReasoning.get(id) } : {}) }).where(and(eq(message.id, row.replyMessageId), eq(message.status, 'streaming')))
       if (!reply[0].affectedRows) throw new FencedTransition()
       if (owner?.taskId) await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, owner.taskId))
@@ -602,7 +614,7 @@ export class RequestsService implements OnModuleDestroy {
     return count
   }
 
-  private async run(id: string, staged: StagedFile[], forceInline: string[], deadlineAt: number): Promise<void> {
+  private async run(id: string, staged: StagedFile[], forceInline: string[], deadlineAt: number, detail: AnswerDetail = 'brief'): Promise<void> {
     const controller = new AbortController()
     this.runs.set(id, controller)
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -624,6 +636,7 @@ export class RequestsService implements OnModuleDestroy {
       .then((result) => { if (!result[0].affectedRows) controller.abort('lost') }).catch(() => controller.abort('lost')) }, this.config.request.keepaliveMs)
     lease.unref?.()
     let acc = '', reasoning = '', phase = '', info: RequestInfo | undefined, snapshot: unknown, snapshotBytes: Buffer | undefined, failure: string | undefined
+    let steps: AnswerStep[] = [], providerSteps = false
     const responseImages: ResponseImages = { images: [], failures: [] }
     let dirty = false
     let replyId = ''
@@ -631,7 +644,7 @@ export class RequestsService implements OnModuleDestroy {
       if (!dirty || !replyId || controller.signal.aborted) return
       dirty = false
       const content = acc
-      const updated = await this.db.update(message).set({ content, reasoning: reasoning || null }).where(and(eq(message.id, replyId), eq(message.status, 'streaming')))
+      const updated = await this.db.update(message).set({ content, reasoning: reasoning || null, steps: steps.length ? [...steps] : null }).where(and(eq(message.id, replyId), eq(message.status, 'streaming')))
       if (!updated[0].affectedRows) controller.abort('lost')
     }
     const flushTimer = setInterval(() => { void flush().catch(() => controller.abort('lost')) }, this.config.request.flushMs)
@@ -656,7 +669,7 @@ export class RequestsService implements OnModuleDestroy {
         recorded.flatMap(item => item.snapshotId && item.sourceTaskId ? [{ snapshotId: item.snapshotId, sourceTaskId: item.sourceTaskId, weight: item.weight as 'main' | 'reference' }] : [])) : []
       const srRecords = await this.db.select().from(chatRequestInput).where(and(eq(chatRequestInput.requestId, id), eq(chatRequestInput.kind, 'sr'))).orderBy(chatRequestInput.seq)
       const srs = srRecords.map(item => { if (!item.srSnapshot) throw new Error('SR 본문 기록을 찾을 수 없습니다'); return item.srSnapshot })
-      const built = await Promise.race([buildChatRequest(scope, domainThread, history, { conversations, srs, inputs: staged.filter((item) => !item.oneShot),
+      const built = await Promise.race([buildChatRequest(scope, domainThread, history, { detail, conversations, srs, inputs: staged.filter((item) => !item.oneShot),
         oneShotFileIds: staged.filter((item) => item.oneShot).map((item) => item.fileId), forceInlineFileIds: forceInline,
         deadlineAt,
         onWebProgress: (host) => {
@@ -675,7 +688,7 @@ export class RequestsService implements OnModuleDestroy {
       if (built.failed.length) { failure = `파일 ${built.failed.length}개(${built.failed.map((item) => item.name).join(', ')})를 OpenWebUI에 전달하지 못해 요청을 보내지 않았습니다.`; return }
       if (info.bytes > info.limitBytes) { failure = `요청 크기 한도 초과 (${Math.ceil(info.bytes / 1024)} KB / ${Math.ceil(info.limitBytes / 1024)} KB)`; return }
       const recordSnapshot = (extras: Record<string, unknown> = {}) => {
-        snapshot = { sentAt: new Date().toISOString(), provider: this.provider.kind, model: built.model, meta: built.meta,
+        snapshot = { detail, sentAt: new Date().toISOString(), provider: this.provider.kind, model: built.model, meta: built.meta,
           messages: built.messages, ...(info?.webPages?.length ? { webPages: info.webPages } : {}), stream: true, ...extras, ...(built.files?.length && { files: built.info.inputs.flatMap((input) => input.kind === 'file' && input.delivery === 'attached'
             ? [{ type: 'file', fileId: input.fileId }] : []) }) }
         const serialized = Buffer.from(JSON.stringify(snapshot))
@@ -704,6 +717,36 @@ export class RequestsService implements OnModuleDestroy {
       if (!streaming[0].affectedRows) { controller.abort('lost'); return }
       this.appEvents?.publish('request.updated', { requestId: id, threadId: row.threadId, taskId: owner.taskId, status: 'streaming', phase: null })
       const iterator = this.provider.stream({ model: built.model, messages: built.messages, files: built.files, meta: built.meta, signal: controller.signal,
+        onStep: (index, step, stepCount) => {
+          if (controller.signal.aborted) return
+          providerSteps = true
+          dirty = true
+          arm(this.config.request.idleMs)
+          const prev = steps[index]
+          // 같은 글 단계가 뒤로 자라기만 하면 늘어난 조각만 보낸다(SSE·재생 기록이 토큰마다 누적 전체를 싣지 않게).
+          // 그 종류의 마지막 단계일 때만 — 호환 필드(content·reasoning)도 이어 붙이기만 하면 된다
+          if ((step.type === 'text' || step.type === 'reasoning') && prev?.type === step.type && step.text.length > prev.text.length && step.text.startsWith(prev.text)
+            && (stepCount === undefined || stepCount === steps.length) && !steps.slice(index + 1).some(item => item.type === step.type)) {
+            const piece = step.text.slice(prev.text.length)
+            steps[index] = step
+            if (step.type === 'text') { acc += piece; this.streamText.set(id, acc) } else { reasoning += piece; this.streamReasoning.set(id, reasoning) }
+            this.streamSteps.set(id, [...steps])
+            this.emit(id, { event: step.type === 'text' ? 'delta' : 'reasoning', data: { text: piece, stepIndex: index } })
+            return
+          }
+          steps[index] = step
+          if (stepCount !== undefined && stepCount < steps.length) steps.length = stepCount
+          const bounded = boundSteps(steps)
+          const changed = bounded.flatMap((item, i) => i !== index && item !== steps[i] ? [i] : [])
+          steps = bounded
+          const projection = stepProjection(steps)
+          acc = projection.content
+          reasoning = projection.reasoning
+          this.streamSteps.set(id, [...steps])
+          this.streamText.set(id, acc)
+          this.streamReasoning.set(id, reasoning)
+          for (const i of [index, ...changed]) this.emit(id, { event: 'delta', data: { text: '', stepIndex: i, step: publicSteps([steps[i]!])[0], stepCount: steps.length } })
+        },
         onResponseImages: result => {
           if (!controller.signal.aborted) arm(this.config.request.idleMs)
           responseImages.images.push(...result.images)
@@ -742,6 +785,12 @@ export class RequestsService implements OnModuleDestroy {
           if (!(await setPhase(chunk.value.text))) break
           continue
         }
+        // Step snapshots already carry appended text. Replacements must still notify
+        // legacy listeners and invalidate delta replay for reconnecting clients.
+        if (providerSteps && (chunk.value.type === 'delta' || chunk.value.type === 'reasoning')) {
+          if (!(await setPhase(chunk.value.type === 'reasoning' ? '생각 중' : '답변 중'))) break
+          continue
+        }
         if (chunk.value.type === 'replace') {
           arm(this.config.request.idleMs)
           if (!(await setPhase(chunk.value.field === 'reasoning' ? '생각 중' : '답변 중'))) break
@@ -756,15 +805,17 @@ export class RequestsService implements OnModuleDestroy {
         if ((chunk.value.type !== 'delta' && chunk.value.type !== 'reasoning') || !chunk.value.text) continue
         arm(this.config.request.idleMs)
         if (!(await setPhase(chunk.value.type === 'reasoning' ? '생각 중' : '답변 중'))) break
-        if (chunk.value.type === 'reasoning') {
-          reasoning += chunk.value.text
-          this.streamReasoning.set(id, reasoning)
-        } else {
-          acc += chunk.value.text
-          this.streamText.set(id, acc)
-        }
+        // 단계 없이 조각만 내는 공급자 — 같은 종류가 이어지면 마지막 단계에 붙이고, 아니면 새 단계(호환 필드는 stepProjection과 같은 줄바꿈 이음)
+        const type = chunk.value.type === 'delta' ? 'text' : 'reasoning'
+        const last = steps.at(-1)
+        const index = last?.type === type ? steps.length - 1 : steps.length
+        const text = chunk.value.text
+        steps[index] = { type, text: (last?.type === type ? last.text : '') + text }
+        if (type === 'reasoning') { reasoning += (last?.type !== type && reasoning ? '\n' : '') + text; this.streamReasoning.set(id, reasoning) }
+        else { acc += (last?.type !== type && acc ? '\n' : '') + text; this.streamText.set(id, acc) }
+        this.streamSteps.set(id, [...steps])
         dirty = true
-        this.emit(id, { event: chunk.value.type, data: { text: chunk.value.text } })
+        this.emit(id, { event: chunk.value.type, data: { text, stepIndex: index } })
       }
     } catch (error) { failure = controller.signal.reason === 'timeout' ? TIMEOUT : this.safeError(error) }
     finally {
@@ -785,6 +836,13 @@ export class RequestsService implements OnModuleDestroy {
           }
           recordImages()
           acc = rewriteResponseImageUrls(original, prepared.replacements)
+          const originalSteps = steps
+          const imageSteps = steps.map(step => {
+            if (step.type !== 'text') return step
+            const text = rewriteResponseImageUrls(step.text, prepared.replacements)
+            return text === step.text ? step : { ...step, originalText: step.text, text }
+          })
+          if (acc !== original) this.streamSteps.set(id, imageSteps)
           let writtenKey: string | undefined
           if (snapshotBytes && snapshot && typeof snapshot === 'object' && 'storageKey' in snapshot && typeof snapshot.storageKey === 'string') {
             try { await this.storage.write(snapshot.storageKey, snapshotBytes); writtenKey = snapshot.storageKey }
@@ -804,6 +862,7 @@ export class RequestsService implements OnModuleDestroy {
                 catch { snapshot = JSON.parse(snapshotBytes.toString('utf8')) as unknown }
               }
               acc = original
+              this.streamSteps.set(id, originalSteps)
               transitioned = await this.transition(id, failure ? 'failed' : 'succeeded', failure, original, info, snapshot)
               await Promise.all(prepared.files.map(file => this.storage.remove(file.storageKey).catch(() => undefined)))
             }
@@ -812,7 +871,7 @@ export class RequestsService implements OnModuleDestroy {
               if (acc !== original) {
                 this.streamText.set(id, acc)
                 this.truncated.add(id)
-                this.emit(id, { event: 'replace', data: { field: 'content', text: acc } })
+                this.emit(id, { event: 'replace', data: { field: 'content', text: acc, steps: publicSteps(this.streamSteps.get(id)) } })
               }
               if (imageReport.saved.length) {
                 const [owner] = await this.db.select({ taskId: thread.taskId, srId: thread.srId }).from(thread).where(eq(thread.id, (await this.getRow(id)).threadId))

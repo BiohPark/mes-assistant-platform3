@@ -52,6 +52,8 @@ export interface ChatRequest {
   /** 세션 모드 채팅이 만들어진 직후 — 이후 폴링·취소·정리가 이 채팅을 쓴다 */
   onSession?: (chatId: string) => void | Promise<void>
   /** Incremental image results, including pending failures synchronously on abort. Empty results signal progress. */
+  /** Ordered step snapshots; the index is stable across incremental updates. */
+  onStep?: (index: number, step: import('@mes/domain').AnswerStep, stepCount?: number) => void
   onResponseImages?: (result: import('./responseImages.js').ResponseImages) => void
   limits?: ChatLimits
 }

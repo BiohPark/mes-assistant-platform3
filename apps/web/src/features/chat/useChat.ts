@@ -1,3 +1,5 @@
+import { stepProjection, type AnswerStep } from '@mes/domain'
+import { useAnswerDetail } from './useAnswerDetail'
 import { newId } from '@/lib/ids'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -8,10 +10,10 @@ import { getDraft, setDraft, type ComposerDraft } from './drafts'
 import { useT } from '@/i18n'
 
 /** firstTokenMs·idleMs·maxMs: 서버가 알린 이 요청의 첫 응답·무응답·최대 처리 제한(ms) */
-export interface ChatRun { requestId: string; replyId: string; text: string; reasoning?: string; phase?: string; startedAt?: number; firstTokenMs?: number; idleMs?: number; maxMs?: number }
+export interface ChatRun { requestId: string; replyId: string; text: string; reasoning?: string; steps?: AnswerStep[]; phase?: string; startedAt?: number; firstTokenMs?: number; idleMs?: number; maxMs?: number }
 /** 실행 중 이만큼 응답 스트림 이벤트가 없으면 서버 요청 상태를 직접 확인한다 — 프록시가 SSE를 붙잡거나 조용히 끊어도 끝을 놓치지 않게 */
 export const STATUS_CHECK_MS = 5_000
-interface Attempt { key: string; threadId: string; requestId?: string; startedAt?: number; text: string; attachmentIds: string[]; path: string; body: unknown; autoStartNotified?: boolean }
+interface Attempt { key: string; threadId: string; requestId?: string; startedAt?: number; text: string; attachmentIds: string[]; path: string; body: unknown; autoStartNotified?: boolean; detailCaptured?: boolean }
 interface FirstDraft { taskId: string; draft: ComposerDraft }
 const firstDrafts = new Map<string, FirstDraft>()
 const storageKey = (threadId: string) => `mes-chat-attempt:${threadId}`
@@ -35,6 +37,9 @@ export function queueFirstRequest(threadId: string, body: { content: string; att
 
 export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFailure?: (draft: ComposerDraft, error: unknown) => void, onStarted?: () => void) {
   const t = useT()
+  const { detail } = useAnswerDetail()
+  const detailRef = useRef(detail)
+  detailRef.current = detail
   const query = useQueryClient()
   const autoStarted = useRef(onAutoStarted)
   autoStarted.current = onAutoStarted
@@ -91,6 +96,11 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
           window.addEventListener('focus', wake)
           document.addEventListener('visibilitychange', wake)
           try {
+            if (!attempt.requestId && !attempt.detailCaptured) {
+              if (detailRef.current === 'full') attempt.body = { ...(attempt.body as object), detail: 'full' }
+              attempt.detailCaptured = true
+              save(attempt)
+            }
             await streamRequest(attempt.path, attempt.body, (event, data) => {
               if (detached) return
               lastEventAt = Date.now()
@@ -103,13 +113,41 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
                 save(attempt)
                 rememberMyRequest(attempt.requestId) // 다른 창·탭의 도우미가 이 요청의 끝을 알린다(replyBubble)
                 if (notify) autoStarted.current?.()
-                setRun({ requestId: attempt.requestId, replyId: String(data.replyMessageId), text: String(data.resumedText ?? ''), reasoning: String(data.resumedReasoning ?? ''),
+                setRun({ requestId: attempt.requestId, replyId: String(data.replyMessageId), text: String(data.resumedText ?? ''), reasoning: String(data.resumedReasoning ?? ''), steps: Array.isArray(data.resumedSteps) ? data.resumedSteps as AnswerStep[] : undefined,
                   startedAt: typeof data.createdAt === 'string' ? Date.parse(data.createdAt) : attempt.startedAt,
                   firstTokenMs: typeof data.firstTokenMs === 'number' ? data.firstTokenMs : undefined, idleMs: typeof data.idleMs === 'number' ? data.idleMs : undefined,
                   maxMs: typeof data.maxMs === 'number' ? data.maxMs : undefined })
                 void query.invalidateQueries({ queryKey: ['messages', attempt.threadId] })
               } else if (event === 'phase') {
                 setRun((current) => current ? { ...current, phase: String(data.text) } : current)
+              } else if ((event === 'delta' || event === 'reasoning') && typeof data.stepIndex === 'number' && data.step) {
+                setRun(current => {
+                  if (!current) return current
+                  const steps = [...(current.steps ?? [])]
+                  steps[data.stepIndex as number] = data.step as AnswerStep
+                  if (typeof data.stepCount === 'number' && data.stepCount < steps.length) steps.length = data.stepCount
+                  const projection = stepProjection(steps)
+                  return { ...current, steps, text: projection.content, reasoning: projection.reasoning,
+                    phase: (data.step as AnswerStep).type === 'reasoning' ? '생각 중' : (data.step as AnswerStep).type === 'text' ? '답변 중' : current.phase }
+                })
+              } else if ((event === 'delta' || event === 'reasoning') && typeof data.stepIndex === 'number') {
+                // 단계에 붙는 조각 — 서버는 자라는 글 단계의 늘어난 부분만 보낸다
+                const index = data.stepIndex
+                const type = event === 'delta' ? 'text' : 'reasoning'
+                const piece = String(data.text)
+                setRun(current => {
+                  if (!current) return current
+                  const steps = [...(current.steps ?? [])]
+                  const prev = steps[index]
+                  steps[index] = { type, text: (prev?.type === type ? prev.text : '') + piece }
+                  const phase = type === 'reasoning' ? '생각 중' : '답변 중'
+                  // 그 종류의 마지막 단계에 붙으면 호환 필드도 이어 붙이고(토큰마다 전체를 다시 잇지 않게), 아니면 다시 만든다
+                  if (prev?.type === type && !steps.slice(index + 1).some(step => step.type === type)) {
+                    return type === 'text' ? { ...current, steps, text: current.text + piece, phase } : { ...current, steps, reasoning: (current.reasoning ?? '') + piece, phase }
+                  }
+                  const projection = stepProjection(steps)
+                  return { ...current, steps, text: projection.content, reasoning: projection.reasoning, phase }
+                })
               } else if (event === 'reasoning') {
                 setRun((current) => current ? { ...current, reasoning: (current.reasoning ?? '') + String(data.text), phase: '생각 중' } : current)
               } else if (event === 'delta') {
@@ -117,7 +155,7 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
               } else if (event === 'replace') {
                 // OpenWebUI 세션 모드 — 누적 본문·생각이 이어지지 않으면 서버가 전체를 다시 보낸다
                 setRun((current) => current ? data.field === 'reasoning' ? { ...current, reasoning: String(data.text), phase: '생각 중' }
-                  : { ...current, text: String(data.text), phase: '답변 중' } : current)
+                  : { ...current, text: String(data.text), steps: Array.isArray(data.steps) ? data.steps as AnswerStep[] : current.steps, phase: '답변 중' } : current)
               } else if (event === 'failed') {
                 failed = String(data.error)
                 terminal = true
@@ -199,14 +237,14 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
     send: (content: string, attachmentIds: string[] = [], oneShotFileIds: string[] = [], startedAt = Date.now()) => {
       if (!threadId) throw new Error(t('chat.noThread'))
       const attempt = load(threadId) ?? { key: newId(), threadId, startedAt, text: content, attachmentIds,
-        path: `/threads/${encodeURIComponent(threadId)}/requests`, body: { content, attachmentIds, oneShotFileIds } }
+        path: `/threads/${encodeURIComponent(threadId)}/requests`, detailCaptured: true, body: { content, attachmentIds, oneShotFileIds, ...(detail === 'full' ? { detail } : {}) } }
       save(attempt)
       return consume(attempt)
     },
     retry: (requestId: string, options: { excludeFileIds?: string[]; forceInlineFileIds?: string[] } = {}) => {
       if (!threadId) throw new Error(t('chat.noThread'))
       const attempt = load(threadId) ?? { key: newId(), threadId, requestId, text: '', attachmentIds: [],
-        path: `/requests/${encodeURIComponent(requestId)}/retry`, body: options }
+        path: `/requests/${encodeURIComponent(requestId)}/retry`, detailCaptured: true, body: { ...options, ...(detail === 'full' ? { detail } : {}) } }
       save(attempt)
       return consume(attempt)
     },
