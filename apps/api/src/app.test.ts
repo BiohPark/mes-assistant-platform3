@@ -120,10 +120,16 @@ describe('api 골격', () => {
       ['get', '/api/codes'], ['get', '/api/settings'], ['get', '/api/tasks'],
       ['post', '/api/tasks'], ['get', '/api/tasks/task-id'], ['get', '/api/reports'],
       ['get', '/api/tags/suggest'], ['get', '/api/notifications'], ['get', '/api/llm/models'],
-      ['get', '/api/events'], ['get', '/api/test/so'],
+      ['get', '/api/test/so'],
     ] as const) {
       await request(app.getHttpServer())[method](path).set('Cookie', 'mes_session=bo').expect(403)
     }
+    // A안: 이벤트 구독은 허용한다. 요청자 범위는 events/requester-filter.test.ts에서 검증한다.
+    const events = await fetch(`${await app.getUrl()}/api/events`, { headers: { Cookie: 'mes_session=bo' } })
+    try {
+      expect(events.status).toBe(200)
+      expect(events.headers.get('content-type')).toContain('text/event-stream')
+    } finally { await events.body?.cancel() }
     await request(app.getHttpServer()).get('/api/llm/models').set('Cookie', 'mes_session=dual').expect(200)
     await request(app.getHttpServer()).get('/api/me').set('Cookie', 'mes_session=bo').expect(200)
     await request(app.getHttpServer()).get('/api/service-requests/intake-assistant').set('Cookie', 'mes_session=bo').expect(200, { srIntakeAssistantId: 'intake-1' })

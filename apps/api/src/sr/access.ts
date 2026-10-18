@@ -47,6 +47,7 @@ export async function assertFileAccess(db: Db, actor: string, fileId: string) {
   const [file] = await db.select().from(fileObject).where(and(eq(fileObject.id, fileId), isNull(fileObject.deletedAt)))
   if (!file) throw new NotFoundException('파일을 찾을 수 없습니다')
   if (file.originSrId) {
+    if (file.kind === 'ai_output') { await assertSrAccess(db, actor, file.originSrId); return }
     const [sr] = await db.select({ requesterId: serviceRequest.requesterId }).from(serviceRequest).where(eq(serviceRequest.id, file.originSrId))
     if (sr?.requesterId === actor && file.uploadedBy === actor) return
   }

@@ -1,6 +1,7 @@
 // 가짜 OpenWebUI — 개발·E2E용 대역. OpenAI 호환 최소 엔드포인트만 흉내 낸다(의존성 없음).
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
+import { pathToFileURL } from 'node:url'
 
 const port = Number(process.env.PORT ?? 8080)
 // fake-general은 OpenWebUI의 모델 편집 기록(info.meta·info.params)을 흉내 낸다 — OpenWebUI 진단(S10-5)·화면 기본값(S13-J)용
@@ -88,11 +89,19 @@ async function completeChat(payload, res) {
   res.end('data: [DONE]\n\n')
 }
 
+// 실제 PNG 1×1: 브라우저가 디코딩할 수 있어야 이미지 깨짐을 E2E가 잡는다.
+const IMAGE_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
+const generatedImages = new Map()
+function imageReply(owner) {
+  const url = `/api/v1/files/generated-${owner}/content`
+  generatedImages.set(url, owner)
+  return `![generated](${url})\n\n![inline](data:image/png;base64,${IMAGE_PNG.toString('base64')})`
+}
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 /** [tool-slow]의 도구 실행 시간, [done-linger]의 [DONE] 뒤 연결 유지 시간 */
 const TOOL_MS = Number(process.env.FAKE_OWUI_TOOL_MS ?? 10_000)
 const LINGER_MS = 30_000
-const answerText = (payload, userText) => `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${userText} [files: ${payload.files?.length ?? 0}]`
+const answerText = (payload, userText) => /\[image\]/i.test(userText) ? `${imageReply(payload.__imageOwner ?? randomUUID())}\n\n${userText}` : `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${userText} [files: ${payload.files?.length ?? 0}]`
 /** OpenWebUI 세션 모드 요청 — session_id가 있고 parent_id:null(새 채팅)일 때만 백그라운드 작업이 된다 */
 const isSessionRequest = payload => typeof payload.session_id === 'string' && 'parent_id' in payload && payload.parent_id === null && !payload.chat_id
 
@@ -112,7 +121,7 @@ async function runSessionSteps(chat, payload) {
   const alive = () => chats.get(chat.id) === chat && !chat.stopped
   const status = (description, extra = {}) => message.statusHistory.push({ description, done: false, ...extra })
   const userText = lastUserText(payload.messages)
-  let text = answerText(payload, userText)
+  let text = answerText({ ...payload, __imageOwner: chat.id }, userText)
   await wait(100)
   if (/\[delay\]/i.test(userText)) for (let i = 0; i < 3; i++) { if (!alive()) return; status('작업 대기 중'); await wait(1000) }
   const url = /https?:\/\/[^\s<>"')\]]+/.exec(userText)?.[0]
@@ -142,6 +151,13 @@ async function runSessionSteps(chat, payload) {
     return
   }
   const item = { type: 'message', content: [{ type: 'output_text', text: '' }] }
+  if (/\[image\]/i.test(userText)) {
+    const image = { type: 'image', url: `/api/v1/files/generated-${chat.id}/content` }
+    const filesOnly = { type: 'image', url: `/cache/${chat.id}/files-only.png` }
+    generatedImages.set(filesOnly.url, chat.id)
+    message.files = [image]
+    item.files = [image, filesOnly]
+  }
   message.output.push(item)
   if (/\[replace\]/i.test(userText)) {
     item.content[0].text = message.content = '임시 답변'
@@ -173,7 +189,7 @@ async function runSessionSteps(chat, payload) {
   if (alive()) message.done = true
 }
 
-const server = createServer(async (req, res) => {
+export async function handleRequest(req, res) {
   const url = new URL(req.url ?? '/', 'http://localhost')
   if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: true })
   // URL reader targets live on this test server; the application never fetches a public fixture site.
@@ -235,6 +251,12 @@ const server = createServer(async (req, res) => {
     uploads.set(id, { filename, at: Date.now() })
     return json(res, 200, { id, filename, meta: { size: body.length } })
   }
+  if (req.method === 'GET' && (url.pathname.startsWith('/api/v1/files/generated-') || url.pathname.startsWith('/cache/'))) {
+    if (!req.headers.authorization?.startsWith('Bearer ')) return json(res, 401, { detail: 'Unauthorized' })
+    if (!generatedImages.has(url.pathname)) return json(res, 404, { detail: 'Not Found' })
+    res.writeHead(200, { 'content-type': 'image/png', 'content-length': IMAGE_PNG.length })
+    return res.end(IMAGE_PNG)
+  }
   const statusMatch = /^\/api\/v1\/files\/([^/]+)\/process\/status$/.exec(url.pathname)
   if (req.method === 'GET' && statusMatch) {
     const upload = uploads.get(statusMatch[1])
@@ -269,6 +291,7 @@ const server = createServer(async (req, res) => {
     if (!chat) return json(res, 404, { detail: 'Not Found' })
     if (req.method === 'DELETE') {
       chats.delete(chat.id)
+      for (const [url, owner] of generatedImages) if (owner === chat.id) generatedImages.delete(url)
       sessionLog.deleted.push(chat.id)
       return json(res, 200, true)
     }
@@ -289,6 +312,8 @@ const server = createServer(async (req, res) => {
     return json(res, 200, { status: true })
   }
   json(res, 404, { detail: 'Not Found' })
-})
+}
 
-server.listen(port, () => console.log(`fake-openwebui listening on :${port}`))
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  createServer(handleRequest).listen(port, () => console.log(`fake-openwebui listening on :${port}`))
+}

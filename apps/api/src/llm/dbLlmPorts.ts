@@ -1,3 +1,4 @@
+import { messagesForAi } from './responseContent.js'
 import { networkInterfaces } from 'node:os'
 import { UrlReader } from '../requests/urlReader.js'
 import { linkedTaskSrs } from '../tasks/sr-inputs.service.js'
@@ -151,15 +152,17 @@ export class DbLlmPorts implements LlmPorts {
     const rows = await this.db.select({ id: fileObject.id }).from(fileObject).where(and(eq(fileObject.originSrId, srId), isNull(fileObject.deletedAt)))
     return (await this.getFiles(rows.map((row) => row.id))).filter((file): file is FileAsset => !!file)
   }
-  async loadConversationInputs(taskId: string) {
-    const loaded = await new DbConversationInputsService(this.db).load(taskId)
+  async loadConversationInputs(taskId: string, captured?: Parameters<DbConversationInputsService['load']>[2]) {
+    const loaded = await new DbConversationInputsService(this.db).load(taskId, undefined, captured)
+    const originals = await messagesForAi(this.db, loaded.flatMap(item => item.messages))
+    const originalById = new Map(originals.map(row => [row.id, row.content]))
     const sources = await this.getTasks(loaded.map((item) => item.input.sourceTaskId))
     const assistants = await this.getAssistants()
     return loaded.flatMap((item, index) => {
       const source = sources[index]
       if (!source) return []
       return [{ input: item.input, snapshot: item.snapshot, source,
-        assistant: assistants.find((agent) => agent.id === source.assistantId), messages: item.messages }]
+        assistant: assistants.find((agent) => agent.id === source.assistantId), messages: item.messages.map(value => ({ ...value, content: originalById.get(value.id) ?? value.content })) }]
     })
   }
   async updateFileRemoteIds(fileId: string, remoteIds: Record<string, string>): Promise<void> {

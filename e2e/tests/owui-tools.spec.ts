@@ -128,13 +128,23 @@ test('OpenWebUI 세션 모드: 작업 오류는 실패로, 생성 거부는 기�
     expect(attempts.map(row => 'session_id' in row)).toEqual([true, false])
     expect(snapshot.messages).toEqual(attempts[1]!.messages)
 
-    const before = await s.sessions()
-    await s.conversation('owui-session-stop')
-    await s.send(`[delay] 중지 ${Date.now()}`)
+    const stopping = await s.conversation('owui-session-stop')
+    const stopPrompt = `[delay] 중지 task=${stopping.id}`
+    await s.send(stopPrompt)
     await expect(page.getByText('작업 대기 중').first()).toBeVisible()
+    const stopAttempts = await s.captured(stopPrompt)
+    expect(stopAttempts).toHaveLength(1)
+    expect(stopAttempts[0]).toHaveProperty('session_id')
+    // 진행 중 snapshot은 아직 저장되지 않는다. 실제 보낸 message id로 자기 채팅을 찾는다.
+    const active = await Promise.all((await s.sessions()).active.map(async chatId => {
+      const chat = await (await page.request.get(`${fake}/api/v1/chats/${chatId}`)).json() as { chat?: { history: { currentId: string } } }
+      return chat.chat?.history.currentId === stopAttempts[0]!.id ? chatId : undefined
+    }))
+    const ownChats = active.filter((id): id is string => !!id)
+    expect(ownChats).toHaveLength(1)
+    const chatId = ownChats[0]!
     await page.getByRole('button', { name: '중지' }).click()
-    await expect.poll(async () => (await s.sessions()).stopped.length).toBe(before.stopped.length + 1)
-    const after = await s.sessions()
-    expect(after.deleted).toContain(after.stopped.at(-1))
+    await expect.poll(async () => (await s.sessions()).stopped).toContain(chatId)
+    await expect.poll(async () => (await s.sessions()).deleted).toContain(chatId)
   } finally { await s.restore() }
 })

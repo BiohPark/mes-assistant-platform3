@@ -115,6 +115,18 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
     {(!assistant || hasContent) && <div className={`rounded-2xl px-3.5 py-2.5 ${tone === 'card' ? 'border bg-card' : tone === 'warning' ? 'rounded-tr-sm border border-dashed border-tone-warning-fg/40 bg-tone-warning-bg' : 'rounded-tr-sm bg-primary text-primary-foreground'}`}><div className="md-body" data-tone={tone}><ReactMarkdown remarkPlugins={[remarkGfm, remarkSrCodes]} components={{
         a: ({ href, title, children }) => href?.startsWith(SR_CODE_HREF) ? <SrCodeLink code={href.slice(SR_CODE_HREF.length)}>{children}</SrCodeLink> : <a href={href} title={title} target="_blank" rel="noreferrer">{children}</a>,
         pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+        img: ({ src, alt, title }) => {
+          const match = typeof src === 'string' ? /^\/api\/files\/([^/?#]+)\/content$/.exec(src) : null
+          if (!match) return <span>{alt}</span>
+          return <button type="button" className="block max-w-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={async (event) => {
+            previewOpener.current = event.currentTarget
+            try {
+              const response = await fetch(`/api/files/${match[1]}`, { credentials: 'same-origin' })
+              if (!response.ok) throw new HttpError(response.status)
+              setPreview(await response.json() as FileMeta)
+            } catch (error) { toast.error(attachmentFallback(error)) }
+          }}><img src={src} alt={alt ?? ''} title={title} loading="lazy" className="max-h-96 max-w-full rounded-lg object-contain" /></button>
+        },
       }}>{content}</ReactMarkdown></div></div>}
     {/* 글이 멈췄는데 아직 끝나지 않았으면 답 바로 아래에도 같은 상태를 보인다 — 읽는 자리(답 끝)에서 끝난 것처럼 보이지 않게. 읽기는 머리 줄(role=status)이 맡는다 */}
     {assistant && progress?.stalled && <div data-testid="reply-progress" aria-hidden="true" className="flex flex-wrap items-center gap-1.5 px-1 text-xs text-muted-foreground">

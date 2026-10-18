@@ -1,3 +1,4 @@
+import { aiMessageContent } from '../llm/responseContent.js'
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { buildTaskReport, type ChecklistReviewItem, type Message, type Note } from '@mes/domain'
@@ -89,7 +90,7 @@ export class TaskExtrasService {
     const [agent] = await this.db.select().from(assistant).where(eq(assistant.id, current.assistantId))
     const rows = current.threadId ? await this.db.select().from(message).where(eq(message.threadId, current.threadId)).orderBy(message.seq) : []
     const history: Message[] = rows.map((row) => ({ id: row.id, threadId: row.threadId, seq: row.seq,
-      role: row.role as Message['role'], kind: row.kind as Message['kind'], content: row.content, status: row.status as Message['status'],
+      role: row.role as Message['role'], kind: row.kind as Message['kind'], content: aiMessageContent(row), status: row.status as Message['status'],
       createdAt: row.createdAt.toISOString(), attachmentIds: [], ...(row.authorId && { authorId: row.authorId }) }))
     const result = await this.requests.runAuxiliary(actor, 'checklist', async (signal) => {
       const model = current.modelId ?? agent?.modelId ?? await readEffectiveDefaultModel(this.db, this.config ?? { llm: { defaultModel: undefined } })
@@ -152,7 +153,7 @@ export class TaskExtrasService {
     await this.db.transaction(async (tx) => {
       await this.editable(tx, taskId)
       if (unique.length) {
-        const files = await tx.select().from(fileObject).where(and(inArray(fileObject.id, unique), eq(fileObject.kind, 'task_file'), isNull(fileObject.deletedAt)))
+        const files = await tx.select().from(fileObject).where(and(inArray(fileObject.id, unique), inArray(fileObject.kind, ['task_file', 'ai_output']), isNull(fileObject.deletedAt)))
         if (files.length !== unique.length) throw new BadRequestException('자료함 파일만 첨부할 수 있습니다')
       }
       await tx.insert(note).values({ id: noteId, taskId, authorId: actor, content: clean })

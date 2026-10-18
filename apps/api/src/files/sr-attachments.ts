@@ -9,7 +9,7 @@ type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 /** 접수 대화에 올린 파일 전체를 같은 SR 자료함으로 공유한다. 삭제된 파일은 제외한다. */
 export async function srAttachments(db: Db | Tx, srId: string) {
   return db.select().from(fileObject)
-    .where(and(eq(fileObject.originSrId, srId), eq(fileObject.kind, 'sr_attachment'), isNull(fileObject.deletedAt)))
+    .where(and(eq(fileObject.originSrId, srId), inArray(fileObject.kind, ['sr_attachment', 'ai_output']), isNull(fileObject.deletedAt)))
     .orderBy(fileObject.uploadedAt, fileObject.id)
 }
 
@@ -24,14 +24,14 @@ export async function taskSrAttachments(db: Db | Tx, taskId: string) {
   return db.select({ file: fileObject, srId: serviceRequest.id, srCode: serviceRequest.code, srTitle: serviceRequest.title }).from(task)
     .innerJoin(serviceRequest, linkedSr(db))
     .innerJoin(fileObject, eq(fileObject.originSrId, serviceRequest.id))
-    .where(and(eq(task.id, taskId), isNull(task.deletedAt), eq(fileObject.kind, 'sr_attachment'), isNull(fileObject.deletedAt)))
+    .where(and(eq(task.id, taskId), isNull(task.deletedAt), inArray(fileObject.kind, ['sr_attachment', 'ai_output']), isNull(fileObject.deletedAt)))
     .orderBy(serviceRequest.code, serviceRequest.id, fileObject.uploadedAt, fileObject.id)
 }
 
 /** 연결 업무 참여자(만든 사람·소유자·담당자 — assertTaskAccess와 같은 범위)면 그 SR에 올린 파일을 읽을 수 있다. */
 async function linkedParticipant(db: Db, actor: string, fileId: string) {
   const [file] = await db.select({ srId: fileObject.originSrId }).from(fileObject)
-    .where(and(eq(fileObject.id, fileId), eq(fileObject.kind, 'sr_attachment'), isNull(fileObject.deletedAt)))
+    .where(and(eq(fileObject.id, fileId), inArray(fileObject.kind, ['sr_attachment', 'ai_output']), isNull(fileObject.deletedAt)))
   if (!file?.srId) return false
   const linked = await db.select({ id: task.id, createdBy: task.createdBy, ownerId: task.ownerId }).from(task)
     .innerJoin(serviceRequest, and(eq(serviceRequest.id, file.srId), linkedSr(db)))

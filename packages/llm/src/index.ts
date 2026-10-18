@@ -27,4 +27,6 @@ export * from './srRefine.js'
 export * from './title.js'
 export * from './tools.js'
 
+export { responseImageUrls, rewriteResponseImageUrls } from './responseImages.js'
+export type { ResponseImage, ResponseImageFailure, ResponseImages } from './responseImages.js'
 export * from './owuiTerminals.js'

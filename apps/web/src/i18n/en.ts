@@ -32,6 +32,7 @@ export const en = {
     modelSource: { thread: 'This conversation', task: 'This conversation', assistant: 'Agent settings', settings: 'Default model' },
   },
   components: {
+    aiGenerated: 'AI generated',
     assistantSource: 'Agent',
     removeValue: 'Remove {value}',
     editValue: 'Edit {value}',

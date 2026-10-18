@@ -318,3 +318,17 @@ it('S14: 답변은 넓게(모바일 전체 폭), 내 질문은 모바일 90%·�
   expect(answer).toHaveClass('max-w-full', 'sm:max-w-[92%]')
   expect(question).toHaveClass('max-w-[90%]', 'sm:max-w-[80%]')
 })
+
+it('opens a persisted answer image in the existing file preview and blocks remote/data image loading', async () => {
+  const file = { id: 'ai-image', name: 'generated.png', mime: 'image/png', size: 3, source: 'assistant' }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/files/ai-image' ? jsonResponse(200, file) : url.endsWith('/content') ? new Response('png') : jsonResponse(200, [])))
+  vi.stubGlobal('URL', { createObjectURL: () => 'blob:preview', revokeObjectURL: vi.fn() })
+  const message = { id: 'image-message', threadId: 'h', role: 'assistant', status: 'done', content: '![generated](/api/files/ai-image/content) ![foreign](https://other.test/image.png) ![inline](data:image/png;base64,aGk=)', attachmentIds: [], createdAt: '2026-01-01' } as Message
+  renderWithProviders(<TooltipProvider><MessageBubble message={message} /></TooltipProvider>)
+  expect(screen.getByRole('img', { name: 'generated' })).toHaveAttribute('src', '/api/files/ai-image/content')
+  expect(screen.queryByRole('img', { name: 'foreign' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('img', { name: 'inline' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'generated' }))
+  expect(await screen.findByRole('dialog', { name: 'generated.png' })).toBeInTheDocument()
+  await waitFor(() => expect(within(screen.getByRole('dialog')).getByRole('img')).toHaveAttribute('src', 'blob:preview'))
+})

@@ -3,7 +3,7 @@ import type { Response } from 'express'
 import { eq } from 'drizzle-orm'
 import type { AuthedRequest } from '../auth/guards.js'
 import { DB, type Db } from '../db/db.module.js'
-import { thread } from '../db/schema.js'
+import { appUser, thread } from '../db/schema.js'
 import { EventsService, type StoredEvent } from './events.service.js'
 import { assertSrAccess, assertThreadAccess } from '../sr/access.js'
 
@@ -11,15 +11,15 @@ import { assertSrAccess, assertThreadAccess } from '../sr/access.js'
 export class EventsController {
   constructor(@Inject(EventsService) private readonly events: EventsService, @Inject(DB) private readonly db: Db) {}
 
-  private async visible(actor: string, event: StoredEvent) {
+  private async visible(actor: string, event: StoredEvent, requesterOnly = false) {
     if (event.event === 'sr.updated') {
       try { await assertSrAccess(this.db, actor, event.data.srId); return true }
       catch { return false }
     }
     if (event.event === 'notification.created') return event.data.userId === actor
-    if (event.event !== 'message.appended' && event.event !== 'request.updated' && event.event !== 'presence.typing') return true
+    if (event.event !== 'message.appended' && event.event !== 'request.updated' && event.event !== 'presence.typing') return !requesterOnly
     const [owner] = await this.db.select({ srId: thread.srId }).from(thread).where(eq(thread.id, event.data.threadId))
-    if (!owner?.srId) return true
+    if (!owner?.srId) return !requesterOnly
     try { await assertSrAccess(this.db, actor, owner.srId); return true }
     catch { return false }
   }
@@ -40,14 +40,21 @@ export class EventsController {
     }
     res.on('close', cleanup)
     const write = (chunk: string) => { if (!closed && !res.write(chunk)) { cleanup(); res.end() } }
+    const actor = req.user!.id
     const send = async (event: StoredEvent) => {
-      if (await this.visible(req.user!.id, event)) write(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`)
+      if (closed) return
+      // A long-lived connection must not retain the roles from its initial HTTP request.
+      const [user] = await this.db.select({ active: appUser.active, mustChangePassword: appUser.mustChangePassword,
+        isBusinessOwner: appUser.isBusinessOwner, isSystemOwner: appUser.isSystemOwner }).from(appUser).where(eq(appUser.id, actor))
+      if (!user?.active || user.mustChangePassword) { cleanup(); res.end(); return }
+      const requesterOnly = user.isBusinessOwner && !user.isSystemOwner
+      if (await this.visible(actor, event, requesterOnly)) write(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`)
     }
     const pending: StoredEvent[] = []
     let ready = false
     let delivery = Promise.resolve()
     unsubscribe = this.events.subscribe((event) => {
-      if (ready) delivery = delivery.then(() => send(event)).catch(() => cleanup())
+      if (ready) delivery = delivery.then(() => send(event)).catch(() => { cleanup(); res.end() })
       else pending.push(event)
     })
     const replay = this.events.replay(lastId)

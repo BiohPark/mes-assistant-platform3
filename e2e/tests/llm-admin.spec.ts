@@ -115,9 +115,12 @@ test('SO 전역 기본 모델: 저장·해제 즉시 반영, 목록 실패 시 �
   await owner(page)
   const original = await (await page.request.get('/api/settings')).json()
   try {
+    // 기존 override가 첫 모델이면 같은 값 선택은 PATCH를 보내지 않는다. 잠금 안에서 시작 상태를 고정한다.
+    expect((await page.request.patch('/api/settings', { data: { defaultModelOverride: null } })).status()).toBe(200)
     await page.goto('/settings')
     const picker = page.getByRole('combobox', { name: '기본 모델' })
     await expect(picker).toBeEnabled()
+    await expect(picker).toHaveValue('')
     const model = (await (await page.request.get('/api/llm/models')).json()).models[0] as string | undefined
     expect(model).toBeTruthy()
     await picker.click()

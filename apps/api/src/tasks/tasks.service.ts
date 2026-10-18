@@ -360,7 +360,7 @@ export class DbTasksService {
           // 연결을 뺀 첨부는 다음 전송에 남기지 않는다. 시작한 sr_id와 과거 요청 기록은 유지한다.
           if (sr && owner.srId !== sr.id) await tx.delete(taskInput).where(and(eq(taskInput.taskId, taskId),
             inArray(taskInput.fileId, tx.select({ id: fileObject.id }).from(fileObject)
-              .where(and(eq(fileObject.originSrId, sr.id), eq(fileObject.kind, 'sr_attachment'))))))
+              .where(and(eq(fileObject.originSrId, sr.id), inArray(fileObject.kind, ['sr_attachment', 'ai_output']))))))
         }
         await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, taskId))
         await tx.insert(activityLog).values({ id: id(), type: 'tag.removed', userId: actor, taskId, payload: { tag: normalizeTag(raw) } })

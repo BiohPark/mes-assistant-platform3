@@ -1,15 +1,16 @@
+import { aiMessageContent, messagesForAi } from '../llm/responseContent.js'
 import { linkedTaskSrs } from '../tasks/sr-inputs.service.js'
-import { DbConversationInputsService } from '../context/conversation-inputs.service.js'
 import { randomUUID } from 'node:crypto'
 import { resumeHeldTask } from '../tasks/resume-held-task.js'
 import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common'
 import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
-import { buildChatRequest, composeSrDraft, createProvider, OWUI_DEFAULT_KEYS, refineSrDraft, suggestTitle, summarizeConversation, SrDraftBudgetError, SummaryBudgetError, type ChatProvider, type ChatScope, type SrAiOptions, type SrDraftText, type SrProposal } from '@mes/llm'
+import { rewriteResponseImageUrls, type ResponseImages, buildChatRequest, composeSrDraft, createProvider, OWUI_DEFAULT_KEYS, refineSrDraft, suggestTitle, summarizeConversation, SrDraftBudgetError, SummaryBudgetError, type ChatProvider, type ChatScope, type SrAiOptions, type SrDraftText, type SrProposal } from '@mes/llm'
 import type { LlmSettings, Message, RequestInfo, RequestInput, ServiceRequest, Thread } from '@mes/domain'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
 import { isDuplicateKey } from '../db/errors.js'
 import { activityLog, appSetting, assistant, chatRequest, chatRequestInput, conversationInput, dbLock, fileObject, message, messageAttachment, serviceRequest, srInput, task, taskInput, thread } from '../db/schema.js'
+import { prepareResponseImages, type PreparedImage } from '../files/responseImages.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { EventsService } from '../events/events.service.js'
 import { DbLlmPorts } from '../llm/dbLlmPorts.js'
@@ -112,7 +113,7 @@ export class RequestsService implements OnModuleDestroy {
     if (!owner?.srId) throw new BadRequestException('접수 대화가 아닙니다')
     const rows = await this.db.select().from(message).where(eq(message.threadId, threadId)).orderBy(message.seq)
     const history: Message[] = rows.filter((row) => row.status === 'done').map((row) => ({ id: row.id, threadId,
-      seq: row.seq, role: row.role as Message['role'], kind: row.kind as Message['kind'], content: row.content,
+      seq: row.seq, role: row.role as Message['role'], kind: row.kind as Message['kind'], content: aiMessageContent(row),
       authorId: row.authorId ?? undefined, status: row.status as Message['status'], createdAt: row.createdAt.toISOString(), attachmentIds: [] }))
     return { owner, history }
   }
@@ -148,6 +149,7 @@ export class RequestsService implements OnModuleDestroy {
     return threadModelId ?? intake?.modelId ?? await readEffectiveDefaultModel(this.db, this.config)
   }
   async draftConversationSummary(actor: string, taskId: string, messages: Message[], signal?: AbortSignal) {
+    messages = await messagesForAi(this.db, messages)
     const ports = new DbLlmPorts(this.db, this.config, actor)
     const [owner, agents, users, settings] = await Promise.all([ports.getTask(taskId), ports.getAssistants(), ports.getUsers(), ports.getSettings()])
     if (!owner) throw new NotFoundException('대화를 찾을 수 없습니다')
@@ -280,7 +282,7 @@ export class RequestsService implements OnModuleDestroy {
     const scope = await this.scope(owner, ports)
     const rows = await this.db.select().from(message).where(eq(message.threadId, threadId)).orderBy(message.seq)
     const history: Message[] = rows.map((item) => ({ id: item.id, threadId, seq: item.seq, role: item.role as Message['role'],
-      content: item.content, authorId: item.authorId ?? undefined, createdAt: item.createdAt.toISOString(), attachmentIds: [],
+      content: aiMessageContent(item), authorId: item.authorId ?? undefined, createdAt: item.createdAt.toISOString(), attachmentIds: [],
       status: item.status as Message['status'], kind: item.kind as Message['kind'] }))
     history.push({ id: 'draft', threadId, role: 'user', content: body.draft?.trim() ?? '', authorId: actor,
       createdAt: new Date().toISOString(), attachmentIds: attachments, status: 'done' })
@@ -543,15 +545,21 @@ export class RequestsService implements OnModuleDestroy {
   }
 
   private async transition(id: string, status: 'succeeded' | 'failed' | 'cancelled' | 'interrupted', error?: string, content?: string,
-    info?: RequestInfo, snapshot?: unknown, expired = false): Promise<boolean> {
+    info?: RequestInfo, snapshot?: unknown, expired = false, images: PreparedImage[] = [], originalContent?: string): Promise<boolean> {
     const row = await this.getRow(id)
     try { const changed = await this.db.transaction(async (tx) => {
       const owner = await this.lockedOwner(tx, row.threadId).catch((e) => { if (e instanceof ConflictException && status !== 'succeeded') return undefined; throw e })
       const updated = await tx.update(chatRequest).set({ status, error: error ?? null, finishedAt: new Date(), phase: null,
         snapshot: snapshot ?? row.snapshot, leaseUntil: null }).where(and(eq(chatRequest.id, id), inArray(chatRequest.status, ACTIVE), ...(expired ? [lt(chatRequest.leaseUntil, sql`current_timestamp(6)`)] : [])))
       if (!updated[0].affectedRows) return false
+      if (images.length) {
+        await tx.insert(fileObject).values(images.map(image => ({ ...image, kind: 'ai_output', originTaskId: owner?.taskId ?? null,
+          originSrId: owner?.srId ?? null, source: 'assistant', version: 1, uploadedBy: row.requestedBy })))
+        await tx.insert(messageAttachment).values(images.map(image => ({ messageId: row.replyMessageId, fileId: image.id })))
+      }
       const reply = await tx.update(message).set({ status: status === 'succeeded' ? 'done' : 'error', error: error ?? null,
         ...(content !== undefined ? { content: content || (error ? `⚠️ ${error}` : '') } : {}),
+        ...(originalContent !== undefined ? { originalContent } : {}),
         ...(this.streamReasoning.has(id) ? { reasoning: this.streamReasoning.get(id) } : {}) }).where(and(eq(message.id, row.replyMessageId), eq(message.status, 'streaming')))
       if (!reply[0].affectedRows) throw new FencedTransition()
       if (owner?.taskId) await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, owner.taskId))
@@ -616,6 +624,7 @@ export class RequestsService implements OnModuleDestroy {
       .then((result) => { if (!result[0].affectedRows) controller.abort('lost') }).catch(() => controller.abort('lost')) }, this.config.request.keepaliveMs)
     lease.unref?.()
     let acc = '', reasoning = '', phase = '', info: RequestInfo | undefined, snapshot: unknown, snapshotBytes: Buffer | undefined, failure: string | undefined
+    const responseImages: ResponseImages = { images: [], failures: [] }
     let dirty = false
     let replyId = ''
     const flush = async () => {
@@ -637,21 +646,14 @@ export class RequestsService implements OnModuleDestroy {
       const all = await this.db.select().from(message).where(eq(message.threadId, row.threadId)).orderBy(message.seq)
       const user = all.find((item) => item.id === row.userMessageId)
       const history: Message[] = all.filter((item) => item.seq <= (user?.seq ?? 0)).map((item) => ({ id: item.id, threadId: item.threadId,
-        role: item.role as Message['role'], content: item.content, authorId: item.authorId ?? undefined, createdAt: item.createdAt.toISOString(),
+        role: item.role as Message['role'], content: aiMessageContent(item), authorId: item.authorId ?? undefined, createdAt: item.createdAt.toISOString(),
         attachmentIds: [], status: item.status as Message['status'], kind: item.kind as Message['kind'] }))
       const domainThread: Thread = { id: owner.id, ...(owner.taskId ? { taskId: owner.taskId } : { srId: owner.srId! }), title: owner.title,
         createdBy: owner.createdBy, createdAt: owner.createdAt.toISOString(), archived: false, ...(owner.modelId ? { modelId: owner.modelId } : {}) }
       if (controller.signal.aborted) throw new Error('요청 시간 초과')
       const recorded = await this.db.select().from(chatRequestInput).where(and(eq(chatRequestInput.requestId, id), eq(chatRequestInput.kind, 'conversation'))).orderBy(chatRequestInput.seq)
-      const loaded = owner.taskId ? await new DbConversationInputsService(this.db).load(owner.taskId, undefined,
+      const conversations = owner.taskId ? await ports.loadConversationInputs(owner.taskId,
         recorded.flatMap(item => item.snapshotId && item.sourceTaskId ? [{ snapshotId: item.snapshotId, sourceTaskId: item.sourceTaskId, weight: item.weight as 'main' | 'reference' }] : [])) : []
-      const sources = await ports.getTasks(loaded.map(item => item.input.sourceTaskId))
-      const assistants = await ports.getAssistants()
-      const conversations = loaded.map((item, index) => {
-        const source = sources[index]
-        if (!source) throw new Error('참조 대화 기록을 찾을 수 없습니다')
-        return { input: item.input, snapshot: item.snapshot, messages: item.messages, source, assistant: assistants.find(agent => agent.id === source.assistantId) }
-      })
       const srRecords = await this.db.select().from(chatRequestInput).where(and(eq(chatRequestInput.requestId, id), eq(chatRequestInput.kind, 'sr'))).orderBy(chatRequestInput.seq)
       const srs = srRecords.map(item => { if (!item.srSnapshot) throw new Error('SR 본문 기록을 찾을 수 없습니다'); return item.srSnapshot })
       const built = await Promise.race([buildChatRequest(scope, domainThread, history, { conversations, srs, inputs: staged.filter((item) => !item.oneShot),
@@ -702,6 +704,11 @@ export class RequestsService implements OnModuleDestroy {
       if (!streaming[0].affectedRows) { controller.abort('lost'); return }
       this.appEvents?.publish('request.updated', { requestId: id, threadId: row.threadId, taskId: owner.taskId, status: 'streaming', phase: null })
       const iterator = this.provider.stream({ model: built.model, messages: built.messages, files: built.files, meta: built.meta, signal: controller.signal,
+        onResponseImages: result => {
+          if (!controller.signal.aborted) arm(this.config.request.idleMs)
+          responseImages.images.push(...result.images)
+          responseImages.failures.push(...result.failures)
+        },
         owuiTools: built.settings.llm.owuiTools, owuiMode: built.settings.llm.owuiMode, owuiCleanup: built.settings.llm.owuiCleanup,
         onDispatch: async (delivery, body) => {
           if (controller.signal.aborted) throw new Error('요청 중지')
@@ -722,6 +729,12 @@ export class RequestsService implements OnModuleDestroy {
         const chunk = await Promise.race([iterator.next(), deadline, stopped])
         if (chunk.done) break
         if (controller.signal.aborted) break
+        if (chunk.value.type === 'images') {
+          arm(this.config.request.idleMs)
+          responseImages.images.push(...chunk.value.images)
+          responseImages.failures.push(...chunk.value.failures)
+          continue
+        }
         if (chunk.value.type === 'error') { failure = chunk.value.message; break }
         // 세션 모드 상태(도구 실행 등)는 진행 단계이자 생존 신호다
         if (chunk.value.type === 'status') {
@@ -762,6 +775,16 @@ export class RequestsService implements OnModuleDestroy {
       if (controller.signal.reason === 'timeout') failure = capped ? `응답 시간 초과 — 최대 처리 시간(${maxLabel(this.config.request.maxMs)})을 넘었습니다.` : TIMEOUT
       try {
         if (controller.signal.reason !== 'lost' && controller.signal.reason !== 'cancelled') {
+          const original = acc
+          const prepared = await prepareResponseImages(this.storage, responseImages.images, this.config.fileMaxBytes)
+          const imageReport = { saved: prepared.files.map(file => ({ fileId: file.id })), failures: [...responseImages.failures, ...prepared.failures] }
+          const recordImages = () => {
+            if (!imageReport.saved.length && !imageReport.failures.length) return
+            if (snapshotBytes) snapshotBytes = Buffer.from(JSON.stringify({ ...JSON.parse(snapshotBytes.toString('utf8')), responseImages: imageReport }))
+            else snapshot = { ...(snapshot as Record<string, unknown>), responseImages: imageReport }
+          }
+          recordImages()
+          acc = rewriteResponseImageUrls(original, prepared.replacements)
           let writtenKey: string | undefined
           if (snapshotBytes && snapshot && typeof snapshot === 'object' && 'storageKey' in snapshot && typeof snapshot.storageKey === 'string') {
             try { await this.storage.write(snapshot.storageKey, snapshotBytes); writtenKey = snapshot.storageKey }
@@ -769,13 +792,39 @@ export class RequestsService implements OnModuleDestroy {
           }
           let transitioned = false
           try {
-            transitioned = await this.transition(id, failure ? 'failed' : 'succeeded', failure, acc, info, snapshot)
+            if (prepared.files.length) try {
+              transitioned = await this.transition(id, failure ? 'failed' : 'succeeded', failure, acc, info, snapshot, false, prepared.files, acc !== original ? original : undefined)
+            } catch {
+              // 파일 행·본문 트랜잭션이 실패하면 원문으로 완료하고 원인을 기록한다.
+              imageReport.saved = []
+              imageReport.failures.push(...responseImages.images.map(image => ({ source: image.sources[0]!, reason: '이미지 등록 실패' })))
+              recordImages()
+              if (writtenKey && snapshotBytes) {
+                try { await this.storage.write(writtenKey, snapshotBytes) }
+                catch { snapshot = JSON.parse(snapshotBytes.toString('utf8')) as unknown }
+              }
+              acc = original
+              transitioned = await this.transition(id, failure ? 'failed' : 'succeeded', failure, original, info, snapshot)
+              await Promise.all(prepared.files.map(file => this.storage.remove(file.storageKey).catch(() => undefined)))
+            }
+            else transitioned = await this.transition(id, failure ? 'failed' : 'succeeded', failure, acc, info, snapshot)
             if (transitioned) {
+              if (acc !== original) {
+                this.streamText.set(id, acc)
+                this.truncated.add(id)
+                this.emit(id, { event: 'replace', data: { field: 'content', text: acc } })
+              }
+              if (imageReport.saved.length) {
+                const [owner] = await this.db.select({ taskId: thread.taskId, srId: thread.srId }).from(thread).where(eq(thread.id, (await this.getRow(id)).threadId))
+                if (owner?.taskId) this.appEvents?.publish('file.updated', { taskId: owner.taskId })
+                if (owner?.srId) this.appEvents?.publish('sr.updated', { srId: owner.srId })
+              }
               this.emit(id, failure ? { event: 'failed', data: { error: failure, code: errorCode('failed', failure, info?.bytes ?? 0), requestInfo: publicInfo(info) } } : { event: 'completed', data: { requestInfo: publicInfo(info) } })
               if (!failure) void this.maybeTitle(id).catch(() => undefined)
             }
           } finally {
             if (writtenKey && !transitioned) await this.storage.remove(writtenKey)
+            if (!transitioned) await Promise.all(prepared.files.map(file => this.storage.remove(file.storageKey).catch(() => undefined)))
           }
         }
       } finally { this.runs.delete(id) }
@@ -789,7 +838,7 @@ export class RequestsService implements OnModuleDestroy {
     const [current] = await this.db.select().from(task).where(eq(task.id, owner.taskId))
     if (current?.titleSource !== 'default') return
     const rows = await this.db.select().from(message).where(eq(message.threadId, owner.id)).orderBy(message.seq)
-    const history: Message[] = rows.map((item) => ({ id: item.id, threadId: item.threadId, role: item.role as Message['role'], content: item.content,
+    const history: Message[] = rows.map((item) => ({ id: item.id, threadId: item.threadId, role: item.role as Message['role'], content: aiMessageContent(item),
       createdAt: item.createdAt.toISOString(), attachmentIds: [], status: item.status as Message['status'], kind: item.kind as Message['kind'] }))
     const title = await this.runAuxiliary(row.requestedBy, 'title', (signal) => suggestTitle(this.provider, row.model, history, signal))
     if (title) {
