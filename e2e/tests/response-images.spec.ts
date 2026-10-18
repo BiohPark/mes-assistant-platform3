@@ -1,4 +1,5 @@
 import { expect, test } from './owui-settings-fixture.js'
+import { revealMaterials } from './materials.js'
 
 test.skip((process.env.E2E_LLM_MODE ?? process.env.LLM_MODE) !== 'live', '가짜 OpenWebUI live 환경에서 실행')
 const fake = `http://127.0.0.1:${process.env.E2E_FAKE_OWUI_PORT ?? '3102'}`
@@ -45,8 +46,8 @@ for (const mode of ['session', 'direct'] as const) test(`AI 답변 이미지: ${
     await page.keyboard.press('Escape')
     await page.reload()
     await expect.poll(async () => page.getByRole('img', { name: 'generated', exact: true }).evaluate((node: HTMLImageElement) => node.complete && node.naturalWidth > 0)).toBe(true)
-    await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
-    await expect(page.getByText('AI 생성', { exact: true }).first()).toBeVisible()
+    await revealMaterials(page)
+    await expect(page.getByRole('complementary', { name: '#태그·SR 연결 자료' }).getByText('AI 생성', { exact: true }).first()).toBeVisible()
   } finally {
     expect((await page.request.patch('/api/settings', { data: { owuiMode: original.owuiMode ?? 'auto', owuiCleanup: original.owuiCleanup ?? true } })).ok()).toBe(true)
   }
