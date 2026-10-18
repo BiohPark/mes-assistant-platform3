@@ -3,7 +3,7 @@ import type { Response } from 'express'
 import { eq } from 'drizzle-orm'
 import type { AuthedRequest } from '../auth/guards.js'
 import { DB, type Db } from '../db/db.module.js'
-import { thread } from '../db/schema.js'
+import { appUser, thread } from '../db/schema.js'
 import { EventsService, type StoredEvent } from './events.service.js'
 import { assertSrAccess, assertThreadAccess } from '../sr/access.js'
 
@@ -40,15 +40,21 @@ export class EventsController {
     }
     res.on('close', cleanup)
     const write = (chunk: string) => { if (!closed && !res.write(chunk)) { cleanup(); res.end() } }
-    const requesterOnly = !!req.user!.isBusinessOwner && !req.user!.isSystemOwner
+    const actor = req.user!.id
     const send = async (event: StoredEvent) => {
-      if (await this.visible(req.user!.id, event, requesterOnly)) write(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`)
+      if (closed) return
+      // A long-lived connection must not retain the roles from its initial HTTP request.
+      const [user] = await this.db.select({ active: appUser.active, mustChangePassword: appUser.mustChangePassword,
+        isBusinessOwner: appUser.isBusinessOwner, isSystemOwner: appUser.isSystemOwner }).from(appUser).where(eq(appUser.id, actor))
+      if (!user?.active || user.mustChangePassword) { cleanup(); res.end(); return }
+      const requesterOnly = user.isBusinessOwner && !user.isSystemOwner
+      if (await this.visible(actor, event, requesterOnly)) write(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`)
     }
     const pending: StoredEvent[] = []
     let ready = false
     let delivery = Promise.resolve()
     unsubscribe = this.events.subscribe((event) => {
-      if (ready) delivery = delivery.then(() => send(event)).catch(() => cleanup())
+      if (ready) delivery = delivery.then(() => send(event)).catch(() => { cleanup(); res.end() })
       else pending.push(event)
     })
     const replay = this.events.replay(lastId)

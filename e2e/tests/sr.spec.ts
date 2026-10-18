@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './owui-settings-fixture.js'
 import { resolve } from 'node:path'
 import { createPool } from '../../apps/api/src/db/connection.js'
 import { FileStorageService } from '../../apps/api/src/files/fileStorage.service.js'

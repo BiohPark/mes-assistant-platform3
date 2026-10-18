@@ -1,4 +1,5 @@
-import { expect, test as base, type APIRequestContext, type Page } from '@playwright/test'
+import { type APIRequestContext } from '@playwright/test'
+import { expect, test as base, type Page } from './owui-settings-fixture.js'
 import type { Assistant } from '../../packages/contracts/src/catalog.js'
 import { createPool } from '../../apps/api/src/db/connection.js'
 

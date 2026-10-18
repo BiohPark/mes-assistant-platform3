@@ -28,6 +28,14 @@ import { EventEmitter } from 'node:events'
 import type { Response } from 'express'
 import { vi } from 'vitest'
 
+function sseResponse() {
+  const stream = new EventEmitter() as EventEmitter & { status: ReturnType<typeof vi.fn>; set: ReturnType<typeof vi.fn>;
+    flushHeaders: ReturnType<typeof vi.fn>; write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> }
+  stream.status = vi.fn(() => stream); stream.set = vi.fn(() => stream); stream.flushHeaders = vi.fn()
+  stream.write = vi.fn(() => true); stream.end = vi.fn(() => stream.emit('close'))
+  return stream
+}
+
 describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () => {
   let temp: Awaited<ReturnType<typeof createTempDb>>
   let client: Pool
@@ -106,19 +114,22 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     async function openAll() {
       for (const actor of actors) {
         const stream = makeStream(); streams.push(stream)
-        await controller.stream({ user: { id: actor } } as never, stream as unknown as Response, cursor)
+        const [user] = await db.select().from(appUser).where(eq(appUser.id, actor))
+        await controller.stream({ user } as never, stream as unknown as Response, cursor)
       }
     }
     try {
       if (delivery === 'live') await openAll()
       events.publish('sr.updated', { srId: draft.id })
       events.publish('sr.updated', { srId: other.id })
-      // 후속 이벤트까지 기다려 비공개 이벤트의 권한 판정 완료도 확인한다.
-      events.publish('task.updated', { taskId: 'barrier' })
+      events.publish('task.updated', { taskId: 'internal-task' })
+      // Every actor can see their own notification, including BOs that cannot see task events.
+      for (const actor of actors) events.publish('notification.created', { userId: actor, id: 'barrier' })
       if (delivery === 'replay') await openAll()
       await vi.waitFor(() => streams.forEach(stream => expect(stream.write.mock.calls.flat().join('')).toContain('barrier')))
       const ids = streams.map(stream => stream.write.mock.calls.flat().join('').split('\n').filter(line => line.startsWith('data: {"srId"')).map(line => JSON.parse(line.slice(6)).srId))
       expect(ids).toEqual([[draft.id], [other.id], [draft.id], [draft.id, other.id]])
+      expect(streams.map(stream => stream.write.mock.calls.flat().join('').includes('internal-task'))).toEqual([false, false, true, true])
     } finally { streams.forEach(stream => stream.emit('close')) }
   })
 
@@ -135,6 +146,86 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     expect(publish).not.toHaveBeenCalled()
     await service.content('requester', draft.id, { title: '최신 수정', body: '', attachmentIds: [], updatedAt: submitted.updatedAt })
     expect(publish).toHaveBeenCalledExactlyOnceWith('sr.updated', { srId: draft.id })
+  })
+
+  it.each(['live', 'replay'] as const)('revokes SR stream visibility after its staff task is unlinked on %s', async delivery => {
+    const draft = await sr.create('requester')
+    const linked = await new DbTasksService(db).create('staff', { assistantId }, undefined, draft.id)
+    const events = new EventsService(), controller = new EventsController(events, db)
+    const [user] = await db.select().from(appUser).where(eq(appUser.id, 'staff'))
+    const initial = sseResponse(), reconnect = sseResponse()
+    let stream = initial
+    const publishSrEvents = () => {
+      events.publish('sr.updated', { srId: draft.id })
+      events.publish('message.appended', { threadId: draft.threadId, taskId: '', messageId: 'private-message' })
+      events.publish('request.updated', { threadId: draft.threadId, taskId: null, requestId: 'private-request', status: 'pending' })
+      events.typing(draft.threadId, 'requester', 'private-name')
+      events.publish('notification.created', { userId: 'staff', id: 'barrier' })
+    }
+    try {
+      await controller.stream({ user } as never, initial as unknown as Response, events.cursor())
+      publishSrEvents()
+      await vi.waitFor(() => expect(initial.write.mock.calls.flat().join('')).toContain('barrier'))
+      expect(initial.write.mock.calls).toHaveLength(5)
+      initial.write.mockClear()
+      const cursor = events.cursor()
+      if (delivery === 'replay') { initial.emit('close'); publishSrEvents() }
+      // The last task granting this staff user access no longer belongs to the SR.
+      await db.update(task).set({ srId: null }).where(eq(task.id, linked.task.id))
+      if (delivery === 'live') publishSrEvents()
+      else { stream = reconnect; await controller.stream({ user } as never, reconnect as unknown as Response, cursor) }
+      await vi.waitFor(() => expect(stream.write.mock.calls.flat().join('')).toContain('barrier'))
+      expect(stream.write.mock.calls).toHaveLength(1)
+      expect(stream.write.mock.calls.flat().join('')).not.toContain(draft.id)
+      expect(stream.write.mock.calls.flat().join('')).not.toContain('private-')
+    } finally { initial.emit('close'); reconnect.emit('close') }
+  })
+
+  it.each([
+    { label: 'SO/BO loses SO', isSystemOwner: true, isBusinessOwner: true },
+    { label: 'member becomes BO', isSystemOwner: false, isBusinessOwner: false },
+  ].flatMap(roles => (['live', 'replay'] as const).map(delivery => ({ ...roles, delivery }))))(
+    'applies role downgrade ($label) to $delivery events despite an old connection role snapshot', async ({ isSystemOwner, isBusinessOwner, delivery }) => {
+    const actor = `sse-${isSystemOwner}-${delivery}`
+    await db.insert(appUser).values({ id: actor, name: actor, initials: 'S', color: '#123456', isSystemOwner, isBusinessOwner })
+    const own = await sr.create(actor), foreign = await sr.create('other')
+    const ordinary = await new DbTasksService(db).create('staff', { assistantId })
+    const events = new EventsService(), controller = new EventsController(events, db)
+    const [user] = await db.select().from(appUser).where(eq(appUser.id, actor))
+    const initial = sseResponse(), reconnect = sseResponse()
+    let stream = initial
+    const publishEvents = () => {
+      events.publish('task.created', { taskId: 'hidden-task', assistantId: 'hidden-assistant' })
+      for (const event of ['task.updated', 'file.updated', 'input.updated', 'context.updated', 'brief.updated'] as const) events.publish(event, { taskId: 'hidden-task' })
+      events.publish('message.appended', { threadId: ordinary.task.threadId!, taskId: ordinary.task.id, messageId: 'hidden-message' })
+      events.publish('request.updated', { threadId: ordinary.task.threadId!, taskId: ordinary.task.id, requestId: 'hidden-request', status: 'pending' })
+      events.typing(ordinary.task.threadId!, 'hidden-user', 'hidden-name')
+      events.publish('sr.updated', { srId: foreign.id })
+      events.publish('sr.updated', { srId: own.id })
+      events.publish('notification.created', { userId: actor, id: 'barrier' })
+    }
+    try {
+      await controller.stream({ user } as never, initial as unknown as Response, events.cursor())
+      events.publish('task.updated', { taskId: 'before' })
+      await vi.waitFor(() => expect(initial.write.mock.calls.flat().join('')).toContain('before'))
+      if (isSystemOwner) {
+        events.publish('sr.updated', { srId: foreign.id })
+        await vi.waitFor(() => expect(initial.write.mock.calls.flat().join('')).toContain(foreign.id))
+      }
+      initial.write.mockClear()
+      const cursor = events.cursor()
+      if (delivery === 'replay') { initial.emit('close'); publishEvents() }
+      await db.update(appUser).set({ isBusinessOwner: true, isSystemOwner: false }).where(eq(appUser.id, actor))
+      if (delivery === 'live') publishEvents()
+      else { stream = reconnect; await controller.stream({ user } as never, reconnect as unknown as Response, cursor) }
+      await vi.waitFor(() => expect(stream.write.mock.calls.flat().join('')).toContain('barrier'))
+      const chunks = stream.write.mock.calls.flat().join('')
+      expect(stream.write.mock.calls).toHaveLength(2)
+      expect(chunks).toContain(own.id)
+      expect(chunks).not.toContain(foreign.id)
+      expect(chunks).not.toContain('hidden-')
+      expect(chunks).not.toContain(ordinary.task.threadId!)
+    } finally { initial.emit('close'); reconnect.emit('close') }
   })
 
   const draftService = () => {
@@ -325,20 +416,23 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
         flushHeaders: ReturnType<typeof vi.fn>; write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> }
       stream.status = vi.fn(() => stream); stream.set = vi.fn(() => stream); stream.flushHeaders = vi.fn()
       stream.write = vi.fn(() => true); stream.end = vi.fn()
-      await controller.stream({ user: { id: actor } } as never, stream as unknown as Response, lastId)
+      const [user] = await db.select().from(appUser).where(eq(appUser.id, actor))
+      await controller.stream({ user } as never, stream as unknown as Response, lastId)
       return stream
     }
     const cursor = events.cursor()
     const live = await open(cursor)
     events.publish('request.updated', { requestId: 'secret', threadId: draft.threadId, taskId: null, status: 'pending' })
-    await vi.waitFor(() => expect(live.write.mock.calls.flat().join('')).not.toContain('secret'))
     events.publish('task.updated', { taskId: 'ordinary' })
-    await vi.waitFor(() => expect(live.write.mock.calls.flat().join('')).toContain('ordinary'))
+    events.publish('notification.created', { userId: 'other', id: 'barrier' })
+    await vi.waitFor(() => expect(live.write.mock.calls.flat().join('')).toContain('barrier'))
+    expect(live.write.mock.calls.flat().join('')).not.toContain('ordinary')
     expect(live.write.mock.calls.flat().join('')).not.toContain('secret')
     live.emit('close')
     const replay = await open(cursor)
     expect(replay.write.mock.calls.flat().join('')).not.toContain('secret')
-    expect(replay.write.mock.calls.flat().join('')).toContain('ordinary')
+    expect(replay.write.mock.calls.flat().join('')).not.toContain('ordinary')
+    expect(replay.write.mock.calls.flat().join('')).toContain('barrier')
     replay.emit('close')
     const requester = await open(cursor, 'requester')
     expect(requester.write.mock.calls.flat().join('')).toContain('secret')
@@ -346,7 +440,7 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
   })
 
   it.each(['other', 'staff', 'requester', 'owner'].flatMap((actor) => ['live', 'replay'].map((delivery) => ({ actor, delivery }))))(
-    'filters SR typing for $actor on $delivery delivery while preserving ordinary typing', async ({ actor, delivery }) => {
+    'filters SR and ordinary typing according to current roles for $actor on $delivery', async ({ actor, delivery }) => {
     const draft = await sr.create('requester')
     const ordinary = await new DbTasksService(db).create('staff', { assistantId })
     const events = new EventsService(), controller = new EventsController(events, db)
@@ -355,7 +449,8 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
         flushHeaders: ReturnType<typeof vi.fn>; write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> }
       stream.status = vi.fn(() => stream); stream.set = vi.fn(() => stream); stream.flushHeaders = vi.fn()
       stream.write = vi.fn(() => true); stream.end = vi.fn()
-      await controller.stream({ user: { id: actor } } as never, stream as unknown as Response, lastId)
+      const [user] = await db.select().from(appUser).where(eq(appUser.id, actor))
+      await controller.stream({ user } as never, stream as unknown as Response, lastId)
       return stream
     }
     const cursor = events.cursor()
@@ -364,12 +459,15 @@ describe('SR DB (demo conversations 105/114/121; notifications 35/57/69)', () =>
     try {
       events.typing(draft.threadId, 'requester', '비공개 입력자')
       events.typing(ordinary.task.threadId!, 'staff', '일반 입력자')
+      events.publish('notification.created', { userId: actor, id: 'barrier' })
       stream ??= await open(cursor)
-      // Delivery is ordered: seeing the ordinary event means the SR event has been processed.
-      await vi.waitFor(() => expect(stream!.write.mock.calls.flat().join('')).toContain('일반 입력자'))
+      // Wait for an allowed event after both typing events, so negative assertions cannot pass early.
+      await vi.waitFor(() => expect(stream!.write.mock.calls.flat().join('')).toContain('barrier'))
       const chunks = stream.write.mock.calls.flat().join('')
       expect(chunks.includes(draft.threadId)).toBe(canReadSr)
       expect(chunks.includes('비공개 입력자')).toBe(canReadSr)
+      expect(chunks.includes('일반 입력자')).toBe(actor === 'staff' || actor === 'owner')
+      expect(chunks.includes(ordinary.task.threadId!)).toBe(actor === 'staff' || actor === 'owner')
     } finally { stream?.emit('close') }
   })
 

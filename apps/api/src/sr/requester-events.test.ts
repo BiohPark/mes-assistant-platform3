@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { SessionGuard, type AuthedRequest } from '../auth/guards.js'
 import type { AuthUser, SessionStore } from '../auth/session.service.js'
 import type { Db } from '../db/db.module.js'
+import { appUser } from '../db/schema.js'
 import { EventsController } from '../events/events.controller.js'
 import { EventsService } from '../events/events.service.js'
 
@@ -46,7 +47,8 @@ it.each(['live', 'replay'] as const)('delivers only own SR events and notificati
     where.mockResolvedValueOnce([{ srId: 'own-sr' }]).mockResolvedValueOnce([{ srId: 'other-sr' }])
       .mockResolvedValueOnce([{ srId: null }]).mockResolvedValueOnce([])
   }
-  const db = { select: () => ({ from: () => ({ where }) }) } as unknown as Db
+  const db = { select: () => ({ from: (table: unknown) => ({ where: table === appUser
+    ? async () => [{ ...bo, active: true, mustChangePassword: false }] : where }) }) } as unknown as Db
   const events = new EventsService(), controller = new EventsController(events, db)
   const stream = new EventEmitter() as EventEmitter & Pick<Response, 'status' | 'set' | 'flushHeaders' | 'write'>
   stream.status = vi.fn(() => stream) as unknown as Response['status']

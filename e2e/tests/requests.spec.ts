@@ -39,25 +39,28 @@ test('S7 두 탭의 동시 전송 중 하나만 시작한다', async ({ page, co
   await second.close()
 })
 
-test('S8 Mock 답변에 사용한 자료와 요청 기록을 표시한다', async ({ page }) => {
+test.describe('Mock 전용 요청 기록', () => {
+  // 본문 skip은 page/worker fixture 초기화 뒤에 실행된다. live에서는 수집 단계에서 제외한다.
   test.skip((process.env.E2E_LLM_MODE ?? process.env.LLM_MODE) === 'live', 'Mock 전용 시나리오 — live 모드에서는 건너뜀')
-  await setup(page)
-  await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: 'e2e-input.txt', mimeType: 'text/plain', buffer: Buffer.from('참고 입력') })
-  await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('자료를 사용해 답변해 줘')
-  await page.getByRole('button', { name: '전송', exact: true }).click()
-  await expect(page.getByText(/사용한 자료.*Mock 대역 표시/).first()).toBeVisible({ timeout: 15_000 })
-  // 답변 본문이 보여도 요청 기록은 종료 전이 뒤에 확정된다 — 중지 버튼이 사라질 때(응답 종료)까지 기다린 뒤 기록을 연다
-  await expect(page.getByRole('button', { name: '중지' })).toBeHidden({ timeout: 15_000 }) // mock 스트리밍(18 ms/청크)이 병렬 부하에서 5 s를 넘길 수 있다
-  await page.getByRole('button', { name: '사용한 자료' }).click()
-  await expect(page.getByRole('dialog')).toContainText('e2e-input.txt')
-  await expect(page.getByRole('link', { name: '원본 JSON 다운로드' })).toHaveAttribute('href', /\/snapshot$/)
-  await page.keyboard.press('Escape')
-  // S13 스테이징(D54 개정): 첨부는 그 턴에만 간다 — 두 번째 턴의 사용한 자료에는 없다
-  await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('두 번째 턴 질문')
-  await page.getByRole('button', { name: '전송', exact: true }).click()
-  await expect(page.getByRole('button', { name: '사용한 자료' })).toHaveCount(2)
-  await expect(page.getByRole('button', { name: '중지' })).toBeHidden()
-  await page.getByRole('button', { name: '사용한 자료' }).last().click()
-  await expect(page.getByRole('dialog')).not.toContainText('e2e-input.txt')
-  await expect(page.getByRole('link', { name: '원본 JSON 다운로드' })).toHaveAttribute('href', /\/snapshot$/)
+  test('S8 Mock 답변에 사용한 자료와 요청 기록을 표시한다', async ({ page }) => {
+    await setup(page)
+    await page.locator('[data-tour="composer"] input[type="file"]').setInputFiles({ name: 'e2e-input.txt', mimeType: 'text/plain', buffer: Buffer.from('참고 입력') })
+    await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('자료를 사용해 답변해 줘')
+    await page.getByRole('button', { name: '전송', exact: true }).click()
+    await expect(page.getByText(/사용한 자료.*Mock 대역 표시/).first()).toBeVisible({ timeout: 15_000 })
+    // 답변 본문이 보여도 요청 기록은 종료 전이 뒤에 확정된다 — 중지 버튼이 사라질 때(응답 종료)까지 기다린 뒤 기록을 연다
+    await expect(page.getByRole('button', { name: '중지' })).toBeHidden({ timeout: 15_000 }) // mock 스트리밍(18 ms/청크)이 병렬 부하에서 5 s를 넘길 수 있다
+    await page.getByRole('button', { name: '사용한 자료' }).click()
+    await expect(page.getByRole('dialog')).toContainText('e2e-input.txt')
+    await expect(page.getByRole('link', { name: '원본 JSON 다운로드' })).toHaveAttribute('href', /\/snapshot$/)
+    await page.keyboard.press('Escape')
+    // S13 스테이징(D54 개정): 첨부는 그 턴에만 간다 — 두 번째 턴의 사용한 자료에는 없다
+    await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill('두 번째 턴 질문')
+    await page.getByRole('button', { name: '전송', exact: true }).click()
+    await expect(page.getByRole('button', { name: '사용한 자료' })).toHaveCount(2)
+    await expect(page.getByRole('button', { name: '중지' })).toBeHidden()
+    await page.getByRole('button', { name: '사용한 자료' }).last().click()
+    await expect(page.getByRole('dialog')).not.toContainText('e2e-input.txt')
+    await expect(page.getByRole('link', { name: '원본 JSON 다운로드' })).toHaveAttribute('href', /\/snapshot$/)
+  })
 })
