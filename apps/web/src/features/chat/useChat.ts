@@ -3,7 +3,7 @@ import { useAnswerDetail } from './useAnswerDetail'
 import { newId } from '@/lib/ids'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { cancelRequest, getRequest, isTerminalRequest, streamRequest } from '@/api/requests'
+import { RequestHttpError, cancelRequest, getRequest, isTerminalRequest, streamRequest } from '@/api/requests'
 import { useSlowRequestBubble } from '@/features/assistant-pill/bubbles'
 import { rememberMyRequest } from '@/features/assistant-pill/replyBubble'
 import { getDraft, setDraft, type ComposerDraft } from './drafts'
@@ -166,6 +166,11 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
             if (!terminal) await settle()
             if (!terminal) throw new Error(t('chat.streamDisconnected'))
           } catch (error) {
+            if (error instanceof RequestHttpError && error.status === 409 && error.code === 'INPUT_SELECTION_CHANGED') {
+              terminal = true // 서버가 생성 전에 거부했으므로 이 시도는 재생하지 않는다.
+              void query.invalidateQueries({ queryKey: ['estimate', attempt.threadId] })
+              throw new Error(t('task.materials.selectionChanged'))
+            }
             if (detached) break
             if (!terminal) await settle()
             // 끝이 확인됐으면(이벤트·상태 확인) 스트림 오류는 무시한다 — 실패는 아래에서 failed로 알린다
@@ -190,7 +195,7 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
           await query.invalidateQueries({ queryKey: ['messages', attempt.threadId] })
           await query.invalidateQueries({ queryKey: ['activity'] })
           // 사용 기록(chat_request_input)은 전달 단계에서 쌓인다 — 끝난 뒤 자료함의 사용됨·첨부됨을 다시 읽는다(완료 SSE는 이 목록을 건드리지 않는다)
-          for (const key of ['candidates', 'sr-inputs', 'conversation-inputs']) void query.invalidateQueries({ queryKey: [key] })
+          for (const key of ['candidate-count', 'candidates', 'sr-inputs', 'conversation-inputs']) void query.invalidateQueries({ queryKey: [key] })
         }
       }
     })()
@@ -234,10 +239,10 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
     hasPendingAttempt: () => !!(threadId && load(threadId)),
     /** 보관된(전송하지 못한) 시도의 내용 — 다음 전송이 이것을 그대로 다시 보낸다 */
     pendingAttempt: (): { text: string; attachmentIds: string[] } | null => { const attempt = threadId ? load(threadId) : null; return attempt && { text: attempt.text, attachmentIds: attempt.attachmentIds } },
-    send: (content: string, attachmentIds: string[] = [], oneShotFileIds: string[] = [], startedAt = Date.now()) => {
+    send: (content: string, attachmentIds: string[] = [], oneShotFileIds: string[] = [], startedAt = Date.now(), inputSignature?: string) => {
       if (!threadId) throw new Error(t('chat.noThread'))
       const attempt = load(threadId) ?? { key: newId(), threadId, startedAt, text: content, attachmentIds,
-        path: `/threads/${encodeURIComponent(threadId)}/requests`, detailCaptured: true, body: { content, attachmentIds, oneShotFileIds, ...(detail === 'full' ? { detail } : {}) } }
+        path: `/threads/${encodeURIComponent(threadId)}/requests`, detailCaptured: true, body: { content, attachmentIds, oneShotFileIds, ...(inputSignature ? { inputSignature } : {}), ...(detail === 'full' ? { detail } : {}) } }
       save(attempt)
       return consume(attempt)
     },

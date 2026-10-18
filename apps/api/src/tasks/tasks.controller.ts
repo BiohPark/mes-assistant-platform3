@@ -37,6 +37,9 @@ export class TasksController {
   constructor(@Inject(DbTasksService) private readonly tasks: DbTasksService, @Inject(TaskExtrasService) private readonly extras: TaskExtrasService,
     @Inject(TaskBriefService) private readonly brief: TaskBriefService) {}
 
+  @Get(':id/candidate-count')
+  candidateCount(@Req() req: AuthedRequest, @Param('id') id: string) { return this.tasks.candidateCount(req.user!.id, id) }
+
   @Post()
   async create(@Req() req: AuthedRequest, @Body() body: unknown, @Headers('idempotency-key') key?: string) {
     const input = parse(createSchema, body)

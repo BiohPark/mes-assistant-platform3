@@ -42,3 +42,17 @@ describe('BO events session guard', () => {
     await expect(authorize('GET', '/api/events', user)).resolves.toMatchObject({ allowed: true })
   })
 })
+
+
+describe('BO previous materials guard', () => {
+  const path = '/api/tasks/own-sr-task/conversation-inputs/previous-materials'
+  it('allows the candidate GET while the service enforces requester scope', async () => {
+    await expect(authorize('GET', path)).resolves.toEqual({ allowed: true, user: requester })
+  })
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('rejects %s on the candidate route', async method => {
+    await expect(authorize(method, path)).rejects.toMatchObject({ status: 403 })
+  })
+  it.each(['/api/tasks/t/conversation-inputs', '/api/tasks/t/conversation-inputs/previous-materials/private', '/api/tasks/t/conversation-inputs/source'])('keeps adjacent GET %s restricted', async path => {
+    await expect(authorize('GET', path)).rejects.toMatchObject({ status: 403 })
+  })
+})

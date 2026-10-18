@@ -14,6 +14,7 @@ function allowedBusinessOwnerRoute(method: string, path: string): boolean {
   if (method === 'GET' && (path === '/api/me' || path === '/api/service-requests/intake-assistant')) return true
   if (method === 'POST' && (path === '/api/auth/logout' || path === '/api/auth/password')) return true
   if (method === 'PATCH' && (path === '/api/me' || path === '/api/users/me')) return true
+  if (method === 'GET' && /^\/api\/tasks\/[^/]+\/conversation-inputs\/previous-materials$/.test(path)) return true // 서비스가 대상 대화·자료의 현재 접근 범위를 확인한다.
   if (path === '/api/service-requests') return method === 'GET' || method === 'POST'
   if (/^\/api\/service-requests\/[^/]+$/.test(path)) return method === 'GET' || method === 'DELETE'
   if (/^\/api\/service-requests\/[^/]+\/draft$/.test(path)) return method === 'GET'

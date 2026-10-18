@@ -1,7 +1,7 @@
 import { newId } from '@/lib/ids'
 import type { RequestInfo } from '@mes/domain'
 
-export type RequestEstimate = RequestInfo & { overLimit: boolean; attachmentLimit: number }
+export type RequestEstimate = RequestInfo & { overLimit: boolean; attachmentLimit: number; inputSignature: string }
 export async function estimateRequest(threadId: string, body: { draft?: string; attachmentIds?: string[]; oneShotFileIds?: string[] }): Promise<RequestEstimate> {
   return check(await fetch(`/api/threads/${encodeURIComponent(threadId)}/requests/estimate`, { method: 'POST', credentials: 'same-origin',
     headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).then((response) => response.json()) as Promise<RequestEstimate>
@@ -49,10 +49,14 @@ export interface RequestRecord {
 /** 서버 요청의 끝 상태 — 이 상태면 더 기다리지 않는다 */
 export const isTerminalRequest = (status?: string) => status === 'succeeded' || status === 'failed' || status === 'cancelled' || status === 'interrupted'
 
+export class RequestHttpError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string) { super(message) }
+}
+
 async function check(response: Response) {
   if (response.ok) return response
-  const body = await response.json().catch(() => ({})) as { message?: string | { code?: string } }
-  throw new Error(typeof body.message === 'string' ? body.message : body.message?.code ?? `HTTP ${response.status}`)
+  const body = await response.json().catch(() => ({})) as { code?: string; message?: string | { code?: string } }
+  throw new RequestHttpError(typeof body.message === 'string' ? body.message : body.code ?? body.message?.code ?? `HTTP ${response.status}`, response.status, body.code ?? (typeof body.message === 'object' ? body.message?.code : undefined))
 }
 
 export async function readSse(reader: ReadableStreamDefaultReader<Uint8Array>, onEvent: (event: string, data: Record<string, unknown>) => void) {

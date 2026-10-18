@@ -41,6 +41,17 @@ describe('requests HTTP', () => {
     expect(start).toHaveBeenCalledWith('u', 't', { content: 'x'.repeat(270_000) }, 'key')
   })
 
+  it('accepts an estimate signature and rejects malformed signatures before starting a stream', async () => {
+    const inputSignature = 'a'.repeat(64)
+    await request(app.getHttpServer()).post('/api/threads/t/requests').set('Cookie', 'mes_session=x')
+      .set('Idempotency-Key', 'signed').send({ content: 'signed question', inputSignature }).expect(201)
+    expect(start).toHaveBeenLastCalledWith('u', 't', { content: 'signed question', inputSignature }, 'signed')
+    for (const invalid of ['', 'a'.repeat(63), 'g'.repeat(64), 123]) {
+      await request(app.getHttpServer()).post('/api/threads/t/requests').set('Cookie', 'mes_session=x')
+        .set('Idempotency-Key', 'invalid').send({ content: 'question', inputSignature: invalid }).expect(400)
+    }
+  })
+
   it('accepts estimate draft without an idempotency key', async () => {
     const response = await request(app.getHttpServer()).post('/api/threads/t/requests/estimate').set('Cookie', 'mes_session=x')
       .send({ draft: 'x'.repeat(270_000), attachmentIds: [] }).expect(201)

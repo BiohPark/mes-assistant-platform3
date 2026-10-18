@@ -1,16 +1,19 @@
+import type { PreviousMaterial } from '@mes/contracts'
+import { assertFileReadable, taskSrAttachments } from '../files/sr-attachments.js'
+import { linkedTaskSrs } from '../tasks/sr-inputs.service.js'
 import { randomUUID } from 'node:crypto'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common'
 import { byteLength, eligibleMessages, newMessagesSince, renderAnswer, type AnswerDetail, type AnswerStep, type ContextSnapshot, type ConversationInput, type Message } from '@mes/domain'
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { DB, type Db } from '../db/db.module.js'
 import { EventsService } from '../events/events.service.js'
-import { activityLog, appUser, assistant, chatRequest, chatRequestInput, contextSnapshot, contextSnapshotMessage, conversationInput, message, tag, task, taskTag, thread } from '../db/schema.js'
+import { activityLog, appUser, assistant, chatRequest, chatRequestInput, contextSnapshot, contextSnapshotMessage, conversationInput, fileObject, message, tag, task, taskTag, thread } from '../db/schema.js'
 import { assertTaskAccess } from '../sr/access.js'
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 type Weight = 'main' | 'reference'
 type Mode = 'full' | 'messages' | 'summary'
-export interface SelectConversation { mode: Mode; weight?: Weight; messageIds?: string[]; summary?: { text: string; source: 'ai' | 'rule'; model?: string; messageIds: string[] } }
+export interface SelectConversation { mode: Mode; snapshotId?: string; weight?: Weight; messageIds?: string[]; summary?: { text: string; source: 'ai' | 'rule'; model?: string; messageIds: string[] } }
 const id = () => randomUUID()
 const badIds = () => new BadRequestException({ code: 'INVALID_MESSAGE_IDS' })
 const eligible = (rows: (typeof message.$inferSelect)[]): Message[] => eligibleMessages(rows.map((row) => ({
@@ -126,6 +129,45 @@ export class DbConversationInputsService {
   }
   async list(taskId: string, actor?: string) { return (await this.load(taskId, actor)).map(({ messages: _messages, ...row }) => row) }
 
+  /** Only the immediately preceding AI request, with present-day existence and access checks. */
+  async previousMaterials(actor: string, taskId: string): Promise<PreviousMaterial[]> {
+    await assertTaskAccess(this.db, actor, taskId)
+    await this.taskRow(taskId)
+    const [previous] = await this.db.select({ id: chatRequest.id }).from(chatRequest)
+      .innerJoin(thread, eq(thread.id, chatRequest.threadId)).innerJoin(message, eq(message.id, chatRequest.userMessageId))
+      .where(eq(thread.taskId, taskId)).orderBy(desc(message.seq), desc(chatRequest.createdAt), desc(chatRequest.id)).limit(1)
+    if (!previous) return []
+    const rows = await this.db.select().from(chatRequestInput).where(eq(chatRequestInput.requestId, previous.id)).orderBy(chatRequestInput.seq)
+    const linked = await linkedTaskSrs(this.db, actor, taskId)
+    const result: PreviousMaterial[] = []
+    let linkedFiles: Set<string> | undefined
+    for (const row of rows) {
+      try {
+        if (row.kind === 'file' && row.fileId) {
+          const [file] = await this.db.select().from(fileObject).where(and(eq(fileObject.id, row.fileId), isNull(fileObject.deletedAt)))
+          if (!file) continue
+          await assertFileReadable(this.db, actor, file.id)
+          if (file.originSrId) {
+            linkedFiles ??= new Set((await taskSrAttachments(this.db, taskId)).map(item => item.file.id))
+            if (!linkedFiles.has(file.id)) continue
+          } else if (file.originTaskId !== taskId && (!file.originTaskId || !(await this.shared(taskId, file.originTaskId)))) continue
+          if (file.originTaskId) await this.taskRow(file.originTaskId)
+          result.push({ kind: 'file', fileId: file.id, weight: row.weight as Weight })
+        } else if (row.kind === 'sr' && row.srId && linked.some(sr => sr.id === row.srId)) {
+          result.push({ kind: 'sr', srId: row.srId })
+        } else if (row.kind === 'conversation' && row.sourceTaskId && row.snapshotId) {
+          await assertTaskAccess(this.db, actor, row.sourceTaskId)
+          await this.taskRow(row.sourceTaskId)
+          if (!(await this.shared(taskId, row.sourceTaskId))) continue
+          result.push({ kind: 'conversation', sourceTaskId: row.sourceTaskId, snapshotId: row.snapshotId, mode: row.mode as Mode, weight: row.weight as Weight })
+        }
+      } catch (error) {
+        if (!(error instanceof ForbiddenException || error instanceof NotFoundException)) throw error
+      }
+    }
+    return result
+  }
+
   async select(actor: string, taskId: string, sourceTaskId: string, options: SelectConversation, allowDetachedFull = false) {
     await assertTaskAccess(this.db, actor, taskId)
     await assertTaskAccess(this.db, actor, sourceTaskId)
@@ -139,6 +181,18 @@ export class DbConversationInputsService {
       const [existing] = await tx.select().from(conversationInput).where(and(eq(conversationInput.taskId, taskId), eq(conversationInput.sourceTaskId, sourceTaskId))).for('update')
       if (!(allowDetachedFull && options.mode === 'full' && existing) && (options.mode !== 'summary' || !existing)
         && !(await this.shared(taskId, sourceTaskId, tx))) throw new ConflictException({ code: 'TAG_NOT_SHARED' })
+      if (options.snapshotId) {
+        const [recorded] = await tx.select({ snapshot: contextSnapshot }).from(chatRequestInput)
+          .innerJoin(chatRequest, eq(chatRequest.id, chatRequestInput.requestId)).innerJoin(thread, eq(thread.id, chatRequest.threadId))
+          .innerJoin(contextSnapshot, eq(contextSnapshot.id, chatRequestInput.snapshotId))
+          .where(and(eq(thread.taskId, taskId), eq(chatRequestInput.sourceTaskId, sourceTaskId), eq(contextSnapshot.id, options.snapshotId))).limit(1)
+        if (!recorded || recorded.snapshot.mode !== options.mode) throw new BadRequestException('이 대화에서 사용한 자료 기록이 아닙니다')
+        const values = { snapshotId: options.snapshotId, mode: options.mode, weight: options.weight ?? existing?.weight ?? 'reference', selectedBy: actor, selectedAt: new Date() }
+        if (existing) await tx.update(conversationInput).set(values).where(eq(conversationInput.id, existing.id))
+        else await tx.insert(conversationInput).values({ id: id(), taskId, sourceTaskId, ...values })
+        await tx.insert(activityLog).values({ id: id(), type: 'context.selected', userId: actor, taskId, payload: { snapshotId: options.snapshotId, mode: options.mode } })
+        return
+      }
       const all = await this.messages(sourceTaskId, tx)
       const supplied = options.mode === 'summary' ? options.summary?.messageIds : options.messageIds
       if (supplied && (new Set(supplied).size !== supplied.length || supplied.some((value) => !all.some((row) => row.id === value)))) throw badIds()

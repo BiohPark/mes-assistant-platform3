@@ -14,7 +14,7 @@ const file = { kind: 'file' as const, fileId: 'f', name: 'spec.txt', version: 2,
 const conversation = { kind: 'conversation' as const, sourceTaskId: 's', code: 'WK-2026-0002', title: '원본 대화', assistantName: 'A', mode: 'summary' as const, weight: 'main' as const, snapshotId: 'snap', messageCount: 3, bytes: 50 }
 const sr = { kind: 'sr' as const, srId: 'sr1', code: 'SR-2026-0001', title: '알람 필터', weight: 'reference' as const, bytes: 40 }
 const data: NonNullable<RequestEstimateState['data']> = {
-  at: '2026-09-28T00:00:00.000Z', provider: 'mock', transport: 'inline', model: 'mock', bytes: 400, limitBytes: 1000, srCodes: ['SR-2026-0009'], srs: [{ code: 'SR-2026-0009', title: '연결만 된 SR' }], overLimit: false, attachmentLimit: 10,
+  at: '2026-09-28T00:00:00.000Z', provider: 'mock', transport: 'inline', model: 'mock', bytes: 400, limitBytes: 1000, srCodes: ['SR-2026-0009'], srs: [{ code: 'SR-2026-0009', title: '연결만 된 SR' }], overLimit: false, attachmentLimit: 10, inputSignature: 'a'.repeat(64),
   inputs: [file, conversation, sr],
 }
 const me = { id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member' as const], theme: 'system' as const, locale: 'ko' as const }
@@ -48,9 +48,12 @@ it('추정(보낼 것)의 파일·대화·SR 본문이 입력창 칩으로 보�
   expect(screen.getByRole('button', { name: 'WK-2026-0002 주 입력 전환' })).toHaveAttribute('aria-pressed', 'true')
   expect(screen.queryByRole('button', { name: 'SR-2026-0001 주 입력 전환' })).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'spec.txt 주 입력 전환' }))
-  fireEvent.click(screen.getByRole('button', { name: 'spec.txt 첨부 취소' }))
-  fireEvent.click(screen.getByRole('button', { name: 'WK-2026-0002 첨부 취소' }))
-  fireEvent.click(screen.getByRole('button', { name: 'SR-2026-0001 첨부 취소' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'spec.txt 첨부 빼기' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: 'spec.txt 첨부 빼기' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'WK-2026-0002 첨부 빼기' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: 'WK-2026-0002 첨부 빼기' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'SR-2026-0001 첨부 빼기' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: 'SR-2026-0001 첨부 빼기' }))
   await waitFor(() => expect(calls).toEqual(expect.arrayContaining([
     ['/api/tasks/t/inputs/f', 'PUT'], ['/api/tasks/t/inputs/f', 'DELETE'], ['/api/tasks/t/conversation-inputs/s', 'DELETE'], ['/api/tasks/t/sr-inputs/sr1', 'DELETE'],
   ])))
@@ -58,7 +61,7 @@ it('추정(보낼 것)의 파일·대화·SR 본문이 입력창 칩으로 보�
 
 it('완료된 대화는 칩을 막고, 새 추정을 기다리는 동안 칩을 흐리게 두되 누를 수 있다', () => {
   const { rerender } = mount({ data, pending: false, revisionChanged: false }, { target: { ...task, status: 'done' } })
-  expect(screen.getByRole('button', { name: 'spec.txt 첨부 취소' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'spec.txt 첨부 빼기' })).toBeDisabled()
   rerender({ data, pending: true, revisionChanged: true })
   expect(screen.getAllByRole('listitem')[0]).toHaveClass('opacity-60')
 })

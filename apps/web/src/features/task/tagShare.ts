@@ -59,7 +59,7 @@ export async function changeTagWithShare(query: QueryClient, taskId: string, act
   const before = query.getQueryData<Candidates>(key) ?? await getCandidates(taskId).catch(() => undefined)
   await action()
   await query.cancelQueries({ queryKey: key }) // 태그 변경 전에 시작한 조회가 새 결과를 덮지 않게
-  for (const related of [['conversation-inputs', taskId], ['sr-inputs', taskId], ['estimate']]) void query.invalidateQueries({ queryKey: related })
+  for (const related of [['candidate-count', taskId], ['conversation-inputs', taskId], ['sr-inputs', taskId], ['estimate']]) void query.invalidateQueries({ queryKey: related })
   // 태그는 이미 바뀌었다 — 다시 읽기가 실패하면 표시 없이 자료함 조회에 맡긴다
   const after = await getCandidates(taskId).catch(() => undefined)
   if (!after) { void query.invalidateQueries({ queryKey: key }); return }

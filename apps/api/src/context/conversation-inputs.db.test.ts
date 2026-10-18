@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { drizzle } from 'drizzle-orm/mysql2'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { Pool } from 'mysql2/promise'
 import type { Db } from '../db/db.module.js'
 import { createPool } from '../db/connection.js'
 import { runMigrations } from '../db/migrate.js'
 import { seedCatalog } from '../db/seed.js'
-import { appUser, assistant, chatRequest, chatRequestInput, contextSnapshot, contextSnapshotMessage, conversationInput, message } from '../db/schema.js'
+import { appUser, assistant, chatRequest, chatRequestInput, contextSnapshot, contextSnapshotMessage, conversationInput, message, task, taskAssignee, taskInput, fileObject, serviceRequest } from '../db/schema.js'
 import { createTempDb } from '../test/tempDb.js'
 import { DbTasksService } from '../tasks/tasks.service.js'
 import { TaskExtrasService } from '../tasks/task-extras.service.js'
@@ -253,6 +253,27 @@ describe('conversation inputs DB', () => {
     } finally { vi.restoreAllMocks(); runner.onModuleDestroy() }
   })
 
+  it('reattaches the exact previous snapshot once, excludes deleted sources, and never falls back to older requests', async () => {
+    const source = await make(['reattach'], ['original', 'answer'])
+    const mine = await make(['reattach'])
+    const chosen = await service.select(actor, mine.task.id, source.task.id, { mode: 'messages', messageIds: [`${source.task.id}-0`], weight: 'main' })
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' }), new MockProvider())
+    try {
+      const first = await runner.start(actor, mine.thread.id, { content: 'first' }, id()); await first.done
+      expect(await service.list(mine.task.id)).toEqual([])
+      const previous = await service.previousMaterials(actor, mine.task.id)
+      expect(previous).toEqual([{ kind: 'conversation', sourceTaskId: source.task.id, snapshotId: chosen.snapshot.id, mode: 'messages', weight: 'main' }])
+      await service.select(actor, mine.task.id, source.task.id, { mode: 'messages', snapshotId: chosen.snapshot.id, weight: 'main' })
+      expect((await service.list(mine.task.id))[0]?.snapshot).toEqual(chosen.snapshot)
+      await expect(service.select(actor, source.task.id, mine.task.id, { mode: 'messages', snapshotId: chosen.snapshot.id })).rejects.toMatchObject({ status: 400 })
+      const second = await runner.start(actor, mine.thread.id, { content: 'second' }, id()); await second.done
+      expect(JSON.stringify(await runner.snapshot(second.id))).toContain('original')
+      expect((await runner.get(second.id)).inputs).toMatchObject([{ kind: 'conversation', snapshotId: chosen.snapshot.id }])
+      const empty = await runner.start(actor, mine.thread.id, { content: 'no materials' }, id()); await empty.done
+      expect(await service.previousMaterials(actor, mine.task.id)).toEqual([])
+    } finally { runner.onModuleDestroy() }
+  })
+
   it('places only pinned source messages in the reference section of the request', async () => {
     const source = await make(['context-full-prompt'], ['선택 질문', '선택 답변'])
     await db.insert(message).values({ id: `${source.task.id}-note`, threadId: source.thread.id, seq: 3, role: 'user', kind: 'discussion', content: '팀 의견 제외', status: 'done', authorId: actor })
@@ -269,6 +290,60 @@ describe('conversation inputs DB', () => {
       expect(snapshot).not.toContain('팀 의견 제외')
     } finally { runner.onModuleDestroy() }
   })
+  it('filters previous materials using real DB permissions after a participant becomes a business owner', async () => {
+    const source = await make(['previous-access'], ['permission source'])
+    const mine = await make(['previous-access'])
+    const other = 'previous-other'
+    await db.insert(appUser).values({ id: other, name: 'Other', initials: 'O', color: '#123456' })
+    await db.update(task).set({ createdBy: other, ownerId: other }).where(eq(task.id, source.task.id))
+    await service.select(actor, mine.task.id, source.task.id, { mode: 'full' })
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173' }), new MockProvider())
+    try {
+      const first = await runner.start(actor, mine.thread.id, { content: 'permission check' }, id()); await first.done
+      expect(await service.previousMaterials(actor, mine.task.id)).toHaveLength(1)
+      await db.update(appUser).set({ isBusinessOwner: true }).where(eq(appUser.id, actor))
+      // A business owner still has access while assigned. Remove that last grant to model real permission loss.
+      expect(await service.previousMaterials(actor, mine.task.id)).toHaveLength(1)
+      await db.delete(taskAssignee).where(and(eq(taskAssignee.taskId, source.task.id), eq(taskAssignee.userId, actor)))
+      expect(await service.previousMaterials(actor, mine.task.id)).toEqual([])
+      await expect(service.previousMaterials(actor, source.task.id)).rejects.toMatchObject({ status: 403 })
+    } finally { await db.update(appUser).set({ isBusinessOwner: false }).where(eq(appUser.id, actor)); runner.onModuleDestroy() }
+  })
+
+  it('counts picker candidates in one query regardless of volume, respecting versions, tags, SRs and access', async () => {
+    const source = await make(['count-direct'])
+    const mine = await make(['count-direct', 'SR-2099-9999'])
+    const hidden = await make(['count-indirect'])
+    const fixture = (id: string, originTaskId: string, previousId: string | null = null, version = 1) => ({ id, kind: 'task_file', originTaskId, originalName: 'count.txt', mime: 'text/plain', sizeBytes: 5, sha256: 'a'.repeat(64), storageKey: id, source: 'upload', version, previousId, uploadedBy: actor })
+    const prefix = mine.task.id
+    const old = `${prefix}-old`, newer = `${prefix}-new`
+    await db.insert(fileObject).values([fixture(old, source.task.id), fixture(`${prefix}-own`, mine.task.id), fixture(`${prefix}-hidden`, hidden.task.id)])
+    await db.insert(fileObject).values(fixture(newer, source.task.id, old, 2))
+    await db.insert(taskInput).values({ taskId: mine.task.id, fileId: old, weight: 'reference', sortOrder: 0, selectedBy: actor })
+    await db.insert(serviceRequest).values({ id: `${prefix}-sr`, code: 'SR-2099-9999', requesterId: actor, titleSource: 'manual', status: 'submitted', body: 'large SR original' })
+    await db.insert(fileObject).values({ ...fixture(`${prefix}-sr-file`, mine.task.id), originTaskId: null, originSrId: `${prefix}-sr`, kind: 'sr_attachment' })
+    const queries: string[] = []
+    const counted = new DbTasksService(drizzle(client, { logger: { logQuery: query => queries.push(query) } }))
+    // own file + selected old and newest shared versions + SR body + SR attachment + source conversation.
+    expect(await counted.candidateCount(actor, mine.task.id)).toEqual({ count: 6 })
+    expect(queries).toHaveLength(1)
+    expect(queries[0]).not.toMatch(/select[^;]*\b(?:body|content|steps|reasoning)\b/i)
+    await db.insert(fileObject).values(Array.from({ length: 40 }, (_, n) => ({ ...fixture(`${prefix}-extra-${n}`, source.task.id), originalName: `extra-${n}.txt` })))
+    queries.length = 0
+    expect(await counted.candidateCount(actor, mine.task.id)).toEqual({ count: 46 })
+    expect(queries).toHaveLength(1)
+    const other = `${prefix}-bo`
+    await db.insert(appUser).values({ id: other, name: 'BO', initials: 'B', color: '#123456', isBusinessOwner: true })
+    await expect(counted.candidateCount(other, mine.task.id)).rejects.toMatchObject({ status: 403 })
+    await db.update(task).set({ ownerId: other }).where(eq(task.id, mine.task.id))
+    expect(await counted.candidateCount(other, mine.task.id)).toEqual({ count: 2 })
+    await tasks.delete(hidden.task.id)
+    await expect(counted.candidateCount(actor, hidden.task.id)).rejects.toMatchObject({ status: 404 })
+    expect(await tasks.get(mine.task.id, actor)).toMatchObject({ hasMessages: false })
+    await tasks.appendMessage(actor, mine.thread.id, { content: 'team', kind: 'discussion' })
+    expect(await tasks.get(mine.task.id, actor)).toMatchObject({ hasMessages: true })
+  })
+
 })
 
 const id = () => crypto.randomUUID()

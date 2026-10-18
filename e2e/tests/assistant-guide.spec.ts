@@ -111,16 +111,16 @@ test('창의 "🧭 이 화면 사용법"은 인사·대화 기록 뒤 창을 닫
   await expectSpotlightAround(page, page.locator('[data-tour="linked-materials"]'))
   await page.keyboard.press('Enter') // 닫힌 연결 자료를 연다
   await expect(linkedMaterialsToggle(page)).toHaveAttribute('aria-expanded', 'true')
-  await expect(dialog.getByText(/\[\+ 입력창에 담기\]/)).toBeVisible()
+  await expect(dialog.getByText(/\[\+ 첨부\]/)).toBeVisible()
   await expect(dialog.getByText('연결 자료를 열었어요')).toBeVisible() // 맥락 없는 대화이므로 투어가 패널을 열었다
   await expectSpotlightAround(page, page.getByTestId('materials-library'))
   await page.keyboard.press('Enter')
-  await expect(dialog.getByText(/#태그 공유 대화도 \[\+ 입력창에 담기\]/)).toBeVisible() // 대화 첨부 장면
+  await expect(dialog.getByText(/#태그 공유 대화도 \[\+ 첨부\]/)).toBeVisible() // 대화 첨부 장면
   await expectSpotlightAround(page, page.locator('[data-tour="materials-conversations"]'))
   await page.keyboard.press('Enter')
-  await expect(dialog.getByText(/붙인 자료는 입력창 위 칩으로 보여요/)).toBeVisible()
-  // 첨부 칩 줄 — 아직 칩이 없는 새 대화라 앵커는 📎 버튼
-  await expectSpotlightAround(page, page.getByRole('button', { name: '파일 첨부', exact: true }))
+  await expect(dialog.getByText(/이번 질문에 보낼 자료만 칩으로 보여요/)).toBeVisible()
+  // 첨부 칩이 없는 첫 질문에서도 트레이 헤더를 안내한다.
+  await expectSpotlightAround(page, page.locator('[data-tour="materials-staged"]'))
   await list.getByRole('button', { name: 'AI 도우미', exact: true }).click()
   await expectSpotlightAround(page, page.getByRole('button', { name: 'AI 도우미 열기' }))
   await expect(dialog.getByRole('button', { name: '다음' })).toHaveCount(0)

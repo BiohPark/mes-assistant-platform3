@@ -1,4 +1,14 @@
 import { expect, test } from '@playwright/test'
+import { SEED_ASSISTANTS } from '../../apps/api/src/db/seedData.js'
+const seedIds = new Set(SEED_ASSISTANTS.map(item => item.id))
+// 다른 spec이 추가한 에이전트는 이 카탈로그 시나리오의 데이터가 아니다.
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/assistants', async route => {
+    const response = await route.fetch()
+    const items = await response.json() as Array<{ id: string }>
+    await route.fulfill({ response, json: items.filter(item => seedIds.has(item.id)) })
+  })
+})
 
 test('로그인 후 시드 카탈로그 카드·검색·Lv1 필터', async ({ page }) => {
   const loginId = `e2e-catalog-${Date.now()}`
@@ -19,8 +29,8 @@ test('로그인 후 시드 카탈로그 카드·검색·Lv1 필터', async ({ pa
   await page.getByRole('button', { name: 'Record', exact: true }).click()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('button', { name: 'Record 해제' })).toBeVisible()
-  const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ status: string; classifications: Array<{ level1: string; level2: string; level1CodeId: string; level2CodeId: string }> }>
-  const recordCount = assistants.filter(a => a.status !== 'retired' && a.classifications.some(path => path.level1 === 'Record')).length
+  const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string; status: string; classifications: Array<{ level1: string; level2: string; level1CodeId: string; level2CodeId: string }> }>
+  const recordCount = assistants.filter(a => seedIds.has(a.id) && a.status !== 'retired' && a.classifications.some(path => path.level1 === 'Record')).length
   await expect(page.getByRole('link', { name: /새 대화/ })).toHaveCount(recordCount)
   await expect(page).toHaveURL(/l1=/)
   const selectedUrl = page.url()

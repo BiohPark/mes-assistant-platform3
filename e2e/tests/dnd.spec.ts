@@ -118,7 +118,7 @@ test('대화 화면: 자료 패널에 놓으면 저장, 팀 의견 첨부는 AI 
   await page.getByRole('button', { name: '팀 의견 (AI 미전송)' }).click()
   await drop(chat, await dataTransfer(page, [{ name: 'dnd-note.txt', content: 'note' }]))
   await expect(page.getByText('dnd-note.txt')).toBeVisible()
-  await expect(page.getByRole('button', { name: /첨부 (제거|취소)$/ })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /첨부 빼기$/ })).toHaveCount(1)
   await expect(page.getByRole('button', { name: /입력으로 고정|이번 메시지만/ })).toHaveCount(0)
   await page.getByRole('textbox', { name: '팀 의견 입력' }).fill('끌어다 놓은 파일 공유')
   await page.getByRole('button', { name: '전송', exact: true }).click()

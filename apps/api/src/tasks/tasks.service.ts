@@ -1,3 +1,4 @@
+import { materialCandidateCount } from '../context/material-candidates.js'
 import { randomUUID } from 'node:crypto'
 import { resumeHeldTask } from './resume-held-task.js'
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common'
@@ -42,6 +43,8 @@ const SHOWN_AI_STATUSES: TaskAiRequestStatus[] = ['pending', 'streaming', 'faile
 
 @Injectable()
 export class DbTasksService {
+  candidateCount(actor: string, taskId: string) { return materialCandidateCount(this.db, actor, taskId) }
+
   constructor(@Inject(DB) private readonly db: Db, @Inject(EventsService) private readonly events?: EventsService,
     @Inject('TASK_EXTRAS') private readonly extras?: TaskExtrasService,
     @Inject(NotificationsService) private readonly notifications?: NotificationsService) {}
@@ -80,7 +83,7 @@ export class DbTasksService {
     const startedSr = alias(serviceRequest, 'started_sr')
     const taggedSr = alias(serviceRequest, 'tagged_sr')
     const [details, materials, extras, aiRequests] = await Promise.all([
-      this.db.select({ taskId: task.id, label: tag.label, userId: taskAssignee.userId, taskThread: thread, startedSrCode: startedSr.code, taggedSrCode: taggedSr.code }).from(task)
+      this.db.select({ taskId: task.id, label: tag.label, userId: taskAssignee.userId, taskThread: thread, hasMessages: sql<number>`exists(select 1 from ${message} where ${message.threadId} = ${thread.id})`, startedSrCode: startedSr.code, taggedSrCode: taggedSr.code }).from(task)
         .leftJoin(taskTag, eq(taskTag.taskId, task.id)).leftJoin(tag, eq(taskTag.tagKey, tag.key))
         .leftJoin(taskAssignee, eq(taskAssignee.taskId, task.id)).leftJoin(thread, eq(thread.taskId, task.id))
         .leftJoin(startedSr, eq(startedSr.id, task.srId))
@@ -111,6 +114,7 @@ export class DbTasksService {
       const taskDetails = detailsOf(taskId)
       const taskMaterials = materialsOf(taskId)
       const taskThread = taskDetails[0]?.taskThread
+      const hasMessages = !!taskDetails[0]?.hasMessages
       const extra = extrasOf(taskId)
       const checks = [...new Map(extra.filter((item) => item.check).map((item) => [item.check!.id, item.check!])).values()].sort((a, b) => a.sortOrder - b.sortOrder)
       const reviews = [...new Map(extra.filter((item) => item.review).map((item) => [item.review!.id, item.review!])).values()].sort((a, b) => b.at.getTime() - a.at.getTime())
@@ -131,7 +135,7 @@ export class DbTasksService {
           source: review.source as 'ai' | 'rule', items: reviewItems.map((item) => ({ itemId: item.itemId, met: item.met, note: item.note })) } }),
         ...(feedback && { feedback: { rating: feedback.rating, comment: feedback.comment, by: feedback.byUser, at: feedback.at.toISOString() } }),
         inputs: taskMaterials.filter((item) => !item.isOutput).sort((a, b) => (a.weight === b.weight ? a.sortOrder! - b.sortOrder! : a.weight === 'main' ? -1 : 1)).map((item) => ({ fileId: item.fileId, weight: item.weight as 'main' | 'reference', selectedBy: item.selectedBy!, selectedAt: item.selectedAt!.toISOString() })),
-        outputFileIds: taskMaterials.filter((item) => item.isOutput).map((item) => item.fileId), ...(taskThread && { threadId: taskThread.id,
+        hasMessages, outputFileIds: taskMaterials.filter((item) => item.isOutput).map((item) => item.fileId), ...(taskThread && { threadId: taskThread.id,
           thread: { id: taskThread.id, taskId, title: taskThread.title, createdAt: taskThread.createdAt.toISOString(), createdBy: taskThread.createdBy, archived: false, ...(taskThread.modelId && { modelId: taskThread.modelId }) } }),
         ...(row.modelId && { modelId: row.modelId }), createdAt: row.createdAt.toISOString(),
         createdBy: row.createdBy, lastActivityAt: row.lastActivityAt.toISOString(),

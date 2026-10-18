@@ -8,6 +8,7 @@ import { listConversationInputs, refreshConversationInput, removeConversationInp
 import { useLocale, useT } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { useAnswerDetail } from '@/features/chat/useAnswerDetail'
+import { inputSelection } from '@/api/inputSelection'
 import { AttachToggle, UsedMark } from './AttachToggle'
 import { ConversationPickerDialog } from './ConversationPickerDialog'
 
@@ -18,6 +19,7 @@ const TASK_STATUSES: readonly string[] = ['todo', 'in_progress', 'on_hold', 'don
  * 범위 좁히기(메시지 선택·요약)는 선택 — 제목을 누르면 고른다. fresh는 방금 태그로 들어온 대화(tagShare)
  */
 export function ConversationInputs({ taskId, candidates, disabled, fresh }: { taskId: string; candidates: ConversationCandidate[]; disabled: boolean; fresh?: ReadonlySet<string> }) {
+  const saving = inputSelection(state => !!state.byTask[taskId]?.sending || (state.byTask[taskId]?.pending ?? 0) > 0)
   const t = useT()
   const locale = useLocale()
   const { detail } = useAnswerDetail()
@@ -38,7 +40,7 @@ export function ConversationInputs({ taskId, candidates, disabled, fresh }: { ta
           <span className="font-mono text-muted-foreground">{candidate.code}</span> · {candidate.title}</button>
           {isFresh && <span className="shrink-0 text-[11px] text-tone-info-fg">{t('task.materials.fresh')}</span>}
           {candidate.used && <UsedMark />}
-          <AttachToggle inputLabels attached={!!current} label={candidate.code} disabled={disabled || (!current && !candidate.messageCount)}
+          <AttachToggle inputLabels attached={!!current} label={candidate.code} disabled={disabled || saving || (!current && !candidate.messageCount)}
             onToggle={() => void run(current ? removeConversationInput(taskId, candidate.taskId) : selectConversation(taskId, candidate.taskId, { mode: 'full' }))} /></div>
         <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground"><span className="rounded-full border px-1.5" style={{ borderColor: candidate.assistant.color }}>{candidate.assistant.name}</span>
           {TASK_STATUSES.includes(candidate.status) && <span>· {t(`status.task.${candidate.status as TaskStatus}`)}</span>}<span>{t('task.inputs.messages', { count: current?.messageCount ?? candidate.messageCount })}</span><span>· {formatSize(detail === 'full' ? current?.bytesFull ?? candidate.bytesFull ?? current?.bytes ?? candidate.bytes : current?.bytes ?? candidate.bytes)}</span>

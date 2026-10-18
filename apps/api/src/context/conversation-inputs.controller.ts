@@ -5,7 +5,7 @@ import { RequestsService } from '../requests/requests.service.js'
 import { DbConversationInputsService } from './conversation-inputs.service.js'
 
 const ids = z.array(z.string().min(1).max(191))
-const selectBody = z.object({ mode: z.enum(['full', 'messages', 'summary']), weight: z.enum(['main', 'reference']).optional(), messageIds: ids.optional(),
+const selectBody = z.object({ mode: z.enum(['full', 'messages', 'summary']), weight: z.enum(['main', 'reference']).optional(), snapshotId: z.string().min(1).max(191).optional(), messageIds: ids.optional(),
   summary: z.object({ text: z.string(), source: z.enum(['ai', 'rule']), model: z.string().optional(), messageIds: ids }).strict().optional() }).strict()
 const weightBody = z.object({ weight: z.enum(['main', 'reference']) }).strict()
 const draftBody = z.object({ messageIds: ids.optional() }).strict()
@@ -22,6 +22,9 @@ export class ConversationInputsController {
 
   @Get()
   list(@Req() req: AuthedRequest, @Param('id') taskId: string) { return this.context.list(taskId, req.user!.id) }
+
+  @Get('previous-materials')
+  previousMaterials(@Req() req: AuthedRequest, @Param('id') taskId: string) { return this.context.previousMaterials(req.user!.id, taskId) }
 
   @Put(':sourceTaskId')
   select(@Req() req: AuthedRequest, @Param('id') taskId: string, @Param('sourceTaskId') sourceTaskId: string, @Body() body: unknown) {

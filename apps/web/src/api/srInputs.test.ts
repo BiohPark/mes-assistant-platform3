@@ -20,7 +20,7 @@ it('loads SR staging and invalidates the estimate after selection/removal with e
     ['/api/tasks/task%2F1/sr-inputs/sr%2F1', { method: 'DELETE', credentials: 'same-origin' }],
   ])
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ['sr-inputs', 'task/1'] })
-  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['estimate'] })
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['estimate'], refetchType: 'none' })
 })
 
 it('preserves server access failures without invalidating successful state', async () => {
