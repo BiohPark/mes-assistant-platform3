@@ -101,7 +101,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 /** [tool-slow]의 도구 실행 시간, [done-linger]의 [DONE] 뒤 연결 유지 시간 */
 const TOOL_MS = Number(process.env.FAKE_OWUI_TOOL_MS ?? 10_000)
 const LINGER_MS = 30_000
-const answerText = (payload, userText) => /\[image\]/i.test(userText) ? imageReply(payload.__imageOwner ?? randomUUID()) : `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${userText} [files: ${payload.files?.length ?? 0}]`
+const answerText = (payload, userText) => /\[image\]/i.test(userText) ? `${imageReply(payload.__imageOwner ?? randomUUID())}\n\n${userText}` : `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${userText} [files: ${payload.files?.length ?? 0}]`
 /** OpenWebUI 세션 모드 요청 — session_id가 있고 parent_id:null(새 채팅)일 때만 백그라운드 작업이 된다 */
 const isSessionRequest = payload => typeof payload.session_id === 'string' && 'parent_id' in payload && payload.parent_id === null && !payload.chat_id
 

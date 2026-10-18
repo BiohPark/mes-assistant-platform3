@@ -1,3 +1,4 @@
+import { aiMessageContent } from '../llm/responseContent.js'
 import { Inject, Injectable, NotFoundException } from '@nestjs/common'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { eligibleMessages, type Message } from '@mes/domain'
@@ -74,7 +75,7 @@ export class TaskBriefService {
     const [owner] = await this.db.select({ id: thread.id }).from(thread).where(eq(thread.taskId, taskId))
     const rows = owner ? await this.db.select().from(message).where(eq(message.threadId, owner.id)).orderBy(message.seq) : []
     const history: Message[] = rows.map((item) => ({ id: item.id, threadId: item.threadId, seq: item.seq, role: item.role as Message['role'],
-      kind: item.kind as Message['kind'], content: item.content, status: item.status as Message['status'], createdAt: item.createdAt.toISOString(),
+      kind: item.kind as Message['kind'], content: aiMessageContent(item), status: item.status as Message['status'], createdAt: item.createdAt.toISOString(),
       attachmentIds: [], ...(item.authorId && { authorId: item.authorId }) }))
     return { row, history }
   }

@@ -10,6 +10,7 @@ import { SESSION_COOKIE, SESSION_STORE, type AuthUser, type SessionStore } from 
 export type AuthedRequest = Request & { user?: AuthUser }
 
 function allowedBusinessOwnerRoute(method: string, path: string): boolean {
+  if (method === 'GET' && path === '/api/events') return true // SSE 응답에서 요청자 SR 범위를 적용한다.
   if (method === 'GET' && (path === '/api/me' || path === '/api/service-requests/intake-assistant')) return true
   if (method === 'POST' && (path === '/api/auth/logout' || path === '/api/auth/password')) return true
   if (method === 'PATCH' && (path === '/api/me' || path === '/api/users/me')) return true

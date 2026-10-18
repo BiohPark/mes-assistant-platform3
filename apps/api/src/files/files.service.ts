@@ -224,7 +224,7 @@ export class DbFilesService {
       const root = rootOf(row)
       if ((heads.get(root)?.version ?? 0) < row.version) heads.set(root, row)
     }
-    const files = rows.filter((row) => ['task_file', 'ai_output'].includes(row.kind) && (heads.get(rootOf(row))?.id === row.id || selectedById.has(row.id))).map((row) => {
+    const files = rows.filter((row) => row.originTaskId && ['task_file', 'ai_output'].includes(row.kind) && (heads.get(rootOf(row))?.id === row.id || selectedById.has(row.id))).map((row) => {
       const head = heads.get(rootOf(row))!.id
       const olderVersionIds: string[] = []
       if (head === row.id) { let previous = row.previousId; while (previous && byId.has(previous)) { if (!byId.get(previous)!.deletedAt) olderVersionIds.push(previous); previous = byId.get(previous)!.previousId } }

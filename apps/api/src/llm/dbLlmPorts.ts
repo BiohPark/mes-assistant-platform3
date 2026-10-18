@@ -1,3 +1,4 @@
+import { messagesForAi } from './responseContent.js'
 import { networkInterfaces } from 'node:os'
 import { UrlReader } from '../requests/urlReader.js'
 import { linkedTaskSrs } from '../tasks/sr-inputs.service.js'
@@ -8,7 +9,7 @@ import type { LlmPorts } from '@mes/llm'
 import { remoteKey } from '@mes/llm'
 import type { AppConfig } from '../config/config.js'
 import type { Db } from '../db/db.module.js'
-import { appSetting, appUser, checklistItem, fileObject, fileRemoteRef, message, serviceRequest, srInput, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
+import { appSetting, appUser, checklistItem, fileObject, fileRemoteRef, serviceRequest, srInput, tag, task, taskAssignee, taskInput, taskTag, thread } from '../db/schema.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { toLlmSettings } from './presets.js'
 import { effectiveDefaultModel, DEFAULT_MODEL_OVERRIDE_KEY } from './effectiveDefaultModel.js'
@@ -153,8 +154,7 @@ export class DbLlmPorts implements LlmPorts {
   }
   async loadConversationInputs(taskId: string, captured?: Parameters<DbConversationInputsService['load']>[2]) {
     const loaded = await new DbConversationInputsService(this.db).load(taskId, undefined, captured)
-    const ids = loaded.flatMap(item => item.messages.map(value => value.id))
-    const originals = ids.length ? await this.db.select({ id: message.id, content: message.originalContent }).from(message).where(inArray(message.id, ids)) : []
+    const originals = await messagesForAi(this.db, loaded.flatMap(item => item.messages))
     const originalById = new Map(originals.map(row => [row.id, row.content]))
     const sources = await this.getTasks(loaded.map((item) => item.input.sourceTaskId))
     const assistants = await this.getAssistants()

@@ -11,15 +11,15 @@ import { assertSrAccess, assertThreadAccess } from '../sr/access.js'
 export class EventsController {
   constructor(@Inject(EventsService) private readonly events: EventsService, @Inject(DB) private readonly db: Db) {}
 
-  private async visible(actor: string, event: StoredEvent) {
+  private async visible(actor: string, event: StoredEvent, requesterOnly = false) {
     if (event.event === 'sr.updated') {
       try { await assertSrAccess(this.db, actor, event.data.srId); return true }
       catch { return false }
     }
     if (event.event === 'notification.created') return event.data.userId === actor
-    if (event.event !== 'message.appended' && event.event !== 'request.updated' && event.event !== 'presence.typing') return true
+    if (event.event !== 'message.appended' && event.event !== 'request.updated' && event.event !== 'presence.typing') return !requesterOnly
     const [owner] = await this.db.select({ srId: thread.srId }).from(thread).where(eq(thread.id, event.data.threadId))
-    if (!owner?.srId) return true
+    if (!owner?.srId) return !requesterOnly
     try { await assertSrAccess(this.db, actor, owner.srId); return true }
     catch { return false }
   }
@@ -40,8 +40,9 @@ export class EventsController {
     }
     res.on('close', cleanup)
     const write = (chunk: string) => { if (!closed && !res.write(chunk)) { cleanup(); res.end() } }
+    const requesterOnly = !!req.user!.isBusinessOwner && !req.user!.isSystemOwner
     const send = async (event: StoredEvent) => {
-      if (await this.visible(req.user!.id, event)) write(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`)
+      if (await this.visible(req.user!.id, event, requesterOnly)) write(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`)
     }
     const pending: StoredEvent[] = []
     let ready = false

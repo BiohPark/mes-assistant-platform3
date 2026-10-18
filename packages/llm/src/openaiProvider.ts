@@ -250,8 +250,9 @@ export class OpenAICompatibleProvider implements ChatProvider {
       for (const tc of toolAcc.values()) {
         if (tc.name) yield { type: 'tool_call', call: { id: tc.id ?? `call_${tc.index}`, name: tc.name, arguments: tc.arguments } }
       }
-      const images = await collectResponseImages(this.settings, content, undefined, req.signal)
-      if (images.images.length || images.failures.length) yield { type: 'images', ...images }
+      const images = await collectResponseImages(this.settings, content, undefined, req.signal, req.onResponseImages)
+      if (!req.onResponseImages && (images.images.length || images.failures.length)) yield { type: 'images', ...images }
+      if (req.signal?.aborted) { yield { type: 'error', message: req.signal.reason === 'timeout' ? '응답 시간 초과' : CANCELLED }; return }
       yield { type: 'done' }
     } catch (e) {
       yield { type: 'error', message: errorMessage(e) }
@@ -391,10 +392,11 @@ export class OpenAICompatibleProvider implements ChatProvider {
           if (next.error || next.done || ended) {
             finished = true
             if (!next.error && (next.done || content.trim())) {
-              const images = await collectResponseImages(this.settings, content, message, req.signal)
-              if (images.images.length || images.failures.length) yield { type: 'images', ...images }
+              const images = await collectResponseImages(this.settings, content, message, req.signal, req.onResponseImages)
+              if (!req.onResponseImages && (images.images.length || images.failures.length)) yield { type: 'images', ...images }
             }
             await cleanup()
+            if (req.signal?.aborted) { yield { type: 'error', message: req.signal.reason === 'timeout' ? '응답 시간 초과' : CANCELLED }; return }
             yield next.error ? { type: 'error', message: 'LLM 서비스 오류 (OpenWebUI 작업 실패)' } : next.done || content.trim() ? { type: 'done' } : { type: 'error', message: ENDED_EMPTY }
             return
           }

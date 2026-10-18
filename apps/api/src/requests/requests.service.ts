@@ -1,3 +1,4 @@
+import { aiMessageContent, messagesForAi } from '../llm/responseContent.js'
 import { linkedTaskSrs } from '../tasks/sr-inputs.service.js'
 import { randomUUID } from 'node:crypto'
 import { resumeHeldTask } from '../tasks/resume-held-task.js'
@@ -112,7 +113,7 @@ export class RequestsService implements OnModuleDestroy {
     if (!owner?.srId) throw new BadRequestException('접수 대화가 아닙니다')
     const rows = await this.db.select().from(message).where(eq(message.threadId, threadId)).orderBy(message.seq)
     const history: Message[] = rows.filter((row) => row.status === 'done').map((row) => ({ id: row.id, threadId,
-      seq: row.seq, role: row.role as Message['role'], kind: row.kind as Message['kind'], content: row.originalContent ?? row.content,
+      seq: row.seq, role: row.role as Message['role'], kind: row.kind as Message['kind'], content: aiMessageContent(row),
       authorId: row.authorId ?? undefined, status: row.status as Message['status'], createdAt: row.createdAt.toISOString(), attachmentIds: [] }))
     return { owner, history }
   }
@@ -148,6 +149,7 @@ export class RequestsService implements OnModuleDestroy {
     return threadModelId ?? intake?.modelId ?? await readEffectiveDefaultModel(this.db, this.config)
   }
   async draftConversationSummary(actor: string, taskId: string, messages: Message[], signal?: AbortSignal) {
+    messages = await messagesForAi(this.db, messages)
     const ports = new DbLlmPorts(this.db, this.config, actor)
     const [owner, agents, users, settings] = await Promise.all([ports.getTask(taskId), ports.getAssistants(), ports.getUsers(), ports.getSettings()])
     if (!owner) throw new NotFoundException('대화를 찾을 수 없습니다')
@@ -280,7 +282,7 @@ export class RequestsService implements OnModuleDestroy {
     const scope = await this.scope(owner, ports)
     const rows = await this.db.select().from(message).where(eq(message.threadId, threadId)).orderBy(message.seq)
     const history: Message[] = rows.map((item) => ({ id: item.id, threadId, seq: item.seq, role: item.role as Message['role'],
-      content: item.originalContent ?? item.content, authorId: item.authorId ?? undefined, createdAt: item.createdAt.toISOString(), attachmentIds: [],
+      content: aiMessageContent(item), authorId: item.authorId ?? undefined, createdAt: item.createdAt.toISOString(), attachmentIds: [],
       status: item.status as Message['status'], kind: item.kind as Message['kind'] }))
     history.push({ id: 'draft', threadId, role: 'user', content: body.draft?.trim() ?? '', authorId: actor,
       createdAt: new Date().toISOString(), attachmentIds: attachments, status: 'done' })
@@ -644,7 +646,7 @@ export class RequestsService implements OnModuleDestroy {
       const all = await this.db.select().from(message).where(eq(message.threadId, row.threadId)).orderBy(message.seq)
       const user = all.find((item) => item.id === row.userMessageId)
       const history: Message[] = all.filter((item) => item.seq <= (user?.seq ?? 0)).map((item) => ({ id: item.id, threadId: item.threadId,
-        role: item.role as Message['role'], content: item.originalContent ?? item.content, authorId: item.authorId ?? undefined, createdAt: item.createdAt.toISOString(),
+        role: item.role as Message['role'], content: aiMessageContent(item), authorId: item.authorId ?? undefined, createdAt: item.createdAt.toISOString(),
         attachmentIds: [], status: item.status as Message['status'], kind: item.kind as Message['kind'] }))
       const domainThread: Thread = { id: owner.id, ...(owner.taskId ? { taskId: owner.taskId } : { srId: owner.srId! }), title: owner.title,
         createdBy: owner.createdBy, createdAt: owner.createdAt.toISOString(), archived: false, ...(owner.modelId ? { modelId: owner.modelId } : {}) }
@@ -702,6 +704,11 @@ export class RequestsService implements OnModuleDestroy {
       if (!streaming[0].affectedRows) { controller.abort('lost'); return }
       this.appEvents?.publish('request.updated', { requestId: id, threadId: row.threadId, taskId: owner.taskId, status: 'streaming', phase: null })
       const iterator = this.provider.stream({ model: built.model, messages: built.messages, files: built.files, meta: built.meta, signal: controller.signal,
+        onResponseImages: result => {
+          if (!controller.signal.aborted) arm(this.config.request.idleMs)
+          responseImages.images.push(...result.images)
+          responseImages.failures.push(...result.failures)
+        },
         owuiTools: built.settings.llm.owuiTools, owuiMode: built.settings.llm.owuiMode, owuiCleanup: built.settings.llm.owuiCleanup,
         onDispatch: async (delivery, body) => {
           if (controller.signal.aborted) throw new Error('요청 중지')
@@ -769,8 +776,7 @@ export class RequestsService implements OnModuleDestroy {
       try {
         if (controller.signal.reason !== 'lost' && controller.signal.reason !== 'cancelled') {
           const original = acc
-          const prepared = !failure ? await prepareResponseImages(this.storage, responseImages.images, this.config.fileMaxBytes)
-            : { files: [], replacements: new Map<string, string>(), failures: [] }
+          const prepared = await prepareResponseImages(this.storage, responseImages.images, this.config.fileMaxBytes)
           const imageReport = { saved: prepared.files.map(file => ({ fileId: file.id })), failures: [...responseImages.failures, ...prepared.failures] }
           const recordImages = () => {
             if (!imageReport.saved.length && !imageReport.failures.length) return
@@ -809,8 +815,9 @@ export class RequestsService implements OnModuleDestroy {
                 this.emit(id, { event: 'replace', data: { field: 'content', text: acc } })
               }
               if (imageReport.saved.length) {
-                const [owner] = await this.db.select({ taskId: thread.taskId }).from(thread).where(eq(thread.id, (await this.getRow(id)).threadId))
+                const [owner] = await this.db.select({ taskId: thread.taskId, srId: thread.srId }).from(thread).where(eq(thread.id, (await this.getRow(id)).threadId))
                 if (owner?.taskId) this.appEvents?.publish('file.updated', { taskId: owner.taskId })
+                if (owner?.srId) this.appEvents?.publish('sr.updated', { srId: owner.srId })
               }
               this.emit(id, failure ? { event: 'failed', data: { error: failure, code: errorCode('failed', failure, info?.bytes ?? 0), requestInfo: publicInfo(info) } } : { event: 'completed', data: { requestInfo: publicInfo(info) } })
               if (!failure) void this.maybeTitle(id).catch(() => undefined)
@@ -831,7 +838,7 @@ export class RequestsService implements OnModuleDestroy {
     const [current] = await this.db.select().from(task).where(eq(task.id, owner.taskId))
     if (current?.titleSource !== 'default') return
     const rows = await this.db.select().from(message).where(eq(message.threadId, owner.id)).orderBy(message.seq)
-    const history: Message[] = rows.map((item) => ({ id: item.id, threadId: item.threadId, role: item.role as Message['role'], content: item.originalContent ?? item.content,
+    const history: Message[] = rows.map((item) => ({ id: item.id, threadId: item.threadId, role: item.role as Message['role'], content: aiMessageContent(item),
       createdAt: item.createdAt.toISOString(), attachmentIds: [], status: item.status as Message['status'], kind: item.kind as Message['kind'] }))
     const title = await this.runAuxiliary(row.requestedBy, 'title', (signal) => suggestTitle(this.provider, row.model, history, signal))
     if (title) {
