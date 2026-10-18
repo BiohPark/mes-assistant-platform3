@@ -315,11 +315,11 @@ it.each(['star', 'remove'] as const)('keeps the reference chip mounted and dimme
   const chip = (await screen.findByText('C-1')).closest('li')!
   // 한도에서 먼 크기는 보이지 않는다
   expect(screen.queryByRole('meter')).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: action === 'star' ? 'C-1 주 입력 전환' : 'C-1 첨부 빼기' }))
+  fireEvent.click(screen.getByRole('button', { name: action === 'star' ? 'C-1 주 입력 전환' : 'C-1 첨부 취소' }))
   await waitFor(() => expect(chip).toHaveClass('opacity-60'))
   expect(screen.getByText('C-1').closest('li')).toBe(chip)
   expect(screen.getByRole('button', { name: 'C-1 주 입력 전환' })).toBeEnabled()
-  expect(screen.getByRole('button', { name: 'C-1 첨부 빼기' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'C-1 첨부 취소' })).toBeEnabled()
   expect(screen.getByRole('button', { name: '전송' })).toBeEnabled()
   await act(async () => finishRefetch(Response.json({ ...info, bytes: 100,
     inputs: action === 'star' ? [{ ...info.inputs[0], weight: 'main' }] : [] })))
@@ -329,7 +329,7 @@ it.each(['star', 'remove'] as const)('keeps the reference chip mounted and dimme
   } else await waitFor(() => expect(screen.queryByText('C-1')).not.toBeInTheDocument())
 })
 
-const emptyHint = '📎나 자료함에서 파일·대화를 첨부할 수 있어요.'
+const emptyHint = '📎나 연결 자료에서 파일·대화를 입력창에 담을 수 있어요.'
 
 it('offers materials only after messages load empty and opening adds no requests or selections', async () => {
   let finish!: (response: Response) => void
@@ -563,7 +563,7 @@ it('keeps the staged attachment and draft across a task refetch and a chat remou
   fireEvent.click(await screen.findByRole('button', { name: '텍스트 바꾸기' }))
   await waitFor(() => expect(input).toHaveValue(originalQuestion.content))
   expect(screen.getByText('current.txt')).toBeVisible()
-  expect(screen.getByRole('button', { name: '첨부 제거' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /첨부 취소$/ })).toBeInTheDocument()
 })
 
 function progressView(status: Task['status']) {

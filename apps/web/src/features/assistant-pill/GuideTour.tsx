@@ -108,8 +108,12 @@ export function GuideTour({ userId, pillRef }: { userId: string; pillRef: RefObj
       setAnchor(current)
     }
     const settleLater = () => { clearTimeout(settle); settle = setTimeout(place, SETTLE_MS) }
+    // 패널 조회·접힌 내용의 렌더는 스크롤/창 resize 없이도 대상 크기를 바꾼다.
+    const onGeometryChange = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => setRect(measure())); settleLater() }
+    const observer = new ResizeObserver(onGeometryChange)
     const show = (target: HTMLElement | undefined) => {
       if (!target) { place(); return }
+      observer.observe(target)
       const plan = scrollPlan(target)
       cleared = plan === 'none'
       if (plan === 'center') target.scrollIntoView({ block: 'center', behavior })
@@ -127,12 +131,12 @@ export function GuideTour({ userId, pillRef }: { userId: string; pillRef: RefObj
       wait()
     } else show(target)
     // 스크롤 중에는 스포트라이트만 프레임마다 따라가고, 말풍선 자리는 멈춘 뒤에 정한다. 리사이즈는 바로
-    const onScroll = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => setRect(measure())); settleLater() }
+    const onScroll = onGeometryChange
     const onResize = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(place) }
     window.addEventListener('resize', onResize)
     document.addEventListener('scroll', onScroll, true) // 스크롤 컨테이너·부드러운 스크롤 중에도 따라간다
     cardRef.current?.focus({ preventScroll: true })
-    return () => { cancelAnimationFrame(frame); cancelAnimationFrame(opening); clearTimeout(settle); window.removeEventListener('resize', onResize); document.removeEventListener('scroll', onScroll, true) }
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); cancelAnimationFrame(opening); clearTimeout(settle); window.removeEventListener('resize', onResize); document.removeEventListener('scroll', onScroll, true) }
   }, [step, reduced, t])
   // 단계 본문·목록 펼침·탭 알림이 바뀌면 실제 높이로 — 아래 자리를 가리는지 판단이 어긋나지 않게
   useLayoutEffect(() => { if (step) setHeight(cardRef.current?.offsetHeight || CARD_FALLBACK_HEIGHT) }, [step, listOpen, switched])

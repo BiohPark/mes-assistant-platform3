@@ -1,3 +1,4 @@
+import { materialToggleName } from './materials.js'
 import { expect, test, type Page } from '@playwright/test'
 
 // S11 U2 같은 태그 펼침 패널·담기 — 시드에 기대지 않고 테스트마다 사용자·대화·태그를 직접 만든다
@@ -25,7 +26,7 @@ async function answered(page: Page, threadId: string, content: string) {
   expect(result.status()).toBe(201)
   await expect.poll(async () => (await (await page.request.get(`/api/threads/${threadId}/messages`)).json() as Array<{ status: string }>).at(-1)?.status).toBe('done')
 }
-const panel = (page: Page) => page.getByText('같은 태그를 가진 대화').locator('..')
+const panel = (page: Page) => page.getByTestId('conversation-candidates')
 
 test('indirect tag not listed — 다른 태그로만 이어진 대화는 패널에 없고, 직접 공유 대화도 기본 무체크다', async ({ page }) => {
   await signup(page, 'ind')
@@ -34,13 +35,13 @@ test('indirect tag not listed — 다른 태그로만 이어진 대화는 패널
   const bridge = await createTask(page, [`cmp-x-${stamp}`, `cmp-y-${stamp}`])
   const indirect = await createTask(page, [`cmp-y-${stamp}`])
   await page.goto(`/c/${me.id}`)
-  await page.locator('[data-tour="related"] > summary').click() // 자료함의 '같은 태그 대화 1개' 제목과 구분
-  await expect(panel(page).getByRole('link', { name: new RegExp(bridge.code) })).toBeVisible()
-  await expect(panel(page).getByRole('link', { name: new RegExp(indirect.code) })).toHaveCount(0)
-  const box = panel(page).getByRole('checkbox', { name: `${bridge.code} 대화 본문(전체 스냅샷) 첨부` })
-  await expect(box).toBeEnabled()
-  await expect(box).not.toBeChecked()
-  await expect(panel(page).getByRole('checkbox')).toHaveCount(1)
+  await expect(panel(page).getByRole('button', { name: new RegExp(bridge.code + ' ·') })).toBeVisible()
+  await expect(panel(page).getByRole('button', { name: new RegExp(indirect.code + ' ·') })).toHaveCount(0)
+  const box = panel(page).getByRole('button', { name: materialToggleName(`${bridge.code}`), exact: true })
+  await expect(box).toBeDisabled() // 메시지가 없는 대화는 보내지 않는다.
+  await expect(box).toHaveAttribute('aria-pressed', 'false')
+  await expect(panel(page).locator('[aria-pressed]')).toHaveCount(1)
+
 })
 
 test('estimate equals send after add — 패널에서 대화 본문·파일을 첨부한 뒤 입력창 칩·추정과 실제 전송 크기가 같다', async ({ page }) => {
@@ -55,15 +56,11 @@ test('estimate equals send after add — 패널에서 대화 본문·파일을 �
   expect(upload.ok()).toBe(true)
 
   await page.goto(`/c/${consumer.id}`)
-  await page.locator('[data-tour="related"] > summary').click() // 자료함의 '같은 태그 대화 1개' 제목과 구분
-  await panel(page).getByRole('checkbox', { name: `${source.code} 대화 본문(전체 스냅샷) 첨부` }).check()
-  await panel(page).getByRole('button', { name: `${source.code} 파일 펼치기` }).click()
-  await panel(page).getByRole('radiogroup', { name: `${fileName} 버전` }).getByRole('radio', { name: 'v1' }).check()
-  await panel(page).getByRole('button', { name: '첨부 · 2' }).click()
-  await expect(panel(page).getByText('첨부 2 · 실패 0 · 미처리 0')).toBeVisible()
-  // 첨부된 항목은 체크·비활성 — 덮어쓰기 없음
-  await expect(panel(page).getByRole('checkbox', { name: `${source.code} 대화 본문(전체 스냅샷) 첨부` })).toBeDisabled()
-  await expect(panel(page).getByRole('checkbox', { name: `${source.code} 대화 본문(전체 스냅샷) 첨부` })).toBeChecked()
+  const attachConversation = panel(page).getByRole('button', { name: materialToggleName(`${source.code}`), exact: true })
+  await attachConversation.click()
+  await page.getByTestId('materials-shared').getByRole('button', { name: materialToggleName(`${fileName}`), exact: true }).click()
+  await expect(attachConversation).toHaveAttribute('aria-pressed', 'true')
+  await expect(attachConversation).toHaveText('담김 ✓')
 
   const draft = '담은 자료로 답해 줘 U2'
   await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill(draft)
@@ -81,4 +78,63 @@ test('estimate equals send after add — 패널에서 대화 본문·파일을 �
     expect(record.status).toBe('succeeded')
     expect(record.bytes).toBe(estimate.bytes)
   }).toPass()
+})
+
+test('일괄 담기 대체 경로 — 여러 자료를 고를 때 부분 실패한 파일만 재시도하고 기존 선택을 보존한다', async ({ page }) => {
+  await signup(page, 'partial')
+  const tag = `cmp-partial-${Date.now().toString(36)}`
+  const source = await createTask(page, [tag])
+  const consumer = await createTask(page, [tag])
+  await answered(page, source.threadId, '부분 실패 시 보존할 대화')
+  const upload = await page.request.post('/api/files', { multipart: { originTaskId: source.id, file: { name: 'retry.txt', mimeType: 'text/plain', buffer: Buffer.from('재시도할 파일') } } })
+  expect(upload.ok()).toBe(true)
+  const file = await upload.json() as { id: string }
+  let attempts = 0
+  await page.route(`**/api/tasks/${consumer.id}/inputs/${file.id}`, async route => {
+    if (route.request().method() === 'PUT' && ++attempts === 1) await route.fulfill({ status: 503, json: { message: '파일 담기 일시 실패' } })
+    else await route.continue()
+  })
+  await page.goto(`/c/${consumer.id}`)
+  const conversation = panel(page).getByRole('button', { name: materialToggleName(source.code) })
+  const fileToggle = page.getByTestId(`candidate-file-${file.id}`).getByRole('button', { name: materialToggleName('retry.txt') })
+  await conversation.click()
+  await expect(conversation).toHaveAttribute('aria-pressed', 'true')
+  await fileToggle.click()
+  await expect(page.getByText('파일 담기 일시 실패', { exact: true })).toBeVisible()
+  await expect(fileToggle).toHaveAttribute('aria-pressed', 'false')
+  await expect(conversation).toHaveAttribute('aria-pressed', 'true')
+  const chips = page.getByRole('list', { name: '첨부', exact: true }).getByRole('listitem')
+  await expect(chips).toHaveCount(1)
+  await fileToggle.click()
+  await expect(fileToggle).toHaveAttribute('aria-pressed', 'true')
+  await expect(chips).toHaveCount(2)
+  expect(attempts).toBe(2)
+  const selected = await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json() as unknown[]
+  expect(selected).toHaveLength(1)
+})
+
+test('버전 선택 대체 경로 — 연결 자료에서 이전 버전을 직접 담고 최신 버전으로 명시 전환한다', async ({ page }) => {
+  await signup(page, 'version')
+  const tag = `cmp-version-${Date.now().toString(36)}`
+  const source = await createTask(page, [tag])
+  const consumer = await createTask(page, [tag])
+  const versions: Array<{ id: string }> = []
+  for (const content of ['첫 버전', '두 번째 버전']) {
+    const response = await page.request.post('/api/files', { multipart: { originTaskId: source.id, file: { name: 'version.txt', mimeType: 'text/plain', buffer: Buffer.from(content) } } })
+    expect(response.ok()).toBe(true)
+    versions.push(await response.json() as { id: string })
+  }
+  await page.goto(`/c/${consumer.id}`)
+  const latest = page.getByTestId(`candidate-file-${versions[1]!.id}`)
+  await latest.getByRole('button', { name: '이전 버전 1', exact: true }).click()
+  await latest.getByRole('button', { name: materialToggleName('version.txt v1') }).click()
+  const chips = page.getByRole('list', { name: '첨부', exact: true }).getByRole('listitem')
+  await expect(chips).toHaveCount(1)
+  await expect(chips).toHaveAttribute('title', /version\.txt v1/)
+  // v2가 있어도 v1을 그대로 보낸다 — 사용자가 바꾸기를 누를 때만 대체한다.
+  const task = await (await page.request.get(`/api/tasks/${consumer.id}`)).json() as { inputs: Array<{ fileId: string }> }
+  expect(task.inputs.map(input => input.fileId)).toEqual([versions[0]!.id])
+  await page.getByTestId(`candidate-file-${versions[0]!.id}`).getByRole('button', { name: '새 버전 있음 · 바꾸기' }).click()
+  await expect(chips).toHaveCount(1)
+  await expect(chips).toHaveAttribute('title', /version\.txt v2/)
 })

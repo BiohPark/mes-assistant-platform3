@@ -35,6 +35,7 @@ function scroller() {
   return { box, scrollBy }
 }
 const lastLog = () => useAssistantHistory.getState().log.at(-1)
+const OriginalResizeObserver = globalThis.ResizeObserver
 let pill: HTMLButtonElement
 const dialog = () => screen.getByRole('dialog', { name: '페이지 가이드' })
 const spotlight = () => screen.getByTestId('tour-spotlight')
@@ -50,7 +51,7 @@ beforeEach(() => {
   resetHistory()
   pill = target('pill', box(16, 700, 48, 48), 'button') as HTMLButtonElement
 })
-afterEach(() => { act(() => useTourStore.getState().close()); document.querySelectorAll('[data-tour], [data-scroller]').forEach(element => element.remove()); vi.clearAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
+afterEach(() => { act(() => useTourStore.getState().close()); document.querySelectorAll('[data-tour], [data-scroller]').forEach(element => element.remove()); vi.clearAllMocks(); vi.unstubAllGlobals(); globalThis.ResizeObserver = OriginalResizeObserver; vi.useRealTimers() })
 
 it('renders no card or spotlight while waiting; Escape cancels and returns focus without a delayed tour', () => {
   renderWithProviders(<GuideTour userId="u" pillRef={{ current: pill }} />)
@@ -60,7 +61,7 @@ it('renders no card or spotlight while waiting; Escape cancels and returns focus
   fireEvent.keyDown(window, { key: 'Escape' })
   expect(pill).toHaveFocus()
   target('composer')
-  target('task-tabs')
+  target('linked-materials')
   act(() => vi.advanceTimersByTime(1500))
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(useTourStore.getState().route).toBeNull()
@@ -211,30 +212,45 @@ it('section list: shows every section with the current one marked, skips the cur
   expect(pill).toHaveFocus()
 })
 
-it('opens the materials tab when a materials step comes up, then spotlights the panel target', () => {
-  const tabs = target('task-tabs')
-  tabs.setAttribute('role', 'tablist')
+it('opens the materials tab and keeps the spotlight around its target as async panel content changes size', () => {
+  // 파일/대화 조회가 끝나면 스크롤·window resize 없이도 패널 높이가 달라진다.
+  const resized = new Map<Element, () => void>()
+  globalThis.ResizeObserver = class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe(element: Element) { resized.set(element, () => this.callback([], this)) }
+    unobserve(element: Element) { resized.delete(element) }
+    disconnect() { resized.clear() }
+  }
+  const panelRect = box(700, 100, 300, 400)
+  const tabs = target('linked-materials')
+  tabs.setAttribute('aria-expanded', 'false')
   const tab = document.createElement('button')
   tab.setAttribute('role', 'tab'); tab.textContent = '자료'
   // 탭을 누르면 패널이 렌더된다 — React처럼 클릭한 그 순간이 아니라 뒤이은 커밋에서
-  tab.addEventListener('click', () => { requestAnimationFrame(() => { target('materials-library', box(700, 100, 300, 400)); target('materials-conversations', box(700, 520, 300, 100)) }) })
-  tabs.append(tab)
+  tab.addEventListener('click', () => { requestAnimationFrame(() => { target('materials-library', panelRect); target('materials-conversations', box(700, 520, 300, 100)) }) })
+  tabs.addEventListener('click', () => tab.click())
   target('composer')
   renderWithProviders(<GuideTour userId="materials-user" pillRef={{ current: pill }} />)
   act(() => { useTourStore.getState().start('conversation', 'materials-user'); vi.advanceTimersByTime(1500) }) // 앞 테스트가 'u'의 진행을 남겨도 영향받지 않게
-  expect(screen.getByText('1/6')).toBeInTheDocument() // composer · task-tabs · materials-library · materials-conversations · materials-staged · pill
+  expect(screen.getByText('1/6')).toBeInTheDocument() // composer · linked-materials · materials-library · materials-conversations · materials-staged · pill
   fireEvent.keyDown(dialog(), { key: 'Enter' })
-  expect(within(dialog()).getByRole('heading', { name: '자료함' })).toBeInTheDocument()
-  expect(within(dialog()).queryByText('자료 탭을 열었어요')).toBeNull() // 앞 단계(탭 목록)는 화면을 바꾸지 않았다
+  expect(within(dialog()).getByRole('heading', { name: '연결 자료' })).toBeInTheDocument()
+  expect(within(dialog()).queryByText('연결 자료를 열었어요')).toBeNull() // 앞 단계(탭 목록)는 화면을 바꾸지 않았다
   fireEvent.keyDown(dialog(), { key: 'Enter' })
   expect(document.querySelector('[data-tour="materials-library"]')).toBeNull()
   act(() => { vi.advanceTimersByTime(32) })
   expect(document.querySelector('[data-tour="materials-library"]')).not.toBeNull()
   expect(spotlight()).toHaveStyle({ left: '696px', top: '96px', width: '308px', height: '408px' })
-  expect(within(dialog()).getByText('자료 탭을 열었어요')).toBeInTheDocument() // 화면을 바꿨으면 말풍선에 알린다
+  Object.assign(panelRect, { height: 426, bottom: 526 })
+  act(() => {
+    resized.get(document.querySelector('[data-tour="materials-library"]')!)?.()
+    vi.advanceTimersByTime(32)
+  })
+  expect(spotlight()).toHaveStyle({ left: '696px', top: '96px', width: '308px', height: '434px' })
+  expect(within(dialog()).getByText('연결 자료를 열었어요')).toBeInTheDocument() // 화면을 바꿨으면 말풍선에 알린다
   expect(dialog()).toHaveFocus()
   fireEvent.keyDown(dialog(), { key: 'Enter' }) // 다음 대상은 이미 열린 패널에 있다 — 알림 없음
-  expect(within(dialog()).queryByText('자료 탭을 열었어요')).toBeNull()
+  expect(within(dialog()).queryByText('연결 자료를 열었어요')).toBeNull()
 })
 
 it('resumes at the first section not done yet; the replay event starts the tour for the current page and records acceptance', () => {
@@ -285,22 +301,21 @@ it('navigating away closes the tour', () => {
 })
 
 it('S14: 좁은 화면에서 자료 탭이 열린 채 첨부 단계가 오면 대화 탭으로 돌아가 입력창의 첨부 칩 줄·📎을 짚는다', () => {
-  const tabs = target('task-tabs')
-  tabs.setAttribute('role', 'tablist')
+  const tabs = target('linked-materials')
+  tabs.setAttribute('aria-expanded', 'false')
   const chatTab = document.createElement('button')
   chatTab.setAttribute('role', 'tab'); chatTab.textContent = '대화'
   // 대화 탭을 누르면 입력창(📎 앵커)이 다시 보인다 — React처럼 다음 커밋에서
   chatTab.addEventListener('click', () => { requestAnimationFrame(() => { target('materials-staged', box(240, 720, 32, 32), 'button') }) })
-  tabs.append(chatTab)
-  target('composer')
+  const composer = target('composer'); const input = document.createElement('textarea'); composer.append(input); input.addEventListener('focus', () => chatTab.click())
   renderWithProviders(<GuideTour userId="staged-user" pillRef={{ current: pill }} />)
   act(() => { useTourStore.getState().start('conversation', 'staged-user'); vi.advanceTimersByTime(1500) })
   act(() => useTourStore.getState().goToSection(1)) // 자료함 섹션
-  for (let step = 0; step < 3; step++) fireEvent.keyDown(dialog(), { key: 'Enter' }) // task-tabs → library → conversations → staged
+  for (let step = 0; step < 3; step++) fireEvent.keyDown(dialog(), { key: 'Enter' }) // linked-materials → library → conversations → staged
   expect(within(dialog()).getByText(/붙인 자료는 입력창 위 칩으로 보여요/)).toBeInTheDocument()
   expect(document.querySelector('[data-tour="materials-staged"]')).toBeNull()
   act(() => { vi.advanceTimersByTime(32) })
   expect(document.querySelector('[data-tour="materials-staged"]')).not.toBeNull()
-  expect(within(dialog()).getByText('대화 탭으로 돌아왔어요')).toBeInTheDocument()
+  expect(within(dialog()).getByText('대화 화면으로 돌아왔어요')).toBeInTheDocument()
   expect(spotlight()).toHaveStyle({ left: '236px', top: '716px', width: '40px', height: '40px' })
 })

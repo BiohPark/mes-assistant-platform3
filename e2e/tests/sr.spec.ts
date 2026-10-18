@@ -1,4 +1,5 @@
 import { expect, test } from './owui-settings-fixture.js'
+import { materialToggleName, revealMaterials } from './materials.js'
 import { resolve } from 'node:path'
 import { createPool } from '../../apps/api/src/db/connection.js'
 import { FileStorageService } from '../../apps/api/src/files/fileStorage.service.js'
@@ -147,12 +148,12 @@ test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유',
     // S13-S: 접수 대화에 올린 모든 파일은 복사 없이 연결 업무 자료함에 보인다
     expect(task.inputs.map(item => item.fileId).sort()).toEqual([fileId, extraFileId].sort())
     expect(task.inputs.every(item => item.weight === 'reference')).toBe(true)
-    await owner.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
+    await revealMaterials(owner)
     const srSection = owner.getByTestId('materials-sr-files')
-    await expect(srSection).toContainText('sr-e2e.txt v1')
+    await expect(srSection).toContainText('sr-e2e.txt')
     await expect(srSection).toContainText('sr-e2e-extra.txt')
     // S14: 연결 SR 첨부는 자료함에서 '첨부됨', 입력창 칩으로도 보인다
-    await expect(owner.getByTestId(`sr-file-${fileId}`).getByRole('button', { name: 'sr-e2e.txt 첨부', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(owner.getByTestId(`sr-file-${fileId}`).getByRole('button', { name: materialToggleName('sr-e2e.txt'), exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect(owner.getByRole('list', { name: '첨부', exact: true })).toContainText('sr-e2e.txt')
     const shared = await owner.request.post(`/api/tasks/${taskId}/outputs`, { data: { name: 'shared.md', content: '# 완료' } })
     const hidden = await owner.request.post(`/api/tasks/${taskId}/outputs`, { data: { name: 'internal.md', content: '# 내부' } })

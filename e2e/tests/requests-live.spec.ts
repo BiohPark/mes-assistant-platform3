@@ -60,7 +60,8 @@ test('E2 파일 전달 실패 후 텍스트로 보내기를 선택해 복구한�
   const card = kanban.locator('.group', { has: kanban.getByRole('link', { name: new RegExp(task.code) }) })
   await expect(card.getByText('AI 실패')).toBeVisible() // U3: 마지막 요청이 실패면 칩이 남는다
   await kanban.close()
-  await page.getByRole('button', { name: '텍스트로 보내기' }).click()
+  // 오류 시 헤더에도 같은 복구 버튼이 노출된다. 실패 메시지에 붙은 동작으로 복구한다.
+  await page.getByTestId('chat-message-scroll').getByRole('button', { name: '텍스트로 보내기', exact: true }).click()
   await page.getByRole('dialog').getByRole('checkbox').check()
   await page.getByRole('dialog').getByRole('button', { name: '다시 시도' }).click()
   await expect(page.getByText(/files: 0/).first()).toBeVisible({ timeout: 15_000 })

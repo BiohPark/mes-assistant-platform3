@@ -1,14 +1,22 @@
-import { Check, CheckCheck } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { CheckCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useT } from '@/i18n'
 
-/** 자료함 항목의 [첨부] — 누르면 입력창 칩으로 붙고, 첨부 중이면 '첨부됨'(눌림)으로 보인다 */
-export function AttachToggle({ attached, onToggle, disabled, label }: { attached: boolean; onToggle: () => void; disabled?: boolean; label: string }) {
+/** 연결 자료를 입력창 칩에 담는다. SR 접수 화면은 기존 첨부 문구를 사용한다. */
+export function AttachToggle({ attached, onToggle, disabled, label, inputLabels = false }: { attached: boolean; onToggle: () => void; disabled?: boolean; label: string; inputLabels?: boolean }) {
   const t = useT()
-  return <Button type="button" variant={attached ? 'secondary' : 'outline'} size="sm" className="h-8 shrink-0" aria-pressed={attached}
-    aria-label={t('task.materials.attachLabel', { label })} disabled={disabled} onClick={onToggle}>
-    {attached && <Check />}{t(attached ? 'task.materials.attached' : 'task.materials.attach')}
-  </Button>
+  const previous = useRef(attached)
+  const [announcement, setAnnouncement] = useState('')
+  useEffect(() => {
+    if (attached && !previous.current) setAnnouncement(t('task.materials.addedAnnouncement', { label }))
+    if (!attached) setAnnouncement('')
+    previous.current = attached
+  }, [attached, label, t])
+  return <><Button type="button" variant={attached ? 'secondary' : 'outline'} size="sm" className="h-8 shrink-0" aria-pressed={attached}
+    aria-label={inputLabels ? `${t(attached ? 'task.materials.addedToInput' : 'task.materials.addToInput')} · ${label}` : t('task.materials.attachLabel', { label })} disabled={disabled} onClick={onToggle}>
+    {t(inputLabels ? attached ? 'task.materials.addedToInput' : 'task.materials.addToInput' : attached ? 'task.materials.attached' : 'task.materials.attach')}
+  </Button><span className="sr-only" aria-live="polite">{announcement}</span></>
 }
 
 /** 이 대화의 질문에 보낸 적 있음 — 작은 표시, 설명은 툴팁 */

@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { linkedMaterialsToggle } from './materials.js'
 
 const password = 'e2e-password-1234'
 async function signUp(page: Page) {
@@ -102,19 +103,19 @@ test('창의 "🧭 이 화면 사용법"은 인사·대화 기록 뒤 창을 닫
   // 섹션 목록: 현재 위치가 표시되고 다른 섹션으로 바로 간다
   await dialog.getByRole('button', { name: '섹션 목록' }).click()
   const list = dialog.getByRole('list', { name: '가이드 섹션' })
-  for (const name of ['대화 기본', '자료함', '팀 의견', '태그·같은 태그', '보류·완료', 'AI 도우미']) await expect(list.getByRole('button', { name, exact: true })).toBeVisible()
+  for (const name of ['대화 기본', '연결 자료', '팀 의견', '태그·같은 태그', '보류·완료', 'AI 도우미']) await expect(list.getByRole('button', { name, exact: true })).toBeVisible()
   await expect(list.getByRole('button', { name: '요약 카드' })).toHaveCount(0) // 새 대화에는 요약 카드가 없다 → 섹션째 건너뜀
   await expect(list.getByRole('button', { name: '대화 기본', exact: true })).toHaveAttribute('aria-current', 'step')
   await dialog.getByRole('button', { name: '이 섹션 건너뛰기' }).click()
-  await expect(dialog.getByRole('heading', { name: '자료함' })).toBeVisible()
-  await expectSpotlightAround(page, page.getByRole('tablist', { name: '보조 패널' }))
-  await page.keyboard.press('Enter') // 자료함을 짚는다(S14: 기본 패널이 자료)
-  await expect(page.getByRole('tab', { name: '자료', exact: true })).toHaveAttribute('aria-selected', 'true')
-  await expect(dialog.getByText(/\[첨부\]하면 입력창에 칩으로 붙어요/)).toBeVisible()
-  await expect(dialog.getByText('자료 탭을 열었어요')).toHaveCount(0) // 넓은 화면은 자료 패널이 이미 열려 있다 — 화면을 바꾸지 않는다
+  await expect(dialog.getByRole('heading', { name: '연결 자료' })).toBeVisible()
+  await expectSpotlightAround(page, page.locator('[data-tour="linked-materials"]'))
+  await page.keyboard.press('Enter') // 닫힌 연결 자료를 연다
+  await expect(linkedMaterialsToggle(page)).toHaveAttribute('aria-expanded', 'true')
+  await expect(dialog.getByText(/\[\+ 입력창에 담기\]/)).toBeVisible()
+  await expect(dialog.getByText('연결 자료를 열었어요')).toBeVisible() // 맥락 없는 대화이므로 투어가 패널을 열었다
   await expectSpotlightAround(page, page.getByTestId('materials-library'))
   await page.keyboard.press('Enter')
-  await expect(dialog.getByText(/같은 태그 대화도 파일처럼 \[첨부\]/)).toBeVisible() // 대화 첨부 장면
+  await expect(dialog.getByText(/#태그 공유 대화도 \[\+ 입력창에 담기\]/)).toBeVisible() // 대화 첨부 장면
   await expectSpotlightAround(page, page.locator('[data-tour="materials-conversations"]'))
   await page.keyboard.press('Enter')
   await expect(dialog.getByText(/붙인 자료는 입력창 위 칩으로 보여요/)).toBeVisible()

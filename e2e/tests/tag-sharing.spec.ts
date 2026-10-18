@@ -1,3 +1,4 @@
+import { materialToggleName, revealMaterials } from './materials.js'
 import { expect, test, type Page } from '@playwright/test'
 
 // S14-DD 느슨한 공유 — 태그를 넣으면 같은 태그 대화의 파일(대화 첨부·자료함 업로드·산출물)과 대화가 바로 자료함에 들어오고,
@@ -47,7 +48,7 @@ async function sourceConversation(page: Page, tag: string, marker: string) {
 }
 async function openMaterials(page: Page, taskId: string) {
   await page.goto(`/c/${taskId}`)
-  await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
+  await revealMaterials(page)
 }
 const tagInput = (page: Page) => page.getByRole('combobox', { name: '태그 입력' })
 async function addTag(page: Page, tag: string) {
@@ -80,7 +81,7 @@ test('태그를 넣으면 같은 태그 대화의 파일 세 경로와 대화가
   await expect(page.getByTestId('assistant-bubble')).toContainText('들어왔')
 
   // [첨부] 한 번 — 범위 고르기 창 없이 대화 전체가 입력창 칩으로
-  await page.getByTestId('conversation-candidates').getByRole('button', { name: `${source.code} 첨부`, exact: true }).click()
+  await page.getByTestId('conversation-candidates').getByRole('button', { name: materialToggleName(`${source.code}`), exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   const chips = page.getByRole('list', { name: '첨부', exact: true })
   await expect(chips.getByRole('listitem').filter({ hasText: source.code })).toHaveAttribute('title', /전체 원문/)

@@ -11,10 +11,11 @@ export const isAiGenerated = (file: FileMeta): boolean => 'kind' in file && file
 
 const iconButton = 'inline-flex size-8 shrink-0 items-center justify-center rounded-lg hover:bg-muted'
 
-export function FileList({ files, taskId, onToggleOutput, onPreview, canDelete = true, canViewHistory = true, renderActions, deletableBy }: {
+export function FileList({ files, taskId, onToggleOutput, onPreview, canDelete = true, canViewHistory = true, renderActions, deletableBy, showVersion = true }: {
   files: FileMeta[]; taskId?: string; onToggleOutput?: (fileId: string, isOutput: boolean) => void;
   onPreview?: (file: FileMeta) => void; canDelete?: boolean; canViewHistory?: boolean; renderActions?: (file: FileMeta) => ReactNode
   /** 주면 이 사용자가 올린 파일에만 삭제 버튼을 보인다(서버도 같은 규칙) */
+  showVersion?: boolean
   deletableBy?: string
 }) {
   const t = useT()
@@ -27,8 +28,8 @@ export function FileList({ files, taskId, onToggleOutput, onPreview, canDelete =
     else toast.success(t('task.files.deleted'))
   }
   if (!files.length) return <div className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">{t('task.files.empty')}</div>
-  return <><ul className="space-y-1">{files.map((file) => <li key={file.id} data-testid={`file-${file.id}`} className="flex items-center gap-1 rounded-lg border bg-card px-2 py-1 text-xs">
-    {onPreview ? <button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => onPreview(file)}>{file.name} v{file.version}</button> : <span className="min-w-0 flex-1 truncate">{file.name} v{file.version}</span>}
+  return <><ul className="space-y-1">{files.map((file) => <li key={file.id} data-testid={`file-${file.id}`} className={`flex items-center gap-1 rounded-lg border bg-card px-2 py-1 text-xs ${showVersion ? '' : 'flex-wrap'}`}>
+    {onPreview ? <button type="button" className={`min-w-0 flex-1 truncate text-left hover:underline ${showVersion ? '' : 'basis-full'}`} onClick={() => onPreview(file)}>{file.name}{showVersion && ` v${file.version}`}</button> : <span className={`min-w-0 flex-1 truncate ${showVersion ? '' : 'basis-full'}`}>{file.name}{showVersion && ` v${file.version}`}</span>}
     {file.source === 'assistant' && <Badge tone="violet">{t(isAiGenerated(file) ? 'components.aiGenerated' : 'components.assistantSource')}</Badge>}
     <span className="text-xs text-muted-foreground">{formatSize(file.size)}</span>
     {renderActions?.(file)}

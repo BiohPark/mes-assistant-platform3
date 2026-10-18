@@ -54,6 +54,8 @@ interface ComposerProps {
   streaming: boolean
   placeholder?: string
   inputLabel?: string
+  /** 대화 자료 트레이의 항목별 담기 취소 레이블 */
+  inputLabels?: boolean
   maxAttachments?: number
   /** SR 자료함에서 담은 파일도 글 없이 보낼 수 있다 */
   stagedAttachmentCount?: number
@@ -86,7 +88,7 @@ interface ComposerProps {
   contentClassName?: string
 }
 
-export function Composer({ ref, disabled, streaming, placeholder, inputLabel, maxAttachments, stagedAttachmentCount = 0, onSend, beforeSend, onStop, startedAt, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey, tools, attachments = [], notice, contentClassName }: ComposerProps) {
+export function Composer({ ref, disabled, streaming, placeholder, inputLabel, inputLabels = false, maxAttachments, stagedAttachmentCount = 0, onSend, beforeSend, onStop, startedAt, suggestions, allowAttachments = false, onTyping, allowDiscussion, blockedReason, onDraftChange, clearOnSubmit = false, draftKey, tools, attachments = [], notice, contentClassName }: ComposerProps) {
   const t = useT()
   const whenVisible = useWhenVisible()
   const [now, setNow] = useState(Date.now)
@@ -209,13 +211,13 @@ export function Composer({ ref, disabled, streaming, placeholder, inputLabel, ma
                 <Star className={cn('size-3', chip.main && 'fill-tone-warning-fg text-tone-warning-fg')} />
               </button>}
               <Icon className="size-3 shrink-0" /><span className="truncate">{chip.label}</span>
-              {chip.onRemove && <button type="button" disabled={chip.disabled} aria-label={t('task.materials.unstage', { label: chip.label })} onClick={chip.onRemove}><X className="size-3" /></button>}
+              {chip.onRemove && <button type="button" disabled={chip.disabled} aria-label={t(inputLabels ? 'task.materials.unstageInput' : 'task.materials.unstage', { label: chip.label })} onClick={chip.onRemove}><X className="size-3" /></button>}
             </li>
           })}
           {pending.map((p, i) => (
             <li key={`pending-${i}`} className={chipClass}>
               <Paperclip className="size-3 shrink-0" /><span className="truncate">{p.file.name}</span>
-              <button type="button" aria-label={t('chat.removeAttachment')} onClick={() => setPending((cur) => cur.filter((_, j) => j !== i))}>
+              <button type="button" aria-label={inputLabels ? t('task.materials.unstageInput', { label: p.file.name }) : t('chat.removeAttachment')} onClick={() => setPending((cur) => cur.filter((_, j) => j !== i))}>
                 <X className="size-3" />
               </button>
             </li>

@@ -24,7 +24,7 @@ import { useTagShareStore } from './tagShare'
  * 각 항목의 [첨부]로 입력창 칩에 붙이고('첨부됨'을 다시 누르면 뺀다), 보낸 뒤에는 서버가 비우고 '사용됨'을 붙인다.
  * 내 태그 변경 직후에는 들어온 항목을 표시(data-fresh)하고 빠진 항목을 잠시 남긴다(tagShare).
  */
-export function MaterialsPanel({ task }: { task: Task }) {
+export function MaterialsPanel({ task, embedded = false }: { task: Task; embedded?: boolean }) {
   const actor = useActor()
   const t = useT()
   const uploadRef = useRef<HTMLInputElement>(null)
@@ -68,24 +68,44 @@ export function MaterialsPanel({ task }: { task: Task }) {
       toast.success(t('task.materials.uploaded', { count: list.length }), { description: t('task.materials.uploadShareHint') })
     } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
   }
-  const attach = (file: FileMeta, label = file.name) => <AttachToggle attached={!!weightOf(file.id)} label={label} disabled={disabled} onToggle={() => void change(file.id, weightOf(file.id) ? null : 'reference')} />
+  const attach = (file: FileMeta, label = file.name) => <AttachToggle inputLabels attached={!!weightOf(file.id)} label={label} disabled={disabled} onToggle={() => void change(file.id, weightOf(file.id) ? null : 'reference')} />
   // 첨부 중인 이전 버전이면 새 버전으로 바꾸기(사람이 고른다 — 자동 교체 없음)
   const switchVersion = (file: FileMeta) => {
     const newer = newerOf.get(file.id)
     return newer && !disabled && !!weightOf(file.id) && <button type="button" className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-tone-info-fg/40 px-1 text-tone-info-fg" onClick={() => void run(switchInputVersion(actor, task.id, file.id, newer))}><ArrowUpCircle className="size-3" />{t('task.materials.newVersion')}</button>
   }
   const stage = (file: FileMeta) => <>{switchVersion(file)}{used.has(file.id) && <UsedMark testId={`used-${file.id}`} />}{attach(file)}</>
-  return <div className="flex h-full min-h-0 flex-col gap-3 text-xs" data-testid="materials-panel">
+  return <div className="flex shrink-0 flex-col gap-3 text-xs" data-testid="materials-panel">
     {(candidates.isError || own.isError) && <div role="alert">{t('task.materials.loadFailed')} <button type="button" className="underline" onClick={() => { void candidates.refetch(); void own.refetch() }}>{t('common.retry')}</button></div>}
-    <section data-tour="materials-library" data-testid="materials-library" aria-labelledby={libraryId} className="min-h-0 flex-1 space-y-3 overflow-y-auto">
-      <div className="flex items-center gap-1"><h3 id={libraryId} className="text-sm font-medium">{t('task.materials.library')}</h3><HelpTip text={t('task.materials.libraryHelp')} /></div>
+    <section data-tour="materials-library" data-testid="materials-library" aria-labelledby={libraryId} className="space-y-3">
+      <div className={cn('flex items-center gap-1', embedded && 'max-lg:hidden')}><h3 id={libraryId} className="text-sm font-medium">{t('task.materials.linkedLibrary')}</h3><HelpTip text={t('task.materials.libraryHelp')} /></div>
       {!!share?.gone.length && <div data-testid="materials-gone" className="space-y-1 rounded-xl border border-dashed p-2 text-muted-foreground">
         <div className="flex items-center gap-1 font-medium">{t('task.materials.gone')}<HelpTip text={t('task.materials.goneHelp')} /></div>
         <ul className="flex flex-wrap gap-1">{share.gone.map((item) => <li key={item.id} className={cn('rounded-full border px-1.5 line-through', item.kind === 'conversation' && 'font-mono')}>{item.label}</li>)}</ul>
       </div>}
+      {(!!srBodies.data?.length || srFiles.length > 0) && <section aria-label={t('task.materials.srSection')} className="space-y-2"><h4 className="font-medium">{t('task.materials.srSection')}</h4>
+      {!!srBodies.data?.length && <div data-testid="materials-sr-bodies" className="space-y-2 border-t pt-2">
+        <div className="flex items-center gap-1 font-medium">{t('task.materials.srBodies')}<HelpTip text={t('task.materials.srBodiesHelp')} /></div>
+        {srBodies.data.map((item) => <div key={item.srId} className="flex items-center gap-1 rounded-xl border p-2" data-testid={`sr-body-${item.srId}`}>
+          <ClipboardList className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate"><span className="font-mono">{item.code}</span> · {item.title}</span>
+          {item.used && <UsedMark />}
+          <AttachToggle inputLabels attached={item.selected} label={item.code} disabled={disabled} onToggle={() => void run(item.selected ? removeSrInput(task.id, item.srId) : selectSrInput(task.id, item.srId))} />
+        </div>)}
+      </div>}
+      {srFiles.length > 0 && <div data-testid="materials-sr-files" className="space-y-2 border-t pt-2">
+        <div className="flex items-center gap-1 text-xs font-medium">{t('task.materials.srFiles')} · <span className="font-mono">{srFiles[0]!.srCode}</span> <span className="truncate font-normal text-muted-foreground">{srFiles[0]!.srTitle}</span><HelpTip text={t('task.materials.srFilesHelp')} /></div>
+        {srFiles.map((item) => <div key={item.file.id} className="flex items-center gap-1 rounded-xl border p-2" data-testid={`sr-file-${item.file.id}`}>
+          <button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(item.file)}>{item.file.name}</button>
+          {isAiGenerated(item.file) && <Badge tone="violet">{t('components.aiGenerated')}</Badge>}
+          <button type="button" className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg hover:bg-muted" aria-label={t('task.download')} onClick={() => void downloadBlob(item.file, t)}><Download className="size-3.5" /></button>
+          {stage(item.file)}
+        </div>)}
+      </div>}
+      </section>}
       <FileDropZone data-testid="materials-own" label={t('dropzone.toUpload')} disabled={disabled} onFiles={(files) => void upload(files)}><div className="space-y-2">
         <div className="font-medium">{t('task.materials.ownSection')}</div>
-        <FileList files={own.data ?? []} taskId={task.id} onPreview={setPreview} onToggleOutput={disabled ? undefined : (fileId, isOutput) => void setOutputTag(actor, task.id, fileId, isOutput).catch((error: unknown) => toast.error(String(error)))} canDelete={!disabled} deletableBy={actor.userId} renderActions={stage} />
+        <FileList showVersion={false} files={own.data ?? []} taskId={task.id} onPreview={setPreview} onToggleOutput={disabled ? undefined : (fileId, isOutput) => void setOutputTag(actor, task.id, fileId, isOutput).catch((error: unknown) => toast.error(String(error)))} canDelete={!disabled} deletableBy={actor.userId} renderActions={stage} />
         {!disabled && <><button type="button" className="flex w-full items-center justify-center gap-1 rounded-lg border p-1.5" onClick={() => uploadRef.current?.click()}><Upload className="size-3.5" />{t('task.materials.upload')}</button><input ref={uploadRef} type="file" multiple className="hidden" onChange={(event) => { void upload(event.target.files); event.target.value = '' }} /></>}
       </div></FileDropZone>
       <div data-testid="materials-shared" className="space-y-2 border-t pt-2">
@@ -96,31 +116,13 @@ export function MaterialsPanel({ task }: { task: Task }) {
           : !shared.length && (search ? <div className="space-y-1 rounded-xl border border-dashed p-3 text-center text-muted-foreground"><p>{t('task.materials.noSearchResults', { query: search })}</p><button type="button" className="underline" onClick={() => setSearch('')}>{t('task.materials.clearSearch')}</button></div>
             : <div className="rounded-xl border border-dashed p-3 text-center text-muted-foreground">{t('task.materials.noShared')}</div>)}
         {candidates.isSuccess && sortedGroups.flatMap(([assistantId, items]) => [<div key={`group-${assistantId}`} className="pt-1 font-medium" data-testid={`shared-group-${assistantId}`}>{assistantById.get(assistantId)?.name ?? assistantId}</div>, ...items.sort((a, b) => a.file.name.localeCompare(b.file.name) || a.file.version - b.file.version).map((item) => <div key={item.file.id} className={cn('rounded-xl border p-2', fresh.has(item.file.id) && 'border-tone-info-fg/40 bg-tone-info-bg')} data-testid={`candidate-file-${item.file.id}`} data-fresh={fresh.has(item.file.id) ? 'true' : undefined}>
-          <div className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(item.file)}>{item.file.name} v{item.file.version}</button>{fresh.has(item.file.id) && <span className="shrink-0 text-[11px] text-tone-info-fg">{t('task.materials.fresh')}</span>}{stage(item.file)}</div>
+          <div className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(item.file)}>{item.file.name}</button>{fresh.has(item.file.id) && <span className="shrink-0 text-[11px] text-tone-info-fg">{t('task.materials.fresh')}</span>}{stage(item.file)}</div>
           <div className="mt-1 text-xs text-muted-foreground">{isAiGenerated(item.file) && <><Badge tone="violet">{t('components.aiGenerated')}</Badge> · </>}{item.role === 'output' ? <Badge tone="violet">{t('task.materials.roleOutput')}</Badge> : <Badge tone="neutral">{t('task.materials.roleUpload')}</Badge>} · <SourceLink taskId={item.sourceTaskId} code={item.sourceCode} title={item.sourceTitle} /> · {item.viaTags.join(', ')}
             {!!item.olderVersionIds?.length && <button type="button" className="ml-2 underline" onClick={() => setExpanded(expanded === item.file.id ? null : item.file.id)}>{t('task.materials.olderVersions', { count: item.olderVersionIds.length })}</button>}
           </div>
           {expanded === item.file.id && <OlderVersions file={item.file} attach={attach} onPreview={setPreview} />}
         </div>)])}
       </div>
-      {!!srBodies.data?.length && <div data-testid="materials-sr-bodies" className="space-y-2 border-t pt-2">
-        <div className="flex items-center gap-1 font-medium">{t('task.materials.srBodies')}<HelpTip text={t('task.materials.srBodiesHelp')} /></div>
-        {srBodies.data.map((item) => <div key={item.srId} className="flex items-center gap-1 rounded-xl border p-2" data-testid={`sr-body-${item.srId}`}>
-          <ClipboardList className="size-3.5 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate"><span className="font-mono">{item.code}</span> · {item.title}</span>
-          {item.used && <UsedMark />}
-          <AttachToggle attached={item.selected} label={item.code} disabled={disabled} onToggle={() => void run(item.selected ? removeSrInput(task.id, item.srId) : selectSrInput(task.id, item.srId))} />
-        </div>)}
-      </div>}
-      {srFiles.length > 0 && <div data-testid="materials-sr-files" className="space-y-2 border-t pt-2">
-        <div className="flex items-center gap-1 text-xs font-medium">{t('task.materials.srFiles')} · <span className="font-mono">{srFiles[0]!.srCode}</span> <span className="truncate font-normal text-muted-foreground">{srFiles[0]!.srTitle}</span><HelpTip text={t('task.materials.srFilesHelp')} /></div>
-        {srFiles.map((item) => <div key={item.file.id} className="flex items-center gap-1 rounded-xl border p-2" data-testid={`sr-file-${item.file.id}`}>
-          <button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => setPreview(item.file)}>{item.file.name} v{item.file.version}</button>
-          {isAiGenerated(item.file) && <Badge tone="violet">{t('components.aiGenerated')}</Badge>}
-          <button type="button" className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg hover:bg-muted" aria-label={t('task.download')} onClick={() => void downloadBlob(item.file, t)}><Download className="size-3.5" /></button>
-          {stage(item.file)}
-        </div>)}
-      </div>}
       <div data-tour="materials-conversations" className="space-y-2 border-t pt-2"><div className="flex items-center gap-1 text-sm font-semibold">{t('task.materials.sameTagConversations', { count: candidates.data?.conversations.length ?? 0 })}<HelpTip text={t('task.inputs.help')} /></div><ConversationInputs taskId={task.id} candidates={candidates.data?.conversations ?? []} disabled={disabled} fresh={fresh} /></div>
     </section>
     <FilePreviewDialog file={preview} onClose={() => setPreview(null)} />

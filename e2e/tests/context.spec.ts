@@ -1,3 +1,4 @@
+import { materialToggleName, revealMaterials } from './materials.js'
 import { expect, test, type Page } from '@playwright/test'
 
 const password = 'e2e-password-1234'
@@ -43,7 +44,7 @@ async function selectedInputs<T>(page: Page, taskId: string): Promise<T[]> {
 }
 async function openMaterials(page: Page, taskId: string) {
   await page.goto(`/c/${taskId}`)
-  await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
+  await revealMaterials(page)
 }
 
 test('E3a 직접 공유 후보와 전체 원문은 팀 의견을 제외한다', async ({ page }) => {
@@ -54,7 +55,7 @@ test('E3a 직접 공유 후보와 전체 원문은 팀 의견을 제외한다', 
   await expect(page.getByTestId(`conversation-${source.id}`)).toBeVisible()
   await expect(page.getByTestId(`conversation-${unrelated.id}`)).toHaveCount(0)
   // [첨부] 한 번에 대화 전체(전체 원문) — 범위 고르기 창 없이 바로 붙는다
-  await page.getByTestId('conversation-candidates').getByRole('button', { name: `${source.code} 첨부`, exact: true }).click()
+  await page.getByTestId('conversation-candidates').getByRole('button', { name: materialToggleName(`${source.code}`), exact: true }).click()
   await expect.poll(async () => (await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json() as unknown[]).length).toBe(1)
   const selected = await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json() as Array<{ snapshot: { messageIds: string[] } }>
   expect(selected[0]!.snapshot.messageIds).toHaveLength(2)
@@ -110,11 +111,11 @@ test('E3d 선택 시점은 고정되고 새 메시지는 갱신 뒤 포함된다
   await request(page, source.threadId, '원본 질문 E3d 첫째')
   await openMaterials(page, consumer.id)
   // [첨부] 한 번에 대화 전체(전체 원문) — 범위 고르기 창 없이 바로 붙는다
-  await page.getByTestId('conversation-candidates').getByRole('button', { name: `${source.code} 첨부`, exact: true }).click()
+  await page.getByTestId('conversation-candidates').getByRole('button', { name: materialToggleName(`${source.code}`), exact: true }).click()
   const first = await selectedInputs<{ snapshot: { id: string; messageIds: string[] } }>(page, consumer.id)
   await request(page, source.threadId, '원본 질문 E3d 둘째')
   await page.reload()
-  await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
+  await revealMaterials(page)
   await expect(page.getByTestId('conversation-candidates').getByText(/새 메시지 2 · 갱신/)).toBeVisible()
   const still = await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json() as Array<{ snapshot: { id: string; messageIds: string[] } }>
   expect(still[0]!.snapshot.id).toBe(first[0]!.snapshot.id)
@@ -135,21 +136,21 @@ test('E3e 참고 대화는 한 질문에서 소비되고 자료함에서 다시 
   const { source, consumer } = await setup(page, 'consume')
   await request(page, source.threadId, '원본 질문 E3e')
   await openMaterials(page, consumer.id)
-  await expect(page.locator('[data-tour="materials-conversations"]')).toContainText('같은 태그 대화 1개')
+  await expect(page.locator('[data-tour="materials-conversations"]')).toContainText('#태그 공유 대화 1개')
   // [첨부] 한 번에 대화 전체(전체 원문) — 범위 고르기 창 없이 바로 붙는다
-  await page.getByTestId('conversation-candidates').getByRole('button', { name: `${source.code} 첨부`, exact: true }).click()
+  await page.getByTestId('conversation-candidates').getByRole('button', { name: materialToggleName(`${source.code}`), exact: true }).click()
   const selected = await selectedInputs<{ snapshot: { id: string } }>(page, consumer.id)
   await request(page, consumer.threadId, '첫 소비 E3e')
   // 둘째 요청 기록에도 첫 질문이 대화 이력으로 남으므로, 첫 요청 본문은 둘째를 보내기 전에 확인한다
   if (live) expect(await modelRequest(page, '첫 소비 E3e')).toContain('원본 질문 E3e')
   expect(await (await page.request.get(`/api/tasks/${consumer.id}/conversation-inputs`)).json()).toEqual([])
   await page.reload()
-  await page.getByRole('tablist', { name: '보조 패널' }).getByRole('tab', { name: '자료' }).click()
+  await revealMaterials(page)
   await expect(page.getByTestId('conversation-candidates')).toContainText('사용됨')
   await request(page, consumer.threadId, '둘째 소비 E3e')
   if (live) expect(await modelRequest(page, '둘째 소비 E3e')).not.toContain('## 참조 대화')
   // [첨부] 한 번에 대화 전체(전체 원문) — 범위 고르기 창 없이 바로 붙는다
-  await page.getByTestId('conversation-candidates').getByRole('button', { name: `${source.code} 첨부`, exact: true }).click()
+  await page.getByTestId('conversation-candidates').getByRole('button', { name: materialToggleName(`${source.code}`), exact: true }).click()
   const again = await selectedInputs<{ snapshot: { id: string } }>(page, consumer.id)
   expect(again[0]!.snapshot.id).not.toBe(selected[0]!.snapshot.id)
 })
