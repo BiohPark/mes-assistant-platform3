@@ -135,3 +135,9 @@ codex-critic은 커밋 뒤에 부른다. 리뷰 brief가 `git diff main...HEAD`�
 게이트(`gate.sh`) 결과를 `| tail | cut && 실행`으로 판정하지 말 것 — 파이프의 종료 코드는 마지막 명령이라 거부돼도 워커가 실행된다. `if bash gate.sh brief > out; then …` 형태로 판정한다.
 **근거**: s9-sr-simplify — G4 거부(258단어)였으나 codex-main이 실행됨, 즉시 중지(변경 없음)
 **worker**: orchestrator
+
+## 2026-10-17 — 병렬 worktree에서 pnpm install 동시 실행 금지
+- 증상: 한 worktree의 web 단위 테스트 103파일·E2E 113건이 전부 실패(`Cannot read properties of null (reading 'useRef')`), 코드 diff는 8파일 51줄.
+- 원인: 두 worktree의 검증 스크립트가 같은 시각에 `pnpm install --frozen-lockfile`을 실행 → 공유 store 하드링크/심링크가 뒤섞여 React 훅 디스패처가 깨짐. 코드 문제가 아님.
+- 조치: 해당 worktree `node_modules`(루트·apps·packages·e2e) 삭제 후 재설치 → 전부 통과.
+- 규칙: worktree별 install은 **직렬**로(또는 worktree 생성 직후 한 번만), 검증 스크립트에서 install을 빼고 미리 끝낸다. 대량 실패가 나면 코드보다 먼저 node_modules 손상을 의심한다.
