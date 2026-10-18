@@ -17,7 +17,7 @@ import { emitEvent } from '@/app/useEvents'
 
 const task = { id: 't', code: 'WK-2026-0001', assistantId: 'a', title: '대화', titleSource: 'default', summary: '', status: 'in_progress', ownerId: 'u', assigneeIds: ['u'], priority: 'normal', tags: [], checklist: [], inputs: [], outputFileIds: [], threadId: 'h', createdAt: '2026-09-28T00:00:00.000Z', createdBy: 'u', lastActivityAt: '2026-09-28T00:00:00.000Z' } satisfies Task
 
-afterEach(() => { cleanup(); inputSelection.setState({ byTask: {} }); vi.unstubAllGlobals(); sessionStorage.clear(); useMaterialsDrawer.setState({ byTask: {} }); useTagShareStore.setState({ openSeq: {}, consumedSeq: {} }) })
+afterEach(() => { cleanup(); vi.useRealTimers(); inputSelection.setState({ byTask: {} }); vi.unstubAllGlobals(); sessionStorage.clear(); useMaterialsDrawer.setState({ byTask: {} }); useTagShareStore.setState({ openSeq: {}, consumedSeq: {} }) })
 
 function stub() {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -118,6 +118,8 @@ it('MDI 두 대화의 패널 id와 수동 선택은 겹치지 않는다', async 
 })
 
 it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환이 Composer와 입력·전송 상태를 유지한다 (%s)', async (waitingFor) => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTimeAsync })
   const pendingResponse = new Promise<Response>(() => {})
   const fetchMock = vi.fn(async (url: string) => {
     if (url === '/api/threads/h-pending/requests') {
@@ -140,10 +142,15 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
   renderWithProviders(<MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><TaskHeader task={task} assistant={assistant} /><TaskBody task={{ ...task, threadId: 'h-pending' }} assistant={{ id: 'a', name: '도우미' } as Assistant} /></TooltipProvider></MeContext>)
   const chat = () => within(screen.getByRole('region', { name: '대화' }))
   const input = chat().getByRole('textbox')
+  const send = chat().getByRole('button', { name: '전송' })
   const composer = input.parentElement!.parentElement!
   const draft = '응답을 기다리는 AI 요청'
+  // 초기 메시지 조회도 추정 revision을 바꾸므로 완료 후 초안의 디바운스를 진행한다.
+  await chat().findByRole('button', { name: '자료 열기' })
   fireEvent.change(input, { target: { value: draft } })
-  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
+  expect(send).toBeDisabled()
+  await act(() => vi.advanceTimersByTimeAsync(400))
+  await waitFor(() => expect(send).toBeEnabled())
   fireEvent.keyDown(input, { key: 'Enter' })
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/threads/h-pending/requests', expect.objectContaining({ method: 'POST' })))
 
@@ -168,9 +175,9 @@ it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환
   expect(screen.queryByRole('button', { name: '전송 기록' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '파일 빼고 다시' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '텍스트로 보내기' })).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole('button', { name: '더 보기' }))
+  await user.click(screen.getByRole('button', { name: '더 보기' }))
   for (const label of ['전송 기록', '파일 빼고 다시', '텍스트로 보내기']) expect(screen.queryByRole('menuitem', { name: label })).not.toBeInTheDocument()
-  await userEvent.keyboard('{Escape}')
+  await user.keyboard('{Escape}')
   if (waitingFor === 'stream') {
     expectedDraft = '응답 중 작성한 다음 질문'
     fireEvent.change(input, { target: { value: expectedDraft } })
@@ -318,6 +325,8 @@ it('좁은 화면 자동 열림은 접힌 바이며 펼친 다음에만 50% 자�
 })
 
 it('초안 크기 정상→한도 초과→정상 전환에서만 헤더·메뉴 오류 도구를 노출한다', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTimeAsync })
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (url.endsWith('/requests/estimate')) {
       const over = JSON.parse(String(init?.body)).draft === '초과'
@@ -330,18 +339,23 @@ it('초안 크기 정상→한도 초과→정상 전환에서만 헤더·메뉴
   }))
   renderWithProviders(view(task))
   const input = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  const send = screen.getByRole('button', { name: '전송' })
+  await screen.findByRole('button', { name: '자료 열기' })
   fireEvent.change(input, { target: { value: '정상' } })
-  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
+  await act(() => vi.advanceTimersByTimeAsync(400))
+  await waitFor(() => expect(send).toBeEnabled())
   expect(screen.queryByRole('button', { name: '전송 기록' })).not.toBeInTheDocument()
   fireEvent.change(input, { target: { value: '초과' } })
+  await act(() => vi.advanceTimersByTimeAsync(400))
   expect(await screen.findByRole('button', { name: '전송 기록' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '전송' })).toBeDisabled()
-  await userEvent.click(screen.getByRole('button', { name: '더 보기' }))
+  expect(send).toBeDisabled()
+  await user.click(screen.getByRole('button', { name: '더 보기' }))
   expect(screen.getByRole('menuitem', { name: '파일 빼고 다시' })).toBeInTheDocument()
-  await userEvent.keyboard('{Escape}')
+  await user.keyboard('{Escape}')
   fireEvent.change(input, { target: { value: '정상' } })
+  await act(() => vi.advanceTimersByTimeAsync(400))
   await waitFor(() => expect(screen.queryByRole('button', { name: '전송 기록' })).not.toBeInTheDocument())
-  await waitFor(() => expect(screen.getByRole('button', { name: '전송' })).toBeEnabled())
+  await waitFor(() => expect(send).toBeEnabled())
 })
 
 it('같은 화면 인스턴스에서 대화 ID가 바뀌면 이전 대화의 메모 초안·첨부를 섞지 않는다', async () => {
