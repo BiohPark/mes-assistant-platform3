@@ -212,25 +212,27 @@ describe('buildChatRequest — SR intake', () => {
   })
 })
 
-it('excludes reasoning from dry-run tray estimates and actual context including reference conversations', async () => {
+it.each(['full', 'brief'] as const)('keeps estimate and send identical in %s detail, with reasoning only in explicit references', async (detail) => {
   const source = await startConversation(dev, { assistantId: 'urs', tags: ['reasoning'] })
   await appendMessage(dev, source.thread.id, 'user', '원문 질문')
   const reply = await appendMessage(dev, source.thread.id, 'assistant', '참조 답변')
+  await db.messages.update(reply.id, { reasoning: 'REFERENCE_REASONING', steps: [
+    { type: 'reasoning', text: 'REFERENCE_REASONING' },
+    { type: 'tool', name: 'lookup', input: 'RAW_INPUT', output: 'RAW_OUTPUT', status: 'done' }, { type: 'text', text: '参照答변' },
+  ] })
   const target = await startConversation(dev, { assistantId: 'fds', tags: ['reasoning'] })
   await selectConversation(dev, target.task.id, source.task.id, { weight: 'reference' })
   await appendMessage(dev, target.thread.id, 'user', '질문')
   const { scope, thread } = await scopeOf(target.task.id)
-  const history = await historyOf(thread.id)
-  const baseline = await buildChatRequest(scope, thread, history, { dryRun: true })
-  await db.messages.update(reply.id, { reasoning: 'PRIVATE_REASONING'.repeat(10_000) })
-  const withReasoning = history.map(row => ({ ...row, reasoning: 'PRIVATE_REASONING'.repeat(10_000) }))
-  const estimated = await buildChatRequest(scope, thread, withReasoning, { dryRun: true })
-  const actual = await buildChatRequest(scope, thread, withReasoning)
-  expect(estimated.info.bytes).toBe(baseline.info.bytes)
+  const history = (await historyOf(thread.id)).map(row => ({ ...row, reasoning: 'HISTORY_REASONING' }))
+  const estimated = await buildChatRequest(scope, thread, history, { dryRun: true, detail })
+  const actual = await buildChatRequest(scope, thread, history, { detail })
   expect(actual.info.bytes).toBe(estimated.info.bytes)
   expect(actual.messages).toEqual(estimated.messages)
-  expect(JSON.stringify(actual.messages)).not.toContain('PRIVATE_REASONING')
-  expect(actual.messages.every(message => !('reasoning' in message))).toBe(true)
+  const prompt = JSON.stringify(actual.messages)
+  expect(prompt).toContain('REFERENCE_REASONING')
+  expect(prompt).not.toContain('HISTORY_REASONING')
+  expect(prompt.includes('RAW_OUTPUT')).toBe(detail === 'full')
 })
 
 describe('question URL context', () => {

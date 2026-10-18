@@ -272,3 +272,23 @@ describe('OpenWebUI session mode — work after the text stops', () => {
     expect(await collect(req, settled())).toEqual([{ type: 'delta', text: '보인 답' }, { type: 'status', text: '답변 마무리 중' }, { type: 'done' }])
   })
 })
+
+it('streams indexed steps in output order even when a complete tool call passes between polls', async () => {
+  upstream([{}, { done: true, output: [
+    { type: 'reasoning', content: [{ text: '검토' }] }, { type: 'message', content: [{ text: '먼저' }] },
+    { type: 'function_call', call_id: 'a', name: 'lookup', arguments: '{"q":1}' },
+    { type: 'function_call_output', call_id: 'a', output: '원문 결과' }, { type: 'message', content: [{ text: '나중' }] },
+  ] }])
+  const onStep = vi.fn()
+  await collect({ ...req, onStep })
+  expect(onStep.mock.calls.map(([index, step]) => [index, step.type])).toEqual([[0, 'reasoning'], [1, 'text'], [2, 'tool'], [3, 'text']])
+  expect(onStep.mock.calls[2]?.[1]).toMatchObject({ name: 'lookup', output: '원문 결과', status: 'done' })
+})
+
+it('removes stale trailing steps when the upstream revises a shorter nonempty output', async () => {
+  upstream([{ output: [{ type: 'message', content: [{ text: '앞' }] }, { type: 'reasoning', content: [{ text: '옛 생각' }] }] },
+    { done: true, output: [{ type: 'message', content: [{ text: '앞' }] }] }])
+  const onStep = vi.fn()
+  await collect({ ...req, onStep })
+  expect(onStep.mock.calls.at(-1)).toEqual([0, { type: 'text', text: '앞' }, 1])
+})

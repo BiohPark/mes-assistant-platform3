@@ -68,6 +68,22 @@ describe('conversation inputs DB', () => {
     expect((await service.candidates(mine.task.id)).map((item) => item.taskId)).not.toContain(source.task.id)
   })
 
+  it('sizes candidates and selections with the same rendering as the sent reference (brief and full), including legacy reasoning (D75)', async () => {
+    const mine = await make(['context-size'])
+    const source = await make(['context-size'], ['질문'])
+    const steps = [{ type: 'reasoning' as const, text: '단계 생각' }, { type: 'tool' as const, name: 'lookup', input: '도구 입력', output: '도구 결과', status: 'done' as const }, { type: 'text' as const, text: '단계 답' }]
+    await db.insert(message).values([
+      { id: `${source.task.id}-legacy`, threadId: source.thread.id, seq: 2, role: 'assistant', content: '옛 답', reasoning: '옛 생각', status: 'done' },
+      { id: `${source.task.id}-steps`, threadId: source.thread.id, seq: 3, role: 'assistant', content: '단계 답', reasoning: '단계 생각', steps, status: 'done' },
+    ])
+    const brief = Buffer.byteLength('질문') + Buffer.byteLength('[생각 과정]\n옛 생각\n\n옛 답') + Buffer.byteLength('[생각 과정]\n단계 생각\n\n단계 답')
+    const full = brief - Buffer.byteLength('[생각 과정]\n단계 생각\n\n단계 답')
+      + Buffer.byteLength('[생각 과정]\n단계 생각\n\n[도구 사용: lookup · done]\n입력:\n도구 입력\n결과:\n도구 결과\n\n단계 답')
+    expect((await service.candidates(mine.task.id)).find(item => item.taskId === source.task.id)).toMatchObject({ messageCount: 3, bytes: brief, bytesFull: full })
+    await service.select(actor, mine.task.id, source.task.id, { mode: 'full' })
+    expect((await service.list(mine.task.id)).find(item => item.input.sourceTaskId === source.task.id)).toMatchObject({ bytes: brief, bytesFull: full })
+  })
+
   it('rejects a source without a directly shared tag and the task itself', async () => {
     const source = await make(['context-other'], ['q', 'a'])
     const mine = await make(['context-mine'])

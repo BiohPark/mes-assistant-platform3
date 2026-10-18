@@ -41,6 +41,7 @@ import type { ChatMessageInput, ChatMeta } from './provider.js'
 export type ChatScope = { kind: 'task'; task: Task; assistant: Assistant } | { kind: 'sr'; sr: ServiceRequest; intake: Assistant; files: FileAsset[] }
 
 export interface BuildOptions {
+  detail?: import('@mes/domain').AnswerDetail
   /** 이번 메시지에 붙인 첨부 — 그 요청에만 간다 */
   oneShotFileIds?: ID[]
   /** 요청 시작 때 확정(소비)한 '보낼 자료'. 주면 대화의 현재 선택(task.inputs) 대신 이것만 쓴다 — 실제 전송·재시도용 */
@@ -160,12 +161,13 @@ async function deliver(settings: Settings, entries: FileEntry[], opts: BuildOpti
   return { prompt, info, attached: attached?.length ? attached : undefined, lines }
 }
 
-async function loadConversations(taskId: ID, users: UserMap, ports: LlmPorts, captured?: BuildOptions['conversations']): Promise<{ prompt: PromptConversation[]; info: ConversationRequestInput[] }> {
+async function loadConversations(taskId: ID, users: UserMap, ports: LlmPorts, captured?: BuildOptions['conversations'], detail?: BuildOptions['detail']): Promise<{ prompt: PromptConversation[]; info: ConversationRequestInput[] }> {
   const loaded = captured ?? await ports.loadConversationInputs(taskId)
   const prompt: PromptConversation[] = []
   const info: ConversationRequestInput[] = []
   for (const l of [...loaded.filter(item => item.input.weight === 'main'), ...loaded.filter(item => item.input.weight !== 'main')]) {
     const pc: PromptConversation = {
+      detail,
       weight: l.input.weight,
       code: l.source.code,
       title: l.source.title,
@@ -175,7 +177,7 @@ async function loadConversations(taskId: ID, users: UserMap, ports: LlmPorts, ca
       messages: l.messages.map((m) => ({
         role: m.role === 'user' ? 'user' : 'assistant',
         author: m.role === 'user' && m.authorId ? users.get(m.authorId)?.name : undefined,
-        content: m.content,
+        content: m.content, reasoning: m.reasoning, steps: m.steps,
       })),
       summaryText: l.snapshot.summaryText,
     }
@@ -203,7 +205,7 @@ async function buildTaskRequest(scope: Extract<ChatScope, { kind: 'task' }>, set
   const srCodes = [...new Set(task.tags.map(normalizeTag).filter(isSrTag))]
   const [entries, conversations, srSources] = await Promise.all([
     loadFileEntries(task, opts.inputs ?? task.inputs, opts.oneShotFileIds ?? [], ports),
-    loadConversations(task.id, users, ports, opts.conversations),
+    loadConversations(task.id, users, ports, opts.conversations, opts.detail),
     ports.loadTaskSrs ? ports.loadTaskSrs(task.id) : ports.getServiceRequestsByCodes(srCodes).then(linked => ({ linked, selected: [] })),
   ])
   const selectedSrs = opts.srs ?? srSources.selected

@@ -155,14 +155,14 @@ export class DbLlmPorts implements LlmPorts {
   async loadConversationInputs(taskId: string, captured?: Parameters<DbConversationInputsService['load']>[2]) {
     const loaded = await new DbConversationInputsService(this.db).load(taskId, undefined, captured)
     const originals = await messagesForAi(this.db, loaded.flatMap(item => item.messages))
-    const originalById = new Map(originals.map(row => [row.id, row.content]))
+    const originalById = new Map(originals.map(row => [row.id, row]))
     const sources = await this.getTasks(loaded.map((item) => item.input.sourceTaskId))
     const assistants = await this.getAssistants()
     return loaded.flatMap((item, index) => {
       const source = sources[index]
       if (!source) return []
       return [{ input: item.input, snapshot: item.snapshot, source,
-        assistant: assistants.find((agent) => agent.id === source.assistantId), messages: item.messages.map(value => ({ ...value, content: originalById.get(value.id) ?? value.content })) }]
+        assistant: assistants.find((agent) => agent.id === source.assistantId), messages: item.messages.map(value => ({ ...value, content: originalById.get(value.id)?.content ?? value.content, steps: originalById.get(value.id)?.steps ?? value.steps })) }]
     })
   }
   async updateFileRemoteIds(fileId: string, remoteIds: Record<string, string>): Promise<void> {

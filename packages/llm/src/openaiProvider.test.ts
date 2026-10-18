@@ -127,3 +127,44 @@ it('streams explicit reasoning and split think tags while skipping sources and m
   const chunks = await collect(provider.stream({ model: 'm', messages: [] }))
   expect(chunks).toEqual([{ type: 'reasoning', text: '첫 ' }, { type: 'reasoning', text: '생각' }, { type: 'reasoning', text: '검토' }, { type: 'delta', text: '최종 답' }, { type: 'done' }])
 })
+
+it('streams direct think/text/tool/text steps without moving fragmented calls to the end', async () => {
+  const onStep = vi.fn()
+  const frame = (delta: unknown) => `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`
+  vi.stubGlobal('fetch', vi.fn(async () => sseResponse([
+    frame({ content: '<think>검토</think>먼저' }),
+    frame({ tool_calls: [{ index: 0, id: 'a', function: { name: 'lookup', arguments: '{"q":' } }] }),
+    frame({ tool_calls: [{ index: 0, function: { arguments: '1}' } }] }),
+    frame({ content: '나중' }), 'data: [DONE]\n\n',
+  ])))
+  await collect(provider.stream({ model: 'm', messages: [], onStep }))
+  const latest = new Map(onStep.mock.calls.map(([index, step]) => [index, step]))
+  expect([...latest].map(([index, step]) => [index, step.type])).toEqual([[0, 'reasoning'], [1, 'text'], [2, 'tool'], [3, 'text']])
+  expect(latest.get(2)).toMatchObject({ name: 'lookup', input: '{"q":1}' })
+})
+
+it('retains direct sources frames without choices as ordered tool results', async () => {
+  const onStep = vi.fn()
+  const source = { source: { name: 'lookup' }, document: ['원문 검색 결과'], metadata: [{ url: 'https://example.test' }] }
+  vi.stubGlobal('fetch', vi.fn(async () => sseResponse([
+    'data: {"choices":[{"delta":{"content":"앞"}}]}\n\n',
+    `data: ${JSON.stringify({ sources: [source] })}\n\n`,
+    'data: {"choices":[{"delta":{"content":"뒤"}}]}\n\ndata: [DONE]\n\n',
+  ])))
+  await collect(provider.stream({ model: 'm', messages: [], onStep }))
+  expect(onStep.mock.calls.map(([index, step]) => [index, step.type])).toEqual([[0, 'text'], [1, 'tool'], [2, 'text']])
+  expect(onStep.mock.calls[1]?.[1]).toMatchObject({ name: 'lookup', output: JSON.stringify(source), status: 'done', source: true })
+})
+
+it('marks in-flight direct tools as errored if the stream fails', async () => {
+  const onStep = vi.fn()
+  let sent = false
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({ pull(controller) {
+    if (sent) { controller.error(new Error('upstream lost')); return }
+    sent = true
+    controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"lookup","arguments":"{}"}}]}}]}\n\n'))
+  } }))))
+  const chunks = await collect(provider.stream({ model: 'm', messages: [], onStep }))
+  expect(chunks.at(-1)?.type).toBe('error')
+  expect(onStep.mock.calls.at(-1)?.[1]).toMatchObject({ type: 'tool', status: 'error' })
+})

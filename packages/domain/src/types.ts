@@ -329,6 +329,7 @@ export interface Message {
   content: string
   /** 표시·보존 전용. 다음 요청·문맥 크기·요약에는 포함하지 않는다. */
   reasoning?: string | null
+  steps?: import('./answerSteps.js').AnswerStep[] | null
   authorId?: ID
   createdAt: ISODate
   attachmentIds: ID[]

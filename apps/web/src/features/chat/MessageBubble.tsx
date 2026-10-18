@@ -1,3 +1,5 @@
+import { payloadText, renderAnswer, type AnswerStep, type StepPayload } from '@mes/domain'
+import { useAnswerDetail } from './useAnswerDetail'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Message } from '@mes/domain'
 import { useQueries } from '@tanstack/react-query'
@@ -36,6 +38,7 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
   onAskAgain?: () => void; askAgainDisabled?: boolean; intake?: boolean; assistantName?: string; message: Message; onSaveAsOutput?: () => void; onRetry?: () => void; onRetryWithoutFiles?: () => void; onRetryAsText?: () => void; onRequestInfo?: () => void
 }) {
   const t = useT()
+  const { detail } = useAnswerDetail()
   const [preview, setPreview] = useState<FileMeta | null>(null)
   const previewOpener = useRef<HTMLButtonElement | null>(null)
   const menuTrigger = useRef<HTMLButtonElement | null>(null)
@@ -78,7 +81,8 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
     return status === 404 || status === 410 ? t('chat.deletedFile') : status === 403 ? t('chat.attachmentForbidden') : t('chat.attachmentUnavailable')
   }
   async function copy() {
-    if (await copyText(message.content)) toast.success(t('chat.copiedMessage'))
+    const labels = { reasoning: t('chat.reasoning'), tool: t('chat.toolUse'), source: t('chat.sourceUse'), code: t('chat.codeRun'), input: t('chat.stepInput'), output: t('chat.stepOutput') }
+    if (await copyText(assistant ? renderAnswer(message, detail, labels) : message.content)) toast.success(t('chat.copiedMessage'))
     else toast.error(t('chat.copyMessageFailed'))
   }
   // 작업 중이면 조용해도 '응답 대기'가 아니다 — 단계 이름과 작업 시간을 그대로 보이고, 제한은 최대 처리 시간까지
@@ -93,26 +97,7 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
   const progressTiming = <>{sinceText && (progress?.working || !limitText) && <><span aria-hidden>·</span><span aria-live="off">{sinceText}</span></>}
     {limitText && <span aria-live="off">{limitText}</span>}</>
   const actionClass = 'inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50'
-  return <><div data-message-id={message.id} data-search-match={searchMatch || undefined} tabIndex={-1} className={`group/message flex gap-2.5 rounded-md data-[search-match=true]:ring-2 data-[search-match=true]:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${assistant ? '' : 'flex-row-reverse'}`}>{!assistant && <UserAvatar user={user} size="sm" className="mt-1" />}<div className={`flex min-w-0 flex-col gap-1 ${assistant ? 'max-w-full items-start sm:max-w-[92%]' : 'max-w-[90%] items-end sm:max-w-[80%]'}`}>
-    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">{assistant ? assistantName ?? t('chat.agent') : user?.name ?? t(intake ? 'sr.requester' : 'chat.user')}</span><span>{formatDateTime(message.createdAt)}</span>{assistant && (progress || message.status === 'streaming') && <>
-      {progressDot}
-      <span role="status">{progressLabel}</span>
-      {progress && <><span aria-hidden>·</span><span role="timer" aria-live="off">{t('chat.elapsed', { seconds: progress.elapsed })}</span></>}
-      {progressTiming}
-    </>}{!assistant && !intake && message.kind === 'discussion' && <Badge tone="warning" className="gap-0.5 px-1.5"><MessagesSquare className="size-2.5" />{t('chat.discussionBadge')}</Badge>}</div>
-    {assistant && message.reasoning && <details open={reasoningOpen} className="w-full rounded-lg border bg-muted text-foreground">
-      <summary aria-expanded={reasoningOpen} onClick={(event) => { event.preventDefault(); toggleReasoning() }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleReasoning() }
-        }} className="min-h-11 cursor-pointer rounded-lg px-3 py-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('chat.reasoning')}
-        {/* 접힌 채 생각 중이면 마지막 두 줄만 아래쪽 기준으로 보인다. 이름(생각 과정)·읽기 흐름을 흔들지 않게 보조기술에서는 숨긴다 */}
-        {reasoningPreview && <span data-reasoning-preview aria-hidden="true" className="mt-1 flex max-h-10 flex-col justify-end overflow-hidden whitespace-pre-wrap break-words font-normal leading-5 text-muted-foreground">{reasoningPreview}</span>}</summary>
-      <div ref={reasoningScroll} aria-live="off" onScroll={(event) => {
-        const box = event.currentTarget
-        reasoningFollow.current = box.scrollHeight - box.scrollTop - box.clientHeight <= followDistance
-      }} className="max-h-64 overflow-y-auto scroll-auto whitespace-pre-wrap break-words px-3 pb-3 text-sm">{reasoning}</div>
-    </details>}
-    {(!assistant || hasContent) && <div className={`rounded-2xl px-3.5 py-2.5 ${tone === 'card' ? 'border bg-card' : tone === 'warning' ? 'rounded-tr-sm border border-dashed border-tone-warning-fg/40 bg-tone-warning-bg' : 'rounded-tr-sm bg-primary text-primary-foreground'}`}><div className="md-body" data-tone={tone}><ReactMarkdown remarkPlugins={[remarkGfm, remarkSrCodes]} components={{
+  const renderContent = (text: string) => <div className={`rounded-2xl px-3.5 py-2.5 ${tone === 'card' ? 'border bg-card' : tone === 'warning' ? 'rounded-tr-sm border border-dashed border-tone-warning-fg/40 bg-tone-warning-bg' : 'rounded-tr-sm bg-primary text-primary-foreground'}`}><div className="md-body" data-tone={tone}><ReactMarkdown remarkPlugins={[remarkGfm, remarkSrCodes]} components={{
         a: ({ href, title, children }) => href?.startsWith(SR_CODE_HREF) ? <SrCodeLink code={href.slice(SR_CODE_HREF.length)}>{children}</SrCodeLink> : <a href={href} title={title} target="_blank" rel="noreferrer">{children}</a>,
         pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
         img: ({ src, alt, title }) => {
@@ -127,7 +112,34 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
             } catch (error) { toast.error(attachmentFallback(error)) }
           }}><img src={src} alt={alt ?? ''} title={title} loading="lazy" className="max-h-96 max-w-full rounded-lg object-contain" /></button>
         },
-      }}>{content}</ReactMarkdown></div></div>}
+      }}>{text}</ReactMarkdown></div></div>
+  return <><div data-message-id={message.id} data-search-match={searchMatch || undefined} tabIndex={-1} className={`group/message flex gap-2.5 rounded-md data-[search-match=true]:ring-2 data-[search-match=true]:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${assistant ? '' : 'flex-row-reverse'}`}>{!assistant && <UserAvatar user={user} size="sm" className="mt-1" />}<div className={`flex min-w-0 flex-col gap-1 ${assistant ? 'max-w-full items-start sm:max-w-[92%]' : 'max-w-[90%] items-end sm:max-w-[80%]'}`}>
+    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">{assistant ? assistantName ?? t('chat.agent') : user?.name ?? t(intake ? 'sr.requester' : 'chat.user')}</span><span>{formatDateTime(message.createdAt)}</span>{assistant && (progress || message.status === 'streaming') && <>
+      {progressDot}
+      <span role="status">{progressLabel}</span>
+      {progress && <><span aria-hidden>·</span><span role="timer" aria-live="off">{t('chat.elapsed', { seconds: progress.elapsed })}</span></>}
+      {progressTiming}
+    </>}{!assistant && !intake && message.kind === 'discussion' && <Badge tone="warning" className="gap-0.5 px-1.5"><MessagesSquare className="size-2.5" />{t('chat.discussionBadge')}</Badge>}</div>
+    {assistant && !message.steps?.length && message.reasoning && <details open={reasoningOpen} className="w-full rounded-lg border bg-muted text-foreground">
+      <summary aria-expanded={reasoningOpen} onClick={(event) => { event.preventDefault(); toggleReasoning() }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleReasoning() }
+        }} className="min-h-11 cursor-pointer rounded-lg px-3 py-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('chat.reasoning')}
+        {/* 접힌 채 생각 중이면 마지막 두 줄만 아래쪽 기준으로 보인다. 이름(생각 과정)·읽기 흐름을 흔들지 않게 보조기술에서는 숨긴다 */}
+        {reasoningPreview && <span data-reasoning-preview aria-hidden="true" className="mt-1 flex max-h-10 flex-col justify-end overflow-hidden whitespace-pre-wrap break-words font-normal leading-5 text-muted-foreground">{reasoningPreview}</span>}</summary>
+      <div ref={reasoningScroll} aria-live="off" onScroll={(event) => {
+        const box = event.currentTarget
+        reasoningFollow.current = box.scrollHeight - box.scrollTop - box.clientHeight <= followDistance
+      }} className="max-h-64 overflow-y-auto scroll-auto whitespace-pre-wrap break-words px-3 pb-3 text-sm">{reasoning}</div>
+    </details>}
+    {assistant && message.steps?.length ? message.steps.map((step, index, steps) => {
+      if ((step.type === 'tool' || step.type === 'code') && detail !== 'full') return null
+      // 지금 자라는 단계(마지막)만 타자 효과·생각 미리보기 — 앞 단계는 받은 그대로
+      const live = streaming && index === steps.length - 1
+      return <div key={index} data-answer-step={step.type} className="w-full min-w-0">
+        {step.type === 'text' ? <StepText text={step.text} streaming={live} render={renderContent} /> : step.type === 'reasoning' ? <StepReasoning text={step.text} streaming={live} /> : <StepDetails step={step} />}
+      </div>
+    }) : (!assistant || hasContent) && renderContent(content)}
     {/* 글이 멈췄는데 아직 끝나지 않았으면 답 바로 아래에도 같은 상태를 보인다 — 읽는 자리(답 끝)에서 끝난 것처럼 보이지 않게. 읽기는 머리 줄(role=status)이 맡는다 */}
     {assistant && progress?.stalled && <div data-testid="reply-progress" aria-hidden="true" className="flex flex-wrap items-center gap-1.5 px-1 text-xs text-muted-foreground">
       {progressDot}<span>{progressLabel}</span>{progressTiming}</div>}
@@ -172,4 +184,62 @@ function CodeBlock({ children }: { children: ReactNode }) {
   return <div className="relative min-w-0"><button type="button" onClick={() => void copyCode()}
     className="flex min-h-11 items-center gap-1 rounded-md border px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><Copy aria-hidden="true" className="size-3.5" />{t('chat.copyCode')}</button>
     <pre ref={block}>{children}</pre></div>
+}
+
+function StepReasoning({ text, streaming }: { text: string; streaming: boolean }) {
+  const t = useT()
+  const visible = useTypewriter(text, streaming)
+  const [open, setOpen] = useState(false)
+  const scroll = useRef<HTMLDivElement>(null)
+  const follow = useRef(true)
+  useEffect(() => {
+    if (open && follow.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight
+  }, [visible, open])
+  const toggle = () => { if (!open) follow.current = true; setOpen(!open) }
+  return <details open={open} className="w-full rounded-lg border bg-muted text-foreground">
+    <summary aria-expanded={open} onClick={event => { event.preventDefault(); toggle() }}
+      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle() } }}
+      className="min-h-11 cursor-pointer rounded-lg px-3 py-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('chat.reasoning')}
+      {streaming && !open && <span data-reasoning-preview aria-hidden="true" className="mt-1 flex max-h-10 flex-col justify-end overflow-hidden whitespace-pre-wrap break-words font-normal leading-5 text-muted-foreground">{lastLines(visible)}</span>}</summary>
+    <div ref={scroll} aria-live="off" onScroll={event => {
+      const box = event.currentTarget
+      follow.current = box.scrollHeight - box.scrollTop - box.clientHeight <= followDistance
+    }} className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words px-3 pb-3 text-sm">{visible}</div>
+  </details>
+}
+
+function StepText({ text, streaming, render }: { text: string; streaming: boolean; render: (text: string) => ReactNode }) {
+  return render(useTypewriter(text, streaming))
+}
+
+/** 한 줄 요약에 쓰는 입력 핵심 — JSON 인자는 값만, 그 밖에는 첫 줄. 화면 머리글 전용(저장·복사·전송은 원문 그대로) */
+const SUMMARY_MAX = 60
+function inputSummary(payload: StepPayload): string {
+  if (typeof payload !== 'string') return ''
+  let text = payload
+  try {
+    const parsed: unknown = JSON.parse(payload)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const values = Object.values(parsed).filter((value): value is string | number | boolean => ['string', 'number', 'boolean'].includes(typeof value))
+      if (values.length) text = values.join(', ')
+    }
+  } catch { /* 인자가 JSON이 아니면 첫 줄 */ }
+  const line = (text.split('\n').find(item => item.trim()) ?? '').replace(/\s+/g, ' ').trim()
+  return line.length > SUMMARY_MAX ? `${line.slice(0, SUMMARY_MAX - 1)}…` : line
+}
+
+function StepDetails({ step }: { step: Extract<AnswerStep, { type: 'tool' | 'code' }> }) {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const source = step.type === 'tool' && step.source
+  const label = source ? [t('chat.sourceUse'), step.name]
+    : [t(step.type === 'tool' ? 'chat.toolUse' : 'chat.codeRun'), ...(step.type === 'tool' ? [step.name] : []), inputSummary(step.type === 'tool' ? step.input : step.code), t(`chat.stepStatus.${step.status}`)]
+  return <details open={open} className="w-full rounded-lg border bg-muted text-foreground">
+    <summary aria-expanded={open} onClick={event => { event.preventDefault(); setOpen(!open) }}
+      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setOpen(!open) } }}
+      className="min-h-11 cursor-pointer break-words rounded-lg px-3 py-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{label.filter(Boolean).join(' · ')}</summary>
+    <div className="space-y-2 overflow-auto px-3 pb-3 text-sm">
+      {!source && <><p className="text-xs text-muted-foreground">{t('chat.stepInput')}</p><pre className="whitespace-pre-wrap break-words">{payloadText(step.type === 'tool' ? step.input : step.code)}</pre></>}
+      <p className="text-xs text-muted-foreground">{t('chat.stepOutput')}</p><pre className="whitespace-pre-wrap break-words">{payloadText(step.output)}</pre></div>
+  </details>
 }

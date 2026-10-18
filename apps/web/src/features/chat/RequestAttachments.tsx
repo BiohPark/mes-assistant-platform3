@@ -14,6 +14,7 @@ import { ConversationPickerDialog } from '@/features/task/ConversationPickerDial
 import { removeSrInput } from '@/api/srInputs'
 import { useBudgetBubble } from '@/features/assistant-pill/bubbles'
 import { useT } from '@/i18n'
+import { useAnswerDetail } from './useAnswerDetail'
 
 const delivery = { attached: 'chat.delivery.attached', inline: 'chat.delivery.inline', metadata_only: 'chat.delivery.metadata_only', failed: 'chat.delivery.failed' } as const
 const mode = { full: 'task.inputs.modeFull', messages: 'task.inputs.modeMessages', summary: 'task.inputs.modeSummary' } as const
@@ -53,7 +54,12 @@ export function RequestSizeNotice({ task, estimate }: { task: Task; estimate: Re
   const level = info ? budgetLevel(info.bytes, info.limitBytes) : 'ok'
   // 도우미 말풍선(U6) — 레벨이 올라갈 때 1회(추정 로딩 중에는 비교하지 않음), 누르면 이 안내로 포커스
   useBudgetBubble(task.id, info ? level : undefined, () => ref.current?.focus())
-  if (!info || level === 'ok') return null
+  const { detail } = useAnswerDetail()
+  // '도구까지 전체' 모드에서 참고 대화를 보내면 도구 원문까지 실린다 — 얼마나 실리는지 늘 보인다(자동으로 줄이지 않는다)
+  const fullBytes = detail === 'full' ? (info?.inputs ?? []).reduce((sum, item) => item.kind === 'conversation' ? sum + item.bytes : sum, 0) : 0
+  const fullNotice = fullBytes > 0 && <div data-testid="answer-detail-notice" className="text-muted-foreground">{t('chat.detailFullNotice', { size: formatSize(fullBytes) })}</div>
+  if (!info) return null
+  if (level === 'ok') return fullNotice ? <div className="mb-1.5 px-2 text-xs">{fullNotice}</div> : null
   const over = level === 'over'
   const inputs = info.inputs
   const largest = inputs.filter((item) => item.kind === 'conversation').sort((a, b) => b.bytes - a.bytes)[0]
@@ -81,6 +87,8 @@ export function RequestSizeNotice({ task, estimate }: { task: Task; estimate: Re
       </div>
       <span className="text-muted-foreground">{pending ? t('chat.calculating') : t('chat.sizeEstimate', { bytes: formatSize(info.bytes), limit: formatSize(info.limitBytes) })}</span>
     </div>
+    {fullNotice}
+    {over && detail === 'full' && <div className="mt-1 text-destructive">{t('chat.overLimitDetailHint')}</div>}
     {over && <div className="mt-1.5 flex flex-wrap gap-1">
       {first && <Button size="xs" variant="outline" disabled={done} onClick={removeFirst}>{t('chat.removeInput')}</Button>}
       {largest && <><Button size="xs" variant="outline" disabled={done} onClick={() => setAdjust({ taskId: largest.sourceTaskId, mode: 'messages' })}>{t('chat.selectMessageRange')}</Button>

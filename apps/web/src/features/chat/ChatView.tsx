@@ -1,3 +1,4 @@
+import { useAnswerDetail } from './useAnswerDetail'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Message, Task } from '@mes/domain'
@@ -34,6 +35,7 @@ const CHAT_COLUMN = 'mx-auto w-full max-w-5xl'
 /** headerTools가 있으면 검색·질문 목차 아이콘은 그 자리(대화 헤더)로 가고, 펼친 검색 줄만 메시지 위 툴바에 남는다 */
 export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { task: Task; assistant?: Assistant; onOpenMaterials?: () => void; headerTools?: HTMLElement | null }) {
   const t = useT()
+  const { detail } = useAnswerDetail()
   const actor = useActor()
   const selfId = useCurrentUserId()
   const query = useQueryClient()
@@ -176,8 +178,8 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
       }
       if (!discussion) {
         const preview = await estimateRequest(task.threadId, { draft: content, attachmentIds: uploaded,
-          oneShotFileIds: [] })
-        if (preview.overLimit) throw new Error(t('chat.overLimitError', { bytes: String(preview.bytes), limit: String(preview.limitBytes) }))
+          oneShotFileIds: [], ...(detail === 'full' ? { detail } : {}) })
+        if (preview.overLimit) throw new Error(t('chat.overLimitError', { bytes: String(preview.bytes), limit: String(preview.limitBytes) }) + (detail === 'full' ? ` ${t('chat.overLimitDetailHint')}` : ''))
       }
       if (discussion) {
         const accepted = await appendMessage(actor, task.threadId, 'user', content, uploaded, 'done', 'discussion') as Message & { autoStarted?: boolean }

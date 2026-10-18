@@ -1,3 +1,4 @@
+import { renderConversation } from './context.js'
 import { describe, it, expect } from 'vitest'
 import { INJECTION_GUARD, PLATFORM_CONTEXT_NOTE, buildSrSystemPrompt as buildSrSystemPromptWithPort, buildTaskSystemPrompt as buildTaskSystemPromptWithPort, type TaskPromptInput, type SrPromptInput, toChatMessages, type PromptConversation } from './context.js'
 import type { Assistant, FileAsset, ServiceRequest, Task } from '@mes/domain'
@@ -227,4 +228,25 @@ it('sends every classification path in order without adding workflow instruction
     { level1: 'Record', level2: 'CCA', level1CodeId: 'r1', level2CodeId: 'r2' },
   ] }, task, linkedSrs: [], inputs: [] })
   expect(p).toContain('(SDLC > 분석, Record > CCA)')
+})
+
+it('renders reference conversation steps in the selected detail mode', () => {
+  const c = { weight: 'reference' as const, code: 'WK-1', title: '대화', assistantName: 'AI', mode: 'full' as const, selectedAt: 'now',
+    messages: [{ role: 'assistant' as const, content: '답변', reasoning: '검토', steps: [
+      { type: 'reasoning' as const, text: '검토' }, { type: 'tool' as const, name: 'lookup', input: '원문 입력', output: '원문 결과', status: 'done' as const }, { type: 'text' as const, text: '답변' },
+    ] }] }
+  expect(renderConversation({ ...c, detail: 'full' })).toContain('원문 결과')
+  expect(renderConversation({ ...c, detail: 'brief' })).not.toContain('원문 결과')
+  expect(renderConversation({ ...c, detail: 'brief' })).toContain('검토')
+})
+
+it('renders user messages as their content only and keeps legacy reasoning for brief references (D75)', () => {
+  const c = { weight: 'reference' as const, code: 'WK-1', title: '대화', assistantName: 'AI', mode: 'full' as const, selectedAt: 'now', detail: 'brief' as const,
+    messages: [{ role: 'user' as const, content: '질문', reasoning: '사용자 쪽 값', steps: [{ type: 'text' as const, text: '다른 값' }] },
+      { role: 'assistant' as const, content: '옛 답변', reasoning: '옛 생각', steps: null }] }
+  const rendered = renderConversation(c)
+  expect(rendered).toContain('[사용자] 질문')
+  expect(rendered).not.toContain('사용자 쪽 값')
+  expect(rendered).not.toContain('다른 값')
+  expect(rendered).toContain('[assistant] [생각 과정]\n옛 생각\n\n옛 답변')
 })

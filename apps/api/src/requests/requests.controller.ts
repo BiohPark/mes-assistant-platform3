@@ -1,3 +1,4 @@
+import { AnswerDetailSchema } from '@mes/contracts'
 import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Req, Res } from '@nestjs/common'
 import type { Response } from 'express'
 import { z } from 'zod'
@@ -5,9 +6,9 @@ import type { AuthedRequest } from '../auth/guards.js'
 import { RequestsService } from './requests.service.js'
 import { writeEvent } from './sse.js'
 
-const startSchema = z.object({ content: z.string(), attachmentIds: z.array(z.string().min(1)).optional(), oneShotFileIds: z.array(z.string().min(1)).optional() }).strict()
-const retrySchema = z.object({ excludeFileIds: z.array(z.string().min(1)).optional(), forceInlineFileIds: z.array(z.string().min(1)).optional() }).strict()
-const estimateSchema = z.object({ draft: z.string().optional(), attachmentIds: z.array(z.string().min(1)).optional(), oneShotFileIds: z.array(z.string().min(1)).optional() }).strict()
+const startSchema = z.object({ detail: AnswerDetailSchema.optional(), content: z.string(), attachmentIds: z.array(z.string().min(1)).optional(), oneShotFileIds: z.array(z.string().min(1)).optional() }).strict()
+const retrySchema = z.object({ detail: AnswerDetailSchema.optional(), excludeFileIds: z.array(z.string().min(1)).optional(), forceInlineFileIds: z.array(z.string().min(1)).optional() }).strict()
+const estimateSchema = z.object({ detail: AnswerDetailSchema.optional(), draft: z.string().optional(), attachmentIds: z.array(z.string().min(1)).optional(), oneShotFileIds: z.array(z.string().min(1)).optional() }).strict()
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const parsed = schema.safeParse(value)
   if (!parsed.success) throw new BadRequestException('요청 형식이 올바르지 않습니다')

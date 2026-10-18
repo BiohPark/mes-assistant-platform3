@@ -1,3 +1,4 @@
+import { renderAnswer, type AnswerDetail, type AnswerStep } from '@mes/domain'
 import type { ChatMessageInput, ChatMeta } from './provider.js'
 import type { Assistant, ContextMode, FileAsset, ID, InputWeight, Message, ServiceRequest, Task, User } from '@mes/domain'
 import type { LlmPorts } from './ports.js'
@@ -63,7 +64,8 @@ export interface PromptConversation {
   mode: ContextMode
   /** 스냅샷을 고정한 시각 */
   selectedAt: string
-  messages: Array<{ role: 'user' | 'assistant'; author?: string; content: string }>
+  detail?: AnswerDetail
+  messages: Array<{ role: 'user' | 'assistant'; author?: string; content: string; reasoning?: string | null; steps?: AnswerStep[] | null }>
   summaryText?: string
 }
 
@@ -91,7 +93,7 @@ export function renderConversation(c: PromptConversation): string {
   const body =
     c.mode === 'summary'
       ? (c.summaryText ?? '')
-      : c.messages.map((m) => `[${m.role === 'user' ? `사용자${m.author ? ` · ${m.author}` : ''}` : 'assistant'}] ${m.content}`).join('\n\n')
+      : c.messages.map((m) => `[${m.role === 'user' ? `사용자${m.author ? ` · ${m.author}` : ''}` : 'assistant'}] ${m.role === 'user' ? m.content : renderAnswer(m, c.detail)}`).join('\n\n')
   return `${head}\n${body}`
 }
 
