@@ -152,3 +152,7 @@ codex-critic은 커밋 뒤에 부른다. 리뷰 brief가 `git diff main...HEAD`�
 - 증상: 병렬 live E2E가 평소 2.5분 → 5분, 실패 5~13건, 실패가 모두 3분 지점에서 타임아웃. 같은 spec 직렬은 통과.
 - 원인: Mac 유휴 잠자기(`pmset -g log`에 `Entering Sleep 'Idle Sleep' … 181 secs`) — api 프로세스 CPU 0% 구간이 테스트 타임아웃과 일치. 오늘 "병렬 부하 플레이크"로 보고된 상당수가 이것.
 - 규칙: 2분 넘는 테스트(E2E·test:db)는 `caffeinate -i <명령>`으로 돌린다. 느려짐·동시 다발 타임아웃이면 코드보다 먼저 `pmset -g log | grep Sleep`을 본다.
+
+## 2026-10-20 — 테스트에 벽시계 시간 단언 금지 (CI 2코어 러너)
+- 증상: 최근 feature 브랜치 첫 push 4건 중 3건이 CI에서만 실패 — 전부 시간 기준 테스트(5초 안에, 디바운스 뒤 N ms 안에 등). GitHub 러너는 2코어이고 pnpm이 패키지 테스트를 동시에 돌려 로컬보다 3~12배 느리다.
+- 규칙: 성능은 작업량(재스캔 글자 수·호출 횟수)으로, 지연은 fake timer로 단언한다. 워커 brief의 Do NOT에 "벽시계 시간 단언 금지"를 넣는다.
