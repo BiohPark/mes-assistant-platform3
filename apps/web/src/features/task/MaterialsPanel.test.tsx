@@ -401,13 +401,15 @@ it('shows a conversation size for the current answer mode — the same rendering
   onTestFinished(() => { useUiStore.setState({ answerDetails: {} }) })
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/tasks/t/candidates') return jsonResponse(200, { files: [], conversations: [{ taskId: 'source', code: 'WK-2', title: '원본', status: 'todo',
-      assistant: { id: 'a', name: '도우미', color: '#000' }, sharedTags: ['shared'], messageCount: 2, bytes: 1024, bytesFull: 3072, lastActivityAt: '2026-01-01T00:00:00.000Z' }] })
+      assistant: { id: 'a', name: '도우미', color: '#000' }, sharedTags: ['shared'], messageCount: 2, bytes: 1024, bytesFull: 3072, bytesAnswer: 512, lastActivityAt: '2026-01-01T00:00:00.000Z' }] })
     return jsonResponse(200, [])
   }))
   renderWithProviders(<MeContext value={me}><MaterialsPanel task={baseTask} /></MeContext>)
   expect(await screen.findByTestId('conversation-source')).toHaveTextContent('1.0 KB')
   act(() => useUiStore.getState().setAnswerDetail('u', 'full'))
   expect(screen.getByTestId('conversation-source')).toHaveTextContent('3.0 KB')
+  act(() => useUiStore.getState().setAnswerDetail('u', 'answer'))
+  expect(screen.getByTestId('conversation-source')).toHaveTextContent('512 B')
 })
 
 

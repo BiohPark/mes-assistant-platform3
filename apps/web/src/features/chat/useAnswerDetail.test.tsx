@@ -12,6 +12,8 @@ it('defaults to brief, isolates users and restores the chosen mode from persiste
   const { result } = renderHook(useAnswerDetail, { wrapper })
   expect(result.current.detail).toBe('brief')
   act(() => result.current.toggle())
+  expect(result.current.detail).toBe('answer')
+  act(() => result.current.toggle())
   expect(result.current.detail).toBe('full')
   act(() => useUiStore.getState().setAnswerDetail('u2', 'brief'))
   expect(result.current.detail).toBe('full')
@@ -36,3 +38,25 @@ it('follows a mode change made in another window of the same browser (pop-out)',
   expect(result.current.detail).toBe('full')
 })
 
+
+it('cycles full → brief → answer → full', () => {
+  useUiStore.setState({ answerDetails: { anonymous: 'full' } })
+  const { result } = renderHook(useAnswerDetail)
+  act(() => result.current.toggle())
+  expect(result.current.detail).toBe('brief')
+  act(() => result.current.toggle())
+  expect(result.current.detail).toBe('answer')
+  act(() => result.current.toggle())
+  expect(result.current.detail).toBe('full')
+})
+
+it('retains existing user modes during settings migration and persists answer-only mode', async () => {
+  const migrate = useUiStore.persist.getOptions().migrate!
+  expect(await migrate({ answerDetails: { u1: 'full', u2: 'brief' }, homeFilters: { q: 'MES' }, kanbanCompleted: { u1: true } }, 0)).toMatchObject({ answerDetails: { u1: 'full', u2: 'brief' }, kanbanCompleted: { u1: true } })
+  act(() => useUiStore.getState().setAnswerDetail('u3', 'answer'))
+  const saved = localStorage.getItem('mes-hub-ui')!
+  act(() => useUiStore.setState({ answerDetails: {} }))
+  localStorage.setItem('mes-hub-ui', saved)
+  await act(async () => { await useUiStore.persist.rehydrate() })
+  expect(useUiStore.getState().answerDetails.u3).toBe('answer')
+})

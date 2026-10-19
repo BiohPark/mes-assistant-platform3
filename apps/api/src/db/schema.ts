@@ -1,4 +1,4 @@
-import type { OwuiToolDelivery } from '@mes/domain'
+import type { RawResponse, OwuiToolDelivery } from '@mes/domain'
 // MariaDB DDL 정본. 마이그레이션과 schema-drift 테스트로 일치 여부를 확인한다.
 import type { Theme, Locale } from '@mes/contracts'
 import { sql, type AnyColumn } from 'drizzle-orm'
@@ -411,6 +411,7 @@ export const chatRequest = mysqlTable(
     limitBytes: integer('limit_bytes').notNull(),
     error: longtext('error'),
     snapshot: jsonObject('snapshot'),
+    rawResponse: jsonObject('raw_response').$type<RawResponse>(),
     owuiTools: jsonObject('owui_tools').$type<OwuiToolDelivery>(),
     leaseUntil: tz('lease_until'),
     createdAt: tz('created_at').notNull().default(sql`current_timestamp(6)`),

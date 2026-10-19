@@ -1,13 +1,19 @@
+import { useState } from 'react'
+import { copyText } from '@/lib/clipboard'
+import { Button } from '@/components/ui/button'
 import { useQuery } from '@tanstack/react-query'
-import { getRequest, snapshotUrl } from '@/api/requests'
+import { getRequest, getResponseDiagnostic, snapshotUrl } from '@/api/requests'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useT } from '@/i18n'
 import { deliveryLabel, statusLabel } from './requestLabels'
 
 export function RequestInfoDialog({ requestId, onClose }: { requestId: string; onClose: () => void }) {
   const t = useT()
+  const [showResponse, setShowResponse] = useState(false)
+  const [copyFailed, setCopyFailed] = useState(false)
+  const diagnostic = useQuery({ queryKey: ['response-diagnostic', requestId], queryFn: () => getResponseDiagnostic(requestId), enabled: showResponse })
   const record = useQuery({ queryKey: ['request', requestId], queryFn: () => getRequest(requestId) })
-  return <Dialog open onOpenChange={(open) => { if (!open) onClose() }}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{t('chat.requestInfo')}</DialogTitle></DialogHeader>
+  return <Dialog open onOpenChange={(open) => { if (!open) onClose() }}><DialogContent className={showResponse ? "max-h-[90vh] overflow-auto sm:max-w-6xl" : "max-h-[90vh] overflow-auto sm:max-w-lg"}><DialogHeader><DialogTitle>{t('chat.requestInfo')}</DialogTitle></DialogHeader>
     {record.data ? <div className="space-y-2 text-sm">
       <p>{statusLabel[record.data.status] ? t(statusLabel[record.data.status]!) : record.data.status} · {record.data.model} · {record.data.bytes ?? t('chat.calculating')} / {record.data.limitBytes} bytes</p>
       {record.data.owuiTools && <div className="rounded-xl border p-2">
@@ -25,6 +31,18 @@ export function RequestInfoDialog({ requestId, onClose }: { requestId: string; o
         🔗 <a href={page.url} target="_blank" rel="noreferrer" className="underline">{page.url}</a> · {page.bytes} bytes · {page.status === 'read' ? t('chat.webPageRead') : t('chat.webPageFailed', { reason: page.error ?? '' })}
         {page.finalUrl && page.finalUrl !== page.url && <span className="block">→ {page.finalUrl}</span>}
       </li>)}</ul>}
+      {record.data.canViewRawResponse && <Button variant="outline" aria-expanded={showResponse} onClick={() => setShowResponse(!showResponse)}>{t('chat.viewRawResponse')}</Button>}
+      {showResponse && <section className="space-y-2" aria-label={t('chat.viewRawResponse')}>
+        {diagnostic.data ? <>
+          <Button variant="outline" onClick={async () => { setCopyFailed(!await copyText(JSON.stringify(diagnostic.data, null, 2))) }}>{t('chat.copyJson')}</Button>
+          {copyFailed && <p role="alert">{t('chat.copyFailed')}</p>}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="min-w-0"><h3 className="font-medium">{t('chat.rawResponse')}</h3><pre data-testid="raw-response-json" tabIndex={0} className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-all rounded-lg border p-2 text-xs">{diagnostic.data.rawResponse === null ? t('chat.noRawResponse') : JSON.stringify(diagnostic.data.rawResponse, null, 2)}</pre></div>
+            <div className="min-w-0"><h3 className="font-medium">{t('chat.parsedSteps')}</h3><pre tabIndex={0} className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-all rounded-lg border p-2 text-xs">{JSON.stringify(diagnostic.data.steps, null, 2)}</pre></div>
+            <div className="min-w-0"><h3 className="font-medium">{t('chat.responseBody')}</h3><pre data-testid="response-body" tabIndex={0} className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border p-2 text-xs">{diagnostic.data.content}</pre></div>
+          </div>
+        </> : diagnostic.isError ? <p role="alert">{t('chat.requestLoadFailed')}</p> : <p>{t('common.loading')}</p>}
+      </section>}
       {record.data.hasSnapshot && <a className="underline" href={snapshotUrl(requestId)} download>{t('chat.downloadSnapshot')}</a>}
     </div> : record.isError ? <p role="alert">{t('chat.requestLoadFailed')}</p> : <p>{t('common.loading')}</p>}
   </DialogContent></Dialog>

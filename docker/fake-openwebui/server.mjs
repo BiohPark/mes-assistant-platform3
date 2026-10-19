@@ -122,6 +122,21 @@ async function runSessionSteps(chat, payload) {
   const status = (description, extra = {}) => message.statusHistory.push({ description, done: false, ...extra })
   const userText = lastUserText(payload.messages)
   let text = answerText({ ...payload, __imageOwner: chat.id }, userText)
+  if (/\[details\]/i.test(userText)) {
+    const reasoning = '<details type="reasoning" done="false"><summary>Thinking</summary>PRIVATE_REASONING: details thought</details>'
+    message.content = reasoning
+    await wait(250)
+    if (!alive()) return
+    const thought = reasoning.replace('done="false"', 'done="true"')
+    const code = '<details type="code_interpreter" done="false"><summary>Code</summary>\n```sh\necho details\n```\n```output\ndetails output\n```\n</details>'
+    message.content = thought + '\nBefore tool\n' + code
+    await wait(250)
+    if (!alive()) return
+    message.content = thought + '\nBefore tool\n' + code.replace('done="false"', 'done="true"')
+      + '\n<details type="tool_calls" done="true" name="fake_tool" arguments="{&quot;query&quot;:&quot;raw details input&quot;}" result="raw details result"><summary>Tool</summary></details>\n**details answer**'
+    message.done = true
+    return
+  }
   await wait(100)
   if (/\[delay\]/i.test(userText)) for (let i = 0; i < 3; i++) { if (!alive()) return; status('작업 대기 중'); await wait(1000) }
   const url = /https?:\/\/[^\s<>"')\]]+/.exec(userText)?.[0]

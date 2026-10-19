@@ -194,7 +194,7 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
       let signature: string | undefined
       if (!discussion) {
         const preview = await estimateRequest(task.threadId, { draft: content, attachmentIds: uploaded,
-          oneShotFileIds: [], ...(detail === 'full' ? { detail } : {}) })
+          oneShotFileIds: [], ...(detail !== 'brief' ? { detail } : {}) })
         signature = preview.inputSignature
         if (preview.overLimit) throw new Error(t('chat.overLimitError', { bytes: String(preview.bytes), limit: String(preview.limitBytes) }) + (detail === 'full' ? ` ${t('chat.overLimitDetailHint')}` : ''))
       }
