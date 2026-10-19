@@ -218,21 +218,28 @@ describe('direct markup parsing stays incremental', () => {
       expect(await run(fragments)).toEqual(contentSteps(full))
     }
   })
+  // 시간 대신 일의 양을 잰다(CI 러너 속도와 무관): 본문 마크업을 훑는 matchAll이 읽은 글자 수의 합.
+  // 조각마다 누적 전체를 다시 훑으면 합이 n²/8 정도(수천만), 증분이면 n의 상수배다.
+  const scannedWhile = async (fragments: string[], expected: unknown) => {
+    const original = String.prototype.matchAll
+    let chars = 0
+    const spy = vi.spyOn(String.prototype, 'matchAll').mockImplementation(function (this: string, regexp: RegExp) {
+      chars += this.length
+      return original.call(this, regexp)
+    } as typeof original)
+    try { expect(await run(fragments)).toEqual(expected) } finally { spy.mockRestore() }
+    return chars
+  }
+  const cut = (full: string) => Array.from({ length: Math.ceil(full.length / 4) }, (_, i) => full.slice(i * 4, i * 4 + 4))
   it('streams a long open reasoning block in small deltas without re-reading it per delta', async () => {
-    const body = '생각 줄 abc 계속\n'.repeat(10_000)
-    const fragments: string[] = []
+    const body = '생각 줄 abc 계속\n'.repeat(2_000)
     const full = `<think>${body}</think>답`
-    for (let i = 0; i < full.length; i += 4) fragments.push(full.slice(i, i + 4))
-    const started = performance.now()
-    expect(await run(fragments)).toEqual([{ type: 'reasoning', text: body.trim() }, { type: 'text', text: '답' }])
-    expect(performance.now() - started).toBeLessThan(5_000)
-  }, 60_000)
+    const chars = await scannedWhile(cut(full), [{ type: 'reasoning', text: body.trim() }, { type: 'text', text: '답' }])
+    expect(chars).toBeLessThanOrEqual(4 * full.length)
+  })
   it('handles a long plain answer in small deltas without re-reading everything per delta', async () => {
-    const full = '가나다라 abc <b>\n'.repeat(20_000)
-    const fragments: string[] = []
-    for (let i = 0; i < full.length; i += 4) fragments.push(full.slice(i, i + 4))
-    const started = performance.now()
-    expect(await run(fragments)).toEqual([{ type: 'text', text: full }])
-    expect(performance.now() - started).toBeLessThan(5_000)
-  }, 60_000)
+    const full = '가나다라 abc <b>\n'.repeat(2_000)
+    const chars = await scannedWhile(cut(full), [{ type: 'text', text: full }])
+    expect(chars).toBeLessThanOrEqual(4 * full.length)
+  })
 })
