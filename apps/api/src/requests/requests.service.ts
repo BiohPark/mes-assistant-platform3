@@ -100,7 +100,7 @@ export class RequestsService implements OnModuleDestroy {
     let rawResponse: RawResponse | null = null
     let steps: AnswerStep[] = [], hasSteps = false, content = ''
     let mode: 'direct' | 'session' = 'direct'
-    for await (const chunk of this.provider.stream({ model, messages: [{ role: 'user', content: '[details] 응답 형식 진단입니다. 짧게 생각한 뒤 도구와 코드를 사용할 수 있으면 사용하고 결과를 설명해 주세요.' }],
+    for await (const chunk of this.provider.stream({ model, messages: [{ role: 'user', content: '응답 형식 진단입니다. 짧게 생각한 뒤 도구와 코드를 사용할 수 있으면 사용하고 결과를 설명해 주세요.' }],
       // Diagnostic chats are temporary even when conversation retention is enabled.
       signal, owuiMode: llm.owuiMode, owuiTools: llm.owuiTools, owuiCleanup: true,
       onSession: () => { mode = 'session' },
