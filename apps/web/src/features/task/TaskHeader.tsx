@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { CheckCircle2, ExternalLink, MoreHorizontal, PauseCircle, PlayCircle, Trash2 } from 'lucide-react'
-import { tagKey, type Task, type TaskStatus } from '@mes/domain'
+import { isSrTag, tagKey, type Task, type TaskStatus } from '@mes/domain'
 import type { Assistant } from '@mes/contracts'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSettings } from '@/api/admin'
@@ -22,6 +22,7 @@ import { PRIORITY_KEY } from '@/lib/labels'
 import { copyText } from '@/lib/clipboard'
 import { useMaterialCandidates } from '@/features/chat/useMaterialCandidates'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem } from '@/components/ui/dropdown-menu'
 import { useT } from '@/i18n'
 import { assistantLink1 } from '@/lib/links'
@@ -56,6 +57,21 @@ export function TaskHeader({ task, assistant, toolsRef }: { task: Task; assistan
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [complete, setComplete] = useState(false)
   const refresh = () => { void query.invalidateQueries({ queryKey: ['task', task.id] }); void query.invalidateQueries({ queryKey: ['tasks'] }) }
+  const removeTaskTag = async (value: string) => { await changeTagWithShare(query, task.id, () => removeTag(actor, task.id, value)); refresh() }
+  // #태그 칩 메뉴(S15 R3) — 칩은 TagInput 안에서 그려지므로 클릭된 칩 버튼을 기억해 팝오버의 기준점으로 쓴다
+  const tagsRef = useRef<HTMLDivElement>(null)
+  const clicked = useRef<HTMLElement | null>(null)
+  const [tagMenu, setTagMenu] = useState<{ tag: string; anchor: HTMLElement } | null>(null)
+  const tagChipButtons = () => [...(tagsRef.current?.querySelectorAll<HTMLElement>('[data-slot="chip"] > button[title]') ?? [])].filter(button => !isSrTag(button.getAttribute('aria-label') ?? ''))
+  useEffect(() => { for (const button of tagChipButtons()) { button.setAttribute('aria-haspopup', 'menu'); button.setAttribute('aria-expanded', String(button === tagMenu?.anchor)) } })
+  function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
+    const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    const index = items.indexOf(document.activeElement as HTMLElement)
+    const next = event.key === 'ArrowDown' ? index + 1 : event.key === 'ArrowUp' ? index - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : null
+    if (next === null || !items.length) return
+    event.preventDefault()
+    items[(next + items.length) % items.length]!.focus()
+  }
 
   async function changeStatus(status: TaskStatus, reason?: string) {
     try { await setTaskStatus(actor, task.id, status, reason ? { reason } : {}); refresh(); return true }
@@ -72,7 +88,19 @@ export function TaskHeader({ task, assistant, toolsRef }: { task: Task; assistan
       <Link to={`/?view=kanban&assistant=${encodeURIComponent(assistant.id)}`} className="inline-flex max-w-48 shrink-0 items-center gap-1.5 rounded-full border py-0.5 pr-2 pl-0.5 text-xs hover:bg-muted sm:max-w-64"><AssistantAvatar assistant={assistant} size="xs" /><span className="truncate">{assistant.name}</span></Link>
       <div className="min-w-32 flex-1"><TaskTitle key={task.id} task={task} /></div>
       {startedSrs.map((code) => <TagChip key={code} tag={code} className="shrink-0" onSrClick={(value) => void openSr(value)} />)}
-      <TagInput compact data-tour="tags" className="shrink-0 flex-nowrap" tags={task.tags} suggest={(prefix, exclude) => suggest(prefix, exclude).slice(0, 5)} srStatus={srStatus} readOnly={task.status === 'done'} onAdd={async (value) => { await changeTagWithShare(query, task.id, () => addTag(actor, task.id, value)); refresh() }} onRemove={async (value) => { await changeTagWithShare(query, task.id, () => removeTag(actor, task.id, value)); refresh() }} onChipClick={(value) => navigate(`/?view=kanban&tag=${encodeURIComponent(value)}`)} onSrChipClick={(value) => void openSr(value)} />
+      <div ref={tagsRef} className="contents" onClickCapture={event => { clicked.current = (event.target as Element).closest('button') }}><TagInput compact data-tour="tags" className="shrink-0 flex-nowrap" tags={task.tags} suggest={(prefix, exclude) => suggest(prefix, exclude).slice(0, 5)} srStatus={srStatus} readOnly={task.status === 'done'} onAdd={async (value) => { await changeTagWithShare(query, task.id, () => addTag(actor, task.id, value)); refresh() }} onRemove={removeTaskTag} onChipClick={(value) => { const anchor = clicked.current; if (anchor) setTagMenu(current => current?.anchor === anchor ? null : { tag: value, anchor }) }} onSrChipClick={(value) => void openSr(value)} /></div>
+      <Popover open={!!tagMenu} onOpenChange={open => { if (!open) setTagMenu(null) }}>
+        {tagMenu && <PopoverAnchor virtualRef={{ current: tagMenu.anchor }} />}
+        {tagMenu && <PopoverContent align="start" role="menu" aria-label={t('task.header.tagMenu', { value: tagMenu.tag })} className="w-auto min-w-44 p-1" onKeyDown={moveFocus}
+          onOpenAutoFocus={event => { event.preventDefault(); (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>('[role="menuitem"]')?.focus() }}
+          onCloseAutoFocus={event => { event.preventDefault(); if (tagMenu.anchor.isConnected) tagMenu.anchor.focus() }}
+          onInteractOutside={event => { if (tagMenu.anchor.contains(event.target as Node)) event.preventDefault() }}>
+          {/* 그 태그 문자열만 넘긴다 — 파일·이전 대화는 새 대화의 자료 패널에 후보로만 보인다(자동 첨부 없음). 같은 에이전트로 시작 */}
+          <TagMenuItem onClick={() => { setTagMenu(null); navigate(`/new/${encodeURIComponent(assistant.id)}?tag=${encodeURIComponent(tagMenu.tag)}`, { state: { tagPreset: true } }) }}>{t('task.header.tagNewConversation')}</TagMenuItem>
+          <TagMenuItem onClick={() => { setTagMenu(null); navigate(`/?view=kanban&tag=${encodeURIComponent(tagMenu.tag)}`) }}>{t('task.header.tagViewConversations')}</TagMenuItem>
+          {task.status !== 'done' && <TagMenuItem onClick={() => { const { tag } = tagMenu; setTagMenu(null); void removeTaskTag(tag).catch(error => toast.error(error instanceof Error && error.message ? error.message : t('components.tagSaveFailed'))) }}>{t('task.header.tagRemove')}</TagMenuItem>}
+        </PopoverContent>}
+      </Popover>
       <div className="ml-auto flex shrink-0 items-center gap-1">
         <div ref={toolsRef} className="flex items-center gap-1 empty:hidden data-[chat-hidden=true]:max-lg:hidden" />
         <QuickSwitch currentTaskId={task.id} />
@@ -117,4 +145,8 @@ export function TaskHeader({ task, assistant, toolsRef }: { task: Task; assistan
     <ConfirmDialog open={confirmDelete} onOpenChange={setConfirmDelete} title={t('task.header.deleteTitle')} description={t('task.header.deleteDescription')} onConfirm={remove} />
     <TaskCompleteDialog task={task} open={complete} onOpenChange={setComplete} />
   </div>
+}
+
+function TagMenuItem({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return <button type="button" role="menuitem" onClick={onClick} className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm outline-none hover:bg-muted focus-visible:bg-muted">{children}</button>
 }

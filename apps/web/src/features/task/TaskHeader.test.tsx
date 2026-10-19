@@ -152,7 +152,65 @@ it('S14: SR 태그 칩과 태그가 없는 시작 SR 칩은 SR 처리 상세로,
   await userEvent.click(screen.getByRole('button', { name: 'SR-2026-0001' }))
   await waitFor(() => expect(screen.getByLabelText('경로')).toHaveTextContent('/sr/manage?id=sr-1'))
   await userEvent.click(screen.getByRole('button', { name: '일반' }))
+  await userEvent.click(await screen.findByRole('menuitem', { name: '이 태그 대화 보기' }))
   await waitFor(() => expect(screen.getByLabelText('경로')).toHaveTextContent('/?view=kanban&tag=%EC%9D%BC%EB%B0%98'))
+})
+
+function renderWithPath(value: Task) {
+  function Probe() { const location = useLocation(); return <><output aria-label="경로">{location.pathname + location.search}</output><output aria-label="이동 상태">{JSON.stringify(location.state)}</output></> }
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><MemoryRouter initialEntries={['/c/t']}>
+    <TaskHeader task={value} assistant={assistant} /><Probe /></MemoryRouter></MeContext></QueryClientProvider>)
+}
+
+it('S15: #태그 칩 메뉴 [이 태그로 새 대화]는 같은 에이전트의 새 대화 초안에 그 태그만 프리셋한다(자동 첨부 없음)', async () => {
+  const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response('[]', { status: 200 }))
+  vi.stubGlobal('fetch', fetchMock)
+  renderWithPath({ ...task, tags: ['설비 점검', '다른'] })
+  const user = userEvent.setup()
+  const chip = screen.getByRole('button', { name: '설비 점검' })
+  await user.click(chip)
+  const menu = await screen.findByRole('menu', { name: '#설비 점검 태그 메뉴' })
+  expect(chip).toHaveAttribute('aria-haspopup', 'menu')
+  expect(chip).toHaveAttribute('aria-expanded', 'true')
+  expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['이 태그로 새 대화', '이 태그 대화 보기', '태그 해제'])
+  expect(menu).toContainElement(document.activeElement as HTMLElement)
+  await user.click(screen.getByRole('menuitem', { name: '이 태그로 새 대화' }))
+  await waitFor(() => expect(screen.getByLabelText('경로')).toHaveTextContent('/new/a?tag=%EC%84%A4%EB%B9%84%20%EC%A0%90%EA%B2%80'))
+  // 이미 열린 같은 에이전트 초안 탭에도 태그가 적용되도록 프리셋 이동임을 알린다
+  expect(screen.getByLabelText('이동 상태')).toHaveTextContent('{"tagPreset":true}')
+  expect(screen.getByLabelText('경로').textContent).not.toMatch(/ref=|file|다른/)
+  expect(fetchMock.mock.calls.some(([, init]) => !!init?.method && init.method !== 'GET')).toBe(false)
+})
+
+it('S15: 태그 메뉴는 ↑↓로 이동하고 Esc로 닫으면 칩으로 포커스가 돌아오며, [태그 해제]는 그 태그만 뗀다', async () => {
+  const calls: Array<[string, RequestInit | undefined]> = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => { calls.push([url, init]); return new Response(url.includes('/tags') && init?.method ? JSON.stringify({ ...task, tags: [] }) : '[]', { status: 200 }) }))
+  renderWithPath({ ...task, tags: ['설비 점검'] })
+  const user = userEvent.setup()
+  const chip = screen.getByRole('button', { name: '설비 점검' })
+  chip.focus()
+  await user.keyboard('{Enter}')
+  await screen.findByRole('menu')
+  expect(screen.getByRole('menuitem', { name: '이 태그로 새 대화' })).toHaveFocus()
+  await user.keyboard('{ArrowDown}')
+  expect(screen.getByRole('menuitem', { name: '이 태그 대화 보기' })).toHaveFocus()
+  await user.keyboard('{ArrowUp}{ArrowUp}')
+  expect(screen.getByRole('menuitem', { name: '태그 해제' })).toHaveFocus()
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+  expect(chip).toHaveFocus()
+  await user.click(chip)
+  await user.click(await screen.findByRole('menuitem', { name: '태그 해제' }))
+  await waitFor(() => expect(calls.some(([url, init]) => init?.method === 'DELETE' && decodeURIComponent(url).includes('설비 점검'))).toBe(true))
+  expect(screen.getByLabelText('경로')).toHaveTextContent('/c/t')
+})
+
+it('S15: 완료된 대화의 태그 메뉴에는 [태그 해제]가 없다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
+  renderWithPath({ ...task, status: 'done', tags: ['설비 점검'] })
+  await userEvent.click(screen.getByRole('button', { name: '설비 점검' }))
+  await screen.findByRole('menu')
+  expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['이 태그로 새 대화', '이 태그 대화 보기'])
 })
 
 it('코드·우선순위·보류·보조 도구·전송 기록·파일 재시도를 더 보기 안에 수납하고 Esc로 돌아온다', async () => {

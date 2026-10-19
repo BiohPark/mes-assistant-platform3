@@ -574,6 +574,7 @@ export const ko = {
       quickSwitch: '빠른 전환', quickSwitchResponding: '응답 중 {count}', more: '더 보기',
       quickSearch: '대화·SR 검색', quickSearchPlaceholder: '대화·SR 번호·제목 검색', quickSearchConversations: '대화', quickSearchSrs: 'SR', quickSearchEmpty: '찾는 대화·SR이 없습니다',
       popout: '새 창으로 띄우기', popoutBlocked: '팝업이 차단되어 새 창을 열지 못했어요. 브라우저에서 이 사이트의 팝업을 허용해 주세요',
+      tagMenu: '#{value} 태그 메뉴', tagNewConversation: '이 태그로 새 대화', tagViewConversations: '이 태그 대화 보기', tagRemove: '태그 해제',
     },
   },
   systemAssistant: {

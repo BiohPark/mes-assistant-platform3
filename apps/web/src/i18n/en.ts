@@ -576,6 +576,7 @@ export const en = {
       quickSwitch: 'Quick switch', quickSwitchResponding: 'Responding {count}', more: 'More',
       quickSearch: 'Search conversations and SRs', quickSearchPlaceholder: 'Search conversations, SR numbers, titles', quickSearchConversations: 'Conversations', quickSearchSrs: 'SRs', quickSearchEmpty: 'No matching conversations or SRs',
       popout: 'Open in new window', popoutBlocked: 'The browser blocked the popup, so the window could not open. Allow popups for this site and try again',
+      tagMenu: '#{value} tag menu', tagNewConversation: 'New conversation with this tag', tagViewConversations: 'View conversations with this tag', tagRemove: 'Remove tag',
     },
   },
   systemAssistant: {

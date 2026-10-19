@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ThemeProvider } from 'next-themes'
 import { ProfileProvider } from '@/app/profile'
@@ -388,4 +388,41 @@ it.each([409, 500])('restores the first question and uploaded attachment on the 
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('첫 실패 질문'))
   expect(screen.getByText('first-restore.txt')).toBeVisible()
   expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+})
+
+it('S15: 이미 열린 초안(같은 에이전트)에 태그 프리셋 이동(state.tagPreset)이 오면 그 태그로 바꾸고, 탭 전환처럼 같은 주소로 돌아오면 손대지 않는다', async () => {
+  let body: Record<string, unknown> | undefined
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants') return Response.json([assistant])
+    if (url === '/api/tasks' && init?.method === 'POST') { body = JSON.parse(String(init.body)) as Record<string, unknown>; return Response.json({ id: 't', threadId: 'h' }, { status: 201 }) }
+    return Response.json([])
+  }))
+  function Go() {
+    const navigate = useNavigate()
+    return <>
+      <button type="button" onClick={() => navigate('/new/a?tag=B', { state: { tagPreset: true } })}>프리셋 B</button>
+      <button type="button" onClick={() => navigate('/new/a?tag=B')}>탭으로 복귀</button>
+    </>
+  }
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ThemeProvider attribute="class" defaultTheme="system" storageKey="mes-theme" disableTransitionOnChange><ProfileProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system' as const, locale: 'ko' as const }}><TooltipProvider><MemoryRouter initialEntries={['/new/a?tag=A']}><Go /><Routes><Route path="/new/:assistantId" element={<DraftConversationPage />} /><Route path="/c/:taskId" element={<div>대화로 이동</div>} /></Routes></MemoryRouter></TooltipProvider></MeContext></ProfileProvider></ThemeProvider></QueryClientProvider>)
+  await screen.findByRole('button', { name: 'A 태그 제거' })
+  const addTag = (value: string) => { const input = screen.getByRole('combobox', { name: '태그 입력' }); fireEvent.change(input, { target: { value } }); fireEvent.keyDown(input, { key: 'Enter' }) }
+  addTag('수동')
+  await screen.findByRole('button', { name: '수동 태그 제거' })
+  fireEvent.click(screen.getByRole('button', { name: '프리셋 B' }))
+  await screen.findByRole('button', { name: 'B 태그 제거' })
+  expect(screen.queryByRole('button', { name: 'A 태그 제거' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '수동 태그 제거' })).toBeNull()
+  // 탭 칩으로 돌아오는 이동(state 없음, 같은 주소)은 사람이 고친 태그를 지우지 않는다
+  addTag('직접')
+  await screen.findByRole('button', { name: '직접 태그 제거' })
+  fireEvent.click(screen.getByRole('button', { name: '탭으로 복귀' }))
+  expect(screen.getByRole('button', { name: '직접 태그 제거' })).toBeInTheDocument()
+  // 주소가 같아도 프리셋 이동이면 다시 그 태그만
+  fireEvent.click(screen.getByRole('button', { name: '프리셋 B' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: '직접 태그 제거' })).toBeNull())
+  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '메모' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await waitFor(() => expect(body).toEqual({ assistantId: 'a', tags: ['B'], firstMessage: '메모' }))
 })
