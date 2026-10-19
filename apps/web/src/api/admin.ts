@@ -1,4 +1,4 @@
-import { AssistantSchema, CodeSchema, OwuiAccessCheckSchema, OwuiProbeResultSchema, ProfileSchema, type Assistant, type ClassificationInput, type ProfilePatch } from '@mes/contracts'
+import { AssistantSchema, CodeSchema, OwuiAccessCheckSchema, OwuiProbeResultSchema, OwuiResponseProbeResultSchema, ProfileSchema, type Assistant, type ClassificationInput, type ProfilePatch } from '@mes/contracts'
 
 export async function adminRequest(path: string, method: string, body?: unknown) {
   const response = await fetch(`/api/${path}`, { method, credentials: 'same-origin',
@@ -79,4 +79,11 @@ export async function checkOpenWebUiAccess(model: string) {
   const parsed = OwuiAccessCheckSchema.safeParse(payload)
   if (!parsed.success) throw new Error('응답 형식 오류')
   return { ...parsed.data, meta: { ...parsed.data.meta, ...terminalMeta(payload) } }
+}
+
+export async function probeOpenWebUiResponse(model: string) {
+  const payload = await adminRequest('admin/diagnostics/openwebui/response-probe', 'POST', { model })
+  const parsed = OwuiResponseProbeResultSchema.safeParse(payload)
+  if (!parsed.success) throw new Error('응답 형식 오류')
+  return parsed.data
 }

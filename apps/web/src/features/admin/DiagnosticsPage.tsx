@@ -1,3 +1,4 @@
+import { ResponseProbeCard } from './DiagnosticsResponseProbe'
 import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -178,6 +179,7 @@ export function DiagnosticsPage() {
   return <><TopBar title={t('nav.diagnostics')} /><div className="flex-1 overflow-auto p-4"><div className="mx-auto max-w-3xl space-y-4">
     {query.data && <AiConnectionCard data={query.data} />}
     {query.data && <OwuiProbeCard live={query.data.llm.mode === 'live'} defaultModel={query.data.llm.defaultModel} />}
+    {query.data && <ResponseProbeCard live={query.data.llm.mode === 'live' && query.data.llm.preset === 'openwebui'} defaultModel={query.data.llm.defaultModel} />}
     {query.data?.llm.mode === 'live' && query.data.llm.preset === 'openwebui' && <AgentAccessSection defaultModel={query.data.llm.defaultModel} />}
     <SseCheckCard />
     <div className="flex gap-2" data-tour="admin-diagnostics"><Button variant="outline" onClick={() => void query.refetch()}>{t('admin.diagnostics.recheck')}</Button>

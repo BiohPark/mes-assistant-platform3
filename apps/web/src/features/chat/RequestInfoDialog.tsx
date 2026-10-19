@@ -1,3 +1,4 @@
+import { ResponseDiagnosticColumns } from './ResponseDiagnosticColumns'
 import { useState } from 'react'
 import { copyText } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
@@ -36,11 +37,7 @@ export function RequestInfoDialog({ requestId, onClose }: { requestId: string; o
         {diagnostic.data ? <>
           <Button variant="outline" onClick={async () => { setCopyFailed(!await copyText(JSON.stringify(diagnostic.data, null, 2))) }}>{t('chat.copyJson')}</Button>
           {copyFailed && <p role="alert">{t('chat.copyFailed')}</p>}
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="min-w-0"><h3 className="font-medium">{t('chat.rawResponse')}</h3><pre data-testid="raw-response-json" tabIndex={0} className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-all rounded-lg border p-2 text-xs">{diagnostic.data.rawResponse === null ? t('chat.noRawResponse') : JSON.stringify(diagnostic.data.rawResponse, null, 2)}</pre></div>
-            <div className="min-w-0"><h3 className="font-medium">{t('chat.parsedSteps')}</h3><pre tabIndex={0} className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-all rounded-lg border p-2 text-xs">{JSON.stringify(diagnostic.data.steps, null, 2)}</pre></div>
-            <div className="min-w-0"><h3 className="font-medium">{t('chat.responseBody')}</h3><pre data-testid="response-body" tabIndex={0} className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border p-2 text-xs">{diagnostic.data.content}</pre></div>
-          </div>
+          <ResponseDiagnosticColumns result={diagnostic.data} />
         </> : diagnostic.isError ? <p role="alert">{t('chat.requestLoadFailed')}</p> : <p>{t('common.loading')}</p>}
       </section>}
       {record.data.hasSnapshot && <a className="underline" href={snapshotUrl(requestId)} download>{t('chat.downloadSnapshot')}</a>}

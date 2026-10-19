@@ -210,6 +210,10 @@ export const en = {
         buffered: 'Buffering suspected — the signals arrived bunched together (sent {sent} ms apart → received {received} ms apart). Ask for SSE buffering to be turned off on the proxy.',
         failed: 'Could not check: {error}',
       },
+      responseProbe: {
+        title: 'Raw response diagnostics', hint: 'Send one fixed question using current settings and compare the raw response, parsed steps, and displayed answer. Results are not saved.',
+        run: 'Run diagnostics', running: 'Diagnosing…', liveOnly: 'Available only in OpenWebUI Live mode.',
+      },
       probe: {
         title: 'OpenWebUI diagnostics', hint: 'Sends a short test question three times — ① the current way ② with tool_ids · features · function_calling legacy ③ the session way (the chat it creates is deleted afterwards). It also checks whether the agent\'s tools and skills are visible to the service account, the account role and feature permissions, and the fetch_url injection conditions (names and on/off only). Items missing from builtinTools are on by OpenWebUI default. Only models in the OpenWebUI model list can be diagnosed. The result holds no question, answer, file, key or address and is not stored. Tool, feature and model IDs and the version are shown only in the expected format; anything shaped like an address, path, file name, common secret prefix (sk-, ghp_ …) or random string of 24+ characters is masked. A secret that looks like a short identifier cannot be told apart.',
         modelLabel: 'Model to diagnose', run: 'OpenWebUI diagnostics', running: 'Diagnosing… (up to 3 min)', liveOnly: 'Available only in Live mode.',

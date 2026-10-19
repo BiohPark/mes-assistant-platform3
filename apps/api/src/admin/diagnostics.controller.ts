@@ -31,6 +31,19 @@ export class DiagnosticsController {
     finally { res.off('close', onClose) }
   }
 
+  @Post('openwebui/response-probe')
+  @HttpCode(200)
+  @Roles('system_owner')
+  async responseProbe(@Body() body: unknown, @Req() req: AuthedRequest, @Res({ passthrough: true }) res: Response) {
+    const parsed = OwuiProbeRequestSchema.safeParse(body)
+    if (!parsed.success) throw new BadRequestException('요청 형식이 올바르지 않습니다')
+    const client = new AbortController()
+    const onClose = () => { if (!res.writableEnded) client.abort() }
+    res.on('close', onClose)
+    try { return await this.diagnostics.probeOpenWebUiResponse(req.user!.id, parsed.data.model, client.signal) }
+    finally { res.off('close', onClose) }
+  }
+
   /** 실시간 연결(SSE) 점검 — 0·0.5·1초에 ping 3개(보낸 시각 포함)를 보내고 끝낸다. 답 스트림·이벤트와 같은 머리글 */
   @Get('sse')
   @Roles('system_owner')
