@@ -147,3 +147,8 @@ codex-critic은 커밋 뒤에 부른다. 리뷰 brief가 `git diff main...HEAD`�
 - 원인: E2E·규모 시드가 매 실행 개발 MariaDB에 데이터를 쌓아(users 11,588·tasks 14,024·messages 15,047) 목록·후보 조회와 렌더가 느려짐. CI는 매번 빈 DB라 재현 안 됨.
 - 조치: `docker compose down -v && up -d --wait && pnpm db:migrate` 뒤 전체 E2E mock 119/119·live 123/123, 실행 시간 절반.
 - 규칙: E2E 전체 실행 전 DB 행 수를 확인(`select count(*) from task`)하고 수천 건이면 볼륨 초기화. 플레이크 보강보다 먼저 환경(DB 누적·node_modules·dev 서버 재사용)을 의심한다.
+
+## 2026-10-20 — 긴 E2E·DB 테스트는 `caffeinate -i`로 (Mac 유휴 잠자기가 플레이크를 만든다)
+- 증상: 병렬 live E2E가 평소 2.5분 → 5분, 실패 5~13건, 실패가 모두 3분 지점에서 타임아웃. 같은 spec 직렬은 통과.
+- 원인: Mac 유휴 잠자기(`pmset -g log`에 `Entering Sleep 'Idle Sleep' … 181 secs`) — api 프로세스 CPU 0% 구간이 테스트 타임아웃과 일치. 오늘 "병렬 부하 플레이크"로 보고된 상당수가 이것.
+- 규칙: 2분 넘는 테스트(E2E·test:db)는 `caffeinate -i <명령>`으로 돌린다. 느려짐·동시 다발 타임아웃이면 코드보다 먼저 `pmset -g log | grep Sleep`을 본다.
