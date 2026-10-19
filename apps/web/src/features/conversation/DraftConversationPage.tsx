@@ -1,6 +1,6 @@
 import { newId } from '@/lib/ids'
 import { useRef, useState } from 'react'
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, ExternalLink } from 'lucide-react'
 import { OpenWebUiIcon } from '@/components/OpenWebUiIcon'
@@ -42,7 +42,17 @@ export function DraftConversationPage() {
   const srStatus = useSrStatus()
   const { data: assistants, isPending } = useQuery({ queryKey: ['assistants'], queryFn: listAssistants })
   const assistant = assistants?.find((item) => item.id === assistantId)
-  const [tags, setTags] = useState(() => params.getAll('tag').map(normalizeTag).filter(Boolean))
+  const urlTags = params.getAll('tag').map(normalizeTag).filter(Boolean)
+  const [tags, setTags] = useState(urlTags)
+  // 탭(MDI)이 같은 에이전트의 초안을 재사용하면 이 화면은 다시 마운트되지 않는다. 주소의 태그가 바뀌었거나 태그 프리셋 이동
+  // (state.tagPreset — 헤더 [이 태그로 새 대화]·칸반 [+])이 새로 오면 그 태그로 바꾼다. 탭 칩으로 돌아오는 같은 주소 이동은 손대지 않는다
+  const location = useLocation()
+  const preset = (location.state as { tagPreset?: boolean } | null)?.tagPreset ? location.key : null
+  const [applied, setApplied] = useState({ url: urlTags.join('\n'), preset })
+  if (applied.url !== urlTags.join('\n') || (preset && preset !== applied.preset)) {
+    setApplied({ url: urlTags.join('\n'), preset })
+    setTags(urlTags)
+  }
   const [busy, setBusy] = useState(false)
   const [waitingSince, setWaitingSince] = useState<number>()
   const sending = useRef(false)
