@@ -6,6 +6,7 @@ info:
     새 저장소 서버 API 초안. 데모의 저장소 함수(src/db/repositories/*)와 1:1로 대응한다(docs/architecture/data-contract.md §6).
     인증은 사내 SSO 세션 쿠키. 역할: member(담당자), system_owner, requester.
     오류는 공통 Problem 형식. 409는 규칙 위반(진행 중 요청, 참조 중 삭제, 완료된 대화 변경 등).
+    S15 마무리(2026-10-20): 경로·스키마를 apps/api/src/**/*.controller.ts와 packages/contracts·packages/domain 타입에 맞춰 대조·갱신했다(정본은 코드).
 servers:
   - url: /api
 security:
@@ -21,8 +22,16 @@ tags:
   - name: service-requests
   - name: misc
   - name: llm
+  - name: admin
 
 paths:
+  /health:
+    get:
+      tags: [misc]
+      summary: 상태 점검 (인증 없음) — packages/contracts HealthSchema
+      security: []
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } } }
   /auth/mode:
     get:
       tags: [auth]
@@ -266,25 +275,39 @@ paths:
         - { name: assistantId, in: query, schema: { type: string } }
         - { name: status, in: query, schema: { type: array, items: { $ref: '#/components/schemas/TaskStatus' } } }
         - { name: tag, in: query, schema: { type: array, items: { type: string } } }
-        - { name: mine, in: query, schema: { type: boolean } }
+        - { name: mine, in: query, schema: { type: string, enum: ['true', 'false'] } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200 }, description: '페이지 크기(기본 30). limit·cursor·q·ai·activeWithinDays·view 중 하나라도 있으면 페이지 모드' }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 1024 }, description: 이전 응답의 X-Next-Cursor }
+        - { name: q, in: query, schema: { type: string, maxLength: 500 }, description: 코드·제목 검색 }
+        - { name: ai, in: query, schema: { type: array, items: { $ref: '#/components/schemas/TaskAiFilter' } } }
+        - { name: activeWithinDays, in: query, schema: { type: integer, minimum: 0, maximum: 36500 } }
+        - { name: view, in: query, schema: { type: string, enum: [summary] }, description: 'summary면 목록용 요약 행(TaskSummary)' }
       responses:
-        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Task' } } } } }
+        '200':
+          description: 'OK. 페이지 모드에서 다음 페이지가 있으면 X-Next-Cursor 헤더(마지막 페이지엔 없음)'
+          headers: { X-Next-Cursor: { schema: { type: string } } }
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Task' } } } }
+        '400': { $ref: '#/components/responses/Problem' }
     post:
       tags: [tasks]
       summary: 대화 시작 (첫 전송·첨부 때 호출, 코드는 서버 발급)
+      parameters: [{ name: Idempotency-Key, in: header, required: false, schema: { type: string }, description: 초안 첫 전송 재시도 시 같은 키 → 같은 대화 }]
       requestBody:
         content:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required: [assistantId]
               properties:
                 assistantId: { type: string }
-                tags: { type: array, items: { type: string } }
+                ownerId: { type: string }
+                assigneeIds: { type: array, items: { type: string } }
+                tags: { type: array, items: { type: string }, description: '초안 ?tag= 프리셋(헤더 #태그 칩 [이 태그로 새 대화], 칸반 열 [+])도 여기로 — 파일·대화는 자동 첨부하지 않는다(S15)' }
                 title: { type: string }
                 inputFileIds: { type: array, items: { type: string } }
                 referenceTaskId: { type: string, description: '?ref= — 이 대화를 ★ 참조 대화(전체 원문)로 미리 선택. 태그를 직접 공유하지 않거나 전달할 메시지가 없으면 선택하지 않고 응답의 warnings[]로 알린다 (S3 ②)' }
-                firstMessage: { type: string, description: '첫 팀 의견 — 있으면 대화·스레드와 같은 트랜잭션에 kind=discussion 메시지(seq 1)로 저장 (S2 ②)' }
+                firstMessage: { type: string, minLength: 1, description: '첫 팀 의견 — 있으면 대화·스레드와 같은 트랜잭션에 kind=discussion 메시지(seq 1)로 저장 (S2 ②)' }
       responses:
         '201': { description: '생성. 참조 대화를 선택하지 못했으면 Task에 warnings(string[])가 붙는다', content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }
   /tasks/{taskId}:
@@ -307,6 +330,43 @@ paths:
       responses:
         '204': { description: 삭제 }
         '409': { $ref: '#/components/responses/Problem' }
+  /tasks/board:
+    get:
+      tags: [tasks]
+      summary: 칸반 보드 — 에이전트 열별 첫 페이지와 총수. 쿼리는 GET /tasks와 같다(열 이어보기는 assistantId + cursor, total은 cursor 무시)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/TaskBoard' } } } }
+  /tasks/{taskId}/candidate-count:
+    get:
+      tags: [materials]
+      summary: '연결 자료(통합 첨부 선택기) 후보 수 — SQL 집계만, 본문·스냅샷·단계는 읽지 않는다(S14). 헤더 [연결 자료(N)] 표시용'
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, required: [count], properties: { count: { type: integer, minimum: 0 } } } } } }
+  /tasks/{taskId}/files:
+    get:
+      tags: [files]
+      summary: 이 대화의 파일(업로드·산출물·AI 응답 이미지 ai_output)
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/FileMeta' } } } } }
+  /tasks/{taskId}/sr-inputs:
+    get:
+      tags: [materials]
+      summary: 연결 SR(본문·첨부) 목록과 다음 요청 선택·과거 사용 여부 (packages/contracts TaskSrInputSchema)
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/TaskSrInput' } } } } }
+  /tasks/{taskId}/sr-inputs/{srId}:
+    put:
+      tags: [materials]
+      summary: 연결 SR 본문을 다음 요청에 선택(사람이 고른 것만)
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { $ref: '#/components/parameters/srId' }]
+      responses: { '204': { description: 선택 } }
+    delete:
+      tags: [materials]
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { $ref: '#/components/parameters/srId' }]
+      responses: { '204': { description: 해제 } }
   /tasks/{taskId}/checklist:
     get:
       tags: [tasks]
@@ -412,9 +472,12 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [files, srFiles, conversations, usedFileIds]
                 properties:
                   files: { type: array, items: { $ref: '#/components/schemas/PoolItem' } }
+                  srFiles: { type: array, description: 연결 SR 첨부, items: { type: object, required: [file, srId, srCode], properties: { file: { $ref: '#/components/schemas/FileMeta' }, srId: { type: string }, srCode: { type: string }, srTitle: { type: string }, selected: { $ref: '#/components/schemas/InputWeight' } } } }
                   conversations: { type: array, items: { $ref: '#/components/schemas/ConversationCandidate' } }
+                  usedFileIds: { type: array, items: { type: string }, description: "이 대화의 요청 기록에 실린 파일('쓴 적 있음', 전달 실패 제외)" }
   /tasks/{taskId}/inputs/{fileId}:
     put:
       tags: [materials]
@@ -438,14 +501,21 @@ paths:
   /tasks/{taskId}/conversation-inputs:
     get:
       tags: [materials]
-      summary: 고른 참조 대화 (스냅샷·새 메시지 수·태그 해제 여부·크기)
+      summary: 고른 참조 대화 (스냅샷·새 메시지 수·태그 해제 여부·크기 3종)
       parameters: [{ $ref: '#/components/parameters/taskId' }]
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ConversationInput' } } } } }
+  /tasks/{taskId}/conversation-inputs/previous-materials:
+    get:
+      tags: [materials]
+      summary: '직전 AI 요청 1건에 실렸던 자료 중 지금도 존재·접근 가능한 것([↺ 직전 질문 자료 다시 첨부]용). 읽기만 하고 선택하지 않는다 — 다시 담기는 사람이 누를 때만'
+      parameters: [{ $ref: '#/components/parameters/taskId' }]
+      responses:
+        '200': { description: 'OK. 직전 요청이 없으면 빈 배열', content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PreviousMaterial' } } } } }
   /tasks/{taskId}/conversation-inputs/{sourceTaskId}:
     put:
       tags: [materials]
-      summary: 참조 대화 선택 (전체·메시지 선택·요약). 같은 쌍은 스냅샷만 교체
+      summary: 참조 대화 선택 (전체·메시지 선택·요약). 같은 쌍은 스냅샷만 교체. 응답은 목록 항목과 같은 형태
       parameters: [{ $ref: '#/components/parameters/taskId' }, { $ref: '#/components/parameters/sourceTaskId' }]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/ConversationInputRequest' } } } }
       responses:
@@ -513,41 +583,67 @@ paths:
       tags: [requests]
       summary: 지금 보내면 AI가 받을 것 (트레이) — 실제 전송과 같은 조립 함수(dryRun)·같은 입력 상태. 완료 대화도 조회 가능(전송만 차단). S3 ③
       parameters: [{ $ref: '#/components/parameters/threadId' }]
-      requestBody: { content: { application/json: { schema: { type: object, properties: { draft: { type: string }, attachmentIds: { type: array, items: { type: string }, description: '업로드했지만 아직 고정하지 않은 초안 첨부 — 전송 시 규칙대로 ☑ 고정될 것으로 가정' }, oneShotFileIds: { type: array, items: { type: string } } } } } } }
+      requestBody: { content: { application/json: { schema: { type: object, additionalProperties: false, properties: { detail: { $ref: '#/components/schemas/AnswerDetail' }, draft: { type: string }, attachmentIds: { type: array, items: { type: string }, description: '이번 메시지 첨부(D54 개정: 대화 첨부는 이번 요청에만)' }, oneShotFileIds: { type: array, items: { type: string } } } } } } }
       responses:
-        '200': { description: 'RequestInfo + overLimit(초과면 전송 차단 — 자동 절단·요약 없음) · limitBytes · attachmentLimit', content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/RequestInfo' }, { type: object, properties: { overLimit: { type: boolean }, limitBytes: { type: integer }, attachmentLimit: { type: integer } } }] } } } }
+        '200': { description: 'RequestInfo + overLimit(초과면 전송 차단 — 자동 절단·요약 없음) · limitBytes · attachmentLimit · inputSignature(전송 시 그대로 돌려보내면 서버가 같은 조립인지 확인)', content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/RequestInfo' }, { type: object, required: [overLimit, attachmentLimit, inputSignature], properties: { overLimit: { type: boolean }, limitBytes: { type: integer }, attachmentLimit: { type: integer }, inputSignature: { type: string, pattern: '^[a-f0-9]{64}$', description: 'sha256(actor·thread·detail·모델·조립 메시지·RequestInfo(추정 시각 제외))' } } }] } } } }
+        '413': { $ref: '#/components/responses/Problem' }
   /threads/{threadId}/requests:
     post:
       tags: [requests]
-      summary: AI 요청 시작 — 보류 중 새 전송은 진행 중으로 복귀(task.started, auto=true), 완료는 수동 재개 필요. 응답은 SSE. 진행 중 요청 409 REQUEST_ACTIVE, 완료 대화 409 TASK_DONE, 첨부 개수 초과 413 ATTACHMENT_LIMIT(행 없음). 요청 크기 초과는 커밋 후 failed(REQUEST_TOO_LARGE)로 기록 + SSE failed. S3-design §1.3·§8
+      summary: AI 요청 시작 — 보류 중 새 전송은 진행 중으로 복귀(task.started, auto=true), 완료는 수동 재개 필요. 응답은 SSE(201). 진행 중 요청 409 REQUEST_ACTIVE, 완료 대화 409 TASK_DONE, inputSignature를 보냈는데 잠금 안에서 다시 조립한 서명과 다르면 409 INPUT_SELECTION_CHANGED(보낸 것 = 본 것 — 트레이를 다시 계산해 확인 후 재전송), 첨부 개수 초과 413 ATTACHMENT_LIMIT(행 없음). 요청 크기 초과는 커밋 후 failed(REQUEST_TOO_LARGE)로 기록 + SSE failed. S3-design §1.3·§8
       parameters: [{ $ref: '#/components/parameters/threadId' }, { name: Idempotency-Key, in: header, required: true, schema: { type: string }, description: '전송 시도마다 클라이언트 UUID. 같은 키 재호출은 새 행 없이 기존 요청 스트림 재개 (S3-design §8.1)' }]
       requestBody:
         content:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required: [content]
               properties:
                 content: { type: string }
+                inputSignature: { type: string, pattern: '^[a-f0-9]{64}$', description: '선택. 직전 estimate의 inputSignature — 다르면 409 INPUT_SELECTION_CHANGED, 같으면 그 조립을 그대로 보낸다(S14)' }
+                detail: { $ref: '#/components/schemas/AnswerDetail' }
                 attachmentIds: { type: array, items: { type: string } }
                 oneShotFileIds: { type: array, items: { type: string }, description: 대화 입력으로 고정하지 않는 첨부 }
       responses:
-        '200':
+        '201':
           description: |
-            text/event-stream. 이벤트: `started`({requestId, replyMessageId, createdAt, autoStarted?, resumedText?, resumedReasoning?}), `phase`({text}), `reasoning`({text}), `delta`({text}),
-            autoStarted=true이면 이번 새 전송으로 보류를 해제했다. 같은 키 재호출은 상태를 다시 바꾸지 않는다.
-            phase는 파일 처리/생각 중/답변 중을 표시한다. 본문과 생각 청크 모두 무응답 타이머를 갱신한다.
+            text/event-stream. 이벤트: `started`({requestId, replyMessageId, userMessageId, createdAt, autoStarted?, firstTokenMs, idleMs, maxMs, resumedText?, resumedReasoning?, resumedSteps?}), `phase`({text}), `reasoning`({text}),
+            `delta`({text} 또는 단계 갱신 {text:'', stepIndex, step: AnswerStep, stepCount}), `replace`({field: content|reasoning, text, steps?} — 누적 본문 교체),
+            autoStarted=true이면 이번 새 전송으로 보류를 해제했다. 같은 키 재호출은 상태를 다시 바꾸지 않고 resumed* 로 이어 받는다.
+            phase는 파일 처리/생각 중/답변 중을 표시한다. 본문·생각·단계 청크 모두 무응답 타이머를 갱신한다. 15초마다 `: ping` 주석.
             `completed`({requestInfo}), `failed`({error, requestInfo}) — failed의 requestInfo.inputs에 전달 실패 항목
           content: { text/event-stream: { schema: { type: string } } }
-        '409': { $ref: '#/components/responses/Problem' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { description: 'code: REQUEST_ACTIVE · TASK_DONE · INPUT_SELECTION_CHANGED', content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '413': { $ref: '#/components/responses/Problem' }
   /requests/{requestId}:
     get:
       tags: [requests]
-      summary: 전송 기록 (사용한 자료·전달 방식·크기·모델·status·phase·retryOf). pending이면 bytes는 null(준비 중)
+      summary: 전송 기록 (사용한 자료·전달 방식·크기·모델·status·phase·retryOf·읽은 웹 페이지·대기 한도). pending이면 bytes는 null(준비 중)
       parameters: [{ $ref: '#/components/parameters/requestId' }]
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/RequestRecord' } } } }
+  /requests/{requestId}/response:
+    get:
+      tags: [requests]
+      summary: '응답 원문 진단(D77) — 상위가 돌려준 원문 JSON(raw_response, 262144바이트 초과면 { bytes }만)과 저장된 본문·생각·답변 단계. SO와 그 대화의 담당자만(그 밖은 403). RequestRecord.canViewRawResponse로 버튼 노출을 정한다'
+      parameters: [{ $ref: '#/components/parameters/requestId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rawResponse, content, reasoning, steps]
+                properties:
+                  rawResponse: { type: [object, 'null'], additionalProperties: true, description: '원문 JSON(키 제외) 또는 상한 초과 시 { bytes }. 기록 전이면 null' }
+                  content: { type: string }
+                  reasoning: { type: [string, 'null'] }
+                  steps: { type: [array, 'null'], items: { $ref: '#/components/schemas/AnswerStep' } }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
   /requests/{requestId}/snapshot:
     get:
       tags: [requests]
@@ -564,11 +660,13 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               properties:
+                detail: { $ref: '#/components/schemas/AnswerDetail' }
                 excludeFileIds: { type: array, items: { type: string }, description: 입력에서 빼고 다시 }
                 forceInlineFileIds: { type: array, items: { type: string }, description: 텍스트로 보내기 (텍스트 파일만) }
       responses:
-        '200': { description: text/event-stream (시작과 같음), content: { text/event-stream: { schema: { type: string } } } }
+        '201': { description: text/event-stream (시작과 같음), content: { text/event-stream: { schema: { type: string } } } }
         '409': { $ref: '#/components/responses/Problem' }
   /requests/{requestId}/cancel:
     post:
@@ -692,10 +790,26 @@ paths:
       parameters: [{ $ref: '#/components/parameters/srId' }]
       requestBody: { content: { application/json: { schema: { type: object, required: [status], properties: { status: { enum: [in_progress, done, rejected], description: '수동 변경은 완료·반려와 다시 열기(in_progress — done·rejected에서만, 아니면 409)뿐. submitted·responded는 접수·결과 공유의 자동 전환, reviewing은 더 이상 설정 불가(기존 행은 접수됨으로 표시)' }, reason: { type: string, minLength: 1, maxLength: 500, description: 'done·rejected 필수, 그 외 선택' } } } } } }
       responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }, '400': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' } }
+  /service-requests/{srId}/compose:
+    post:
+      tags: [service-requests]
+      summary: '접수 대화로 제목·본문 AI 자동작성 **제안**(저장 없음). Accept: text/event-stream이면 started·delta·completed/failed SSE, 아니면 JSON 201. 슬롯·권한 오류는 헤더 전에 JSON 오류'
+      parameters: [{ $ref: '#/components/parameters/srId' }]
+      responses: { '201': { description: '제안 { title, body } 또는 SSE', content: { application/json: { schema: { type: object, properties: { title: { type: string }, body: { type: string } } } }, text/event-stream: { schema: { type: string } } } }, '403': { $ref: '#/components/responses/Problem' }, '429': { description: 보조 요청 진행 중 } }
+  /service-requests/{srId}/files:
+    post:
+      tags: [files]
+      summary: SR 첨부 업로드 (kind sr_attachment, originSrId)
+      parameters: [{ $ref: '#/components/parameters/srId' }]
+      requestBody: { content: { multipart/form-data: { schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } } } } }
+      responses:
+        '201': { description: 생성, content: { application/json: { schema: { $ref: '#/components/schemas/FileMeta' } } } }
+        '400': { description: 파일 없음 }
+        '413': { $ref: '#/components/responses/Problem' }
   /service-requests/{srId}/refine:
     post:
       tags: [service-requests]
-      summary: 현재 제목·본문을 보조 호출로 다듬은 **제안**만 반환 (요청자·SO, 저장 없음, 기록 없음). 적용·제출은 사람이 한다 (U9)
+      summary: 현재 제목·본문을 보조 호출로 다듬은 **제안**만 반환 (요청자·SO, 저장 없음, 기록 없음). 적용·제출은 사람이 한다 (U9). Accept text/event-stream이면 compose와 같은 SSE
       parameters: [{ $ref: '#/components/parameters/srId' }]
       requestBody: { content: { application/json: { schema: { type: object, required: [title, body], properties: { title: { type: string }, body: { type: string } } } } } }
       responses: { '201': { description: 제안, content: { application/json: { schema: { type: object, properties: { title: { type: string }, body: { type: string } } } } } }, '403': { $ref: '#/components/responses/Problem' }, '429': { description: 보조 요청 진행 중 } }
@@ -799,6 +913,22 @@ paths:
         '200': { description: '{ models: { ok, count, ms, error? }, completion: { ok, ms, model, error? } }' }
         '403': { $ref: '#/components/responses/Problem' }
         '429': { description: 전역 동시 상한 포화 또는 같은 사용자의 보조 요청 진행 중 }
+  /admin/diagnostics:
+    get:
+      tags: [admin]
+      summary: 운영 진단 (SO 전용) — 빌드 정보·DB(version·charset·collation·마이그레이션 수, 실패 시 error) 등 서버 상태 요약. 비밀값 없음
+      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } }
+  /admin/diagnostics/sse:
+    get:
+      tags: [admin]
+      summary: 실시간 연결(SSE) 점검 (SO 전용) — 0·0.5·1초에 `ping`({seq, sentAt}) 3개를 보내고 끝낸다. 화면이 도착 간격으로 프록시 버퍼링을 판단
+      responses: { '200': { description: text/event-stream, content: { text/event-stream: { schema: { type: string } } } }, '403': { $ref: '#/components/responses/Problem' } }
+  /admin/diagnostics/openwebui/access:
+    post:
+      tags: [llm]
+      summary: '에이전트 편집의 연결 확인(S13-J, SO 전용) — 모델 호출 없이 도구·스킬 접근·계정 권한·URL 읽기 주입 조건만 (contracts OwuiAccessCheckSchema: model·meta·access·account·fetchUrl·ms)'
+      requestBody: { content: { application/json: { schema: { type: object, required: [model], additionalProperties: false, properties: { model: { type: string, minLength: 1, maxLength: 191 } } } } } }
+      responses: { '200': { description: OwuiAccessCheck }, '400': { $ref: '#/components/responses/Problem' }, '403': { $ref: '#/components/responses/Problem' } }
   /admin/diagnostics/openwebui:
     post:
       tags: [llm]
@@ -852,6 +982,14 @@ paths:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Settings' } } } }
         '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
+  /settings/owui-terminals:
+    get:
+      tags: [admin]
+      summary: 'OpenWebUI 터미널 연결 목록 (SO 전용, D72) — Live·openwebui 프리셋이 아니면 빈 배열. 서비스 계정에 허용된 활성 연결의 id·name만(URL·인증 비노출). 상위 실패 502'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: object, required: [id], properties: { id: { type: string }, name: { type: string } } } } } } }
+        '403': { $ref: '#/components/responses/Problem' }
+        '502': { description: 터미널 목록을 불러오지 못함 }
   /settings/assistant-image:
     get:
       tags: [misc]
@@ -896,6 +1034,18 @@ components:
       properties:
         loginId: { type: string, pattern: '^[a-z0-9._-]{3,32}$', description: 로그인 ID = 계정 식별자 (D34) }
         password: { type: string, minLength: 8, maxLength: 128 }
+    Password: { type: string, minLength: 8, maxLength: 128 }
+    ActivityLog:
+      type: object
+      required: [id, type, at]
+      properties:
+        id: { type: string }
+        taskId: { type: [string, 'null'] }
+        assistantId: { type: [string, 'null'] }
+        userId: { type: [string, 'null'] }
+        type: { type: string, description: '예 task.started · task.completed · context.selected · sr.status_changed' }
+        payload: { type: [object, 'null'], additionalProperties: true }
+        at: { type: string, format: date-time }
     Problem:
       type: object
       properties:
@@ -957,7 +1107,74 @@ components:
         theme: { $ref: '#/components/schemas/Theme' }
         locale: { $ref: '#/components/schemas/Locale' }
         mustChangePassword: { type: boolean }
+    Health:
+      type: object
+      required: [status, db, version, commit]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        db: { type: string, enum: [up, down] }
+        version: { type: string }
+        commit: { type: string }
     InputWeight: { type: string, enum: [main, reference] }
+    AnswerDetail:
+      type: string
+      enum: [full, brief, answer]
+      description: '답변 표시·참조/복사 범위 3단계(D75·D77, contracts AnswerDetailSchema). full=생각·도구 단계까지, brief=본문+요약 단계(기본값, 생략 시 brief), answer=최종 답만. 요청 조립(이전 답변·참조 대화)과 크기 추정(bytes·bytesFull·bytesAnswer)이 같은 값을 쓴다'
+    StepPayload:
+      description: '도구·코드 입출력. 65536바이트 이하는 문자열 그대로, 넘으면 { bytes }만(메시지당 합계 524288바이트 이후도 같음). 본문 text는 자르지 않는다'
+      oneOf:
+        - { type: string }
+        - { type: object, required: [bytes], properties: { bytes: { type: integer } } }
+    AnswerStep:
+      description: '답변 단계(D75, packages/domain answerSteps.ts). 서버 밖으로는 text의 originalText를 빼고 보낸다(publicSteps)'
+      oneOf:
+        - { type: object, required: [type, text], properties: { type: { const: reasoning }, text: { type: string } } }
+        - { type: object, required: [type, text], properties: { type: { const: text }, text: { type: string } } }
+        - { type: object, required: [type, name, input, output, status], properties: { type: { const: tool }, name: { type: string }, input: { $ref: '#/components/schemas/StepPayload' }, output: { $ref: '#/components/schemas/StepPayload' }, status: { enum: [running, done, error] }, source: { const: true, description: 'OpenWebUI sources(검색 참고 자료) — 도구 호출과 구분 표시' } } }
+        - { type: object, required: [type, code, output, status], properties: { type: { const: code }, code: { $ref: '#/components/schemas/StepPayload' }, output: { $ref: '#/components/schemas/StepPayload' }, status: { enum: [running, done, error] } } }
+    PreviousMaterial:
+      description: 직전 AI 요청에 실렸던 자료(contracts previousMaterials.ts). 읽기는 선택하지 않는다
+      oneOf:
+        - { type: object, required: [kind, fileId, weight], properties: { kind: { const: file }, fileId: { type: string }, weight: { $ref: '#/components/schemas/InputWeight' } } }
+        - { type: object, required: [kind, srId], properties: { kind: { const: sr }, srId: { type: string } } }
+        - { type: object, required: [kind, sourceTaskId, snapshotId, mode, weight], properties: { kind: { const: conversation }, sourceTaskId: { type: string }, snapshotId: { type: string }, mode: { $ref: '#/components/schemas/ContextMode' }, weight: { $ref: '#/components/schemas/InputWeight' } } }
+    TaskSrInput:
+      type: object
+      additionalProperties: false
+      required: [srId, code, title, body, bytes, selected, used]
+      properties:
+        srId: { type: string }
+        code: { type: string }
+        title: { type: string }
+        body: { type: string }
+        bytes: { type: integer, minimum: 0 }
+        selected: { type: boolean, description: 다음 요청에 선택됨 }
+        used: { type: boolean, description: 이 대화의 요청에 실린 적 있음 }
+    TaskAiFilter: { type: string, enum: [pending, streaming, failed, interrupted, none, responding], description: 'responding = pending·streaming, failed = failed·interrupted, none = 표시할 요청 없음' }
+    TaskBoard:
+      type: object
+      required: [columns]
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            required: [assistantId, total, items, nextCursor]
+            properties:
+              assistantId: { type: string }
+              total: { type: integer }
+              items: { type: array, items: { $ref: '#/components/schemas/Task' }, description: 'TaskSummary — Task의 목록 필드 + checklist{checked,total} · inputCount · outputCount' }
+              nextCursor: { type: [string, 'null'] }
+    WebPageSource:
+      type: object
+      required: [url, bytes, status]
+      properties:
+        url: { type: string }
+        finalUrl: { type: string }
+        title: { type: string }
+        bytes: { type: integer, description: 받은 원문 바이트 }
+        status: { enum: [read, failed] }
+        error: { type: string }
     ContextMode: { type: string, enum: [full, messages, summary] }
     TaskStatus: { type: string, enum: [todo, in_progress, on_hold, done] }
     Classification:
@@ -1081,18 +1298,20 @@ components:
         updatedAt: { type: string, format: date-time, description: 'finished_at, 없으면 created_at(활성 요청은 시작 시각)' }
     TaskPatch:
       type: object
+      additionalProperties: false
       properties:
         title: { type: string }
         summary: { type: string }
         priority: { enum: [low, normal, high, urgent] }
-        dueDate: { type: string, format: date }
+        dueDate: { type: [string, 'null'], format: date }
         assigneeIds: { type: array, items: { type: string } }
-        modelId: { type: string }
+        ownerId: { type: string }
+        modelId: { type: [string, 'null'] }
     FileMeta:
       type: object
       properties:
         id: { type: string }
-        kind: { enum: [task_file, sr_attachment, assistant_image] }
+        kind: { enum: [task_file, sr_attachment, assistant_image, ai_output], description: 'ai_output = AI 응답 이미지(D73) — 서버가 받아 보관하고 답변 메시지 attachmentIds에 연결' }
         originTaskId: { type: string }
         originSrId: { type: string }
         name: { type: string }
@@ -1120,11 +1339,21 @@ components:
         olderVersionIds: { type: array, items: { type: string } }
     ConversationCandidate:
       type: object
+      required: [taskId, used, code, title, status, assistant, sharedTags, messageCount, bytes, bytesFull, bytesAnswer, lastActivityAt]
       properties:
-        task: { $ref: '#/components/schemas/Task' }
-        viaTags: { type: array, items: { type: string } }
+        taskId: { type: string }
+        used: { type: boolean, description: 이 대화의 요청에 실린 적 있음 }
+        code: { type: string }
+        title: { type: string }
+        status: { $ref: '#/components/schemas/TaskStatus' }
+        assistant: { type: object, properties: { id: { type: string }, name: { type: string }, color: { type: string } } }
+        sharedTags: { type: array, items: { type: string }, description: 직접 공유하는 태그 }
         messageCount: { type: integer }
-        bytes: { type: integer }
+        bytes: { type: integer, description: 'AnswerDetail brief 기준 원문 크기' }
+        bytesFull: { type: integer, description: 'full(생각·도구 단계 포함) 기준 크기' }
+        bytesAnswer: { type: integer, description: 'answer(최종 답만) 기준 크기' }
+        lastActivityAt: { type: string, format: date-time }
+        selected: { type: object, description: 이미 고른 경우, properties: { weight: { $ref: '#/components/schemas/InputWeight' }, mode: { $ref: '#/components/schemas/ContextMode' }, snapshotId: { type: string }, newMessages: { type: integer }, detached: { type: boolean } } }
     ConversationInputRequest:
       type: object
       required: [mode]
@@ -1135,18 +1364,17 @@ components:
         summary: { type: object, properties: { text: { type: string }, source: { enum: [ai, rule] }, model: { type: string } } }
     ConversationInput:
       type: object
+      required: [input, snapshot, source, messageCount, newMessages, detached, bytes, bytesFull, bytesAnswer]
       properties:
-        id: { type: string }
-        taskId: { type: string }
-        sourceTaskId: { type: string }
-        weight: { $ref: '#/components/schemas/InputWeight' }
-        mode: { $ref: '#/components/schemas/ContextMode' }
-        snapshotId: { type: string }
+        input: { type: object, required: [id, taskId, sourceTaskId, weight, mode, snapshotId], properties: { id: { type: string }, taskId: { type: string }, sourceTaskId: { type: string }, weight: { $ref: '#/components/schemas/InputWeight' }, mode: { $ref: '#/components/schemas/ContextMode' }, snapshotId: { type: string }, selectedBy: { type: string }, selectedAt: { type: string, format: date-time } } }
+        snapshot: { type: object, required: [id, sourceTaskId, mode, messageIds], properties: { id: { type: string }, sourceTaskId: { type: string }, mode: { $ref: '#/components/schemas/ContextMode' }, messageIds: { type: array, items: { type: string } }, upToMessageId: { type: string }, upToCreatedAt: { type: string, format: date-time }, summaryText: { type: string }, summarySource: { enum: [ai, rule] }, summaryModel: { type: string }, createdBy: { type: string }, createdAt: { type: string, format: date-time } } }
+        source: { type: object, properties: { taskId: { type: string }, code: { type: string }, title: { type: string }, assistant: { type: object, properties: { id: { type: string }, name: { type: string }, color: { type: string } } } } }
         messageCount: { type: integer }
         newMessages: { type: integer, description: 선택 이후 원본에 생긴 메시지 수 (갱신 안내) }
         detached: { type: boolean, description: 공유 태그가 없어졌지만 선택은 유지 }
-        bytes: { type: integer }
-        summaryText: { type: string }
+        bytes: { type: integer, description: brief 기준(요약 모드는 요약문 크기) }
+        bytesFull: { type: integer, description: full 기준 }
+        bytesAnswer: { type: integer, description: answer 기준 }
     Message:
       type: object
       properties:
@@ -1157,25 +1385,28 @@ components:
         kind: { enum: [discussion] }
         content: { type: string }
         reasoning: { type: [string, 'null'], description: '표시·보존 전용 생각 과정. 다음 요청·참조 문맥·크기 추정·요약에서 제외' }
+        steps: { type: [array, 'null'], items: { $ref: '#/components/schemas/AnswerStep' }, description: '답변 단계(D75). 없으면 content·reasoning에서 파생. 다음 요청·참조에 무엇을 넣을지는 AnswerDetail' }
         authorId: { type: string }
         status: { enum: [streaming, done, error] }
         error: { type: string }
-        attachmentIds: { type: array, items: { type: string } }
+        attachmentIds: { type: array, items: { type: string }, description: '사용자 첨부, 또는 답변 메시지의 AI 응답 이미지(FileMeta.kind ai_output, D73)' }
         requestId: { type: string }
         createdAt: { type: string, format: date-time }
     RequestInput:
       type: object
       properties:
-        kind: { enum: [file, conversation] }
+        kind: { enum: [file, conversation, sr] }
         weight: { $ref: '#/components/schemas/InputWeight' }
         fileId: { type: string }
+        srId: { type: string, description: 'kind sr — 연결 SR 본문' }
+        title: { type: string, description: 'conversation·sr' }
+        assistantName: { type: string, description: conversation }
         name: { type: string }
         version: { type: integer }
         source: { type: string }
         oneShot: { type: boolean }
         delivery: { enum: [attached, inline, metadata_only, failed] }
         text: { type: boolean, description: 텍스트 파일이면 "텍스트로 보내기" 가능 }
-        remoteId: { type: string }
         error: { type: string }
         sourceTaskId: { type: string }
         code: { type: string }
@@ -1196,12 +1427,15 @@ components:
         provider: { enum: [mock, live] }
         transport: { enum: [inline, openwebui], description: 파일 전달 방식 }
         owuiTools: { $ref: '#/components/schemas/OwuiToolDelivery' }
+        webPages: { type: array, items: { $ref: '#/components/schemas/WebPageSource' }, description: 'URL 자동 읽기(D70)로 실제 넣은 페이지' }
+        at: { type: string, format: date-time }
         model: { type: string }
         bytes: { type: integer }
         limitBytes: { type: integer }
         srCodes: { type: array, items: { type: string }, description: 태그에서 뽑은 SR 번호(접수 여부 무관) }
         srs: { type: array, description: '본문이 프롬프트에 실제 들어간 SR — 태그 중 접수된 것만. estimate와 전송이 같은 조립 결과(S9-4, 보낸 것 = 본 것)', items: { type: object, required: [code, title], properties: { code: { type: string }, title: { type: string } } } }
-        inputs: { type: array, items: { $ref: '#/components/schemas/RequestInput' } }
+        inputs: { type: array, items: { $ref: '#/components/schemas/RequestInput' }, description: 파일 항목의 remoteId는 응답에서 뺀다 }
+        retryOf: { type: string }
     RequestRecord:
       allOf:
         - { $ref: '#/components/schemas/RequestInfo' }
@@ -1214,9 +1448,21 @@ components:
             requestedBy: { type: string }
             retryOf: { type: string }
             status: { enum: [pending, streaming, succeeded, failed, cancelled, interrupted] }
-            error: { type: string }
+            phase: { type: [string, 'null'] }
+            code: { type: [string, 'null'], description: 실패 분류 코드 }
+            error: { type: [string, 'null'] }
+            bytes: { type: [integer, 'null'], description: pending이면 null(준비 중) }
+            hasSnapshot: { type: boolean }
+            canViewRawResponse: { type: boolean, description: 'GET /requests/{id}/response 가능(SO·담당자)' }
+            firstTokenMs: { type: integer }
+            idleMs: { type: integer }
+            maxMs: { type: integer }
             createdAt: { type: string, format: date-time }
             finishedAt: { type: string, format: date-time }
+            inputs:
+              type: array
+              description: 기록된 자료(chat_request_input) — RequestInfo.inputs와 다른 저장 형태
+              items: { type: object, properties: { kind: { enum: [file, conversation, sr] }, weight: { $ref: '#/components/schemas/InputWeight' }, fileId: { type: [string, 'null'] }, fileVersion: { type: [integer, 'null'] }, srId: { type: [string, 'null'] }, srCode: { type: string }, srTitle: { type: string }, sourceLabel: { type: string }, oneShot: { type: boolean }, delivery: { type: [string, 'null'] }, sourceTaskId: { type: [string, 'null'] }, snapshotId: { type: [string, 'null'] }, mode: { type: [string, 'null'] }, messageCount: { type: [integer, 'null'] }, bytes: { type: [integer, 'null'] }, error: { type: [string, 'null'] } } }
     ServiceRequest:
       type: object
       properties:
@@ -1248,14 +1494,19 @@ components:
         defaultModel: { type: string, readOnly: true, description: 'DB defaultModelOverride → .env LLM_DEFAULT_MODEL → 도메인 기본값. 모든 기본 모델 소비처는 effectiveDefaultModel의 해석을 사용한다. 구형 app_setting.defaultModel은 무시하고 기동 경고를 유지한다.' }
         defaultModelSource: { type: string, enum: [setting, env, default], readOnly: true, description: 현재 적용 모델의 출처 }
         defaultModelOverride: { type: string, nullable: true, maxLength: 191, description: '전역 모델 ID. trim 후 1–191자. 빈 값·공백·null은 해제이며 미지정 시 응답에서 생략될 수 있다.' }
+        urlAutoFetch: { type: boolean, default: true, description: 'URL 자동 읽기(D70) 켬/끔' }
+        urlAllowDomains: { type: array, maxItems: 100, items: { type: string }, description: 허용 도메인(하위 포함, URL·포트·와일드카드 거부) }
+        urlBlockDomains: { type: array, maxItems: 100, items: { type: string }, description: 차단 도메인 }
+        owuiDefaultTerminalId: { type: [string, 'null'], maxLength: 200, description: 'OpenWebUI 기본 터미널 연결 ID(D72). 빈 값·null은 해제' }
         owuiTools: { type: string, enum: [auto, off], default: auto, description: 'OpenWebUI Live 도구·기본 기능 전달. 바꾸면 그 키만 PATCH(S12 즉시 저장). 다음 요청부터 적용.' }
         owuiMode: { type: string, enum: [auto, session, direct], description: 'OpenWebUI 대화 요청 방식(S12). session은 OWUI 채팅을 만들어 builtin 도구(URL 읽기 등)를 켜고 폴링으로 받는다. auto는 생성 단계 4xx·형식 불일치만 direct로 폴백. 저장값이 없으면 .env LLM_OWUI_MODE(기본 auto)' }
         owuiCleanup: { type: boolean, description: '세션 모드 완료 뒤 OWUI 채팅 삭제. 저장값이 없으면 .env LLM_OWUI_CLEANUP(기본 true)' }
         fileDelivery: { enum: [inline, openwebui] }
-        requestBudgetBytes: { type: integer, minimum: 1024, maximum: 16777216 }
+        requestBudgetBytes: { type: integer, minimum: 1024, maximum: 100000000 }
         srIntakeAssistantId: { type: string, nullable: true, description: '중단된 에이전트는 409' }
         link1Rule: { type: string, description: '링크1 미입력 시 기본 규칙 (U9, SO 전역 설정)' }
         fileMaxPerRequest: { type: integer, minimum: 1, maximum: 100 }
+        urlAutoFetchAvailable: { type: boolean, readOnly: true, description: '.env에서 URL 자동 읽기를 끄면 false(설정 UI 비활성)' }
         assistantImageFileId: { type: string, readOnly: true, description: 'AI 도우미 알약 캐릭터 이미지 파일 ID (S11 U4). POST/DELETE /settings/assistant-image로만 바뀌고 PATCH에 오면 400. 없으면 생략. 본문은 GET /settings/assistant-image' }
     SettingsPatch:
       type: object
@@ -1263,11 +1514,15 @@ components:
       additionalProperties: false
       properties:
         defaultModelOverride: { type: string, nullable: true, maxLength: 191, description: 'trim 후 빈 값·null이면 새 키를 해제하여 .env 폴백을 사용. 다음 요청부터 적용.' }
+        urlAutoFetch: { type: boolean, default: true, description: 'URL 자동 읽기(D70) 켬/끔' }
+        urlAllowDomains: { type: array, maxItems: 100, items: { type: string }, description: 허용 도메인(하위 포함, URL·포트·와일드카드 거부) }
+        urlBlockDomains: { type: array, maxItems: 100, items: { type: string }, description: 차단 도메인 }
+        owuiDefaultTerminalId: { type: [string, 'null'], maxLength: 200, description: 'OpenWebUI 기본 터미널 연결 ID(D72). 빈 값·null은 해제' }
         owuiTools: { type: string, enum: [auto, off], default: auto, description: 'OpenWebUI Live 도구·기본 기능 전달. 바꾸면 그 키만 PATCH(S12 즉시 저장). 다음 요청부터 적용.' }
         owuiMode: { type: string, enum: [auto, session, direct], description: 'OpenWebUI 대화 요청 방식(S12). session은 OWUI 채팅을 만들어 builtin 도구(URL 읽기 등)를 켜고 폴링으로 받는다. auto는 생성 단계 4xx·형식 불일치만 direct로 폴백. 저장값이 없으면 .env LLM_OWUI_MODE(기본 auto)' }
         owuiCleanup: { type: boolean, description: '세션 모드 완료 뒤 OWUI 채팅 삭제. 저장값이 없으면 .env LLM_OWUI_CLEANUP(기본 true)' }
         fileDelivery: { enum: [inline, openwebui] }
-        requestBudgetBytes: { type: integer, minimum: 1024, maximum: 16777216 }
+        requestBudgetBytes: { type: integer, minimum: 1024, maximum: 100000000 }
         srIntakeAssistantId: { type: string, nullable: true, description: '중단된 에이전트는 409 · null이면 지정 해제' }
         link1Rule: { type: string, description: '링크1 미입력 시 기본 규칙 (U9)' }
         fileMaxPerRequest: { type: integer, minimum: 1, maximum: 100 }
