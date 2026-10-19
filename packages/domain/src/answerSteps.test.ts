@@ -12,7 +12,7 @@ describe('answer steps', () => {
   })
   it('renders the same ordered detail for copy and conversation attachments', () => {
     const message = { content: 'legacy', reasoning: 'old', steps }
-    expect(renderAnswer(message, 'brief')).toBe('[생각 과정]\n검토\n\n먼저\n\n나중')
+    expect(renderAnswer(message, 'brief')).toBe('[생각 과정]\n검토\n\n먼저\n\n[도구 사용: lookup · done]\n\n[코드 실행 · done]\n\n나중')
     const full = renderAnswer(message, 'full')
     expect(full).toContain('{"q":"원문"}')
     expect(full.indexOf('먼저')).toBeLessThan(full.indexOf('lookup'))
@@ -47,7 +47,17 @@ describe('answer steps', () => {
   it('labels sources apart from tools and supports translated labels for the clipboard', () => {
     const source: AnswerStep = { type: 'tool', name: 'kb', input: '', output: '출처 원문', status: 'done', source: true }
     expect(renderAnswer({ content: '', steps: [source] }, 'full')).toContain('[참고 출처: kb]')
-    expect(renderAnswer({ content: '', steps: [source] }, 'brief')).toBe('')
+    expect(renderAnswer({ content: '', steps: [source] }, 'brief')).toBe('[참고 출처: kb]')
     expect(renderAnswer({ content: '', steps }, 'brief', { reasoning: 'Thinking process' })).toContain('[Thinking process]\n검토')
   })
+})
+
+it('uses three modes consistently for legacy and structured copy/reference content', () => {
+  const message = { content: 'legacy', steps }
+  const brief = renderAnswer(message, 'brief')
+  expect(brief).toContain('[도구 사용: lookup · done]')
+  expect(brief).toContain('[코드 실행 · done]')
+  expect(brief).not.toMatch(/원문|조회 결과|print\(1\)/)
+  expect(renderAnswer(message, 'answer')).toBe('먼저\n\n나중')
+  expect(renderAnswer({ content: 'old answer', reasoning: 'private' }, 'answer')).toBe('old answer')
 })

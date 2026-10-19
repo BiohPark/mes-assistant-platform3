@@ -76,10 +76,10 @@ export class DbConversationInputsService {
       .from(thread).innerJoin(message, eq(message.threadId, thread.id))
       .where(and(inArray(thread.taskId, visibleSources.map((item) => item.source.id)), inArray(message.role, ['user', 'assistant']),
         eq(message.status, 'done'), isNull(message.kind), sql`trim(${message.content}) <> ''`)) : []
-    const countsByTask = new Map<string | null, { count: number; bytes: number; bytesFull: number }>()
+    const countsByTask = new Map<string | null, { count: number; bytes: number; bytesFull: number; bytesAnswer: number }>()
     for (const row of rows) {
-      const count = countsByTask.get(row.taskId) ?? { count: 0, bytes: 0, bytesFull: 0 }
-      countsByTask.set(row.taskId, { count: count.count + 1, bytes: count.bytes + messageBytes(row, 'brief'), bytesFull: count.bytesFull + messageBytes(row, 'full') })
+      const count = countsByTask.get(row.taskId) ?? { count: 0, bytes: 0, bytesFull: 0, bytesAnswer: 0 }
+      countsByTask.set(row.taskId, { count: count.count + 1, bytes: count.bytes + messageBytes(row, 'brief'), bytesFull: count.bytesFull + messageBytes(row, 'full'), bytesAnswer: count.bytesAnswer + messageBytes(row, 'answer') })
     }
     const used = await this.db.select({ sourceTaskId: chatRequestInput.sourceTaskId }).from(chatRequestInput)
       .innerJoin(chatRequest, eq(chatRequestInput.requestId, chatRequest.id)).innerJoin(thread, eq(chatRequest.threadId, thread.id))
@@ -93,7 +93,7 @@ export class DbConversationInputsService {
       const detail = choice && loaded.find((row) => row.input.sourceTaskId === source.id)
       return { taskId: source.id, used: usedSources.has(source.id), code: source.code, title: source.title, status: source.status,
         assistant: { id: agent.id, name: agent.name, color: agent.color }, sharedTags: tags.get(source.id)!,
-        messageCount: count?.count ?? 0, bytes: count?.bytes ?? 0, bytesFull: count?.bytesFull ?? 0, lastActivityAt: source.lastActivityAt.toISOString(),
+        messageCount: count?.count ?? 0, bytes: count?.bytes ?? 0, bytesFull: count?.bytesFull ?? 0, bytesAnswer: count?.bytesAnswer ?? 0, lastActivityAt: source.lastActivityAt.toISOString(),
         ...(detail && { selected: { weight: detail.input.weight, mode: detail.input.mode, snapshotId: detail.snapshot.id, newMessages: detail.newMessages, detached: detail.detached } }) }
     })
   }
@@ -124,7 +124,8 @@ export class DbConversationInputsService {
         messages: selectedMessages, messageCount: selectedMessages.length, newMessages: newMessagesSince(view, all),
         detached: !(await this.shared(taskId, row.sourceTaskId)),
         bytes: snapshot.mode === 'summary' ? byteLength(snapshot.summaryText ?? '') : selectedMessages.reduce((n, item) => n + messageBytes(item, 'brief'), 0),
-        bytesFull: snapshot.mode === 'summary' ? byteLength(snapshot.summaryText ?? '') : selectedMessages.reduce((n, item) => n + messageBytes(item, 'full'), 0) }
+        bytesFull: snapshot.mode === 'summary' ? byteLength(snapshot.summaryText ?? '') : selectedMessages.reduce((n, item) => n + messageBytes(item, 'full'), 0),
+        bytesAnswer: snapshot.mode === 'summary' ? byteLength(snapshot.summaryText ?? '') : selectedMessages.reduce((n, item) => n + messageBytes(item, 'answer'), 0) }
     }))
   }
   async list(taskId: string, actor?: string) { return (await this.load(taskId, actor)).map(({ messages: _messages, ...row }) => row) }

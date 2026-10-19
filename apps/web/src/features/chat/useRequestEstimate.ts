@@ -24,7 +24,7 @@ export function useRequestEstimate(threadId: string | undefined, draft: string, 
     const timer = setTimeout(() => setReady(key), 400)
     return () => clearTimeout(timer)
   }, [active, key])
-  const query = useQuery({ queryKey: ['estimate', threadId, ready], queryFn: () => estimateRequest(threadId!, { draft: JSON.parse(ready!)?.draft as string, ...(detail === 'full' ? { detail } : {}) }),
+  const query = useQuery({ queryKey: ['estimate', threadId, ready], queryFn: () => estimateRequest(threadId!, { draft: JSON.parse(ready!)?.draft as string, ...(detail !== 'brief' ? { detail } : {}) }),
     enabled: active && !!ready && ready === key, retry: false })
   const settled = ready === key && !query.isFetching && (query.isSuccess || query.isError)
   const current = active && settled && query.isSuccess ? query.data : undefined

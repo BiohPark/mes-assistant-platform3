@@ -24,3 +24,21 @@ test('answer steps scenario retains message → call → output → message in a
   assert.equal(message.output[1].arguments, '{"query":"raw step input"}')
   assert.equal(message.output[2].output[0].text, 'raw step result')
 })
+test('details-only scenario exposes unfinished reasoning/code and retains all wrappers in final content', async () => {
+  const created = await request('/api/chat/completions', { model: 'fake-general', stream: true, session_id: 'details-test', parent_id: null, id: 'details-steps', messages: [{ role: 'user', content: '[details] 형식 확인' }] })
+  let message, running = false
+  for (let i = 0; i < 200; i++) {
+    const state = await request(`/api/v1/chats/${created.chat_id}`)
+    message = state.chat.history.messages['details-steps']
+    running ||= /done="false"/.test(message.content)
+    if (message.done) break
+    await new Promise(resolve => setTimeout(resolve, 30))
+  }
+  assert.equal(message.done, true)
+  assert.equal(running, true)
+  assert.deepEqual(message.output, [])
+  for (const type of ['reasoning', 'code_interpreter', 'tool_calls']) assert.match(message.content, new RegExp(`type="${type}"`))
+  assert.match(message.content, /PRIVATE_REASONING/)
+  assert.match(message.content, /raw details result/)
+  assert.match(message.content, /\*\*details answer\*\*/)
+})

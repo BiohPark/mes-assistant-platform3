@@ -350,7 +350,8 @@ it('shows ordered steps, hides tools in brief mode, and copies the visible mode'
   await userEvent.click(screen.getAllByRole('button', { name: '복사' })[0]!)
   expect(copy.mock.calls.at(-1)?.[0]).toContain('도구 원문 결과')
   act(() => useUiStore.getState().setAnswerDetail('anonymous', 'brief'))
-  expect(container.querySelector('[data-answer-step="tool"]')).toBeNull()
+  expect(container.querySelector('[data-answer-step="tool"]')).toBeInTheDocument()
+  expect(screen.queryByText('도구 원문 입력')).not.toBeInTheDocument()
   await userEvent.click(screen.getAllByRole('button', { name: '복사' })[0]!)
   expect(copy.mock.calls.at(-1)?.[0]).not.toContain('도구 원문 결과')
   expect(copy.mock.calls.at(-1)?.[0]).toContain('검토')
@@ -415,3 +416,28 @@ it('copies with labels in the viewer language', async () => {
   expect(copy).toHaveBeenCalledWith('[Thinking process]\nchecking\n\nanswer')
 })
 
+
+it('retains headers in brief mode without execution payloads and hides reasoning in answer mode', async () => {
+  const { useUiStore } = await import('@/app/uiStore')
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const view = (message: Message) => <QueryClientProvider client={client}><TooltipProvider><MessageBubble message={message} /></TooltipProvider></QueryClientProvider>
+  useUiStore.setState({ answerDetails: { anonymous: 'brief' } })
+  onTestFinished(() => { useUiStore.setState({ answerDetails: {} }) })
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  const ordered: Message = { id: 'three', threadId: 'h', attachmentIds: [], createdAt: '2026-01-01', role: 'assistant' as const, status: 'done' as const, content: 'answer', steps: [
+    { type: 'reasoning' as const, text: 'secret thought' },
+    { type: 'tool' as const, name: 'lookup', input: 'PRIVATE INPUT', output: 'PRIVATE OUTPUT', status: 'done' as const },
+    { type: 'code' as const, code: 'echo PRIVATE', output: 'PRIVATE RESULT', status: 'done' as const },
+    { type: 'text' as const, text: 'answer' },
+  ] }
+  const { container, rerender } = renderWithProviders(view(ordered))
+  expect(container.querySelectorAll('[data-answer-step]')).toHaveLength(4)
+  expect(screen.getByText(/도구 사용 · lookup/)).toBeInTheDocument()
+  expect(screen.getByText(/코드 실행/)).toBeInTheDocument()
+  expect(container.textContent).not.toMatch(/PRIVATE/)
+  act(() => useUiStore.getState().setAnswerDetail('anonymous', 'answer'))
+  expect(container.querySelectorAll('[data-answer-step]')).toHaveLength(1)
+  expect(screen.queryByText('생각 과정')).not.toBeInTheDocument()
+  rerender(view({ ...ordered, steps: undefined, reasoning: 'legacy thought' }))
+  expect(screen.queryByText('생각 과정')).not.toBeInTheDocument()
+})

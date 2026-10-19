@@ -332,15 +332,19 @@ it('S14: keeps following the bottom while typed-out text grows the conversation,
   expect(scrollIntoView).not.toHaveBeenCalled()
 })
 
-it('names the answer detail toggle by its visible mode, describes what it hides separately and reports the pressed state', async () => {
+it('names the answer detail toggle by its visible mode, describes what it hides separately and cycles all three accessible mode names', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
   const { useUiStore } = await import('@/app/uiStore')
   onTestFinished(() => { useUiStore.setState({ answerDetails: {} }) })
   render(view([question, answer]))
-  const toggle = screen.getByRole('button', { name: '생각·답변만' })
-  expect(toggle).toHaveAttribute('aria-pressed', 'false')
-  expect(toggle).toHaveAccessibleDescription(/도구·코드 블록/)
+  const toggle = screen.getByRole('button', { name: '코드·쉘 실행 제외' })
+  expect(toggle).toHaveAttribute('data-answer-detail', 'brief')
+  expect(toggle).toHaveAccessibleDescription(/도구·코드 헤더/)
   await userEvent.click(toggle)
-  expect(screen.getByRole('button', { name: '도구까지 전체' })).toHaveAttribute('aria-pressed', 'true')
+  expect(toggle).toHaveAccessibleName('답변만')
+  await userEvent.click(toggle)
+  expect(toggle).toHaveAccessibleName('도구·코드까지 전체')
+  await userEvent.click(toggle)
+  expect(toggle).toHaveAccessibleName('코드·쉘 실행 제외')
 })
 

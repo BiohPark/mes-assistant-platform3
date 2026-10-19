@@ -57,6 +57,9 @@ export class RequestsController {
   @Get(':id')
   get(@Req() req: AuthedRequest, @Param('id') id: string) { return this.requests.get(id, req.user!.id) }
 
+  @Get(':id/response')
+  response(@Req() req: AuthedRequest, @Param('id') id: string) { return this.requests.response(id, req.user!.id) }
+
   @Get(':id/snapshot')
   async snapshot(@Req() req: AuthedRequest, @Param('id') id: string, @Res() res: Response) {
     const data = await this.requests.snapshot(id, req.user!.id)

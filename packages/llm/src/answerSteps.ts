@@ -1,3 +1,4 @@
+import { contentSteps } from './contentSteps.js'
 import { boundStepPayload, type AnswerStep } from '@mes/domain'
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 const parts = (v: unknown) => Array.isArray(v) ? v.map(p => object(p) && typeof p.text === 'string' ? p.text : '').join('') : ''
@@ -25,6 +26,11 @@ export function sessionSteps(message: Record<string, unknown>): AnswerStep[] {
       steps.push({ type: 'code', code: boundStepPayload(raw(item.code)), output: boundStepPayload(resultText(item.output)), status: status(item.status, message.done === true) })
     }
   }
-  if (!steps.some(s => s.type === 'text') && typeof message.content === 'string' && message.content) steps.push({ type: 'text', text: message.content })
+  if (typeof message.content === 'string' && message.content) {
+    const parsed = contentSteps(message.content)
+    // output[] wins; content is only a fallback for answer text when output has no message.
+    if (!steps.length) return parsed
+    if (!steps.some(s => s.type === 'text')) steps.push(...parsed.filter(s => s.type === 'text'))
+  }
   return steps
 }

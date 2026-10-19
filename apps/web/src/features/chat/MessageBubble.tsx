@@ -120,7 +120,7 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
       {progress && <><span aria-hidden>·</span><span role="timer" aria-live="off">{t('chat.elapsed', { seconds: progress.elapsed })}</span></>}
       {progressTiming}
     </>}{!assistant && !intake && message.kind === 'discussion' && <Badge tone="warning" className="gap-0.5 px-1.5"><MessagesSquare className="size-2.5" />{t('chat.discussionBadge')}</Badge>}</div>
-    {assistant && !message.steps?.length && message.reasoning && <details open={reasoningOpen} className="w-full rounded-lg border bg-muted text-foreground">
+    {assistant && detail !== 'answer' && !message.steps?.length && message.reasoning && <details open={reasoningOpen} className="w-full rounded-lg border bg-muted text-foreground">
       <summary aria-expanded={reasoningOpen} onClick={(event) => { event.preventDefault(); toggleReasoning() }}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleReasoning() }
@@ -133,11 +133,11 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
       }} className="max-h-64 overflow-y-auto scroll-auto whitespace-pre-wrap break-words px-3 pb-3 text-sm">{reasoning}</div>
     </details>}
     {assistant && message.steps?.length ? message.steps.map((step, index, steps) => {
-      if ((step.type === 'tool' || step.type === 'code') && detail !== 'full') return null
+      if (detail === 'answer' && step.type !== 'text') return null
       // 지금 자라는 단계(마지막)만 타자 효과·생각 미리보기 — 앞 단계는 받은 그대로
       const live = streaming && index === steps.length - 1
       return <div key={index} data-answer-step={step.type} className="w-full min-w-0">
-        {step.type === 'text' ? <StepText text={step.text} streaming={live} render={renderContent} /> : step.type === 'reasoning' ? <StepReasoning text={step.text} streaming={live} /> : <StepDetails step={step} />}
+        {step.type === 'text' ? <StepText text={step.text} streaming={live} render={renderContent} /> : step.type === 'reasoning' ? <StepReasoning text={step.text} streaming={live} /> : <StepDetails step={step} showPayload={detail === 'full'} />}
       </div>
     }) : (!assistant || hasContent) && renderContent(content)}
     {/* 글이 멈췄는데 아직 끝나지 않았으면 답 바로 아래에도 같은 상태를 보인다 — 읽는 자리(답 끝)에서 끝난 것처럼 보이지 않게. 읽기는 머리 줄(role=status)이 맡는다 */}
@@ -228,12 +228,13 @@ function inputSummary(payload: StepPayload): string {
   return line.length > SUMMARY_MAX ? `${line.slice(0, SUMMARY_MAX - 1)}…` : line
 }
 
-function StepDetails({ step }: { step: Extract<AnswerStep, { type: 'tool' | 'code' }> }) {
+function StepDetails({ step, showPayload }: { step: Extract<AnswerStep, { type: 'tool' | 'code' }>; showPayload: boolean }) {
   const t = useT()
   const [open, setOpen] = useState(false)
   const source = step.type === 'tool' && step.source
   const label = source ? [t('chat.sourceUse'), step.name]
-    : [t(step.type === 'tool' ? 'chat.toolUse' : 'chat.codeRun'), ...(step.type === 'tool' ? [step.name] : []), inputSummary(step.type === 'tool' ? step.input : step.code), t(`chat.stepStatus.${step.status}`)]
+    : [t(step.type === 'tool' ? 'chat.toolUse' : 'chat.codeRun'), ...(step.type === 'tool' ? [step.name] : []), ...(showPayload ? [inputSummary(step.type === 'tool' ? step.input : step.code)] : []), t(`chat.stepStatus.${step.status}`)]
+  if (!showPayload) return <div className="rounded-lg border bg-muted px-3 py-3 text-xs font-medium">{label.filter(Boolean).join(' · ')}</div>
   return <details open={open} className="w-full rounded-lg border bg-muted text-foreground">
     <summary aria-expanded={open} onClick={event => { event.preventDefault(); setOpen(!open) }}
       onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setOpen(!open) } }}

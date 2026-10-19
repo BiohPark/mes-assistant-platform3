@@ -3,7 +3,7 @@ export const STEP_PAYLOAD_MAX_BYTES = 65_536
 /** Per-message total of tool/code payloads. Payloads after the total keep their byte count only; text is never cut. */
 export const STEPS_PAYLOAD_TOTAL_MAX_BYTES = 524_288
 export type StepPayload = string | { bytes: number }
-export type AnswerDetail = 'full' | 'brief'
+export type AnswerDetail = 'full' | 'brief' | 'answer'
 export type AnswerStep =
   | { type: 'reasoning'; text: string }
   | { type: 'text'; text: string; originalText?: string }
@@ -69,13 +69,14 @@ export function answerSteps(message: { content: string; reasoning?: string | nul
 /** Block labels. The prompt keeps the Korean defaults; the clipboard passes the viewer's language. */
 export interface AnswerLabels { reasoning: string; tool: string; source: string; code: string; input: string; output: string }
 const KO_LABELS: AnswerLabels = { reasoning: '생각 과정', tool: '도구 사용', source: '참고 출처', code: '코드 실행', input: '입력', output: '결과' }
-/** Shared verbatim rendering for clipboard and reference conversations (D75: 'brief' = reasoning + answer text, tools hidden). */
+/** Shared rendering for clipboard and reference conversations: full, headers with thoughts, or answers only. */
 export function renderAnswer(message: Parameters<typeof answerSteps>[0], detail: AnswerDetail = 'brief', labels: Partial<AnswerLabels> = {}): string {
   const l = { ...KO_LABELS, ...labels }
   return answerSteps(message).flatMap(step => {
     if (step.type === 'text') return [step.text]
-    if (step.type === 'reasoning') return [`[${l.reasoning}]\n${step.text}`]
-    if (detail === 'brief') return []
+    if (step.type === 'reasoning') return detail === 'answer' ? [] : [`[${l.reasoning}]\n${step.text}`]
+    if (detail === 'answer') return []
+    if (detail === 'brief') return [step.type === 'tool' ? `[${step.source ? l.source : l.tool}: ${step.name}${step.source ? '' : ` · ${step.status}`}]` : `[${l.code} · ${step.status}]`]
     if (step.type === 'tool' && step.source) return [`[${l.source}: ${step.name}]\n${payloadText(step.output)}`]
     if (step.type === 'tool') return [`[${l.tool}: ${step.name} · ${step.status}]\n${l.input}:\n${payloadText(step.input)}\n${l.output}:\n${payloadText(step.output)}`]
     return [`[${l.code} · ${step.status}]\n${payloadText(step.code)}\n${l.output}:\n${payloadText(step.output)}`]

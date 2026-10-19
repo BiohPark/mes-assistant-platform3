@@ -76,12 +76,12 @@ describe('conversation inputs DB', () => {
       { id: `${source.task.id}-legacy`, threadId: source.thread.id, seq: 2, role: 'assistant', content: '옛 답', reasoning: '옛 생각', status: 'done' },
       { id: `${source.task.id}-steps`, threadId: source.thread.id, seq: 3, role: 'assistant', content: '단계 답', reasoning: '단계 생각', steps, status: 'done' },
     ])
-    const brief = Buffer.byteLength('질문') + Buffer.byteLength('[생각 과정]\n옛 생각\n\n옛 답') + Buffer.byteLength('[생각 과정]\n단계 생각\n\n단계 답')
-    const full = brief - Buffer.byteLength('[생각 과정]\n단계 생각\n\n단계 답')
+    const brief = Buffer.byteLength('질문') + Buffer.byteLength('[생각 과정]\n옛 생각\n\n옛 답') + Buffer.byteLength('[생각 과정]\n단계 생각\n\n[도구 사용: lookup · done]\n\n단계 답')
+    const full = brief - Buffer.byteLength('[생각 과정]\n단계 생각\n\n[도구 사용: lookup · done]\n\n단계 답')
       + Buffer.byteLength('[생각 과정]\n단계 생각\n\n[도구 사용: lookup · done]\n입력:\n도구 입력\n결과:\n도구 결과\n\n단계 답')
-    expect((await service.candidates(mine.task.id)).find(item => item.taskId === source.task.id)).toMatchObject({ messageCount: 3, bytes: brief, bytesFull: full })
+    expect((await service.candidates(mine.task.id)).find(item => item.taskId === source.task.id)).toMatchObject({ messageCount: 3, bytes: brief, bytesFull: full, bytesAnswer: Buffer.byteLength('질문옛 답단계 답') })
     await service.select(actor, mine.task.id, source.task.id, { mode: 'full' })
-    expect((await service.list(mine.task.id)).find(item => item.input.sourceTaskId === source.task.id)).toMatchObject({ bytes: brief, bytesFull: full })
+    expect((await service.list(mine.task.id)).find(item => item.input.sourceTaskId === source.task.id)).toMatchObject({ bytes: brief, bytesFull: full, bytesAnswer: Buffer.byteLength('질문옛 답단계 답') })
   })
 
   it('rejects a source without a directly shared tag and the task itself', async () => {

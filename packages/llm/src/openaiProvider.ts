@@ -1,10 +1,11 @@
-import { boundStepPayload, type AnswerStep } from '@mes/domain'
+import { boundRawResponse, RAW_RESPONSE_MAX_BYTES, stepProjection, boundStepPayload, type AnswerStep } from '@mes/domain'
+import { parseContent } from './contentSteps.js'
 import { sessionSteps } from './answerSteps.js'
 import { collectResponseImages } from './responseImages.js'
 import { randomUUID } from 'node:crypto'
 import type { ChatChunk, ChatProvider, ChatRequest } from './provider.js'
 import { LimitedFetchError, limitedFetch, toLimitedFetchError } from './limitedFetch.js'
-import { extractDelta, parseSseLines, ThinkSplitter, type ToolCallFragment } from './sse.js'
+import { extractDelta, parseSseLines, type ToolCallFragment } from './sse.js'
 import { owuiModelTools, owuiTerminal, type OwuiDefaults } from './owuiProbe.js'
 import { OwuiTerminalCatalog, type OwuiSettings, type OwuiTerminalSource } from './owuiTerminals.js'
 
@@ -37,21 +38,27 @@ function errorMessage(e: unknown): string {
 
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 
-/** OpenWebUI output 항목의 텍스트 조각 — content(또는 summary)의 text만 */
-function partsText(parts: unknown): string {
-  return Array.isArray(parts) ? parts.map((part) => isObject(part) && typeof part.text === 'string' ? part.text : '').join('') : ''
+/** A wrapper tag start (<think>, <details …>) anywhere in the text. */
+const WRAPPER = /<\/?(?:details|think)\b/i
+const WRAPPER_PREFIXES = ['<details', '<think', '</details', '</think']
+const WRAPPER_PREFIX_MAX = 10
+/** Length of a trailing partial wrapper tag ('<', '<det', '</thi') held back until the next delta decides it. */
+function heldWrapperPrefix(text: string): number {
+  const at = text.lastIndexOf('<')
+  if (at < 0 || text.length - at > WRAPPER_PREFIX_MAX) return 0
+  const tail = text.slice(at).toLowerCase()
+  return WRAPPER_PREFIXES.some(tag => tag.startsWith(tail)) ? text.length - at : 0
 }
 
 /** 채팅 메시지의 누적 본문·생각·최근 상태. 본문은 OpenWebUI get_output_text와 같게(message 항목, 공백뿐인 항목 제외, 줄바꿈 연결) 만든다 */
-function readSessionMessage(message: Record<string, unknown>) {
+function readSessionMessage(message: Record<string, unknown>, steps: AnswerStep[]) {
   const output = Array.isArray(message.output) ? message.output.filter(isObject) : []
-  const content = output.filter((item) => item.type === 'message').map((item) => partsText(item.content)).filter((text) => text.trim()).join('\n')
-  const reasoning = output.filter((item) => item.type === 'reasoning').map((item) => partsText(item.content) || partsText(item.summary)).filter(Boolean).join('\n')
+  const { content, reasoning } = stepProjection(steps)
   const history = Array.isArray(message.statusHistory) ? message.statusHistory : []
   // 상태 항목마다 보이는 문구(숨김·빈 문구는 undefined) — 폴링 사이에 지나간 단계도 놓치지 않는다
   const statuses = history.map((item) => isObject(item) && item.hidden !== true && typeof item.description === 'string' && item.description.trim()
     ? item.description.trim().slice(0, SESSION_STATUS_MAX) : undefined)
-  return { content: content || (typeof message.content === 'string' ? message.content : ''), reasoning, statuses, activity: sessionActivity(output), output: JSON.stringify(output),
+  return { content, reasoning, statuses, activity: sessionActivity(output), output: JSON.stringify(output),
     done: message.done === true, error: message.error !== undefined && message.error !== null && message.error !== false }
 }
 
@@ -214,11 +221,81 @@ export class OpenAICompatibleProvider implements ChatProvider {
         }
       }
     }
+    const firstFrames: string[] = [], lastFrames: string[] = []
+    let frameCount = 0, frameBytes = 0, sampleBytes = 0, oversized = false
+    const recordFrame = (frame: string) => {
+      const bytes = new TextEncoder().encode(frame).byteLength
+      frameCount++; frameBytes += bytes
+      if (oversized) return
+      if (sampleBytes + bytes > RAW_RESPONSE_MAX_BYTES) { oversized = true; firstFrames.length = lastFrames.length = 0; return }
+      if (firstFrames.length < 8) { firstFrames.push(frame); sampleBytes += bytes }
+      else {
+        lastFrames.push(frame); sampleBytes += bytes
+        if (lastFrames.length > 8) sampleBytes -= new TextEncoder().encode(lastFrames.shift()!).byteLength
+      }
+    }
     try {
       const decoder = new TextDecoder()
       const encoder = new TextEncoder()
       let buffer = '', content = ''
-      const think = new ThinkSplitter()
+      // Text deltas may carry OWUI wrappers (<think>, <details type=…>). Only the unsettled tail is re-parsed:
+      // a closed top-level wrapper settles everything before it, and plain text without any wrapper takes a constant-time path.
+      let markup = '', markupStart = 0, markupActive = false, tagged = false
+      // Open reasoning at the end of markup: plain deltas extend it in place. trailing = whitespace the parser trims off for now.
+      let openReasoning: { trailing: string } | undefined
+      const emitStep = (index: number, step: AnswerStep, count: number) => { steps[index] = step; req.onStep?.(index, step, count) }
+      const parseText = function* (text: string, final = false): Generator<ChatChunk> {
+        if (!markupActive) { markupStart = steps.length; markupActive = true; tagged = false; openReasoning = undefined }
+        const window = markup.slice(-WRAPPER_PREFIX_MAX) + text
+        markup += text
+        // Characters that can change tags, fences or entities send the delta through the full parse. Quote unwrapping cannot
+        // flip: shown verbatim means some fixed earlier line is unquoted, and appending never changes an earlier line's start.
+        if (openReasoning && !final && !/[<&`~]/.test(window)) {
+          const last = steps.at(-1)
+          if (last?.type === 'reasoning') {
+            const combined = openReasoning.trailing + text
+            const kept = combined.trimEnd()
+            openReasoning.trailing = combined.slice(kept.length)
+            if (!kept) return
+            emitStep(steps.length - 1, { type: 'reasoning', text: last.text + kept }, steps.length)
+            yield { type: 'reasoning', text: kept }
+            return
+          }
+        }
+        openReasoning = undefined
+        if (!tagged && WRAPPER.test(window)) tagged = true
+        if (!tagged) {
+          const hold = final ? 0 : heldWrapperPrefix(markup)
+          const visible = hold ? markup.slice(0, -hold) : markup
+          const prev = steps.length > markupStart ? steps[markupStart] : undefined
+          const prevText = prev?.type === 'text' ? prev.text : ''
+          if (!visible.trim() || visible.length === prevText.length) return
+          emitStep(markupStart, { type: 'text', text: visible }, markupStart + 1)
+          yield { type: 'delta', text: prev ? visible.slice(prevText.length) : visible }
+          return
+        }
+        const previous = stepProjection(steps)
+        const parsed = parseContent(markup, !final)
+        const count = markupStart + parsed.steps.length
+        parsed.steps.forEach((step, offset) => {
+          const index = markupStart + offset
+          if (JSON.stringify(step) !== JSON.stringify(steps[index]) || (count < steps.length && offset === parsed.steps.length - 1)) emitStep(index, step, count)
+        })
+        steps.length = count
+        const next = stepProjection(steps)
+        for (const field of ['content', 'reasoning'] as const) {
+          if (previous[field] === next[field]) continue
+          yield next[field].startsWith(previous[field]) ? { type: field === 'content' ? 'delta' : 'reasoning', text: next[field].slice(previous[field].length) } : { type: 'replace', field, text: next[field] }
+        }
+        if (parsed.openReasoning && !final && !/</.test(markup.slice(-WRAPPER_PREFIX_MAX))) openReasoning = { trailing: /\s*$/.exec(markup)![0] }
+        if (parsed.settled > 0) {
+          markup = markup.slice(parsed.settled)
+          markupStart += parsed.settledSteps
+          // Settled steps are final; the tail step parsed above stays at markupStart for the next delta.
+          tagged = WRAPPER.test(markup)
+        }
+      }
+      const endMarkup = () => { markup = ''; markupActive = false; openReasoning = undefined }
       const toolAcc = new Map<number, ToolCallFragment>()
       const pushText = (type: 'text' | 'reasoning', text: string) => {
         if (!text) return
@@ -237,6 +314,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
         const { events, rest } = parseSseLines(buffer)
         buffer = rest
         for (const ev of events) {
+          recordFrame(ev)
           if (ev === '[DONE]') { ended = true; break }
           if (Number.isFinite(maxFrameBytes) && encoder.encode(ev).byteLength > maxFrameBytes) {
             await reader.cancel().catch(() => undefined)
@@ -251,6 +329,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
             continue
           }
           if (isObject(parsed) && Array.isArray(parsed.sources)) {
+            endMarkup()
             for (const source of parsed.sources) {
               const name = isObject(source) && isObject(source.source) && typeof source.source.name === 'string' ? source.source.name : 'sources'
               const step: AnswerStep = { type: 'tool', name, input: '', output: boundStepPayload(JSON.stringify(source)), status: 'done', source: true }
@@ -260,8 +339,9 @@ export class OpenAICompatibleProvider implements ChatProvider {
             }
           }
           const { text, reasoning, toolCalls } = extractDelta(parsed)
-          if (reasoning) { pushText('reasoning', reasoning); yield { type: 'reasoning', text: reasoning } }
-          for (const chunk of think.push(text)) { pushText(chunk.type === 'delta' ? 'text' : 'reasoning', chunk.text); if (chunk.type === 'delta') content += chunk.text; yield chunk }
+          if (reasoning) { endMarkup(); pushText('reasoning', reasoning); yield { type: 'reasoning', text: reasoning } }
+          if (text) yield* parseText(text)
+          if (toolCalls.length) endMarkup()
           for (const tc of toolCalls) {
             const prev = toolAcc.get(tc.index)
             toolAcc.set(tc.index, {
@@ -285,11 +365,12 @@ export class OpenAICompatibleProvider implements ChatProvider {
           return
         }
       }
-      for (const chunk of think.finish()) { pushText(chunk.type === 'delta' ? 'text' : 'reasoning', chunk.text); if (chunk.type === 'delta') content += chunk.text; yield chunk }
+      if (markupActive) yield* parseText('', true)
       finishTools(req.signal?.aborted ? 'error' : 'done')
       for (const tc of toolAcc.values()) {
         if (tc.name) yield { type: 'tool_call', call: { id: tc.id ?? `call_${tc.index}`, name: tc.name, arguments: tc.arguments } }
       }
+      content = stepProjection(steps).content
       const images = await collectResponseImages(this.settings, content, undefined, req.signal, req.onResponseImages)
       if (!req.onResponseImages && (images.images.length || images.failures.length)) yield { type: 'images', ...images }
       if (req.signal?.aborted) { yield { type: 'error', message: req.signal.reason === 'timeout' ? '응답 시간 초과' : CANCELLED }; return }
@@ -298,6 +379,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
       finishTools('error')
       yield { type: 'error', message: errorMessage(e) }
     } finally {
+      req.onRawResponse?.(oversized ? { bytes: frameBytes } : boundRawResponse({ mode: 'direct', frameCount, bytes: frameBytes, firstFrames, lastFrames }))
       await reader.cancel().catch(() => undefined)
       reader.releaseLock()
     }
@@ -410,8 +492,11 @@ export class OpenAICompatibleProvider implements ChatProvider {
         }
         changed = false
         if (message) {
-          const next = readSessionMessage(message)
+          // The receiver keeps the latest poll in memory and bounds it once when it persists the terminal state.
+          req.onRawResponse?.({ mode: 'session', message })
+          // One parse per poll serves both the step snapshots and the legacy content/reasoning projection.
           const steps = sessionSteps(message)
+          const next = readSessionMessage(message, steps)
           // Final empty output sometimes omits in-flight content; retain the last visible steps.
           if (steps.length) {
             steps.forEach((step, index) => {

@@ -1,18 +1,18 @@
-import { boundSteps, publicSteps, stepProjection, type AnswerStep, type AnswerDetail } from '@mes/domain'
+import { boundRawResponse, type RawResponse, boundSteps, publicSteps, stepProjection, type AnswerStep, type AnswerDetail } from '@mes/domain'
 import { aiMessageContent, messagesForAi } from '../llm/responseContent.js'
 import { linkedTaskSrs } from '../tasks/sr-inputs.service.js'
 import { randomUUID } from 'node:crypto'
 import { inputSignature } from './input-signature.js'
 import { deliverPreparedRequest, type PreparedRequest } from './prepared-request.js'
 import { resumeHeldTask } from '../tasks/resume-held-task.js'
-import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common'
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common'
 import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { rewriteResponseImageUrls, type ResponseImages, buildChatRequest, composeSrDraft, createProvider, OWUI_DEFAULT_KEYS, refineSrDraft, suggestTitle, summarizeConversation, SrDraftBudgetError, SummaryBudgetError, type ChatProvider, type ChatScope, type SrAiOptions, type SrDraftText, type SrProposal } from '@mes/llm'
 import type { LlmSettings, Message, RequestInfo, RequestInput, ServiceRequest, Thread } from '@mes/domain'
 import { CONFIG, type AppConfig } from '../config/config.js'
 import { DB, type Db } from '../db/db.module.js'
 import { isDuplicateKey } from '../db/errors.js'
-import { activityLog, appSetting, assistant, chatRequest, chatRequestInput, conversationInput, dbLock, fileObject, message, messageAttachment, serviceRequest, srInput, task, taskInput, thread } from '../db/schema.js'
+import { activityLog, appSetting, appUser, taskAssignee, assistant, chatRequest, chatRequestInput, conversationInput, dbLock, fileObject, message, messageAttachment, serviceRequest, srInput, task, taskInput, thread } from '../db/schema.js'
 import { prepareResponseImages, type PreparedImage } from '../files/responseImages.js'
 import { FileStorageService } from '../files/fileStorage.service.js'
 import { EventsService } from '../events/events.service.js'
@@ -532,11 +532,27 @@ export class RequestsService implements OnModuleDestroy {
     const inputs = await this.db.select().from(chatRequestInput).where(eq(chatRequestInput.requestId, id)).orderBy(chatRequestInput.seq)
     const savedSnapshot = row.snapshot as { webPages?: RequestInfo['webPages'] } | null
     const limits = this.limits.get(id) ?? { firstTokenMs: this.firstTokenMs(inputs.some((item) => item.kind === 'file')), idleMs: this.config.request.idleMs, maxMs: this.config.request.maxMs }
-    return { id: row.id, threadId: row.threadId, status: row.status, ...limits, ...(savedSnapshot?.webPages ? { webPages: savedSnapshot.webPages } : {}), phase: row.phase, code: errorCode(row.status, row.error, row.bytes), provider: row.provider, transport: row.transport, owuiTools: row.owuiTools,
+    return { id: row.id, threadId: row.threadId, status: row.status, canViewRawResponse: actor ? await this.canViewResponse(row, actor) : false, ...limits, ...(savedSnapshot?.webPages ? { webPages: savedSnapshot.webPages } : {}), phase: row.phase, code: errorCode(row.status, row.error, row.bytes), provider: row.provider, transport: row.transport, owuiTools: row.owuiTools,
       model: row.model, bytes: row.status === 'pending' && row.bytes === 0 ? null : row.bytes, limitBytes: row.limitBytes, error: row.error, retryOf: row.retryOf, createdAt: row.createdAt.toISOString(),
       finishedAt: row.finishedAt?.toISOString(), hasSnapshot: row.snapshot !== null, inputs: inputs.map((item) => ({ kind: item.kind, weight: item.weight, fileId: item.fileId,
         fileVersion: item.fileVersion, srId: item.srId, srCode: item.srSnapshot?.code, srTitle: item.srSnapshot?.title, sourceLabel: item.sourceLabel, oneShot: item.oneShot, delivery: item.delivery, sourceTaskId: item.sourceTaskId,
         snapshotId: item.snapshotId, mode: item.mode, messageCount: item.messageCount, bytes: item.bytes, error: item.error })) }
+  }
+  /** Raw OWUI JSON may carry what publicSteps strips (originalText etc.) — System Owner and the task's assignees only. */
+  private async canViewResponse(row: typeof chatRequest.$inferSelect, actor: string): Promise<boolean> {
+    const [user] = await this.db.select({ so: appUser.isSystemOwner }).from(appUser).where(eq(appUser.id, actor))
+    if (user?.so) return true
+    const [assigned] = await this.db.select({ userId: taskAssignee.userId }).from(taskAssignee)
+      .innerJoin(thread, eq(thread.taskId, taskAssignee.taskId))
+      .where(and(eq(thread.id, row.threadId), eq(taskAssignee.userId, actor)))
+    return !!assigned
+  }
+  async response(id: string, actor: string) {
+    const row = await this.getRow(id)
+    await assertThreadAccess(this.db, actor, row.threadId)
+    if (!await this.canViewResponse(row, actor)) throw new ForbiddenException('응답 원문은 SO·담당자만 볼 수 있습니다')
+    const [reply] = await this.db.select({ content: message.content, reasoning: message.reasoning, steps: message.steps }).from(message).where(eq(message.id, row.replyMessageId))
+    return { rawResponse: row.rawResponse, content: reply?.content ?? '', reasoning: reply?.reasoning ?? null, steps: publicSteps(reply?.steps ?? []) }
   }
   async snapshot(id: string, actor?: string) {
     const row = await this.getRow(id)
@@ -659,6 +675,7 @@ export class RequestsService implements OnModuleDestroy {
       .then((result) => { if (!result[0].affectedRows) controller.abort('lost') }).catch(() => controller.abort('lost')) }, this.config.request.keepaliveMs)
     lease.unref?.()
     let acc = '', reasoning = '', phase = '', info: RequestInfo | undefined, snapshot: unknown, snapshotBytes: Buffer | undefined, failure: string | undefined
+    let rawResponse: RawResponse | undefined
     let steps: AnswerStep[] = [], providerSteps = false
     const responseImages: ResponseImages = { images: [], failures: [] }
     let dirty = false
@@ -747,6 +764,8 @@ export class RequestsService implements OnModuleDestroy {
       if (!streaming[0].affectedRows) { controller.abort('lost'); return }
       this.appEvents?.publish('request.updated', { requestId: id, threadId: row.threadId, taskId: owner.taskId, status: 'streaming', phase: null })
       const iterator = this.provider.stream({ model: built.model, messages: built.messages, files: built.files, meta: built.meta, signal: controller.signal,
+        // 마지막 원문만 메모리에 두고, 끝난 상태를 저장할 때 한 번만 상한을 적용해 쓴다
+        onRawResponse: response => { if (controller.signal.reason !== 'lost') rawResponse = response },
         onStep: (index, step, stepCount) => {
           if (controller.signal.aborted) return
           providerSteps = true
@@ -855,6 +874,7 @@ export class RequestsService implements OnModuleDestroy {
       clearInterval(flushTimer)
       if (controller.signal.reason === 'timeout') failure = capped ? `응답 시간 초과 — 최대 처리 시간(${maxLabel(this.config.request.maxMs)})을 넘었습니다.` : TIMEOUT
       try {
+        if (rawResponse && controller.signal.reason !== 'lost') await this.db.update(chatRequest).set({ rawResponse: boundRawResponse(rawResponse) }).where(eq(chatRequest.id, id))
         if (controller.signal.reason !== 'lost' && controller.signal.reason !== 'cancelled') {
           const original = acc
           const prepared = await prepareResponseImages(this.storage, responseImages.images, this.config.fileMaxBytes)

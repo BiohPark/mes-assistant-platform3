@@ -173,8 +173,8 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
       </div>
   const tools = <>
       {/* 보이는 문구(현재 모드)가 이름이다 — 무엇이 숨고 담기는지는 설명으로 따로 읽힌다 */}
-      <button type="button" data-testid="answer-detail-toggle" onClick={toggle} title={t('chat.answerDetailGuide')} aria-pressed={detail === 'full'} aria-describedby={detailGuideId}
-        className="min-h-11 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t(detail === 'full' ? 'chat.detailFull' : 'chat.detailBrief')}</button>
+      <button type="button" data-testid="answer-detail-toggle" onClick={toggle} title={t('chat.answerDetailGuide')} data-answer-detail={detail} aria-describedby={detailGuideId}
+        className="min-h-11 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t(detail === 'full' ? 'chat.detailFull' : detail === 'brief' ? 'chat.detailBrief' : 'chat.detailAnswer')}</button>
       <span id={detailGuideId} hidden>{t('chat.answerDetailGuide')}</span>
       <button ref={searchToggle} type="button" data-tour="chat-search" aria-label={t('chat.searchConversation')} title={t('chat.searchConversation')} aria-expanded={searchOpen}
         onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))} className={cn(toolButton, searchOpen && 'bg-muted text-foreground')}><Search aria-hidden="true" className="size-4" /></button>

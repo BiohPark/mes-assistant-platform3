@@ -54,6 +54,43 @@ describe('RequestService DB', () => {
   })
   afterAll(async () => { service?.onModuleDestroy(); await client?.end(); await temp?.drop(); if (root) await rm(root, { recursive: true, force: true }) })
 
+  it('persists the last raw response with a 256 KiB UTF-8 ceiling and limits diagnostics to SO/assignees', async () => {
+    await db.insert(appUser).values([
+      { id: 'raw-outsider', name: 'Outsider', initials: 'O', color: '#123456' },
+      { id: 'raw-so', name: 'SO', initials: 'S', color: '#123456', isSystemOwner: true },
+      { id: 'raw-assignee', name: 'Assignee', initials: 'A', color: '#123456' },
+    ])
+    // 요청자(member)는 대화 소유자이지만 담당자가 아니다
+    const { thread } = await tasks.create('member', { assistantId, assigneeIds: ['raw-assignee'] })
+    let raw = { mode: 'session', message: { content: '<details type="reasoning">thought</details>answer', output: [], statusHistory: [{ description: 'done' }], files: [] } }
+    const capture: ChatProvider = { ...provider, async *stream(req) {
+      req.onRawResponse?.({ mode: 'session', message: { content: 'earlier' } })
+      req.onRawResponse?.(raw)
+      req.onStep?.(0, { type: 'reasoning', text: 'thought' }, 2)
+      req.onStep?.(1, { type: 'text', text: 'answer' }, 2)
+      yield { type: 'done' }
+    } }
+    const runner = new RequestsService(db, loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173', FILE_STORAGE_ROOT: root }), capture)
+    try {
+      const started = await runner.start('member', thread.id, { content: 'raw test' }, 'raw-response')
+      await started.done
+      expect((await db.select().from(chatRequest).where(eq(chatRequest.id, started.id)))[0]?.rawResponse).toEqual(raw)
+      for (const actor of ['raw-so', 'raw-assignee']) {
+        expect(await runner.response(started.id, actor)).toMatchObject({ rawResponse: raw, content: 'answer', steps: [{ type: 'reasoning', text: 'thought' }, { type: 'text', text: 'answer' }] })
+        expect(await runner.get(started.id, actor)).toMatchObject({ canViewRawResponse: true })
+      }
+      // 요청자(=대화 소유자)와 담당자가 아닌 직원은 원문을 못 본다 — 원문에는 공개 단계에서 지운 내용이 남는다
+      for (const actor of ['member', 'raw-outsider']) {
+        expect(await runner.get(started.id, actor)).toMatchObject({ canViewRawResponse: false })
+        await expect(runner.response(started.id, actor)).rejects.toMatchObject({ status: 403 })
+      }
+      raw = { ...raw, message: { ...raw.message, content: '한'.repeat(100_000) } }
+      const large = await runner.start('member', thread.id, { content: 'large raw' }, 'raw-response-large')
+      await large.done
+      expect((await runner.response(large.id, 'raw-so')).rawResponse).toEqual({ bytes: Buffer.byteLength(JSON.stringify(raw)) })
+    } finally { runner.onModuleDestroy() }
+  })
+
   it('rejects a stale estimate before writes or selection consumption, then accepts a fresh signature and replays the same key', async () => {
     const { task: owner, thread } = await tasks.create('member', { assistantId })
     const storage = new FileStorageService(root)

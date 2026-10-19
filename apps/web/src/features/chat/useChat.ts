@@ -97,7 +97,7 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
           document.addEventListener('visibilitychange', wake)
           try {
             if (!attempt.requestId && !attempt.detailCaptured) {
-              if (detailRef.current === 'full') attempt.body = { ...(attempt.body as object), detail: 'full' }
+              if (detailRef.current !== 'brief') attempt.body = { ...(attempt.body as object), detail: detailRef.current }
               attempt.detailCaptured = true
               save(attempt)
             }
@@ -242,14 +242,14 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
     send: (content: string, attachmentIds: string[] = [], oneShotFileIds: string[] = [], startedAt = Date.now(), inputSignature?: string) => {
       if (!threadId) throw new Error(t('chat.noThread'))
       const attempt = load(threadId) ?? { key: newId(), threadId, startedAt, text: content, attachmentIds,
-        path: `/threads/${encodeURIComponent(threadId)}/requests`, detailCaptured: true, body: { content, attachmentIds, oneShotFileIds, ...(inputSignature ? { inputSignature } : {}), ...(detail === 'full' ? { detail } : {}) } }
+        path: `/threads/${encodeURIComponent(threadId)}/requests`, detailCaptured: true, body: { content, attachmentIds, oneShotFileIds, ...(inputSignature ? { inputSignature } : {}), ...(detail !== 'brief' ? { detail } : {}) } }
       save(attempt)
       return consume(attempt)
     },
     retry: (requestId: string, options: { excludeFileIds?: string[]; forceInlineFileIds?: string[] } = {}) => {
       if (!threadId) throw new Error(t('chat.noThread'))
       const attempt = load(threadId) ?? { key: newId(), threadId, requestId, text: '', attachmentIds: [],
-        path: `/requests/${encodeURIComponent(requestId)}/retry`, detailCaptured: true, body: { ...options, ...(detail === 'full' ? { detail } : {}) } }
+        path: `/requests/${encodeURIComponent(requestId)}/retry`, detailCaptured: true, body: { ...options, ...(detail !== 'brief' ? { detail } : {}) } }
       save(attempt)
       return consume(attempt)
     },

@@ -130,5 +130,5 @@ export const UrlDomainSchema = z.string().trim().toLowerCase().transform(value =
 export const UrlDomainListSchema = z.array(UrlDomainSchema).max(100).transform(values => [...new Set(values)])
 
 /** Answer display and verbatim reference/clipboard detail. */
-export const AnswerDetailSchema = z.enum(['full', 'brief'])
+export const AnswerDetailSchema = z.enum(['full', 'brief', 'answer'])
 export type AnswerDetail = z.infer<typeof AnswerDetailSchema>

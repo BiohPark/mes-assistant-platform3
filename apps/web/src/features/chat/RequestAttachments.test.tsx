@@ -119,10 +119,10 @@ it('shows the full-mode size of attached conversations and points to the brief m
     const { rerender } = mount({ data: { ...data, inputs: [full] }, pending: false, revisionChanged: false })
     expect(screen.getByTestId('answer-detail-notice')).toHaveTextContent('전체 모드 — 도구 원문 포함 2.0 KB')
     rerender({ data: { ...data, inputs: [full], bytes: 2000, overLimit: true }, pending: false, revisionChanged: false })
-    expect(screen.getByRole('alert')).toHaveTextContent('생각·답변만 모드로 전환하면 도구 입출력을 제외해 용량을 줄일 수 있습니다')
+    expect(screen.getByRole('alert')).toHaveTextContent('코드·쉘 실행 제외 모드로 전환하면 도구 입출력을 제외해 용량을 줄일 수 있습니다')
     act(() => useUiStore.setState({ answerDetails: { u: 'brief' } }))
     expect(screen.queryByTestId('answer-detail-notice')).not.toBeInTheDocument()
-    expect(screen.getByRole('alert')).not.toHaveTextContent('생각·답변만 모드로 전환하면')
+    expect(screen.getByRole('alert')).not.toHaveTextContent('코드·쉘 실행 제외 모드로 전환하면')
   } finally { act(() => useUiStore.setState({ answerDetails: {} })) }
 })
 

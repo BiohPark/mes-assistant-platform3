@@ -1,8 +1,8 @@
 import { newId } from '@/lib/ids'
-import type { RequestInfo } from '@mes/domain'
+import type { AnswerDetail, AnswerStep, RawResponse, RequestInfo } from '@mes/domain'
 
 export type RequestEstimate = RequestInfo & { overLimit: boolean; attachmentLimit: number; inputSignature: string }
-export async function estimateRequest(threadId: string, body: { draft?: string; attachmentIds?: string[]; oneShotFileIds?: string[] }): Promise<RequestEstimate> {
+export async function estimateRequest(threadId: string, body: { detail?: AnswerDetail; draft?: string; attachmentIds?: string[]; oneShotFileIds?: string[] }): Promise<RequestEstimate> {
   return check(await fetch(`/api/threads/${encodeURIComponent(threadId)}/requests/estimate`, { method: 'POST', credentials: 'same-origin',
     headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).then((response) => response.json()) as Promise<RequestEstimate>
 }
@@ -38,6 +38,7 @@ export interface RequestRecord {
   limitBytes: number
   error?: string | null
   retryOf?: string | null
+  canViewRawResponse?: boolean
   hasSnapshot: boolean
   webPages?: RequestInfo['webPages']
   inputs: RequestInputRecord[]
@@ -95,3 +96,8 @@ export async function cancelRequest(id: string) {
   await check(await fetch(`/api/requests/${encodeURIComponent(id)}/cancel`, { method: 'POST', credentials: 'same-origin' }))
 }
 export const snapshotUrl = (id: string) => `/api/requests/${encodeURIComponent(id)}/snapshot`
+
+export interface ResponseDiagnostic { rawResponse: RawResponse | null; steps: AnswerStep[]; content: string; reasoning: string | null }
+export async function getResponseDiagnostic(id: string): Promise<ResponseDiagnostic> {
+  return check(await fetch(`/api/requests/${encodeURIComponent(id)}/response`, { credentials: 'same-origin' })).then(response => response.json()) as Promise<ResponseDiagnostic>
+}

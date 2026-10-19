@@ -292,3 +292,14 @@ it('removes stale trailing steps when the upstream revises a shorter nonempty ou
   await collect({ ...req, onStep })
   expect(onStep.mock.calls.at(-1)).toEqual([0, { type: 'text', text: '앞' }, 1])
 })
+
+it('projects content details into ordered steps and retains the final polling JSON before cleanup', async () => {
+  const final = { done: true, content: '<details type="reasoning" done="true"><summary>Think</summary>private thought</details>**answer**', statusHistory: [{ description: 'done' }], files: [], output: [] }
+  upstream([{ message: { ...final, done: false } }, { message: final }])
+  const onRawResponse = vi.fn(), onStep = vi.fn()
+  const chunks = await collect({ ...req, onRawResponse, onStep })
+  expect(chunks).toContainEqual({ type: 'reasoning', text: 'private thought' })
+  expect(chunks).toContainEqual({ type: 'delta', text: '**answer**' })
+  expect(onStep).toHaveBeenCalledWith(0, { type: 'reasoning', text: 'private thought' }, 2)
+  expect(onRawResponse).toHaveBeenLastCalledWith({ mode: 'session', message: final })
+})

@@ -47,9 +47,9 @@ export const useUiStore = create<UiState>()(
     }),
     { name: 'mes-hub-ui', version: 1,
       migrate: (stored) => {
-        const state = stored as { homeFilters?: Partial<HomeFilters> & { level1CodeId?: string | null; level2CodeId?: string | null }; kanbanCollapseEmpty?: boolean }
+        const state = stored as Partial<Pick<UiState, 'answerDetails' | 'kanbanCompleted' | 'pillPos'>> & { homeFilters?: Partial<HomeFilters> & { level1CodeId?: string | null; level2CodeId?: string | null }; kanbanCollapseEmpty?: boolean }
         const old = state.homeFilters
-        return { kanbanCollapseEmpty: state.kanbanCollapseEmpty ?? false, homeFilters: {
+        return { answerDetails: state.answerDetails ?? {}, kanbanCompleted: state.kanbanCompleted ?? {}, pillPos: state.pillPos ?? null, kanbanCollapseEmpty: state.kanbanCollapseEmpty ?? false, homeFilters: {
           q: old?.q ?? '', showRetired: old?.showRetired ?? false,
           level1CodeIds: old?.level1CodeIds ?? (old?.level1CodeId ? [old.level1CodeId] : []),
           level2CodeIds: old?.level2CodeIds ?? (old?.level2CodeId ? [old.level2CodeId] : []),

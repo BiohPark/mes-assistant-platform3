@@ -53,6 +53,8 @@ export interface ChatRequest {
   onSession?: (chatId: string) => void | Promise<void>
   /** Incremental image results, including pending failures synchronously on abort. Empty results signal progress. */
   /** Ordered step snapshots; the index is stable across incremental updates. */
+  /** Latest raw upstream response, possibly unbounded; the receiver applies boundRawResponse before persisting. */
+  onRawResponse?: (response: import('@mes/domain').RawResponse) => void
   onStep?: (index: number, step: import('@mes/domain').AnswerStep, stepCount?: number) => void
   onResponseImages?: (result: import('./responseImages.js').ResponseImages) => void
   limits?: ChatLimits

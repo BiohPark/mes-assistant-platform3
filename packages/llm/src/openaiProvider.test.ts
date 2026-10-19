@@ -40,7 +40,7 @@ function sseResponse(frames: string[], extra: { cancel?: () => void } = {}) {
       controller.enqueue(encoder.encode(frames[index++]!))
     },
     cancel: extra.cancel,
-  })
+  }, { highWaterMark: 0 })
   return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
 }
 async function collect(iterable: AsyncIterable<{ type: string }>) {
@@ -125,7 +125,7 @@ it('streams explicit reasoning and split think tags while skipping sources and m
     ...['<thi', 'nk>검토</th', 'ink>최종 답'].map(content => ({ choices: [{ delta: { content } }] }))]
   vi.stubGlobal('fetch', vi.fn(async () => sseResponse(frames.map(frame => `data: ${JSON.stringify(frame)}\n\n`))))
   const chunks = await collect(provider.stream({ model: 'm', messages: [] }))
-  expect(chunks).toEqual([{ type: 'reasoning', text: '첫 ' }, { type: 'reasoning', text: '생각' }, { type: 'reasoning', text: '검토' }, { type: 'delta', text: '최종 답' }, { type: 'done' }])
+  expect(chunks).toEqual([{ type: 'reasoning', text: '첫 ' }, { type: 'reasoning', text: '생각' }, { type: 'reasoning', text: '\n검토' }, { type: 'delta', text: '최종 답' }, { type: 'done' }])
 })
 
 it('streams direct think/text/tool/text steps without moving fragmented calls to the end', async () => {
@@ -167,4 +167,79 @@ it('marks in-flight direct tools as errored if the stream fails', async () => {
   const chunks = await collect(provider.stream({ model: 'm', messages: [], onStep }))
   expect(chunks.at(-1)?.type).toBe('error')
   expect(onStep.mock.calls.at(-1)?.[1]).toMatchObject({ type: 'tool', status: 'error' })
+})
+
+it('parses fragmented direct details and think wrappers and captures bounded first/last raw frames', async () => {
+  const fragments = ['before<det', 'ails type="reasoning" done="true"><summary>Think</summary>private</details>', '<details type="code_interpreter" done="true"><summary>Run</summary>\n```sh\necho hi\n```\n```output\nhi\n```\n</details>', '<think>more thinking</think>answer']
+  const frames = fragments.map(content => JSON.stringify({ choices: [{ delta: { content } }] }))
+  vi.stubGlobal('fetch', vi.fn(async () => sseResponse([...frames.map(frame => `data: ${frame}\n\n`), 'data: [DONE]\n\n'])))
+  const steps: import('@mes/domain').AnswerStep[] = []
+  const onRawResponse = vi.fn()
+  const chunks = await collect(provider.stream({ model: 'm', messages: [], owuiTools: 'off', owuiMode: 'direct', onRawResponse,
+    onStep: (index, step, count) => { steps[index] = step; if (count !== undefined) steps.length = count } }))
+  expect(chunks.at(-1)).toEqual({ type: 'done' })
+  expect(steps.map(s => s.type)).toEqual(['text', 'reasoning', 'code', 'reasoning', 'text'])
+  expect(steps[0]).toMatchObject({ text: 'before' })
+  expect(steps[2]).toMatchObject({ code: 'echo hi', output: 'hi', status: 'done' })
+  expect(steps.at(-1)).toMatchObject({ text: 'answer' })
+  expect(onRawResponse).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'direct', frameCount: 5, firstFrames: [...frames, '[DONE]'], lastFrames: [] }))
+})
+
+describe('direct markup parsing stays incremental', () => {
+  const run = async (fragments: string[]) => {
+    const frames = fragments.map(content => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`)
+    vi.stubGlobal('fetch', vi.fn(async () => sseResponse([frames.join('') + 'data: [DONE]\n\n'])))
+    const steps: import('@mes/domain').AnswerStep[] = []
+    const chunks = await collect(provider.stream({ model: 'm', messages: [], owuiTools: 'off', owuiMode: 'direct',
+      onStep: (index, step, count) => { steps[index] = step; if (count !== undefined) steps.length = count } }))
+    expect(chunks.at(-1)).toEqual({ type: 'done' })
+    return steps
+  }
+  it('ends with the same steps as parsing the whole content, however the stream is cut', async () => {
+    const { contentSteps } = await import('./contentSteps.js')
+    const full = 'a <b> 앞\n<think>생각 <i>x</i></think>\n```\n<details type="reasoning">literal</details>\n```\n<details type="code_interpreter" done="true"><summary>Run</summary>\n```sh\necho 1\n```\n```output\n1\n```\n</details>\n<det 아님 < 끝 <details type="tool_calls" done="true" name="t" arguments="{}" result="r"></details>마지막'
+    for (const size of [1, 2, 3, 5, 7, 11, full.length]) {
+      const fragments: string[] = []
+      for (let i = 0; i < full.length; i += size) fragments.push(full.slice(i, i + size))
+      expect(await run(fragments)).toEqual(contentSteps(full))
+    }
+  })
+  it('matches whole-content parsing for open reasoning with whitespace, quotes, entities and fences, however cut', async () => {
+    const { contentSteps } = await import('./contentSteps.js')
+    const samples = [
+      '<think>  첫 생각  \n\n 둘째 &amp; 셋째 &am p;  </think>답',
+      '앞<details type="reasoning" done="false"><summary>T</summary>\n> 인용 줄\n> 둘째\n평문 줄\n</details>뒤',
+      '<think>코드 ```\n</think> 펜스 안\n``` 끝 ~~~ \t </think>본문',
+      '<details type="reasoning" done="true"><summary>생각 중</summary>\n긴 생각 a b c   ',
+    ]
+    for (const full of samples) for (const size of [1, 2, 3, 4, 7]) {
+      const fragments: string[] = []
+      for (let i = 0; i < full.length; i += size) fragments.push(full.slice(i, i + size))
+      expect(await run(fragments)).toEqual(contentSteps(full))
+    }
+  })
+  // 시간 대신 일의 양을 잰다(CI 러너 속도와 무관): 본문 마크업을 훑는 matchAll이 읽은 글자 수의 합.
+  // 조각마다 누적 전체를 다시 훑으면 합이 n²/8 정도(수천만), 증분이면 n의 상수배다.
+  const scannedWhile = async (fragments: string[], expected: unknown) => {
+    const original = String.prototype.matchAll
+    let chars = 0
+    const spy = vi.spyOn(String.prototype, 'matchAll').mockImplementation(function (this: string, regexp: RegExp) {
+      chars += this.length
+      return original.call(this, regexp)
+    } as typeof original)
+    try { expect(await run(fragments)).toEqual(expected) } finally { spy.mockRestore() }
+    return chars
+  }
+  const cut = (full: string) => Array.from({ length: Math.ceil(full.length / 4) }, (_, i) => full.slice(i * 4, i * 4 + 4))
+  it('streams a long open reasoning block in small deltas without re-reading it per delta', async () => {
+    const body = '생각 줄 abc 계속\n'.repeat(2_000)
+    const full = `<think>${body}</think>답`
+    const chars = await scannedWhile(cut(full), [{ type: 'reasoning', text: body.trim() }, { type: 'text', text: '답' }])
+    expect(chars).toBeLessThanOrEqual(4 * full.length)
+  })
+  it('handles a long plain answer in small deltas without re-reading everything per delta', async () => {
+    const full = '가나다라 abc <b>\n'.repeat(2_000)
+    const chars = await scannedWhile(cut(full), [{ type: 'text', text: full }])
+    expect(chars).toBeLessThanOrEqual(4 * full.length)
+  })
 })
