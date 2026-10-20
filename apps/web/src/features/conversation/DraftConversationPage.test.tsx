@@ -10,6 +10,7 @@ import { DraftConversationPage } from './DraftConversationPage'
 import { clearDrafts } from '@/features/chat/drafts'
 import { TaskPage } from '@/features/task/TaskPage'
 import { useChat } from '@/features/chat/useChat'
+import { useMaterialsDrawer } from '@/features/task/materialsDrawer'
 
 const toastError = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
@@ -425,4 +426,20 @@ it('S15: 이미 열린 초안(같은 에이전트)에 태그 프리셋 이동(st
   fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '메모' } })
   fireEvent.click(screen.getByRole('button', { name: '전송' }))
   await waitFor(() => expect(body).toEqual({ assistantId: 'a', tags: ['B'], firstMessage: '메모' }))
+})
+
+it('S16: 첫 전송으로 만든 대화는 "첫 질문 전" 자동 열림 없이 시작한다(자료 패널이 잠깐 열렸다 닫히지 않게)', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants') return Response.json([assistant])
+    if (url === '/api/tasks' && init?.method === 'POST') return Response.json({ ...createdTask, id: 't-started', tags: ['A'] }, { status: 201 })
+    return Response.json([])
+  }))
+  mountDraft('/new/a?tag=A')
+  await screen.findByRole('button', { name: 'A 태그 제거' })
+  expect(useMaterialsDrawer.getState().byTask['t-started']?.started).toBeUndefined()
+  fireEvent.click(screen.getByRole('button', { name: '팀 의견 (AI 미전송)' }))
+  fireEvent.change(screen.getByRole('textbox', { name: '팀 의견 입력' }), { target: { value: '메모' } })
+  fireEvent.click(screen.getByRole('button', { name: '전송' }))
+  await screen.findByText('대화로 이동')
+  expect(useMaterialsDrawer.getState().byTask['t-started']?.started).toBe(true)
 })

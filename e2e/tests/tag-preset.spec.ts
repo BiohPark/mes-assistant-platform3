@@ -51,7 +51,10 @@ test('#태그 칩 → [이 태그로 새 대화] → 첫 전송 때 태그가 �
   // 보이는 탭(숨은 탭은 aria-hidden)만 — 원본 대화 탭에도 같은 자료 패널이 있다
   const current = page.getByRole('tabpanel')
   const toggle = linkedMaterialsToggle(current)
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true') // 태그가 있으면 자료 패널이 열린 채로 시작
+  // 첫 질문과 함께 시작한 대화는 '첫 질문 전' 자동 열림이 없다(맥락 자동 개폐) — 잠깐 열렸다 닫히지 않고 닫힌 채로 시작한다
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
   await expect(current.getByTestId('materials-shared')).toContainText(`note-${marker}.txt`)
   await expect(current.getByTestId(`conversation-${source.id}`)).toBeVisible()
   await expect(current.getByRole('list', { name: '첨부', exact: true })).toHaveCount(0)
@@ -102,6 +105,8 @@ test('같은 에이전트의 초안 탭이 이미 열려 있어도 [이 태그�
   await draft.getByRole('combobox', { name: '태그 입력' }).press('Enter')
   await strip.getByRole('tab', { name: `${source.code} · 태그 원본`, exact: true }).click()
   await strip.getByRole('tab', { name: /^새 대화 · / }).click()
+  // 앞 탭 전환이 그려지기 전에 누른 탭도 버리지 않는다(느린 러너에서 두 클릭 간격 < 렌더 시간)
+  await expect(strip.getByRole('tab', { name: /^새 대화 · / })).toHaveAttribute('aria-selected', 'true')
   await expect(draft.getByRole('button', { name: '추가-태그 태그 제거', exact: true })).toBeVisible()
   await expect(draft.getByRole('button', { name: `${tag} 태그 제거`, exact: true })).toBeVisible()
 })

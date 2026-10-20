@@ -228,3 +228,19 @@ it('화면 하나 모드(모바일·팝업)는 탭 줄·탭 열기 없이 지금
   expect(await screen.findByRole('tablist', { name: '열린 화면' })).toBeInTheDocument()
   expect(screen.getByRole('textbox', { name: '대화 a 입력' })).toHaveValue('쓰는 중')
 })
+
+it('탭 전환이 화면에 반영되기 전에(느린 렌더·전환 중) 다른 탭을 눌러도 마지막으로 누른 탭으로 간다', async () => {
+  const router = renderHost()
+  await act(() => router.navigate('/c/a'))
+  await act(() => router.navigate('/c/b'))
+  const a = await screen.findByRole('tab', { name: 'WK-a · 제목 a' })
+  const b = screen.getByRole('tab', { name: 'WK-b · 제목 b' })
+  // 두 클릭 사이에 렌더·탭 저장소 갱신이 없다 — 탭 저장소의 활성 탭은 아직 b
+  await act(async () => { fireEvent.click(a); fireEvent.click(b) })
+  expect(router.state.location.pathname).toBe('/c/b')
+  expect(screen.getByRole('tab', { name: 'WK-b · 제목 b' })).toHaveAttribute('aria-selected', 'true')
+  // 이미 보고 있는 탭을 다시 누르면 기록을 쌓지 않는다
+  const before = router.state.location.key
+  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'WK-b · 제목 b' })) })
+  expect(router.state.location.key).toBe(before)
+})
