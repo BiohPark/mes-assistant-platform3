@@ -93,6 +93,38 @@ export class RequestsService implements OnModuleDestroy {
   onModuleDestroy() { if (this.sweepTimer) clearInterval(this.sweepTimer) }
   listModels() { return this.provider.listModels() }
   ping() { return this.provider.ping() }
+  /** Record-free diagnostic using the same injected provider and settings as conversation requests. */
+  async probeResponse(actor: string, model: string, signal: AbortSignal) {
+    if (!(await this.provider.listModels()).includes(model)) throw new BadRequestException('모델 목록에 없는 모델입니다')
+    const { llm } = await new DbLlmPorts(this.db, this.config, actor, this.storage).getSettings()
+    let rawResponse: RawResponse | null = null
+    let steps: AnswerStep[] = [], hasSteps = false, content = ''
+    let mode: 'direct' | 'session' = 'direct'
+    for await (const chunk of this.provider.stream({ model, messages: [{ role: 'user', content: '응답 형식 진단입니다. 짧게 생각한 뒤 도구와 코드를 사용할 수 있으면 사용하고 결과를 설명해 주세요.' }],
+      // Diagnostic chats are temporary even when conversation retention is enabled.
+      signal, owuiMode: llm.owuiMode, owuiTools: llm.owuiTools, owuiCleanup: true,
+      onSession: () => { mode = 'session' },
+      onRawResponse: response => {
+        rawResponse = response
+        if (response.mode === 'direct' || response.mode === 'session') mode = response.mode
+      },
+      onStep: (index, step, count) => {
+        hasSteps = true
+        steps[index] = step
+        if (count !== undefined && count < steps.length) steps.length = count
+        steps = boundSteps(steps)
+        content = stepProjection(steps).content
+      },
+    })) {
+      if (signal.aborted) throw new Error('진단 중지')
+      if (chunk.type === 'error') throw new Error('제공자 응답 오류')
+      if (!hasSteps && chunk.type === 'delta') content += chunk.text
+      if (chunk.type === 'replace' && chunk.field === 'content') content = chunk.text
+    }
+    if (signal.aborted) throw new Error('진단 중지')
+    return { rawResponse: rawResponse === null ? null : boundRawResponse(rawResponse), steps: publicSteps(steps), content, mode, model }
+  }
+
   /**
    * 전역 동시 상한(maxActive) 입장 — 채팅 시작과 같은 전역 용량 잠금 아래에서 DB 진행 중 chat_request + 메모리 슬롯을 세고,
    * 상한이면 429. 잠금을 쥔 채 슬롯을 늘려 채팅 시작 트랜잭션과 어느 순서로 겹쳐도 상한을 넘지 않는다.

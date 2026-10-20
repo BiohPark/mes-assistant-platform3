@@ -122,7 +122,7 @@ async function runSessionSteps(chat, payload) {
   const status = (description, extra = {}) => message.statusHistory.push({ description, done: false, ...extra })
   const userText = lastUserText(payload.messages)
   let text = answerText({ ...payload, __imageOwner: chat.id }, userText)
-  if (/\[details\]/i.test(userText)) {
+  if (/\[details\]|응답 형식 진단/i.test(userText)) {
     const reasoning = '<details type="reasoning" done="false"><summary>Thinking</summary>PRIVATE_REASONING: details thought</details>'
     message.content = reasoning
     await wait(250)

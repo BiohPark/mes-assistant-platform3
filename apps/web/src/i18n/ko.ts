@@ -208,6 +208,10 @@ export const ko = {
         buffered: '버퍼링 의심 — 신호가 몰려서 도착했습니다(보낸 간격 {sent} ms → 받은 간격 {received} ms). 프록시의 SSE 버퍼링을 끄도록 요청하세요.',
         failed: '점검하지 못했습니다: {error}',
       },
+      responseProbe: {
+        title: '응답 원문 진단', hint: '현재 설정으로 고정 질문을 한 번 보내고 원문·파싱 단계·화면 본문을 비교합니다. 결과는 저장하지 않습니다.',
+        run: '진단 실행', running: '진단 중…', liveOnly: 'OpenWebUI Live 모드에서만 실행할 수 있습니다.',
+      },
       probe: {
         title: 'OpenWebUI 진단', hint: '짧은 시험 질문을 세 번 보냅니다 — ① 지금 방식 ② tool_ids · features · function_calling legacy ③ 세션 방식(만든 채팅은 끝나면 지웁니다). 에이전트의 도구·스킬이 서비스 계정에 보이는지, 계정 역할·기능 권한, fetch_url 주입 조건(이름·켜짐 여부만)도 확인합니다. builtinTools에 없는 항목은 OpenWebUI 기본으로 켜져 있습니다. 모델은 OpenWebUI 모델 목록에 있는 것만 진단합니다. 결과에는 질문·답변·파일·키·주소가 담기지 않고 저장되지 않습니다. 도구·기능·모델 ID와 버전은 정해진 형식일 때만 그대로 보이고, 주소·경로·파일명·대표 비밀 접두(sk-·ghp_ 등)·24자 이상 무작위 문자열 모양은 (가림)으로 바뀝니다. 다만 짧은 식별자처럼 생긴 비밀값은 구분하지 못합니다.',
         modelLabel: '진단 모델', run: 'OpenWebUI 진단', running: '진단 중… (최대 3분)', liveOnly: 'Live 모드에서만 실행할 수 있습니다.',

@@ -132,3 +132,18 @@ export const UrlDomainListSchema = z.array(UrlDomainSchema).max(100).transform(v
 /** Answer display and verbatim reference/clipboard detail. */
 export const AnswerDetailSchema = z.enum(['full', 'brief', 'answer'])
 export type AnswerDetail = z.infer<typeof AnswerDetailSchema>
+
+/** SO response diagnostics keep the full raw JSON (subject to the domain byte ceiling). */
+const ProbePayloadSchema = z.union([z.string(), z.object({ bytes: z.number().int().nonnegative() })])
+const ProbeStepSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('reasoning'), text: z.string() }),
+  z.object({ type: z.literal('text'), text: z.string() }),
+  z.object({ type: z.literal('code'), code: ProbePayloadSchema, output: ProbePayloadSchema, status: z.enum(['running', 'done', 'error']) }),
+  z.object({ type: z.literal('tool'), name: z.string(), input: ProbePayloadSchema, output: ProbePayloadSchema,
+    status: z.enum(['running', 'done', 'error']), source: z.literal(true).optional() }),
+])
+export const OwuiResponseProbeResultSchema = z.object({
+  rawResponse: z.record(z.string(), z.unknown()).nullable(), steps: z.array(ProbeStepSchema), content: z.string(),
+  mode: z.enum(['direct', 'session']), model: z.string(), elapsedMs: z.number().int().nonnegative(),
+})
+export type OwuiResponseProbeResult = z.infer<typeof OwuiResponseProbeResultSchema>

@@ -158,6 +158,20 @@ export class DiagnosticsService {
     } finally { release() }
   }
 
+  /** Response contents are returned only to the SO caller and are never persisted or logged. */
+  async probeOpenWebUiResponse(actor: string, model: string, signal?: AbortSignal) {
+    if (this.config.llm.mode !== 'live' || this.config.llm.preset !== 'openwebui') throw new BadRequestException('OpenWebUI Live 모드에서만 진단할 수 있습니다')
+    const release = await this.requests.admit('test')
+    const started = performance.now()
+    try {
+      const result = await this.requests.runAuxiliary(actor, 'test', auxSignal => this.requests.probeResponse(actor, model, auxSignal), { timeoutMs: PROBE_GUARD_MS, signal })
+      return { ...result, elapsedMs: Math.round(performance.now() - started) }
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      throw new HttpException('OpenWebUI 응답 원문 진단을 마치지 못했습니다', 504)
+    } finally { release() }
+  }
+
   /**
    * 연결 진단의 에이전트 OpenWebUI 연결 확인(S13-J) — 모델을 부르지 않는 읽기 GET만 하므로 응답 상한(admit)·보조 요청 슬롯을 쓰지 않는다.
    * 결과는 진단과 같은 허용 목록(계약)으로 거르고 저장하지 않는다.

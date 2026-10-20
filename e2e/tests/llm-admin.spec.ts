@@ -251,3 +251,40 @@ test('SO 도구 전달은 라디오를 바꾸는 즉시 그 값만 PATCH한다',
     expect((await page.request.patch('/api/settings', { data: { owuiTools: original.owuiTools ?? 'auto' } })).status()).toBe(200)
   }
 })
+
+test('R1-3 SO 응답 원문 진단: 고정 details 질문 → 원문·reasoning/code/tool 단계·화면 본문 3열', async ({ page }) => {
+  await owner(page)
+  await page.goto('/admin/diagnostics')
+  const card = page.getByRole('region', { name: '응답 원문 진단' })
+  const button = card.getByRole('button', { name: '진단 실행' })
+  const live = (await (await page.request.get('/api/admin/diagnostics')).json()).llm.mode === 'live'
+  if (!live) {
+    await expect(button).toBeDisabled()
+    expect((await page.request.post('/api/admin/diagnostics/openwebui/response-probe', { data: { model: 'fake-general' } })).status()).toBe(400)
+    return
+  }
+  const original = await (await page.request.get('/api/settings')).json()
+  try {
+    expect((await page.request.patch('/api/settings', { data: { owuiMode: 'session', owuiCleanup: true } })).ok()).toBe(true)
+    await card.getByRole('combobox', { name: '진단 모델' }).click()
+    await page.getByRole('option', { name: 'fake-general', exact: true }).click()
+    const response = page.waitForResponse(res => res.url().endsWith('/api/admin/diagnostics/openwebui/response-probe'))
+    await button.click()
+    const probed = await response
+    expect(probed.status()).toBe(200)
+    expect(probed.request().postDataJSON()).toEqual({ model: 'fake-general' })
+    await expect(card.getByRole('heading', { name: '원문', exact: true })).toBeVisible()
+    await expect(card.getByRole('heading', { name: '파싱된 steps', exact: true })).toBeVisible()
+    await expect(card.getByRole('heading', { name: '화면 본문', exact: true })).toBeVisible()
+    await expect(card.getByTestId('raw-response-json')).toContainText('<details')
+    await expect(card.getByTestId('parsed-steps')).toContainText('"type": "reasoning"')
+    await expect(card.getByTestId('parsed-steps')).toContainText('"type": "code"')
+    await expect(card.getByTestId('parsed-steps')).toContainText('"type": "tool"')
+    await expect(card.getByTestId('response-body')).toContainText('**details answer**')
+    await expect(card.getByTestId('response-body')).not.toContainText('<details')
+    await expect(card.getByRole('status')).toContainText('session · fake-general')
+    await expect(card.getByRole('button', { name: 'JSON 복사' })).toBeEnabled()
+  } finally {
+    expect((await page.request.patch('/api/settings', { data: { owuiMode: original.owuiMode ?? 'auto', owuiCleanup: original.owuiCleanup ?? true } })).ok()).toBe(true)
+  }
+})
