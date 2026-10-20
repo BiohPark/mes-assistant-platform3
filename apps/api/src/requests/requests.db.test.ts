@@ -8,7 +8,7 @@ import type { Pool } from 'mysql2/promise'
 import { createPool } from '../db/connection.js'
 import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { requestBytes } from '@mes/domain'
+import { requestBytes, type AnswerStep } from '@mes/domain'
 import { OpenAICompatibleProvider, type ChatProvider } from '@mes/llm'
 import { loadConfig } from '../config/config.js'
 import { runMigrations } from '../db/migrate.js'
@@ -656,6 +656,53 @@ describe('RequestService DB', () => {
   const sessionMessage = (statuses: string[], reasoning: string, content: string, done = false) => ({ done, content,
     statusHistory: statuses.map(description => ({ description, done: false })),
     output: [...(reasoning ? [{ type: 'reasoning', content: [{ type: 'output_text', text: reasoning }] }] : []), ...(content ? [{ type: 'message', content: [{ type: 'output_text', text: content }] }] : [])] })
+
+  // S16 — 실제 OpenWebUI처럼 점진 직렬화되는 답변(docker/fake-openwebui/progressive.mjs)을 서버가 SSE 단계 이벤트로 옮기는 동안
+  // 화면 병합 규칙(useChat)대로 쌓은 단계가 어느 이벤트 뒤에도 저장될 최종 단계의 앞부분이어야 한다(덮어쓰기·이어 붙기 없음).
+  it.each([['session', 'empty'], ['session', 'tools'], ['direct', 'empty']] as const)('%s (%s output): streamed step events never overwrite or merge earlier steps', async (mode, output) => {
+    const { sessionFrames, directPieces } = await import('../../../../docker/fake-openwebui/progressive.mjs')
+    const frames = sessionFrames(output)
+    const sse = [...directPieces().map(text => `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`), 'data: [DONE]\n\n'].join('')
+    const upstream = await sessionUpstream((_elapsed, count) => ({ ...frames[Math.min(count - 1, frames.length - 1)]!, done: count >= frames.length }),
+      body => 'session_id' in body ? undefined : { status: 200, body: sse, type: 'text/event-stream' }, { mode })
+    try {
+      const started = await upstream.runner.start('member', upstream.thread.id, { content: `점진 ${mode} ${output}` }, `progressive-${mode}-${output}`)
+      const seen: AnswerStep[][] = []
+      let view: AnswerStep[] = []
+      const unsubscribe = upstream.runner.subscribe(started.id, ({ event, data }) => {
+        if ((event === 'delta' || event === 'reasoning') && typeof data.stepIndex === 'number') {
+          view = [...view]
+          if (data.step) {
+            view[data.stepIndex] = data.step as AnswerStep
+            if (typeof data.stepCount === 'number' && data.stepCount < view.length) view.length = data.stepCount
+          } else {
+            const type = event === 'delta' ? 'text' : 'reasoning', prev = view[data.stepIndex]
+            view[data.stepIndex] = { type, text: (prev?.type === type ? prev.text : '') + String(data.text) }
+          }
+          seen.push(view)
+        } else if (event === 'replace' && Array.isArray(data.steps)) seen.push(view = data.steps as AnswerStep[])
+      })
+      await started.done
+      unsubscribe()
+      expect(await upstream.runner.get(started.id)).toMatchObject({ status: 'succeeded' })
+      const [saved] = await db.select({ steps: message.steps }).from(message).where(eq(message.id, started.replyMessageId))
+      const final = saved!.steps!
+      expect(final.map(step => step.type)).toEqual(['text', 'reasoning', 'text', 'code', 'text', 'tool', 'text'])
+      expect(view).toEqual(final)
+      expect(seen.length).toBeGreaterThan(5)
+      for (const [n, steps] of seen.entries()) {
+        expect(steps.length, `event ${n}`).toBeLessThanOrEqual(final.length)
+        steps.forEach((step, i) => {
+          const end = final[i]!
+          expect(step.type, `event ${n} step ${i}`).toBe(end.type)
+          if ((step.type === 'text' || step.type === 'reasoning') && (end.type === 'text' || end.type === 'reasoning')) {
+            expect(end.text.startsWith(step.text), `event ${n} step ${i}: ${JSON.stringify(step.text)}`).toBe(true)
+            if (i < steps.length - 1) expect(step.text.trimEnd(), `event ${n} step ${i}`).toBe(end.text.trimEnd())
+          }
+        })
+      }
+    } finally { await upstream.close() }
+  })
 
   it.each(['direct', 'session'] as const)('%s: URL automatically enables web search without a default; estimate equals send and snapshot records actual features', async mode => {
     const upstream = await sessionUpstream(() => sessionMessage([], '', '답변', true), undefined, { defaultFeatureIds: [], mode })

@@ -153,3 +153,54 @@ test('R1-2: OpenWebUI <details> content becomes ordered steps and the raw respon
     expect((await request.patch('/api/settings', { data: { owuiTools: original.owuiTools ?? 'auto', owuiMode: original.owuiMode ?? 'auto' } })).ok()).toBe(true)
   }
 })
+
+// S16 — 실제 OpenWebUI처럼 점진 직렬화되는 답변(docker/fake-openwebui/progressive.mjs): 스트리밍 중 어느 순간에도
+// 앞 단계가 다음 생각·도구로 덮이거나 다음 단계 글이 앞 단계에 붙지 않고, 끝 모양은 저장된 단계와 같다.
+for (const [mode, trigger] of [['session', '[progressive]'], ['session', '[progressive-tools]'], ['direct', '[progressive]']] as const) {
+  test(`S16 ${mode} ${trigger}: streaming steps only grow below — earlier steps are never overwritten or merged`, async ({ page, request }) => {
+    test.skip(!live, 'Requires fake OpenWebUI progressive scenario')
+    expect((await request.post('/api/auth/login', { data: { loginId: 'dev-owner', password: 'e2e-password-1234' } })).ok()).toBe(true)
+    const original = await (await request.get('/api/settings')).json() as { owuiTools?: string; owuiMode?: string }
+    expect((await request.patch('/api/settings', { data: { owuiTools: 'auto', owuiMode: mode } })).ok()).toBe(true)
+    try {
+      expect((await page.request.post('/api/auth/login', { data: { loginId: 'dev-owner', password: 'e2e-password-1234' } })).ok()).toBe(true)
+      const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string }>
+      const created = await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id, title: `점진 ${mode} ${trigger}` } })
+      expect(created.ok()).toBe(true)
+      const task = await created.json() as { id: string; threadId: string }
+      await page.goto(`/c/${task.id}`)
+      await setDetail(page, 'brief')
+      await page.getByRole('textbox', { name: 'AI 요청 입력' }).fill(`${trigger} 점진 스트리밍`)
+      await page.getByRole('button', { name: '전송', exact: true }).click()
+      const read = async () => await (await page.request.get(`/api/threads/${task.threadId}/messages`)).json() as Array<Message & { content: string }>
+      const bubble = page.locator('[data-message-id]').last()
+      const sample = async () => await bubble.locator('[data-answer-step]').evaluateAll(nodes => nodes.map(node => ({ kind: node.getAttribute('data-answer-step')!, text: node.textContent ?? '' })))
+      const samples: Array<Array<{ kind: string; text: string }>> = []
+      // 끝날 때까지 화면 단계를 계속 떠 둔다(시간 단언 없음 — 끝은 서버 상태로 판단)
+      for (let i = 0; i < 600; i++) {
+        samples.push(await sample())
+        if ((await read()).findLast(m => m.role === 'assistant')?.status === 'done') break
+      }
+      // 끝난 직후(진행 표시를 내리고 저장본으로 바뀌는 사이)도 몇 번 더 뜬다 — 진행 중 옛 사본이 다시 그려지면 안 된다
+      for (let i = 0; i < 30; i++) samples.push(await sample())
+      const reply = (await read()).findLast(m => m.role === 'assistant')!
+      const kinds = ['text', 'reasoning', 'text', 'code', 'text', 'tool', 'text']
+      expect(reply.steps?.map(s => s.type)).toEqual(kinds)
+      await expect(bubble.locator('[data-answer-step]')).toHaveCount(kinds.length)
+      await expect(bubble.locator('strong', { hasText: 'PROGRESSIVE_END' })).toBeVisible()
+      const final = await sample()
+      expect(final.map(s => s.kind)).toEqual(kinds)
+      const growing = samples.filter(s => s.length > 1 && s.length < kinds.length)
+      expect(growing.length).toBeGreaterThan(0)
+      for (const [n, steps] of samples.entries()) {
+        expect(steps.map(s => s.kind), `sample ${n}`).toEqual(kinds.slice(0, steps.length))
+        steps.forEach((step, i) => {
+          expect(step.text, `sample ${n} step ${i}`).not.toMatch(/<details|<summary|&gt;|```/)
+          if (i < steps.length - 1) expect(step.text, `sample ${n} step ${i}`).toBe(final[i]!.text)
+        })
+      }
+    } finally {
+      expect((await request.patch('/api/settings', { data: { owuiTools: original.owuiTools ?? 'auto', owuiMode: original.owuiMode ?? 'auto' } })).ok()).toBe(true)
+    }
+  })
+}

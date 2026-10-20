@@ -42,3 +42,21 @@ test('details-only scenario exposes unfinished reasoning/code and retains all wr
   assert.match(message.content, /raw details result/)
   assert.match(message.content, /\*\*details answer\*\*/)
 })
+test('progressive scenario re-serializes growing content per poll (done="false" → "true") with an empty output', async () => {
+  const created = await request('/api/chat/completions', { model: 'fake-general', stream: true, session_id: 'progressive-test', parent_id: null, id: 'progressive', messages: [{ role: 'user', content: '[progressive] 점진' }] })
+  const contents = new Set()
+  let message
+  for (let i = 0; i < 400; i++) {
+    message = (await request(`/api/v1/chats/${created.chat_id}`)).chat.history.messages.progressive
+    contents.add(message.content)
+    if (message.done) break
+    await new Promise(resolve => setTimeout(resolve, 30))
+  }
+  assert.equal(message.done, true)
+  assert.deepEqual(message.output, [])
+  assert.ok(contents.size > 5)
+  assert.ok([...contents].some(content => /type="reasoning" done="false"/.test(content)))
+  assert.ok([...contents].some(content => /type="code_interpreter" done="false"/.test(content)))
+  assert.match(message.content, /type="tool_calls" done="true"/)
+  assert.match(message.content, /\*\*PROGRESSIVE_END\*\*/)
+})

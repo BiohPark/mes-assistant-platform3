@@ -2,6 +2,7 @@
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
+import { directPieces, sessionFrames } from './progressive.mjs'
 
 const port = Number(process.env.PORT ?? 8080)
 // fake-general은 OpenWebUI의 모델 편집 기록(info.meta·info.params)을 흉내 낸다 — OpenWebUI 진단(S10-5)·화면 기본값(S13-J)용
@@ -74,8 +75,11 @@ async function completeChat(payload, res) {
       await new Promise(resolve => setTimeout(resolve, 1000))
     }
   }
-  for (const piece of text.match(/.{1,8}/gsu) ?? []) {
+  // [progressive] — 실제 OpenWebUI처럼 글·생각(<details> 열림→닫힘)·코드·도구·글을 4~16자 조각으로(S16)
+  const progressive = !isAuxiliary(payload) && /\[progressive(?:-late|-tools)?\]/i.test(userText)
+  for (const piece of progressive ? directPieces() : text.match(/.{1,8}/gsu) ?? []) {
     if (res.destroyed) return
+    if (progressive) await wait(PROGRESSIVE_MS / 5)
     frame({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: { content: piece } }] })
   }
   frame({ id, object: 'chat.completion.chunk', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
@@ -101,6 +105,8 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 /** [tool-slow]의 도구 실행 시간, [done-linger]의 [DONE] 뒤 연결 유지 시간 */
 const TOOL_MS = Number(process.env.FAKE_OWUI_TOOL_MS ?? 10_000)
 const LINGER_MS = 30_000
+/** [progressive] 세션 스냅숏 간격(직접 조각은 1/5) — 세션 폴링(1초) 사이에 여러 번 바뀌어 중간 상태가 화면에 보이게 */
+const PROGRESSIVE_MS = Number(process.env.FAKE_OWUI_PROGRESSIVE_MS ?? 150)
 const answerText = (payload, userText) => /\[image\]/i.test(userText) ? `${imageReply(payload.__imageOwner ?? randomUUID())}\n\n${userText}` : `[가짜 OpenWebUI · ${payload.model ?? '?'}] 받은 메시지: ${userText} [files: ${payload.files?.length ?? 0}]`
 /** OpenWebUI 세션 모드 요청 — session_id가 있고 parent_id:null(새 채팅)일 때만 백그라운드 작업이 된다 */
 const isSessionRequest = payload => typeof payload.session_id === 'string' && 'parent_id' in payload && payload.parent_id === null && !payload.chat_id
@@ -122,6 +128,19 @@ async function runSessionSteps(chat, payload) {
   const status = (description, extra = {}) => message.statusHistory.push({ description, done: false, ...extra })
   const userText = lastUserText(payload.messages)
   let text = answerText({ ...payload, __imageOwner: chat.id }, userText)
+  // [progressive] / [progressive-late] / [progressive-tools] — content를 폴링마다 다시 직렬화(진행 중 블록은 done="false"),
+  // output[]은 늘 비었거나(사내 가정), 마지막에만, 또는 도구·코드 항목만 채운다(progressive.mjs)
+  const progressive = /\[progressive(?:-(late|tools))?\]/i.exec(userText)
+  if (progressive) {
+    for (const frame of sessionFrames(progressive[1]?.toLowerCase() ?? 'empty')) {
+      if (!alive()) return
+      message.content = frame.content
+      message.output = frame.output
+      await wait(PROGRESSIVE_MS)
+    }
+    if (alive()) message.done = true
+    return
+  }
   if (/\[details\]|응답 형식 진단/i.test(userText)) {
     const reasoning = '<details type="reasoning" done="false"><summary>Thinking</summary>PRIVATE_REASONING: details thought</details>'
     message.content = reasoning

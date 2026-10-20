@@ -53,8 +53,15 @@ export function parseContent(content: string, streaming = false): ParsedContent 
     if (!block) return
     const b = block
     let body = content.slice(b.body, end).replace(/^\s*<summary\b[^>]*>[\s\S]*?<\/summary>/i, '')
-    if (streaming && /^\s*<summary\b/i.test(body)) body = ''
-    if (streaming && !closed) body = body.replace(/<\/?(?:d(?:e(?:t(?:a(?:i(?:l(?:s)?)?)?)?)?)?|t(?:h(?:i(?:n(?:k)?)?)?)?)[^>]*$/i, '')
+    // An unfinished summary (even '<s') is markup, not step text.
+    if (streaming && /^\s*(?:<summary\b|<(?:s(?:u(?:m(?:m(?:a(?:r(?:y)?)?)?)?)?)?)?$)/i.test(body)) body = ''
+    if (streaming && !closed) {
+      body = body.replace(/<\/?(?:d(?:e(?:t(?:a(?:i(?:l(?:s)?)?)?)?)?)?|t(?:h(?:i(?:n(?:k)?)?)?)?)[^>]*$/i, '')
+        // A cut entity ('&g' of '&gt;') would show raw and flip the reasoning quote check until the next delta.
+        .replace(/&(?:#x?[\da-f]*|[a-z]*)$/i, '')
+      // A cut fence line ('```py', or the first backticks of a closing fence) is not code yet.
+      if ((b.tag === 'think' ? 'reasoning' : b.attrs.type) === 'code_interpreter') body = body.replace(/(^|\n)[ \t]*[`~][^\n]*$/, '$1')
+    }
     const kind = b.tag === 'think' ? 'reasoning' : b.attrs.type
     if (kind === 'reasoning') {
       const decoded = decode(body.trim())

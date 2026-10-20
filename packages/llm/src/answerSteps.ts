@@ -29,7 +29,11 @@ export function sessionSteps(message: Record<string, unknown>): AnswerStep[] {
   if (typeof message.content === 'string' && message.content) {
     const parsed = contentSteps(message.content)
     // output[] wins; content is only a fallback for answer text when output has no message.
-    if (!steps.length) return parsed
+    // Exception: content wrappers carrying more reasoning/tool/code steps than output means output is partial or late
+    // (older OWUI serializes every block into content). Then content is the ordered source, so a late output item
+    // never takes an earlier index (overwriting the intro text) nor drops content-only reasoning.
+    const extra = (list: AnswerStep[]) => list.filter(s => s.type !== 'text').length
+    if (!steps.length || extra(parsed) > extra(steps)) return parsed
     if (!steps.some(s => s.type === 'text')) steps.push(...parsed.filter(s => s.type === 'text'))
   }
   return steps
