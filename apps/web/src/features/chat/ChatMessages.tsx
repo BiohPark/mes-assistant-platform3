@@ -199,6 +199,7 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
     {visibleMessages.length ? visibleMessages.map(item => <MessageBubble key={item.id} assistantName={assistantName} searchMatch={item.id === selectedMatch}
       message={run?.replyId === item.id ? { ...item, status: 'streaming', content: run.text || item.content, reasoning: run.reasoning || item.reasoning, steps: run.steps ?? item.steps } : item}
       {...(item === currentReply || item.id !== replyId ? actions?.(item) : undefined)}
+      onChoose={!active && item === visibleMessages.at(-1) ? actions?.(item).onChoose : undefined}
       progress={active && item.id === replyId ? { phase, elapsed, lastSignal: lastSignalSeconds, quiet, limitLeft: quiet ? limitLeft : undefined, working, stalled } : undefined} />) : empty}
     {farFromBottom && <div className="sticky bottom-2 flex justify-center"><button type="button" onClick={jumpToEnd}
       className="inline-flex min-h-11 items-center gap-1 rounded-full border bg-card px-3 text-sm text-card-foreground shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowDown aria-hidden="true" className="size-4" />{t('chat.scrollToBottom')}</button></div>}

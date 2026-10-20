@@ -934,3 +934,37 @@ it('forwards the pre-send signature and restores the draft after a stale selecti
   expect(posts[1]?.inputSignature).toBe('b'.repeat(64))
   expect(estimates).toBeGreaterThan(2)
 })
+
+it('appends selected choice text to the current draft, focuses the composer and waits for explicit send', async () => {
+  const posts: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/threads/h/messages') return Response.json([{ id: 'choice-reply', threadId: 'h', seq: 1, role: 'assistant', content: '어느 쪽인가요?\n1. 요약\n2. 상세', status: 'done', createdAt: '2026-01-01', attachmentIds: [] }])
+    if (url.endsWith('/estimate')) return Response.json({ bytes: 100, limitBytes: 1000, inputs: [], srCodes: [], srs: [], overLimit: false })
+    if (url === '/api/threads/h/requests') {
+      posts.push(JSON.parse(init!.body as string).content)
+      return new Response('event: started\ndata: {"requestId":"r","replyMessageId":"a","userMessageId":"u"}\n\nevent: completed\ndata: {}\n\n', { status: 201 })
+    }
+    return Response.json([])
+  }))
+  const task = { id: 'choice-task', threadId: 'h', status: 'in_progress', inputs: [], tags: [] } as unknown as Task
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MeContext value={{ id: 'choice-user', name: 'User', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><ChatView task={task} /></TooltipProvider></MeContext></QueryClientProvider>)
+  const user = userEvent.setup()
+  const group = await screen.findByRole('group', { name: '선택지' })
+  const composer = screen.getByRole('textbox', { name: 'AI 요청 입력' })
+  await user.click(within(group).getByRole('button', { name: '1. 요약' }))
+  expect(composer).toHaveValue('요약')
+  expect(composer).toHaveFocus()
+  await user.clear(composer)
+  await user.type(composer, '기존 입력')
+  within(group).getByRole('button', { name: '2. 상세' }).focus()
+  await user.keyboard('{Enter}')
+  expect(composer).toHaveValue('기존 입력\n상세')
+  expect(composer).toHaveFocus()
+  await user.type(composer, ' 추가 설명')
+  expect(getDraft(task.id)?.text).toBe('기존 입력\n상세 추가 설명')
+  expect(posts).toEqual([])
+  const sendButton = screen.getByRole('button', { name: '전송' })
+  await waitFor(() => expect(sendButton).toBeEnabled())
+  await user.click(sendButton)
+  await waitFor(() => expect(posts).toEqual(['기존 입력\n상세 추가 설명']))
+})

@@ -283,6 +283,7 @@ export const ko = {
     pendingAttemptDraftKept: '이전 요청을 다시 보냈습니다. 새로 작성한 내용은 입력창에 남겨 두었습니다.',
     owuiTools: '도구 전달', owuiBasic: '기본 방식', owuiFallback: '폴백 (기본 방식)',
     copyMessage: '복사', copiedMessage: '메시지를 복사했습니다.', copyMessageFailed: '복사하지 못했습니다. 다시 시도해 주세요.',
+    answerChoices: '선택지',
     messageActions: '메시지 동작', messageMenu: '메시지 메뉴', askAgain: '다시 묻기',
     askAgainHint: '현재 자료·모델로 새 요청, 이전 문답 포함',
     pendingAttemptHint: '전송하지 못한 요청이 있습니다. 전송을 누르면 같은 내용을 다시 보냅니다. 그 전에는 다시 묻기를 쓸 수 없습니다.',
