@@ -296,7 +296,8 @@ export class OpenAICompatibleProvider implements ChatProvider {
         }
       }
       const endMarkup = () => { markup = ''; markupActive = false; openReasoning = undefined }
-      const toolAcc = new Map<number, ToolCallFragment>()
+      // toolAcc/toolSteps are keyed by call slot; toolRound maps the stream's tool index to the slot of its current call.
+      const toolAcc = new Map<number, ToolCallFragment>(), toolRound = new Map<number, number>()
       const pushText = (type: 'text' | 'reasoning', text: string) => {
         if (!text) return
         const last = steps.at(-1)
@@ -343,16 +344,19 @@ export class OpenAICompatibleProvider implements ChatProvider {
           if (text) yield* parseText(text)
           if (toolCalls.length) endMarkup()
           for (const tc of toolCalls) {
-            const prev = toolAcc.get(tc.index)
-            toolAcc.set(tc.index, {
+            // A later round reuses index 0 with a new id — that is a new call and a new step, not more arguments for the old one.
+            let slot = toolRound.get(tc.index)
+            let prev = slot === undefined ? undefined : toolAcc.get(slot)
+            if (slot === undefined || (tc.id && prev?.id && tc.id !== prev.id)) { slot = toolAcc.size; toolRound.set(tc.index, slot); prev = undefined }
+            toolAcc.set(slot, {
               index: tc.index,
               id: tc.id ?? prev?.id,
               name: tc.name ?? prev?.name,
               arguments: (prev?.arguments ?? '') + tc.arguments,
             })
-            let index = toolSteps.get(tc.index)
-            if (index === undefined) { index = steps.length; toolSteps.set(tc.index, index) }
-            const call = toolAcc.get(tc.index)!
+            let index = toolSteps.get(slot)
+            if (index === undefined) { index = steps.length; toolSteps.set(slot, index) }
+            const call = toolAcc.get(slot)!
             const step: AnswerStep = { type: 'tool', name: call.name ?? '?', input: boundStepPayload(call.arguments), output: '', status: 'running' }
             steps[index] = step
             req.onStep?.(index, step, steps.length)

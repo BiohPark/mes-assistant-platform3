@@ -281,3 +281,79 @@ it('appends indexed text and reasoning pieces to their own step without a whole-
   await act(async () => { stream.enqueue(event('completed', {})); stream.close(); await sending })
 })
 
+
+it('S16: mixed piece deltas, indexed snapshots and replace events keep every earlier step intact while new steps open below', async () => {
+  let stream!: ReadableStreamDefaultController<Uint8Array>
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller } }))))
+  const client = new QueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useChat('progressive-thread'), { wrapper })
+  let sending!: Promise<void>
+  await act(async () => { sending = result.current.send('progressive') })
+  const event = (name: string, data: unknown) => new TextEncoder().encode(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`)
+  const code = { type: 'code', code: 'print(1 + 1)', output: '', status: 'running' }
+  const tool = { type: 'tool', name: 'fake_tool', input: '{"query":"q"}', output: '', status: 'running' }
+  // 서버가 세션 폴링(content 재직렬화)·직접 조각을 옮길 때 내는 순서 그대로: 조각 → 앞 단계 스냅숏(줄바꿈) + 새 단계 → 조각 → replace(호환 필드)
+  const sequence: Array<[string, unknown]> = [
+    ['started', { requestId: 'r', replyMessageId: 'm' }],
+    ['delta', { text: '안녕', stepIndex: 0 }], ['delta', { text: '하세요.', stepIndex: 0 }],
+    ['delta', { text: '', stepIndex: 0, stepCount: 1, step: { type: 'text', text: '안녕하세요.\n' } }],
+    ['delta', { text: '', stepIndex: 1, stepCount: 2, step: { type: 'reasoning', text: '' } }],
+    ['reasoning', { text: '검토', stepIndex: 1 }], ['replace', { field: 'reasoning', text: '검토' }], ['reasoning', { text: '합니다', stepIndex: 1 }],
+    ['delta', { text: '', stepIndex: 2, stepCount: 3, step: { type: 'text', text: '\n정리' } }], ['delta', { text: '했습니다.', stepIndex: 2 }],
+    ['delta', { text: '', stepIndex: 2, stepCount: 4, step: { type: 'text', text: '\n정리했습니다.\n' } }], ['delta', { text: '', stepIndex: 3, stepCount: 4, step: code }],
+    ['replace', { field: 'content', text: '안녕하세요.\n\n\n정리했습니다.\n' }],
+    ['delta', { text: '', stepIndex: 3, stepCount: 4, step: { ...code, output: '2', status: 'done' } }],
+    ['delta', { text: '', stepIndex: 4, stepCount: 5, step: { type: 'text', text: '\n결과는 2' } }], ['delta', { text: '입니다.', stepIndex: 4 }],
+    ['delta', { text: '', stepIndex: 5, stepCount: 6, step: tool }], ['delta', { text: '', stepIndex: 5, stepCount: 6, step: { ...tool, output: '결과', status: 'done' } }],
+    ['delta', { text: '', stepIndex: 6, stepCount: 7, step: { type: 'text', text: '\n**끝**' } }],
+  ]
+  const final = [{ type: 'text', text: '안녕하세요.\n' }, { type: 'reasoning', text: '검토합니다' }, { type: 'text', text: '\n정리했습니다.\n' },
+    { ...code, output: '2', status: 'done' }, { type: 'text', text: '\n결과는 2입니다.' }, { ...tool, output: '결과', status: 'done' }, { type: 'text', text: '\n**끝**' }]
+  for (const [name, data] of sequence) {
+    await act(async () => { stream.enqueue(event(name, data)) })
+    const steps = result.current.run?.steps ?? []
+    steps.forEach((step, i) => {
+      expect(step.type, `${name} ${JSON.stringify(data)} · step ${i}`).toBe(final[i]!.type)
+      if (step.type === 'text' || step.type === 'reasoning') expect((final[i] as { text: string }).text.startsWith(step.text), `${name} · step ${i}: ${step.text}`).toBe(true)
+    })
+  }
+  expect(result.current.run?.steps).toEqual(final)
+  expect(result.current.run?.text).toBe('안녕하세요.\n\n\n정리했습니다.\n\n\n결과는 2입니다.\n\n**끝**')
+  await act(async () => { stream.enqueue(event('completed', {})); stream.close(); await sending })
+})
+
+it('S16: when the live run is dropped before the final refetch lands, the cached mid-stream copy shows the finished steps, not old ones', async () => {
+  const { useQuery } = await import('@tanstack/react-query')
+  let stream!: ReadableStreamDefaultController<Uint8Array>
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller } }))))
+  // 스트리밍 중에 읽어 둔 저장본은 앞 두 단계·진행 중 사본이고, 끝난 뒤의 다시 읽기는 늦게 온다(실시간 이벤트가 취소·재요청하는 사이)
+  let finished = false, release: (() => void) | undefined
+  const stale = [{ id: 'm', threadId: 'stale-thread', role: 'assistant', status: 'streaming', content: '앞', createdAt: '2026-10-20', attachmentIds: [],
+    steps: [{ type: 'text', text: '앞' }, { type: 'reasoning', text: '옛 생' }] }]
+  const steps = [{ type: 'text', text: '앞' }, { type: 'reasoning', text: '옛 생각 끝' }, { type: 'text', text: '뒤' }]
+  const client = new QueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const seen: Array<{ run: boolean; reply?: { status: string; steps?: unknown[] } }> = []
+  const { result } = renderHook(() => {
+    const chat = useChat('stale-thread')
+    const messages = useQuery({ queryKey: ['messages', 'stale-thread'], queryFn: () => finished
+      ? new Promise<Array<{ status: string; steps?: unknown[] }>>(resolve => { release = () => resolve([{ ...stale[0]!, status: 'done', steps }]) })
+      : structuredClone(stale) as unknown as Array<{ status: string; steps?: unknown[] }> })
+    seen.push({ run: !!chat.run, reply: messages.data?.[0] })
+    return chat
+  }, { wrapper })
+  let sending!: Promise<void>
+  await act(async () => { sending = result.current.send('stale') })
+  const event = (name: string, data: unknown) => new TextEncoder().encode(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`)
+  await act(async () => {
+    stream.enqueue(event('started', { requestId: 'r', replyMessageId: 'm' }))
+    steps.forEach((step, index) => stream.enqueue(event('delta', { text: '', stepIndex: index, stepCount: index + 1, step })))
+  })
+  await act(async () => { finished = true; stream.enqueue(event('completed', {})); stream.close(); await vi.waitFor(() => expect(release).toBeTypeOf('function')) })
+  await act(async () => { release!(); await sending })
+  const dropped = seen.findIndex((item, i) => i > 0 && seen[i - 1]!.run && !item.run)
+  expect(dropped).toBeGreaterThan(0)
+  // run이 내려간 뒤 그려진 사본은 끝난 상태·마지막 단계다(진행 중 옛 사본이 '다른 곳의 요청'으로 다시 그려지지 않는다)
+  for (const item of seen.slice(dropped)) expect(item.reply).toMatchObject({ status: 'done', steps })
+})

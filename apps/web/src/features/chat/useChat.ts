@@ -1,4 +1,4 @@
-import { stepProjection, type AnswerStep } from '@mes/domain'
+import { stepProjection, type AnswerStep, type Message } from '@mes/domain'
 import { useAnswerDetail } from './useAnswerDetail'
 import { newId } from '@/lib/ids'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -48,6 +48,8 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
   const firstFailure = useRef(onFirstFailure)
   firstFailure.current = onFirstFailure
   const [run, setRun] = useState<ChatRun | null>(null)
+  const runRef = useRef(run)
+  runRef.current = run
   useSlowRequestBubble(run) // 도우미 말풍선(U6) — 마지막 본문·생각 delta 뒤 30초 무진행이면 요청당 1회
   /** 전송 시도가 진행 중(started 이전 대기 포함)인지. run은 started 이후에만 채워진다. */
   const [waitingSince, setWaitingSince] = useState<number | undefined>(() => threadId ? load(threadId)?.startedAt : undefined)
@@ -184,6 +186,13 @@ export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFa
         if (failed && !detached) throw new Error(failed)
       } finally {
         if (terminal) clear(attempt)
+        // 캐시에는 스트리밍 중에 읽은 진행 중 사본이 남아 있을 수 있다(실시간 이벤트마다 다시 읽음) — 그러면 run을 내리는 순간
+        // 그 사본이 '다른 곳의 진행 중 요청'으로 다시 그려진다(앞 단계가 옛 글로 덮임). 성공으로 끝났으면 받은 마지막 단계로 그 사본을 끝 상태로 맞춘다
+        const finished = runRef.current
+        if (!detached && terminal && !failed && finished && finished.requestId === attempt.requestId) {
+          query.setQueryData<Message[]>(['messages', attempt.threadId], rows => rows?.map(row => row.id === finished.replyId && row.status === 'streaming'
+            ? { ...row, status: 'done', content: finished.text || row.content, reasoning: finished.reasoning || row.reasoning, steps: finished.steps ?? row.steps } : row))
+        }
         // 떼어 낸 소비는 화면 상태를 건드리지 않는다 — 같은 인스턴스가 다시 붙었을 수 있다(StrictMode)
         if (!detached) {
           setRun(null)
