@@ -441,3 +441,29 @@ it('retains headers in brief mode without execution payloads and hides reasoning
   rerender(view({ ...ordered, steps: undefined, reasoning: 'legacy thought' }))
   expect(screen.queryByText('생각 과정')).not.toBeInTheDocument()
 })
+
+it.each(['brief', 'full', 'answer'] as const)('detects choices only from the last text step in %s mode', async detail => {
+  const { useUiStore } = await import('@/app/uiStore')
+  useUiStore.setState({ answerDetails: { anonymous: detail } })
+  onTestFinished(() => { useUiStore.setState({ answerDetails: {} }) })
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  const message: Message = { id: 'choices', threadId: 'h', role: 'assistant', status: 'done', content: '- 잘못된 본문\n- 사용 금지', attachmentIds: [], createdAt: '2026-01-01', steps: [
+    { type: 'text', text: '- 이전 항목\n- 제외' },
+    { type: 'text', text: '무엇을 볼까요?\nA. 요약\nB. 상세' },
+    { type: 'tool', name: 'lookup', input: '', output: '- 도구 항목\n- 제외', status: 'done' },
+  ] }
+  const client = new QueryClient()
+  const view = (message: Message) => <QueryClientProvider client={client}><MessageBubble message={message} onChoose={vi.fn()} /></QueryClientProvider>
+  const { rerender } = renderWithProviders(view(message))
+  const group = screen.getByRole('group', { name: '선택지' })
+  expect(within(group).getAllByRole('button').map(button => button.textContent)).toEqual(['1. 요약', '2. 상세'])
+  rerender(view({ ...message, steps: [...message.steps!, { type: 'text', text: '끝난 답변' }] }))
+  expect(screen.queryByRole('group', { name: '선택지' })).not.toBeInTheDocument()
+})
+
+it.each(['streaming', 'error', 'user', 'unavailable'] as const)('hides choices for %s messages', kind => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  const message: Message = { id: 'hidden-choice', threadId: 'h', role: kind === 'user' ? 'user' : 'assistant', status: kind === 'streaming' || kind === 'error' ? kind : 'done', content: '1. 요약\n2. 상세', attachmentIds: [], createdAt: '2026-01-01' }
+  renderWithProviders(<TooltipProvider><MessageBubble message={message} onChoose={kind === 'unavailable' ? undefined : vi.fn()} /></TooltipProvider>)
+  expect(screen.queryByRole('group', { name: '선택지' })).not.toBeInTheDocument()
+})

@@ -348,3 +348,20 @@ it('names the answer detail toggle by its visible mode, describes what it hides 
   expect(toggle).toHaveAccessibleName('코드·쉘 실행 제외')
 })
 
+
+it('offers choices on the latest reply only, hides them after any next user message and during a pending reply', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  const client = new QueryClient()
+  const reply: Message = { ...answer, status: 'done', error: undefined, content: '1. 요약\n2. 상세' }
+  const latest = { ...reply, id: 'latest' }
+  const view = (messages: Message[], waitingSince?: number) => <QueryClientProvider client={client}><TooltipProvider><ChatMessages messages={messages} waitingSince={waitingSince} actions={() => ({ onChoose: () => {} })} /></TooltipProvider></QueryClientProvider>
+  const { rerender } = render(view([question, reply, latest]))
+  expect(screen.getAllByRole('group', { name: '선택지' })).toHaveLength(1)
+  expect(screen.getByRole('group', { name: '선택지' }).closest('[data-message-id]')).toHaveAttribute('data-message-id', 'latest')
+  rerender(view([question, reply, { ...question, id: 'next' }]))
+  expect(screen.queryByRole('group', { name: '선택지' })).not.toBeInTheDocument()
+  rerender(view([question, reply, { ...question, id: 'discussion', kind: 'discussion' }]))
+  expect(screen.queryByRole('group', { name: '선택지' })).not.toBeInTheDocument()
+  rerender(view([question, reply], Date.now()))
+  expect(screen.queryByRole('group', { name: '선택지' })).not.toBeInTheDocument()
+})

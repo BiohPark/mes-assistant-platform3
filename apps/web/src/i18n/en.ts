@@ -285,6 +285,7 @@ export const en = {
     pendingAttemptDraftKept: 'Resent the earlier request. Your new draft was kept in the composer.',
     owuiTools: 'Tool delivery', owuiBasic: 'Basic request', owuiFallback: 'Fallback (basic request)',
     copyMessage: 'Copy', copiedMessage: 'Message copied.', copyMessageFailed: 'Could not copy. Please try again.',
+    answerChoices: 'Choices',
     messageActions: 'Message actions', messageMenu: 'Message menu', askAgain: 'Ask again',
     askAgainHint: 'New request with current materials and model, including previous messages',
     pendingAttemptHint: 'A request could not be sent. Press Send to resend the same content. Ask again is unavailable until then.',

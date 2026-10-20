@@ -1,4 +1,4 @@
-import { payloadText, renderAnswer, type AnswerStep, type StepPayload } from '@mes/domain'
+import { answerSteps, detectAnswerChoices, payloadText, renderAnswer, type AnswerStep, type StepPayload } from '@mes/domain'
 import { useAnswerDetail } from './useAnswerDetail'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Message } from '@mes/domain'
@@ -20,6 +20,7 @@ import { toast } from 'sonner'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useTypewriter } from './useTypewriter'
+import { AnswerChoices } from './AnswerChoices'
 
 /** 읽는 사람이 바닥에서 이만큼 안이면 새 글을 따라간다 */
 const followDistance = 24
@@ -28,7 +29,8 @@ function lastLines(text: string) {
   return text.split('\n').filter((line) => line.trim()).slice(-2).join('\n').slice(-300)
 }
 
-export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithoutFiles, onRetryAsText, onRequestInfo, onAskAgain, askAgainDisabled = false, intake = false, assistantName, progress, searchMatch = false }: {
+export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithoutFiles, onRetryAsText, onRequestInfo, onAskAgain, askAgainDisabled = false, intake = false, assistantName, progress, searchMatch = false, onChoose }: {
+  onChoose?: (text: string) => void
   searchMatch?: boolean
   /**
    * 진행 상태 줄 — lastSignal: 마지막 신호 뒤 초, quiet: 신호가 끊김, limitLeft: 서버 제한까지 남은 초,
@@ -70,6 +72,8 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
   const { formatDateTime } = useDates()
   const user = useUserMap(!intake).get(message.authorId ?? '')
   const assistant = message.role === 'assistant'
+  const choices = assistant && message.status === 'done' && onChoose
+    ? detectAnswerChoices(answerSteps(message).findLast(step => step.type === 'text')?.text ?? '') : null
   const tone = assistant ? 'card' : !intake && message.kind === 'discussion' ? 'warning' : 'primary'
   const attachments = useQueries({ queries: message.attachmentIds.map((id) => ({ queryKey: ['file', id], queryFn: async () => {
     const response = await fetch(`/api/files/${encodeURIComponent(id)}`, { credentials: 'same-origin' })
@@ -144,7 +148,8 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
     {assistant && progress?.stalled && <div data-testid="reply-progress" aria-hidden="true" className="flex flex-wrap items-center gap-1.5 px-1 text-xs text-muted-foreground">
       {progressDot}<span>{progressLabel}</span>{progressTiming}</div>}
     {!assistant && attachments.length > 0 && <div className="flex flex-wrap justify-end gap-1 text-xs">{attachments.map((attachment, index) => <span key={message.attachmentIds[index]} className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5"><Paperclip className="size-3" />{intake ? <a href={`/api/files/${encodeURIComponent(message.attachmentIds[index]!)}/content`} className="underline">{attachment.data?.name ?? t('sr.attachment', { number: index + 1 })}</a> : attachment.data ? <button type="button" className="hover:underline" onClick={(event) => { previewOpener.current = event.currentTarget; setPreview(attachment.data) }}>{attachment.data.name}</button> : (attachment.isError ? attachmentFallback(attachment.error) : t('chat.checkingFile'))}</span>)}</div>}
-    <div className="flex items-center gap-1 text-foreground">
+    <div className="flex w-full min-w-0 flex-wrap items-center gap-1 text-foreground">
+      {choices && onChoose && <AnswerChoices items={choices.items} onChoose={onChoose} />}
       <div role="group" aria-label={t('chat.messageActions')} className="hidden md:flex md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100 motion-safe:transition-opacity">
         <button type="button" className={actionClass} onClick={() => void copy()}><Copy aria-hidden="true" className="size-3.5" />{t('chat.copyMessage')}</button>
         {!assistant && onAskAgain && <button type="button" className={actionClass} disabled={askAgainDisabled} title={t('chat.askAgainHint')} onClick={onAskAgain}><RotateCcw aria-hidden="true" className="size-3.5" />{t('chat.askAgain')}</button>}

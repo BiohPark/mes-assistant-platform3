@@ -256,6 +256,9 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
     <div ref={conversationPanel} data-testid="chat-message-scroll" className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6"><div className={`${CHAT_COLUMN} space-y-4`}>
     <ChatMessages key={task.id} assistantName={assistant?.name} messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince ?? submissionSince} questionIndexContainer={headerTools ?? toolbar} searchContainer={toolbar} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-2 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p className="text-xs">{t('chat.emptyHint')}{onOpenMaterials && <Button variant="link" size="xs" className="ml-1 h-auto p-0" onClick={onOpenMaterials}>{t('chat.openMaterials')}</Button>}</p></div>}
       actions={(item) => ({
+        onChoose: !askAgainDisabled ? text => {
+          if (!askAgainDisabled && !sendLock.current) composer.current?.setText(draft ? `${draft}\n${text}` : text)
+        } : undefined,
         onAskAgain: item.role === 'user' && item.kind !== 'discussion' ? () => askAgain(item) : undefined,
         askAgainDisabled,
         onSaveAsOutput: item.role === 'assistant' && assistant && item.status === 'done' ? () => setSaveTarget(item) : undefined,
