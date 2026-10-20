@@ -20,7 +20,6 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { PriorityBadge, TaskStatusBadge } from '@/components/StatusBadges'
 import { PRIORITY_KEY } from '@/lib/labels'
 import { copyText } from '@/lib/clipboard'
-import { useMaterialCandidates } from '@/features/chat/useMaterialCandidates'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem } from '@/components/ui/dropdown-menu'
@@ -28,19 +27,13 @@ import { useT } from '@/i18n'
 import { assistantLink1 } from '@/lib/links'
 import { QuickSwitch } from './QuickSwitch'
 import { TaskTitle } from './TaskTitle'
-import { drawerId, hasContext, useDrawerOpen, useMaterialsDrawer } from './materialsDrawer'
 import { useTaskChatActions } from './chatActions'
 import { changeTagWithShare } from './tagShare'
 import { TaskCompleteDialog } from './TaskCompleteDialog'
 
 /** 제목·태그·핵심 동작은 한 줄, 관리와 보조 기능은 더 보기 메뉴로 연다. */
 export function TaskHeader({ task, assistant, toolsRef }: { task: Task; assistant: Assistant; toolsRef?: (element: HTMLDivElement | null) => void }) {
-  const openingTool = useRef(false)
-  const panelOpen = useDrawerOpen(task)
-  const choosePanel = useMaterialsDrawer(s => s.choose)
   const chatActions = useTaskChatActions(s => s.byTask[task.id])
-  const contextual = hasContext(task)
-  const { count } = useMaterialCandidates(task.id, false)
   const actor = useActor()
   const t = useT()
   const query = useQueryClient()
@@ -110,7 +103,6 @@ export function TaskHeader({ task, assistant, toolsRef }: { task: Task; assistan
         {task.status === 'done' ? <Button size="sm" variant="outline" onClick={() => setReopen(true)}><PlayCircle data-icon="inline-start" />{t('task.header.reopen')}</Button> : <>
           <Button size="sm" data-tour="task-complete" onClick={() => setComplete(true)}><CheckCircle2 data-icon="inline-start" />{t('task.header.complete')}</Button>
         </>}
-        <Button variant="outline" size="sm" data-tour="linked-materials" aria-expanded={panelOpen} aria-controls={drawerId(task.id)} onClick={() => choosePanel(task.id, panelOpen ? 'closed' : 'open')}>{contextual || count ? t('task.header.materials', { count }) : t('task.body.materials')}</Button>
         {chatActions?.issue && <>
           <Button size="sm" variant="outline" disabled={!chatActions.info} onClick={chatActions.info}>{t('task.header.requestHistory')}</Button>
           <Button size="sm" variant="outline" disabled={!chatActions.exclude} onClick={chatActions.exclude}>{t('chat.retryWithoutFiles')}</Button>
@@ -118,10 +110,7 @@ export function TaskHeader({ task, assistant, toolsRef }: { task: Task; assistan
         </>}
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" data-tour="task-more" aria-label={t('task.header.more')} title={t('task.header.more')}><MoreHorizontal /></Button></DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-56" onCloseAutoFocus={event => { if (openingTool.current) { event.preventDefault(); openingTool.current = false } }}>
-            <DropdownMenuLabel>{t('task.body.tools')}</DropdownMenuLabel>
-            {(['checklist', 'notes', 'history'] as const).map(tool => <DropdownMenuItem key={tool} onSelect={() => { openingTool.current = true; choosePanel(task.id, 'open', tool, true) }}>{t(`task.header.open_${tool}`)}</DropdownMenuItem>)}
-            <DropdownMenuSeparator />
+          <DropdownMenuContent align="end" className="min-w-56">
             <DropdownMenuLabel className="flex items-center gap-2"><TaskStatusBadge status={task.status} /><PriorityBadge priority={task.priority} /></DropdownMenuLabel>
             <DropdownMenuItem onSelect={() => { void copyText(task.code).then(ok => { if (!ok) toast.error(t('chat.copyMessageFailed')) }) }}>{t('task.header.copyCode')} · <span className="font-mono">{task.code}</span></DropdownMenuItem>
             <DropdownMenuLabel>{t('task.header.priority')}</DropdownMenuLabel>

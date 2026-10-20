@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils'
 import { useMaterialCandidates } from '@/features/chat/useMaterialCandidates'
 import { inputSelection } from '@/api/inputSelection'
 import { useTagShareStore } from './tagShare'
+import { useMaterialsDrawer, useRailState } from './materialsDrawer'
 
 /**
  * 자료 패널(S14) — '자료함' 목록만: 이 대화·같은 태그 파일·연결 SR 본문·연결 SR 첨부·같은 태그 대화.
@@ -31,7 +32,11 @@ export function MaterialsPanel({ task, embedded = false, picker = false, onUploa
   const uploadRef = useRef<HTMLInputElement>(null)
   const libraryId = useId()
   const [preview, setPreview] = useState<FileMeta | null>(null)
-  const [search, setSearch] = useState('')
+  const [localSearch, setLocalSearch] = useState('')
+  const state = useRailState(task.id)
+  const update = useMaterialsDrawer(s => s.update)
+  const search = embedded ? state.materialsSearch : localSearch
+  const setSearch = (value: string) => { if (embedded) update(task.id, { materialsSearch: value }); else setLocalSearch(value) }
   const [expanded, setExpanded] = useState<string | null>(null)
   const share = useTagShareStore((state) => state.byTask[task.id])
   const fresh = new Set(share?.fresh)

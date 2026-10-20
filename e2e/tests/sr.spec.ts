@@ -148,9 +148,9 @@ test('E1 S2 접수 첨부와 요청자 범위, 연결 업무 및 결과 공유',
     // S13-S: 접수 대화에 올린 모든 파일은 복사 없이 연결 업무 자료함에 보인다
     expect(task.inputs.map(item => item.fileId).sort()).toEqual([fileId, extraFileId].sort())
     expect(task.inputs.every(item => item.weight === 'reference')).toBe(true)
-    // E1의 연결 업무는 첫 질문 전: 접수 스레드와 별개이므로 자동 열림을 유지한다.
+    // 연결 업무도 자료 레일에서 직접 펼친다.
     expect(await (await owner.request.get(`/api/threads/${task.threadId}/messages`)).json()).toEqual([])
-    await expect(linkedMaterialsToggle(owner)).toHaveAttribute('aria-expanded', 'true')
+    await expect(linkedMaterialsToggle(owner)).toHaveAttribute('aria-expanded', 'false')
     await revealMaterials(owner)
     const srSection = owner.getByTestId('materials-sr-files')
     await expect(srSection).toContainText('sr-e2e.txt')

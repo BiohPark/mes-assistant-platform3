@@ -104,7 +104,7 @@ for (const role of ['member', 'system_owner'] as const) {
 
       await page.goto('/my-work')
       await expect(page.getByRole('heading', { name: '내 작업', exact: true })).toBeVisible()
-      await expect(page.getByRole('navigation').getByRole('link', { name: '내 작업', exact: true })).toHaveAttribute('aria-current', 'page')
+      await expect(page.getByRole('navigation').and(page.locator('[data-tour="nav"]')).getByRole('link', { name: '내 작업', exact: true })).toHaveAttribute('aria-current', 'page')
       await page.getByRole('textbox', { name: '내 작업 검색' }).fill(tag)
       const list = page.locator('[data-tour="my-work-list"]')
       // DB를 공유하는 다른 spec의 대화는 개수·순서 단언에서 제외한다.
@@ -161,7 +161,7 @@ test('BO는 내 작업 메뉴를 보지 않고 /sr로 이동하며 작업 쿼리
   page.on('request', request => requests.push(new URL(request.url()).pathname))
   await page.goto('/my-work')
   await expect(page).toHaveURL(/\/sr$/)
-  await expect(page.getByRole('navigation').getByRole('link', { name: '내 작업', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('navigation').and(page.locator('[data-tour="nav"]')).getByRole('link', { name: '내 작업', exact: true })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '내 SR 요청', exact: true })).toBeVisible()
   expect(requests).not.toContain('/api/tasks')
   expect(requests).not.toContain('/api/assistants')
@@ -187,7 +187,7 @@ test('영어 내 작업 제목·완료 탭·상태·최근 활동', async ({ pag
   expect((await (await page.request.get('/api/me')).json() as { locale: string }).locale).toBe('en')
   await page.goto('/my-work')
   await expect(page.getByRole('heading', { name: 'My work', exact: true })).toBeVisible()
-  await expect(page.getByRole('navigation').getByRole('link', { name: 'My work', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('navigation').and(page.locator('[data-tour="nav"]')).getByRole('link', { name: 'My work', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(page.getByRole('tab', { name: 'Completed', exact: true })).toBeVisible()
   const row = page.getByRole('list', { name: 'My work conversations' }).locator(`a[href="/c/${task.id}"]`)
   await expect(row.getByText('In progress', { exact: true })).toBeVisible()

@@ -14,7 +14,7 @@ async function member(page: Page) {
   expect(response.ok()).toBe(true)
   return { loginId, id: (await response.json()).id as string }
 }
-const nav = (page: Page) => page.getByRole('navigation')
+const nav = (page: Page) => page.getByRole('navigation').and(page.locator('[data-tour="nav"]'))
 const headings = (page: Page) => nav(page).locator('p')
 
 test('SO 사이드바: 업무·요청·관리 3구획 9개 메뉴, 사용자 관리와 전역 설정이 분리돼 있다', async ({ page }) => {

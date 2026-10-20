@@ -68,6 +68,7 @@ export function AssistantBubble({ pillRef, pos }: { pillRef: RefObject<HTMLButto
             {current.excerpt && <p data-testid="bubble-excerpt" className="line-clamp-2 text-xs text-muted-foreground">{current.excerpt}</p>}
             <Button size="xs" onClick={() => go(current.taskId)}>{t('bubble.goToConversation')}</Button>
           </div>
+          : current.source.startsWith('share.') ? <p className="flex-1 leading-snug">{bubbleText(t, current)}</p>
           : <button type="button" className="flex-1 text-left leading-snug hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-lg" onClick={() => open(current)}>{bubbleText(t, current)}</button>}
         <button type="button" aria-label={t('bubble.close')} className="rounded-full p-0.5 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" onClick={dismiss}><X className="size-3.5" /></button>
       </div>}

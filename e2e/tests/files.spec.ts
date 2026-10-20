@@ -59,8 +59,8 @@ test('S4 직접 공유 파일의 주 입력과 참고 입력이 순서대로 표
   await page.request.post('/api/files', { multipart: { originTaskId: source.id, file: { name: 'reference.txt', mimeType: 'text/plain', buffer: Buffer.from('reference') } } })
   const consumer = await (await page.request.post('/api/tasks', { data: { assistantId: assistants[0]!.id, tags: [tag] } })).json() as { id: string }
   await page.goto(`/c/${consumer.id}`)
-  // S4는 메시지 0건: 2B에 따라 태그 자료 패널이 처음부터 열려야 한다.
-  await expect(linkedMaterialsToggle(page)).toHaveAttribute('aria-expanded', 'true')
+  // 태그 자료가 있어도 레일에서 직접 펼치기 전에는 닫혀 있다.
+  await expect(linkedMaterialsToggle(page)).toHaveAttribute('aria-expanded', 'false')
   await openMaterials(page)
   await expect(page.getByTestId('materials-shared')).toContainText('main.txt')
   // 자료함에서 [첨부]하고 ★는 입력창 칩에서 바꾼다 — 칩은 전송과 같은 조립 순서(주 입력 먼저)

@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useDates } from '@/lib/dates'
 import { useT } from '@/i18n'
+import { useMaterialsDrawer, useRailState } from './materialsDrawer'
 
 export function NotesPanel({ task }: { task: Task }) {
   const { formatDateTime } = useDates()
@@ -23,8 +24,10 @@ export function NotesPanel({ task }: { task: Task }) {
   const own = useQuery({ queryKey: ['files', task.id], queryFn: () => filesForTask(task.id) })
   const candidates = useQuery({ queryKey: ['candidates', task.id], queryFn: () => getCandidates(task.id) })
   const files = [...new Map([...(own.data ?? []), ...(candidates.data?.files ?? []).map((item) => item.file)].map((file) => [file.id, file])).values()]
-  const [content, setContent] = useState('')
-  const [attachmentIds, setAttachmentIds] = useState<string[]>([])
+  const { noteDraft: content, noteAttachments: attachmentIds } = useRailState(task.id)
+  const update = useMaterialsDrawer(s => s.update)
+  const setContent = (noteDraft: string) => update(task.id, { noteDraft })
+  const setAttachmentIds = (noteAttachments: string[]) => update(task.id, { noteAttachments })
   const [busy, setBusy] = useState(false)
   async function save() {
     setBusy(true)
@@ -35,6 +38,7 @@ export function NotesPanel({ task }: { task: Task }) {
   return <section className="space-y-3 text-xs" data-testid="notes-panel">
     <h3 className="font-semibold">{t('task.notes.title')}</h3>
     {notes.isError && <div role="alert">{t('task.notes.loadFailed')} <button className="underline" onClick={() => void notes.refetch()}>{t('common.retry')}</button></div>}
+    {notes.isSuccess && !notes.data.length && <p className="text-muted-foreground">{t('task.notes.empty')}</p>}
     {(notes.data ?? []).map((item) => <article key={item.id} className="rounded-xl border p-2">
       <div className="flex justify-between text-xs text-muted-foreground"><span>{users.get(item.authorId)?.name ?? item.authorId} · {formatDateTime(item.createdAt)}</span>
         {task.status !== 'done' && (item.authorId === me || isSystemOwner) && <button type="button" className="underline" onClick={() => void deleteNote(task.id, item.id).catch((error: unknown) => toast.error(String(error)))}>{t('task.delete')}</button>}

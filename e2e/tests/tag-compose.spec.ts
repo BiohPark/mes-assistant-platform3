@@ -1,4 +1,4 @@
-import { materialToggleName } from './materials.js'
+import { materialToggleName, revealMaterials } from './materials.js'
 import { expect, test, type Page } from '@playwright/test'
 
 // S11 U2 같은 태그 펼침 패널·담기 — 시드에 기대지 않고 테스트마다 사용자·대화·태그를 직접 만든다
@@ -35,6 +35,7 @@ test('indirect tag not listed — 다른 태그로만 이어진 대화는 패널
   const bridge = await createTask(page, [`cmp-x-${stamp}`, `cmp-y-${stamp}`])
   const indirect = await createTask(page, [`cmp-y-${stamp}`])
   await page.goto(`/c/${me.id}`)
+  await revealMaterials(page) // 자동 펼침 없음(S16 상시 레일) — 후보는 레일의 자료 탭에서 본다
   await expect(panel(page).getByRole('button', { name: new RegExp(bridge.code + ' ·') })).toBeVisible()
   await expect(panel(page).getByRole('button', { name: new RegExp(indirect.code + ' ·') })).toHaveCount(0)
   const box = panel(page).getByRole('button', { name: materialToggleName(`${bridge.code}`), exact: true })
@@ -56,6 +57,7 @@ test('estimate equals send after add — 패널에서 대화 본문·파일을 �
   expect(upload.ok()).toBe(true)
 
   await page.goto(`/c/${consumer.id}`)
+  await revealMaterials(page) // 자동 펼침 없음(S16 상시 레일) — 후보는 레일의 자료 탭에서 본다
   const attachConversation = panel(page).getByRole('button', { name: materialToggleName(`${source.code}`), exact: true })
   await attachConversation.click()
   await page.getByTestId('materials-shared').getByRole('button', { name: materialToggleName(`${fileName}`), exact: true }).click()
@@ -95,6 +97,7 @@ test('일괄 담기 대체 경로 — 여러 자료를 고를 때 부분 실패�
     else await route.continue()
   })
   await page.goto(`/c/${consumer.id}`)
+  await revealMaterials(page) // 자동 펼침 없음(S16 상시 레일) — 후보는 레일의 자료 탭에서 본다
   const conversation = panel(page).getByRole('button', { name: materialToggleName(source.code) })
   const fileToggle = page.getByTestId(`candidate-file-${file.id}`).getByRole('button', { name: materialToggleName('retry.txt') })
   await conversation.click()
@@ -125,6 +128,7 @@ test('버전 선택 대체 경로 — 연결 자료에서 이전 버전을 직�
     versions.push(await response.json() as { id: string })
   }
   await page.goto(`/c/${consumer.id}`)
+  await revealMaterials(page) // 자동 펼침 없음(S16 상시 레일) — 후보는 레일의 자료 탭에서 본다
   const latest = page.getByTestId(`candidate-file-${versions[1]!.id}`)
   await latest.getByRole('button', { name: '이전 버전 1', exact: true }).click()
   await latest.getByRole('button', { name: materialToggleName('version.txt v1') }).click()

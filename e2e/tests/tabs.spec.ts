@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { linkedMaterialsToggle } from './materials.js'
+import { linkedMaterialsToggle, revealMaterials } from './materials.js'
 
 // S15 상단 탭 MDI — 메뉴·대화를 탭으로 열고, 탭을 바꿔도 각 화면(입력·스크롤)이 그대로 남는다
 const password = 'e2e-password-1234'
@@ -11,8 +11,8 @@ async function owner(page: Page) {
 }
 const strip = (page: Page) => page.getByRole('tablist', { name: '열린 화면' })
 const tab = (page: Page, name: string | RegExp) => strip(page).getByRole('tab', { name })
-const menu = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true })
-const activePanel = (page: Page) => page.locator('[role="tabpanel"]:not([inert])')
+const menu = (page: Page, name: string) => page.getByRole('navigation').and(page.locator('[data-tour="nav"]')).getByRole('link', { name, exact: true })
+const activePanel = (page: Page) => page.locator('[data-tab-panel]:not([inert])')
 
 /** 활성 탭 안에서 가장 먼저 스크롤되는 영역을 px만큼 내리고 실제 위치를 돌려준다 */
 async function scrollActive(panel: Locator, top: number) {
@@ -98,7 +98,10 @@ test('살려 두는 화면은 8개 — 넘치면 오래 안 본 화면부터 내
 
 test('뒤로·앞으로가기는 탭을 오가고, ×·가운데 클릭·우클릭 메뉴로 닫는다(홈은 고정)', async ({ page }) => {
   await page.goto('/')
-  for (const name of ['내 작업', '리포트', 'SR 처리']) await menu(page, name).click()
+  for (const name of ['내 작업', '리포트', 'SR 처리']) {
+    await menu(page, name).click()
+    await expect(tab(page, name)).toHaveAttribute('aria-selected', 'true') // 부하에서 연속 클릭이 이동 전에 겹치지 않게
+  }
   await expect(tab(page, 'SR 처리')).toHaveAttribute('aria-selected', 'true')
 
   await page.goBack()
@@ -184,8 +187,8 @@ test('대화 두 개를 함께 열어도 보조 패널 탭·패널 id가 겹치�
   await page.goto(`/c/${second.id}`)
   await tab(page, `${first.code} · MDI id 하나`).click()
   await tab(page, `${second.code} · MDI id 둘`).click()
-  await expect(page.locator('[role="tabpanel"]').filter({ has: page.getByRole('complementary', { name: '#태그·SR 연결 자료', includeHidden: true }) })).toHaveCount(2)
-  const ids = await page.locator('[id^="task-"]').evaluateAll(elements => elements.map(element => element.id))
+  await expect(page.locator('[data-tab-panel]').filter({ has: page.getByRole('complementary', { name: '#태그·SR 연결 자료', includeHidden: true }) })).toHaveCount(2)
+  const ids = await page.locator('[id^="work-panel-"], [id^="work-tab-"]').evaluateAll(elements => elements.map(element => element.id))
   expect(ids.length).toBeGreaterThan(0)
   expect(new Set(ids).size).toBe(ids.length)
   await expect(tab(page, `${second.code} · MDI id 둘`)).toHaveAttribute('aria-selected', 'true')
@@ -216,12 +219,10 @@ test('공유 안내 처리→수동 닫힘→다른 화면 8개로 LRU 퇴거→
   await expect(activePanel(page).getByRole('button', { name: `${tagName} 태그 제거`, exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(input).toBeHidden()
-  const bubble = page.getByRole('status', { name: 'AI 도우미 말풍선' })
-  await bubble.getByRole('button', { name: /연결 자료에 들어왔어요/ }).click()
+  await revealMaterials(page)
   const toggle = linkedMaterialsToggle(activePanel(page))
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-  // 자동 개폐로 이미 열려 있어도 공유 안내의 열기 처리가 끝난 뒤 수동으로 닫는다.
-  await expect(activePanel(page).getByRole('complementary', { name: '#태그·SR 연결 자료' })).toBeFocused()
+  await expect(activePanel(page).getByRole('tab', { name: '자료', exact: true })).toBeFocused()
   await expect(activePanel(page).getByTestId('materials-shared')).toContainText('lru.txt')
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
@@ -236,4 +237,34 @@ test('공유 안내 처리→수동 닫힘→다른 화면 8개로 LRU 퇴거→
   await expect(activePanel(page).getByRole('textbox', { name: 'AI 요청 입력' })).toBeVisible()
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await expect(activePanel(page).getByRole('complementary', { name: '#태그·SR 연결 자료' })).toHaveCount(0)
+})
+
+test('업무 레일은 MDI에서 내려갔다 다시 열려도 펼침·마지막 탭·작성 중 초안·스크롤을 되살린다', async ({ page }) => {
+  test.slow() // 살려 둔 화면 9개를 병렬 부하에서 개발 빌드로 그린다
+  const assistants = await (await page.request.get('/api/assistants')).json() as Array<{ id: string; status: string }>
+  const task = await (await page.request.post('/api/tasks', { data: { assistantId: assistants.find(item => item.status === 'open')!.id, title: '레일 퇴거 대화' } })).json() as { id: string; code: string }
+  for (let index = 1; index <= 30; index++) {
+    expect((await page.request.post(`/api/tasks/${task.id}/notes`, { data: { content: `레일 스크롤 메모 ${index}\n${'긴 줄 '.repeat(20)}`, attachmentIds: [] } })).ok()).toBe(true)
+  }
+  await page.goto(`/c/${task.id}`)
+  const rail = activePanel(page).getByRole('navigation', { name: '업무 도구' })
+  await rail.getByRole('button', { name: /^메모/ }).click()
+  const notesPanel = activePanel(page).getByRole('tabpanel', { name: '메모' })
+  await expect(notesPanel.getByText('레일 스크롤 메모 30')).toBeVisible()
+  await activePanel(page).getByRole('textbox', { name: '메모 본문' }).fill('퇴거 뒤에도 남을 초안')
+  const scrolled = await notesPanel.evaluate(node => { node.scrollTop = 400; node.dispatchEvent(new Event('scroll')); return node.scrollTop })
+  expect(scrolled).toBeGreaterThan(0)
+  const taskPanelId = await tab(page, `${task.code} · 레일 퇴거 대화`).getAttribute('aria-controls')
+  for (const name of ['에이전트 허브', '내 작업', 'SR 처리', '내 SR 요청', '에이전트 관리', '전역 설정', '사용자 관리', '연결 진단']) {
+    await menu(page, name).click()
+    await expect(tab(page, name)).toHaveAttribute('aria-selected', 'true')
+  }
+  await expect(page.locator(`[id="${taskPanelId}"]`)).toHaveCount(0) // 실제 퇴거 — 다시 열면 새로 마운트한다
+  await tab(page, `${task.code} · 레일 퇴거 대화`).click()
+  const restored = activePanel(page)
+  await expect(restored.getByRole('navigation', { name: '업무 도구' }).getByRole('button', { name: /^메모/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect(restored.getByRole('tab', { name: '메모', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(restored.getByRole('textbox', { name: '메모 본문' })).toHaveValue('퇴거 뒤에도 남을 초안')
+  await expect(restored.getByRole('tabpanel', { name: '메모' }).getByText('레일 스크롤 메모 30')).toBeVisible()
+  await expect.poll(() => restored.getByRole('tabpanel', { name: '메모' }).evaluate(node => node.scrollTop)).toBe(scrolled)
 })

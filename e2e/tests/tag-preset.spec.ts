@@ -49,9 +49,9 @@ test('#태그 칩 → [이 태그로 새 대화] → 첫 전송 때 태그가 �
 
   // 우측 자료 패널: 같은 태그 대화의 파일·대화가 후보로 보인다(담기는 사람이)
   // 보이는 탭(숨은 탭은 aria-hidden)만 — 원본 대화 탭에도 같은 자료 패널이 있다
-  const current = page.getByRole('tabpanel')
+  const current = page.locator('[data-tab-panel]:not([inert])')
   const toggle = linkedMaterialsToggle(current)
-  // 첫 질문과 함께 시작한 대화는 '첫 질문 전' 자동 열림이 없다(맥락 자동 개폐) — 잠깐 열렸다 닫히지 않고 닫힌 채로 시작한다
+  // 태그와 후보가 있어도 레일에서 직접 펼치기 전에는 닫혀 있다
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
@@ -79,7 +79,7 @@ test('같은 에이전트의 초안 탭이 이미 열려 있어도 [이 태그�
 
   // 원본 대화 탭을 연 뒤, 앱 안 이동(새로고침 없이)으로 같은 에이전트의 초안 탭을 열어 손으로 태그를 붙여 둔다
   await page.goto(`/c/${source.id}`)
-  await page.getByRole('tabpanel').getByRole('link', { name: assistant!.name }).click() // 헤더 에이전트 칩 → 홈 탭 칸반
+  await page.locator('[data-tab-panel]:not([inert])').getByRole('link', { name: assistant!.name }).click() // 헤더 에이전트 칩 → 홈 탭 칸반
   await page.getByRole('link', { name: `${assistant!.name} 새 대화`, exact: true }).click() // 칸반 열 [+]
   await expect(page).toHaveURL(new RegExp(`/new/${encodeURIComponent(assistant!.id)}$`))
   const draft = page.getByRole('tabpanel', { name: /^새 대화 · / })
@@ -92,7 +92,7 @@ test('같은 에이전트의 초안 탭이 이미 열려 있어도 [이 태그�
 
   // 원본 대화 탭으로 돌아가 칩 메뉴 → 초안 탭이 재사용되고 태그가 프리셋 태그로 바뀐다
   await strip.getByRole('tab', { name: `${source.code} · 태그 원본`, exact: true }).click()
-  await page.getByRole('tabpanel').getByRole('button', { name: tag, exact: true }).click()
+  await page.locator('[data-tab-panel]:not([inert])').getByRole('button', { name: tag, exact: true }).click()
   await page.getByRole('menuitem', { name: '이 태그로 새 대화' }).click()
   await expect(page).toHaveURL(new RegExp(`/new/${encodeURIComponent(assistant!.id)}\\?tag=${encodeURIComponent(tag)}$`))
   await expect(strip.getByRole('tab')).toHaveCount(tabCount)

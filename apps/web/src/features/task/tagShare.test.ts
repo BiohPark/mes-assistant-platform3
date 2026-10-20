@@ -4,7 +4,7 @@ import type { Candidates, FileCandidate } from '@/api/files'
 import { resetBubbles, useBubbleStore } from '@/features/assistant-pill/bubbles'
 import { changeTagWithShare, FRESH_MS, sharedItems, shareDiff, useTagShareStore } from './tagShare'
 
-beforeEach(() => { resetBubbles(); useTagShareStore.setState({ byTask: {}, openSeq: {} }) })
+beforeEach(() => { resetBubbles(); useTagShareStore.setState({ byTask: {} }) })
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 const file = (id: string, sourceTaskId: string, extra: Partial<FileCandidate> = {}): FileCandidate => ({

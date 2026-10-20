@@ -45,7 +45,7 @@ async function send(page: Page, text: string, threadId: string) {
   await expect(page.getByRole('textbox', { name: 'AI 요청 입력' })).toHaveValue('')
 }
 
-test('같은 태그 대화 2개의 후보 수는 접힌 헤더·선택기에서 일치하고 갱신된다', async ({ page }) => {
+test('같은 태그 대화 2개의 후보 수는 레일 미확인 배지·선택기에서 갱신된다', async ({ page }) => {
   const { create } = await setup(page)
   const tag = `count-${crypto.randomUUID()}`
   const task = await create([tag])
@@ -56,13 +56,13 @@ test('같은 태그 대화 2개의 후보 수는 접힌 헤더·선택기에서 
   const header = linkedMaterialsToggle(page)
   const attach = page.locator('[data-tour="materials-picker"]')
   await expect(header).toHaveAttribute('aria-expanded', 'false')
-  await expect(header).toHaveText('연결 자료(2)')
+  await expect(header).toContainText('새 2')
   await expect(attach).toHaveText('+ 첨부 · 후보 2')
   await revealMaterials(page)
-  await expect(header).toHaveText('연결 자료(2)')
+  await expect(header).not.toContainText('새 ')
   await header.click()
   await create([tag])
-  await expect(header).toHaveText('연결 자료(3)')
+  await expect(header).toContainText('새 1')
   await expect(attach).toHaveText('+ 첨부 · 후보 3')
 })
 
@@ -76,7 +76,7 @@ test('1A·2B: 첫 질문은 무첨부, SR 본문만 선택하고 추정과 전�
   expect(count.status()).toBe(200)
   expect(await count.json()).toEqual({ count: 2 })
   await page.goto(`/c/${task.id}`)
-  await expect(linkedMaterialsToggle(page)).toHaveAttribute('aria-expanded', 'true')
+  await expect(linkedMaterialsToggle(page)).toHaveAttribute('aria-expanded', 'false')
   await expect(page.locator('[data-tour="materials-picker"]')).toHaveText('+ 첨부 · 후보 2')
   await expect(page.getByText('이번 질문에 보낼 자료 · 0개')).toBeVisible()
   await send(page, '첨부 없는 일반 질문', task.threadId)
@@ -215,7 +215,7 @@ test('태그 추가는 수동 닫힘을 유지하고 다른 참여자의 선택�
   const task = await create(['picker-tags'])
   const file = await upload(page, task.id)
   await page.goto(`/c/${task.id}`)
-  await expect(linkedMaterialsToggle(page)).toHaveAttribute('aria-expanded', 'true')
+  await revealMaterials(page)
   await linkedMaterialsToggle(page).click()
   await page.request.put(`/api/tasks/${task.id}/tags/picker-new-tag`)
   await expect(linkedMaterialsToggle(page)).toHaveAttribute('aria-expanded', 'false')

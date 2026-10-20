@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { revealMaterials } from './materials.js'
 
 // S9-4 태그 연결 정확도 — 시드에 기대지 않고 테스트마다 사용자·대화·태그를 직접 만든다
 const password = 'e2e-password-1234'
@@ -51,6 +52,7 @@ test('Enter는 후보를 고르지 않으면 입력값 그대로 붙이고, ↑�
   await tagInput(page).press('Enter')
   await expect(removeButton(page, popular)).toBeVisible()
   await page.keyboard.press('Escape') // 태그 입력 팝오버 닫기
+  await revealMaterials(page) // 자동 펼침 없음(S16) — 같은 태그 대화는 레일의 자료 탭에
 
   const related = page.getByTestId(`conversation-${other.id}`)
   await expect(related).toContainText(other.code)
@@ -73,6 +75,8 @@ test('접수되지 않은 SR 번호 태그는 SR 미접수로 구분되고 입�
   await expect(page.getByRole('textbox', { name: 'AI 요청 입력' })).toBeVisible()
   await expect(page.getByRole('list', { name: '첨부', exact: true })).toHaveCount(0)
   // 이 번호를 쓰는 다른 대화가 없으니 0건 표시
+  await page.keyboard.press('Escape') // 태그 입력 팝오버 닫기
+  await revealMaterials(page)
   await expect(page.getByTestId('conversation-candidates').getByText(/^같은 태그 대화가 없습니다\./)).toBeVisible()
 })
 

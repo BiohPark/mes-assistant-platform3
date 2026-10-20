@@ -1,4 +1,5 @@
 import type { TranslationKey, Translator } from '@/i18n'
+import { withoutRailFocus } from '@/features/task/materialsDrawer'
 
 export type PageRoute = 'hub' | 'conversation' | 'sr' | 'myWork' | 'admin' | 'other'
 type MenuKey = Extract<TranslationKey, `pill.menu.${string}`>
@@ -23,8 +24,6 @@ export const PAGE_ACTIONS: Record<PageRoute, readonly PageAction[]> = {
   ],
   conversation: [
     GUIDE,
-    { kind: 'focus', label: 'pill.menu.related', target: 'related' },
-    { kind: 'focus', label: 'pill.menu.materials', target: 'materials' },
     MY_WORK,
   ],
   sr: [GUIDE, { kind: 'navigate', label: 'pill.menu.mySr', to: '/sr' }],
@@ -67,7 +66,7 @@ export function focusPageTarget(target: 'search' | 'related' | 'materials' | 'ch
   if (target === 'materials' || target === 'related') {
     if (element?.tagName === 'SUMMARY') {
       if (!element.closest('details')?.open) element.click()
-    } else if (element?.getAttribute('aria-expanded') !== 'true') element?.click()
+    } else if (element?.getAttribute('aria-expanded') !== 'true') withoutRailFocus(() => element?.click())
     if (target === 'related') requestAnimationFrame(() => {
       shown<HTMLElement>('[data-tour="materials-conversations"]').find(node => !node.closest('[inert]'))?.scrollIntoView?.({ block: 'nearest' })
     })

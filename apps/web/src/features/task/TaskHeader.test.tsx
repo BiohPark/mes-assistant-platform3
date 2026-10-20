@@ -213,14 +213,14 @@ it('S15: 완료된 대화의 태그 메뉴에는 [태그 해제]가 없다', asy
   expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['이 태그로 새 대화', '이 태그 대화 보기'])
 })
 
-it('코드·우선순위·보류·보조 도구·전송 기록·파일 재시도를 더 보기 안에 수납하고 Esc로 돌아온다', async () => {
+it('코드·우선순위·보류·전송 기록·파일 재시도를 더 보기 안에 수납하고 Esc로 돌아온다', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
   render(wrap(task))
   expect(screen.queryByRole('button', { name: '보류' })).not.toBeInTheDocument()
   const user = userEvent.setup()
   const trigger = screen.getByRole('button', { name: '더 보기' })
   await user.click(trigger)
-  for (const name of ['체크리스트 열기', '메모 열기', '활동 이력 열기']) expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
+  for (const name of ['체크리스트 열기', '메모 열기', '활동 이력 열기']) expect(screen.queryByRole('menuitem', { name })).not.toBeInTheDocument()
   for (const name of ['전송 기록', '파일 빼고 다시', '텍스트로 보내기']) expect(screen.queryByRole('menuitem', { name })).not.toBeInTheDocument()
   expect(screen.getByText(task.code)).toBeInTheDocument()
   expect(screen.getByRole('menuitemradio', { name: '보통' })).toHaveAttribute('aria-checked', 'true')
@@ -238,33 +238,11 @@ it('메뉴의 우선순위 변경은 기존 PATCH 경로에 고른 값만 보낸
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/tasks/t', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ priority: 'urgent' }) })))
 })
 
-it('연결 자료 개수는 상세 목록 조회 없이 경량 집계 결과를 표시한다', async () => {
-  const fetcher = vi.fn(async (url: string) => Response.json(url.endsWith('/candidate-count') ? { count: 4 } : []))
-  vi.stubGlobal('fetch', fetcher)
+it('헤더는 자료 입구·후보 조회를 제공하지 않는다', async () => {
+  const calls: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => { calls.push(url); return Response.json([]) }))
   render(wrap({ ...task, tags: ['A'] }))
-  expect(await screen.findByRole('button', { name: '연결 자료(4)' })).toBeInTheDocument()
-  expect(fetcher.mock.calls.filter(([url]) => /\/(candidates|files|sr-inputs)$/.test(url))).toHaveLength(0)
-})
-
-it('후보가 없는 닫힌 패널은 숫자와 상세 조회 3종을 생략한다', async () => {
-  const calls: string[] = []
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => { calls.push(url); return new Response('[]', { status: 200 }) }))
-  render(wrap(task))
-  expect(screen.getByRole('button', { name: '연결 자료' })).toHaveAttribute('aria-expanded', 'false')
   await waitFor(() => expect(calls).toContain('/api/settings'))
-  expect(calls.filter(url => /\/tasks\/t\/(candidates|files|sr-inputs)$/.test(url))).toEqual([])
-})
-
-
-it('수동으로 닫힌 패널도 경량 후보 수를 표시하고 상세 조회는 생략한다', async () => {
-  sessionStorage.setItem('mes-hub:panel-state:t', 'closed')
-  const calls: string[] = []
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => { calls.push(url); return Response.json(url.endsWith('/candidate-count') ? { count: 2 } : []) }))
-  try {
-    render(wrap({ ...task, tags: ['A'] }))
-    expect(screen.getByRole('button', { name: /^연결 자료/ })).toHaveAttribute('aria-expanded', 'false')
-    expect(await screen.findByRole('button', { name: '연결 자료(2)' })).toBeVisible()
-    await waitFor(() => expect(calls).toContain('/api/settings'))
-    expect(calls.filter(url => /\/tasks\/t\/(candidates|files|sr-inputs)$/.test(url))).toEqual([])
-  } finally { sessionStorage.removeItem('mes-hub:panel-state:t') }
+  expect(screen.queryByRole('button', { name: /^연결 자료/ })).not.toBeInTheDocument()
+  expect(calls.some(url => /candidate/.test(url))).toBe(false)
 })
