@@ -344,7 +344,7 @@ it.each(['star', 'remove'] as const)('keeps the reference chip mounted and dimme
 
 const emptyHint = '[+ 첨부]에서 이번 질문에 보낼 파일·대화를 고를 수 있어요.'
 
-it('offers materials only after messages load empty and opening adds no requests or selections', async () => {
+it('shows the empty hint after messages load without an extra materials entrance', async () => {
   let finish!: (response: Response) => void
   const calls: Array<{ url: string; method?: string }> = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -359,10 +359,8 @@ it('offers materials only after messages load empty and opening adds no requests
   expect(screen.queryByRole('button', { name: '자료 열기' })).not.toBeInTheDocument()
   await act(async () => finish(Response.json([])))
   expect(await screen.findByText(emptyHint)).toBeVisible()
-  const before = [...calls]
-  fireEvent.click(screen.getByRole('button', { name: '자료 열기' }))
-  expect(open).toHaveBeenCalledOnce()
-  expect(calls).toEqual(before)
+  expect(screen.queryByRole('button', { name: '자료 열기' })).not.toBeInTheDocument()
+  expect(open).not.toHaveBeenCalled()
   expect(calls.some(({ url, method }) => /inputs/.test(url) && method === 'PUT')).toBe(false)
 })
 

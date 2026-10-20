@@ -8,12 +8,15 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { useDates } from '@/lib/dates'
 import { useT } from '@/i18n'
+import { useMaterialsDrawer, useRailState } from './materialsDrawer'
 
 export function ChecklistPanel({ task }: { task: Task }) {
   const { formatDateTime } = useDates()
   const users = useUserMap()
   const t = useT()
-  const [label, setLabel] = useState('')
+  const { checklistDraft: label } = useRailState(task.id)
+  const update = useMaterialsDrawer(s => s.update)
+  const setLabel = (checklistDraft: string) => update(task.id, { checklistDraft })
   const [busy, setBusy] = useState(false)
   const [reviewSince, setReviewSince] = useState<number>()
   const [now, setNow] = useState(Date.now)

@@ -31,7 +31,7 @@ test('새 창으로 띄우기 — 팝업에는 사이드바·상단 내비·도�
   await expect(popup).toHaveURL(new RegExp(`/c/${task.id}\\?popout=1$`))
   await expect(popup.getByRole('textbox', { name: 'AI 요청 입력' })).toBeVisible()
   await expect(popup.getByRole('button', { name: '팝업 대화', exact: true })).toBeVisible() // 제목은 한 줄 대화 헤더에서 편집한다
-  await expect(popup.getByRole('navigation')).toHaveCount(0) // 사이드바
+  await expect(popup.locator('[data-tour="nav"]')).toHaveCount(0) // 사이드바
   await expect(popup.getByRole('button', { name: /모드로 전환$/ })).toHaveCount(0) // 상단 바 내비
   await expect(popup.getByRole('button', { name: '알림' })).toHaveCount(0)
   await expect(popup.getByTestId('assistant-pill')).toHaveCount(0) // 도우미 알약
@@ -39,9 +39,9 @@ test('새 창으로 띄우기 — 팝업에는 사이드바·상단 내비·도�
   await expect(popoutButton(popup)).toHaveCount(0) // 팝업 안에서 다시 띄우기 없음
   await expect(popup.getByRole('button', { name: '업무 완료' })).toBeVisible() // 대화 헤더는 남는다
   await revealMaterials(popup) // 작은 창에서도 같은 연결 자료 패널
-  await expect(popup.getByRole('complementary', { name: '#태그·SR 연결 자료' })).toBeVisible() // 자료 패널 안의 'AI 입력' tabpanel과 구분
+  await expect(popup.getByRole('dialog', { name: '대화 보조 패널' })).toBeVisible() // 자료 패널 안의 'AI 입력' tabpanel과 구분
   await expect(page).toHaveURL(new RegExp(`/c/${task.id}$`)) // 본창은 그대로
-  await expect(page.getByRole('navigation')).toBeVisible()
+  await expect(page.getByRole('navigation').and(page.locator('[data-tour="nav"]'))).toBeVisible()
 
   const other = await createTask(page, '둘째 팝업')
   await page.goto(`/c/${other.id}`)

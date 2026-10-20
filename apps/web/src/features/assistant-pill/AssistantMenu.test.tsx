@@ -96,3 +96,10 @@ it('other pages (My info) and My work offer the guide plus a hub shortcut', () =
   mount('/my-work')
   expect(within(menu()).getByRole('button', { name: '에이전트 허브' })).toBeInTheDocument()
 })
+
+it('대화 도우미 메뉴는 패널 입구를 중복 제공하지 않는다', () => {
+  mount('/c/t')
+  expect(within(menu()).getAllByRole('button')).toHaveLength(2)
+  expect(within(menu()).getByRole('button', { name: '이 화면 사용법' })).toBeVisible()
+  expect(within(menu()).getByRole('button', { name: '내 작업' })).toBeVisible()
+})

@@ -23,6 +23,7 @@ import { localeOptions, themeOptions, useProfile } from './profile'
 import type { Locale, Theme } from '@mes/contracts'
 import { NotificationBell } from './NotificationBell'
 import { clearDrafts } from '@/features/chat/drafts'
+import { clearRailState } from '@/features/task/materialsDrawer'
 
 interface TopBarProps {
   title?: React.ReactNode
@@ -93,7 +94,7 @@ export function TopBar({ title, actions, onLoggedOut = goToLoggedOut }: TopBarPr
           <DropdownMenuItem onClick={() => void navigate('/password')}><KeyRound />{t('common.changePassword')}</DropdownMenuItem>
           <DropdownMenuItem
             onClick={() =>
-              logout().then(() => { profile.reset(); clearDrafts(); onLoggedOut() }, () => toast.error(t('common.logoutFailed')))
+              logout().then(() => { profile.reset(); clearDrafts(); clearRailState(); onLoggedOut() }, () => toast.error(t('common.logoutFailed')))
             }
           >
             <LogOut />

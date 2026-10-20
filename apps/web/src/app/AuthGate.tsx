@@ -7,6 +7,7 @@ import { useProfile } from './profile'
 import { Button } from '@/components/ui/button'
 import { HttpError, MeContext, fetchAuthMode, fetchMe } from './auth'
 import { bindDraftsToUser } from '@/features/chat/drafts'
+import { bindRailToUser } from '@/features/task/materialsDrawer'
 
 const isUnauthorized = (err: unknown) => err instanceof HttpError && err.status === 401
 
@@ -52,7 +53,7 @@ export function AuthGate({ children, redirectToLogin, retryDelayMs = 1000 }: Aut
   }, [unauthorized, mode, redirectToLogin, navigate])
 
   // 자식(Composer)의 초기화가 같은 렌더에서 초안 Map을 읽으므로 effect가 아니라 렌더 단계에서 묶는다(멱등)
-  if (data) { bindDraftsToUser(data.id); return <MeContext value={data}>{children}</MeContext> }
+  if (data) { bindDraftsToUser(data.id); bindRailToUser(data.id); return <MeContext value={data}>{children}</MeContext> }
   if ((error && !unauthorized) || modeError) {
     return (
       <div role="alert" className="p-8 text-sm">

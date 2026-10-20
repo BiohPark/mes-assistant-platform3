@@ -19,7 +19,7 @@ async function setup(page: Page) {
   return { create }
 }
 
-test('맥락 자동 개폐·수동 선택·새 태그·새로고침·MDI를 유지하고 자료를 자동 담지 않는다', async ({ page }) => {
+test('자동 펼침 없이 수동 선택·새 태그·새로고침·MDI를 유지하고 자료를 자동 담지 않는다', async ({ page }) => {
   const { create } = await setup(page)
   const first = await create([])
   const second = await create(['R3'])
@@ -40,16 +40,15 @@ test('맥락 자동 개폐·수동 선택·새 태그·새로고침·MDI를 유�
   await expect(active.getByRole('button', { name: 'R3 태그 제거', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(tag).toBeHidden()
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await expect(page.getByRole('list', { name: '첨부', exact: true })).toHaveCount(0)
-  await toggle.click()
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await page.reload()
   await expect(firstTab).toHaveAttribute('aria-selected', 'true')
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await page.goto(`/c/${second.id}`)
   await expect(secondTab).toHaveAttribute('aria-selected', 'true')
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await firstTab.click()
   await expect(firstTab).toHaveAttribute('aria-selected', 'true')
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
@@ -63,14 +62,11 @@ test('맥락 자동 개폐·수동 선택·새 태그·새로고침·MDI를 유�
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await expect(active.getByRole('list', { name: '첨부', exact: true })).toHaveCount(0)
   await toggle.click()
-  const tools = active.locator('[data-tour="work-tools"]')
-  await expect(tools).not.toHaveAttribute('open')
-  await tools.locator('summary').focus()
-  await page.keyboard.press('Space')
-  await expect(tools).toHaveAttribute('open', '')
+  await openWorkTool(page, '메모')
+  await expect(active.getByRole('tabpanel', { name: '메모', exact: true })).toBeVisible()
 })
 
-test('더 보기의 보조 도구·관리·전송 기록과 두 파일 재시도 대화상자를 연다', async ({ page }) => {
+test('레일의 보조 도구·더 보기 관리·전송 기록과 두 파일 재시도 대화상자를 연다', async ({ page }) => {
   const { create } = await setup(page)
   const task = await create([])
   const reply = { id: 'reply-r3', threadId: task.threadId, seq: 1, role: 'assistant', content: '답변', status: 'done', requestId: 'request-r3', attachmentIds: [], createdAt: '2026-10-01T00:00:00Z' }
@@ -81,8 +77,8 @@ test('더 보기의 보조 도구·관리·전송 기록과 두 파일 재시도
   await expect(page.getByRole('button', { name: '이 대화 파일로 저장' })).toBeVisible()
   for (const name of ['체크리스트', '메모', '활동 이력'] as const) {
     await openWorkTool(page, name)
-    await expect(page.locator('[data-tour="work-tools"]')).toHaveAttribute('open', '')
-    await expect(page.getByRole('region', { name, exact: true })).toBeVisible()
+    const label = { '체크리스트': '체크', '메모': '메모', '활동 이력': '이력' }[name]
+    await expect(page.getByRole('tabpanel', { name: label, exact: true })).toBeVisible()
   }
   await page.getByRole('button', { name: '더 보기', exact: true }).click()
   await expect(page.getByRole('menuitem', { name: '전송 기록', exact: true })).toHaveCount(0)
@@ -110,25 +106,21 @@ test('더 보기의 보조 도구·관리·전송 기록과 두 파일 재시도
   await expect(page.getByRole('button', { name: '전송 기록', exact: true })).toBeVisible()
 })
 
-test('900px 자동 패널은 접힌 바이고 직접 펼치면 대화 본문 높이의 절반 이내다', async ({ page }) => {
+test('900px 하단 바에서 직접 펼친 시트는 대화 본문 높이의 70% 이내다', async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 800 })
   const { create } = await setup(page)
   const task = await create(['R3-narrow'])
   await page.goto(`/c/${task.id}`)
-  const active = page.locator('[role="tabpanel"]:not([inert])')
+  const active = page.locator('[data-tab-panel]:not([inert])')
   const toggle = linkedMaterialsToggle(active)
-  const drawer = active.getByRole('complementary', { name: '#태그·SR 연결 자료' })
-  const body = active.getByTestId('task-body')
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-  const barBox = await drawer.boundingBox()
-  expect(barBox!.height).toBeLessThan(100)
-  await drawer.locator(':scope > details > summary').click()
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-  const bodyBox = await body.boundingBox()
-  const panelBox = await drawer.boundingBox()
-  const inputBox = await active.getByRole('textbox', { name: 'AI 요청 입력' }).boundingBox()
-  expect(panelBox!.height).toBeLessThanOrEqual(bodyBox!.height / 2 + 1)
-  expect(inputBox!.y).toBeGreaterThanOrEqual(bodyBox!.y)
-  expect(inputBox!.y + inputBox!.height).toBeLessThanOrEqual(panelBox!.y)
-  await expect(active.getByRole('textbox', { name: 'AI 요청 입력' })).toBeVisible()
+  await expect(active.getByRole('navigation', { name: '업무 도구' })).toBeVisible()
+  await toggle.click()
+  const sheet = active.getByRole('dialog', { name: '대화 보조 패널' })
+  await expect(sheet).toBeVisible()
+  const bodyBox = await active.getByTestId('task-body').boundingBox()
+  const panelBox = await sheet.boundingBox()
+  expect(panelBox!.height).toBeLessThanOrEqual(bodyBox!.height * 0.7 + 1)
+  await sheet.getByRole('button', { name: '접기', exact: true }).click()
+  await expect(toggle).toBeFocused()
 })

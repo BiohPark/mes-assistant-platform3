@@ -5,7 +5,7 @@ import { markSectionDone, readTourProgress, saveGuideOffer } from './tutorial'
 
 /** 한 단계 = 화면의 `data-tour` 대상 + 설명. 대상이 페이지에 없으면 건너뛴다. `opens`가 있으면 연결 자료를 열거나 입력창에 초점을 옮긴다 */
 export interface TourStep { target: string; text: Extract<TranslationKey, `tour.steps.${string}`>; opens?: 'materials' | 'chat' }
-/** 연결 자료 버튼이 보이면 패널 내부의 단계도 포함한다. chat은 입력창을 가리킨다 */
+/** 상시 레일의 자료 버튼이 보이면 패널 내부의 단계도 포함한다. chat은 입력창을 가리킨다 */
 export const OPENERS: Record<NonNullable<TourStep['opens']>, string> = { materials: 'linked-materials', chat: 'linked-materials' }
 /** 섹션 = 화면의 한 주제. 단계가 모두 없으면 섹션째 건너뛰고, 완료는 사용자별로 기억한다 */
 export interface TourSection { id: string; title: Extract<TranslationKey, `tour.sections.${string}`>; steps: readonly TourStep[] }

@@ -9,6 +9,7 @@ import { TopBar } from './TopBar'
 import { resetPopout } from './popout'
 import { useProfile } from './profile'
 import { getDraft, setDraft } from '@/features/chat/drafts'
+import { useMaterialsDrawer } from '@/features/task/materialsDrawer'
 
 vi.mock('./NotificationBell', () => ({ NotificationBell: () => null }))
 
@@ -57,10 +58,13 @@ describe('TopBar', () => {
     await userEvent.click(screen.getByRole('button', { name: /김운영/ }))
     expect(await screen.findByText('System Owner')).toBeInTheDocument()
     setDraft('t', { text: '보내지 않은 초안', pending: [], discussion: false })
+    useMaterialsDrawer.getState().update('t', { noteDraft: '레일 메모 초안' })
     await userEvent.click(screen.getByRole('menuitem', { name: '로그아웃' }))
     await waitFor(() => expect(afterLogout).toHaveBeenCalledOnce())
     expect(fetchMock).toHaveBeenCalledWith('/api/auth/logout', expect.objectContaining({ method: 'POST' }))
     expect(getDraft('t')).toBeUndefined() // 로그아웃하면 전환 초안을 폐기한다
+    expect(useMaterialsDrawer.getState().byTask.t).toBeUndefined() // 레일 초안(메모리·세션)도
+    expect(Object.keys(sessionStorage).some(key => key.startsWith('mes-hub:panel-state:'))).toBe(false)
   })
 
   it.each([204, 500])('로그아웃 응답 %s에서 성공한 경우에만 화면·두 캐시를 system·ko로 초기화한다', async (status) => {

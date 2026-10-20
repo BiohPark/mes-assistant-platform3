@@ -18,7 +18,6 @@ import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { AssistantStatusBadge } from '@/components/StatusBadges'
 import { TagInput } from '@/components/TagInput'
 import { RelatedStrip } from '@/features/task/RelatedStrip'
-import { useMaterialsDrawer } from '@/features/task/materialsDrawer'
 import { Chip } from '@/components/Chip'
 import { useT } from '@/i18n'
 import { assistantLink1 } from '@/lib/links'
@@ -89,7 +88,6 @@ export function DraftConversationPage() {
       }
       const task = created.current
       // 이 대화는 첫 질문(또는 팀 의견)과 함께 시작한다 — '첫 질문 전' 자동 열림을 건너뛰어, 메시지 조회 전에 자료 패널이 잠깐 열렸다 닫히지 않게
-      useMaterialsDrawer.getState().markStarted(task.id)
       const uploaded: string[] = []
       if (attachments.length) {
         for (const attachment of attachments) {

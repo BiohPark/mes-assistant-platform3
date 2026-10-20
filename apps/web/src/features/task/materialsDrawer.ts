@@ -1,57 +1,99 @@
-import type { TaskMessageState } from '@mes/contracts'
-import { useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { getMessages } from '@/api/tasks'
+import { useMemo } from 'react'
 import { create } from 'zustand'
-import { useMediaQuery } from '@/app/useMediaQuery'
 import type { Task } from '@mes/domain'
 
-export type WorkTool = 'checklist' | 'notes' | 'history'
+export const RAIL_TABS = ['materials', 'checklist', 'notes', 'history'] as const
+export type RailTab = typeof RAIL_TABS[number]
+export type WorkTool = Exclude<RailTab, 'materials'>
 type Choice = 'open' | 'closed'
-const key = (taskId: string) => `mes-hub:panel-state:${taskId}`
+const PREFIX = 'mes-hub:panel-state:'
+/** 로그인 사용자 — 저장 키와 메모리 상태를 사용자별로 나눠, 같은 브라우저 탭의 다음 계정에 이전 사용자의 초안이 보이지 않게 한다 */
+let owner = ''
+const key = (taskId: string) => `${PREFIX}${owner}:${taskId}`
+function removeStored(keep?: string) {
+  try {
+    for (const item of Object.keys(sessionStorage)) if (item.startsWith(PREFIX) && (keep === undefined || !item.startsWith(`${PREFIX}${keep}:`))) sessionStorage.removeItem(item)
+  } catch { /* 저장소 차단 — 지울 것도 없다 */ }
+}
 export const drawerId = (taskId: string) => `linked-materials-drawer-${taskId}`
-export const hasContext = (task: Task) => task.tags.length > 0 || !!task.linkedSrCodes?.length
-function read(taskId: string): Choice | undefined {
-  try { const value = sessionStorage.getItem(key(taskId)); return value === 'open' || value === 'closed' ? value : undefined } catch { return undefined }
+export interface RailState {
+  owner: string
+  choice: Choice
+  tab: RailTab
+  focusSeq: number
+  seen: string[]
+  scroll: Partial<Record<RailTab, number>>
+  noteDraft: string
+  noteAttachments: string[]
+  checklistDraft: string
+  materialsSearch: string
+}
+const initial = (): RailState => ({ owner, choice: 'closed', tab: 'materials', focusSeq: 0, seen: [], scroll: {}, noteDraft: '', noteAttachments: [], checklistDraft: '', materialsSearch: '' })
+const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every(item => typeof item === 'string')
+function read(taskId: string): RailState {
+  const fallback = initial()
+  try {
+    const raw = sessionStorage.getItem(key(taskId))
+    if (raw === 'open' || raw === 'closed') return { ...fallback, choice: raw }
+    const value = JSON.parse(raw ?? 'null') as Partial<RailState> | null
+    if (!value || typeof value !== 'object') return fallback
+    return {
+      ...fallback,
+      choice: value.choice === 'open' ? 'open' : 'closed',
+      tab: RAIL_TABS.includes(value.tab as RailTab) ? value.tab! : 'materials',
+      seen: strings(value.seen) ? value.seen : [],
+      scroll: Object.fromEntries(RAIL_TABS.flatMap(tab => {
+        const top = value.scroll?.[tab]
+        return typeof top === 'number' && Number.isFinite(top) && top >= 0 ? [[tab, top]] : []
+      })),
+      noteDraft: typeof value.noteDraft === 'string' ? value.noteDraft : '',
+      noteAttachments: strings(value.noteAttachments) ? value.noteAttachments : [],
+      checklistDraft: typeof value.checklistDraft === 'string' ? value.checklistDraft : '',
+      materialsSearch: typeof value.materialsSearch === 'string' ? value.materialsSearch : '',
+    }
+  } catch { return fallback }
+}
+const mine = (state: RailState | undefined) => state?.owner === owner ? state : undefined
+let quiet = false
+/** 프로그램이 대신 누른 레일 클릭(가이드 투어 등) — 펼치기만 하고 포커스는 호출한 쪽에 둔다 */
+export function withoutRailFocus(run: () => void) {
+  quiet = true
+  try { run() } finally { quiet = false }
+}
+/** 렌더 단계에서 불러도 된다(멱등, 스토어 알림 없음). 사용자가 바뀌면 다른 사용자의 세션 저장분을 지운다 — 메모리 항목은 owner로 걸러진다 */
+export function bindRailToUser(userId: string) {
+  if (owner === userId) return
+  owner = userId
+  removeStored(userId)
+}
+/** 로그아웃 — 이 브라우저 탭의 레일 상태(펼침·초안·스크롤)를 모두 지운다 */
+export function clearRailState() {
+  removeStored()
+  useMaterialsDrawer.setState({ byTask: {} })
 }
 interface DrawerState {
-  byTask: Record<string, { choice?: Choice; tool?: WorkTool; focusSeq: number; context?: string[]; started?: boolean }>
-  markStarted: (taskId: string) => void
-  syncContext: (task: Task) => void
-  choose: (taskId: string, choice: Choice, tool?: WorkTool, focus?: boolean) => void
+  byTask: Record<string, RailState>
+  update: (taskId: string, patch: Partial<RailState>) => void
+  choose: (taskId: string, choice: Choice, tab?: RailTab, focus?: boolean) => void
 }
-/** 수동 선택만 저장한다. 맥락에 따른 기본값은 현재 task에서 계산한다. */
-export const useMaterialsDrawer = create<DrawerState>((set) => ({
+/** 업무별 세션 상태. MDI 퇴거·재마운트 뒤에도 사용자의 선택과 작성 중 내용을 복원한다. */
+export const useMaterialsDrawer = create<DrawerState>((set, get) => ({
   byTask: {},
-  markStarted: (taskId) => set(state => ({ byTask: { ...state.byTask, [taskId]: { ...state.byTask[taskId], focusSeq: state.byTask[taskId]?.focusSeq ?? 0, started: true } } })),
-  syncContext: (task) => set(state => {
-    const current = state.byTask[task.id]
-    const context = [...task.tags, ...(task.linkedSrCodes ?? [])]
-    return { byTask: { ...state.byTask, [task.id]: { ...current, focusSeq: current?.focusSeq ?? 0, context } } }
+  update: (taskId, patch) => set(state => {
+    const next = { ...mine(state.byTask[taskId]) ?? read(taskId), ...patch, owner }
+    try { sessionStorage.setItem(key(taskId), JSON.stringify(next)) } catch { /* 저장 차단 시 메모리 상태 유지 */ }
+    return { byTask: { ...state.byTask, [taskId]: next } }
   }),
-  choose: (taskId, choice, tool, focus = false) => {
-    try { sessionStorage.setItem(key(taskId), choice) } catch { /* 저장 차단 시 현재 탭의 메모리 상태 유지 */ }
-    set(state => ({ byTask: { ...state.byTask, [taskId]: { ...state.byTask[taskId], choice, tool, focusSeq: (state.byTask[taskId]?.focusSeq ?? 0) + (focus ? 1 : 0) } } }))
+  choose: (taskId, choice, tab, focus = false) => {
+    const current = mine(get().byTask[taskId]) ?? read(taskId)
+    get().update(taskId, { choice, tab: tab ?? current.tab, focusSeq: current.focusSeq + (focus && !quiet ? 1 : 0) })
   },
 }))
-function useFirstQuestion(task: Task) {
-  const messages = useQuery({ queryKey: ['messages', task.threadId], queryFn: ({ signal }) => getMessages(task.threadId!, signal), enabled: !!task.threadId })
-  const started = useMaterialsDrawer(state => state.byTask[task.id]?.started)
-  useEffect(() => { if (messages.data?.length && !started) useMaterialsDrawer.getState().markStarted(task.id) }, [messages.data?.length, started, task.id])
-  // 메시지 로딩 동안 기존 자동 상태를 유지한다. 첫 렌더는 첫 질문 상태로 시작한다.
-  return !started && (messages.data ? messages.data.length === 0 : !(task as Task & Partial<TaskMessageState>).hasMessages)
+export function useRailState(taskId: string) {
+  const user = owner
+  const saved = useMemo(() => read(taskId), [taskId, user]) // eslint-disable-line react-hooks/exhaustive-deps -- user는 read가 쓰는 모듈 owner의 렌더 시점 값
+  return mine(useMaterialsDrawer(state => state.byTask[taskId])) ?? saved
 }
 export function useDrawerOpen(task: Task) {
-  const firstQuestion = useFirstQuestion(task)
-  const choice = useMaterialsDrawer(state => state.byTask[task.id]?.choice)
-  const narrow = useMediaQuery('(max-width: 1023.98px)')
-  return (choice ?? read(task.id) ?? (hasContext(task) && firstQuestion && !narrow ? 'open' : 'closed')) === 'open'
-}
-
-/** 좁은 화면의 자동 상태는 같은 패널의 제목 바만 보인다. 수동 닫힘은 바도 숨긴다. */
-export function useDrawerBar(task: Task) {
-  const firstQuestion = useFirstQuestion(task)
-  const state = useMaterialsDrawer(s => s.byTask[task.id])
-  const narrow = useMediaQuery('(max-width: 1023.98px)')
-  return narrow && firstQuestion && hasContext(task) && !(state?.choice ?? read(task.id))
+  return useRailState(task.id).choice === 'open'
 }

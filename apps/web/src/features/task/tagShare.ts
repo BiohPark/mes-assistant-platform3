@@ -24,20 +24,10 @@ export function shareDiff(before: ShareItem[], after: ShareItem[]) {
 
 interface TagShareState {
   byTask: Record<string, { fresh: string[]; gone: ShareItem[] }>
-  /** 말풍선을 누르면 그 대화의 자료 탭을 연다 — TaskBody가 이 번호 변화를 본다 */
-  openSeq: Record<string, number>
-  consumeOpen: (taskId: string, seq: number) => boolean
-  consumedSeq: Record<string, number>
-  openMaterials: (taskId: string) => void
+
 }
-export const useTagShareStore = create<TagShareState>()((set, get) => ({
-  byTask: {}, openSeq: {}, consumedSeq: {},
-  consumeOpen: (taskId, seq) => {
-    if (!seq || seq <= (get().consumedSeq[taskId] ?? 0)) return false
-    set(state => ({ consumedSeq: { ...state.consumedSeq, [taskId]: seq } }))
-    return true
-  },
-  openMaterials: (taskId) => set((state) => ({ openSeq: { ...state.openSeq, [taskId]: (state.openSeq[taskId] ?? 0) + 1 } })),
+export const useTagShareStore = create<TagShareState>()(() => ({
+  byTask: {},
 }))
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
 function mark(taskId: string, entry: { fresh: string[]; gone: ShareItem[] }) {
@@ -67,7 +57,7 @@ export async function changeTagWithShare(query: QueryClient, taskId: string, act
   if (!before) return
   const { added, removed } = shareDiff(sharedItems(taskId, before), sharedItems(taskId, after))
   if (added.length || removed.length) mark(taskId, { fresh: added.map((item) => item.id), gone: removed })
-  const bubble = { key: taskId, onOpen: () => useTagShareStore.getState().openMaterials(taskId) }
+  const bubble = { key: taskId }
   if (added.length) useBubbleStore.getState().push({ ...bubble, source: 'share.in', counts: counts(added) })
   else if (removed.length) useBubbleStore.getState().push({ ...bubble, source: 'share.out', counts: counts(removed) })
   else useBubbleStore.getState().push({ ...bubble, source: 'share.none' })
