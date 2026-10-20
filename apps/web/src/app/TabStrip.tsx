@@ -1,4 +1,4 @@
-import { useEffect, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useRef, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { ContextMenu } from 'radix-ui'
 import { X } from 'lucide-react'
@@ -21,9 +21,16 @@ export function TabStrip() {
   const { tabs, activeId, seen } = useTabsStore(useShallow(({ tabs, activeId, seen }) => ({ tabs, activeId, seen })))
   const ids = tabs.map(tab => tab.id)
 
+  // 이동은 전환(transition)으로 그려져 탭 저장소의 활성 탭은 렌더가 끝나야 바뀐다. 그 사이 누른 탭을 버리지 않도록
+  // 마지막으로 요청한 탭과 비교하고, 활성 탭이 바뀌면(요청이 반영됐거나 다른 이동이 앞섰으면) 요청을 잊는다
+  const requested = useRef<string | null>(null)
+  useEffect(() => { requested.current = null }, [activeId])
   const select = (id: string) => {
-    const tab = useTabsStore.getState().tabs.find(item => item.id === id)
-    if (tab && id !== useTabsStore.getState().activeId) void navigate(tab.href)
+    const state = useTabsStore.getState()
+    const tab = state.tabs.find(item => item.id === id)
+    if (!tab || id === (requested.current ?? state.activeId)) return
+    requested.current = id
+    void navigate(tab.href)
   }
   // 닫아서 활성 탭이 바뀌면 그 탭의 위치로 주소를 바꾼다(REPLACE — 뒤로가기가 닫은 탭을 되살리지 않게)
   const apply = (change: (state: TabsState) => TabsState, refocus: boolean) => {
