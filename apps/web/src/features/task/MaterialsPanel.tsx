@@ -79,7 +79,7 @@ export function MaterialsPanel({ task, embedded = false, picker = false, onUploa
   const stage = (file: FileMeta) => <>{switchVersion(file)}{used.has(file.id) && <UsedMark testId={`used-${file.id}`} />}{attach(file)}</>
   if (picker && preview) return <FilePreviewDialog file={preview} embedded onClose={() => setPreview(null)} />
   return <div className="flex shrink-0 flex-col gap-3 text-xs" data-testid="materials-panel">
-    {(candidates.isError || own.isError) && <div role="alert">{t('task.materials.loadFailed')} <button type="button" className="underline" onClick={() => { void candidates.refetch(); void own.refetch() }}>{t('common.retry')}</button></div>}
+    {(candidates.isError || own.isError || srBodies.isError) && <div role="alert">{t('task.materials.loadFailed')} <button type="button" className="underline" onClick={() => { void candidates.refetch(); void own.refetch(); void srBodies.refetch() }}>{t('common.retry')}</button></div>}
     {!picker && <p className="text-muted-foreground">{t('task.materials.selectionHint')}</p>}
     {picker && <><button type="button" disabled={saving} className="rounded-lg border p-2 text-left" onClick={() => uploadRef.current?.click()}>{t('task.materials.uploadComputer')}</button><input autoFocus aria-label={t('task.materials.searchAll')} placeholder={t('task.materials.searchAll')} value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-lg border px-3 py-2" /></>}
     <section data-tour="materials-library" data-testid="materials-library" aria-labelledby={picker ? undefined : libraryId} className="space-y-3">

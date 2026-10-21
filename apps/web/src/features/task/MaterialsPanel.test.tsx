@@ -295,7 +295,7 @@ it('S14: 자료 패널은 자료함만 — [첨부]로 붙이고 다시 눌러 �
   await waitFor(() => expect(calls.some(([url, init]) => url === '/api/tasks/t/inputs/theirs' && init?.method === 'DELETE')).toBe(true))
 })
 
-it('S14: 본문을 자료함 항목으로 보이고 [첨부]·빼기를 하며, 요청 시작(input.updated)에 다시 읽고, 목록을 못 읽으면 구역만 숨긴다', async () => {
+it('S14: 본문을 자료함 항목으로 보이고 [첨부]·빼기를 하며, 요청 시작(input.updated)에 다시 읽고, 목록을 못 읽으면 오류 안내·재시도를 보인다', async () => {
   const calls: Array<[string, RequestInit | undefined]> = []
   let srInputs: Response | null = null
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -325,12 +325,18 @@ it('S14: 본문을 자료함 항목으로 보이고 [첨부]·빼기를 하며, 
   act(() => { for (const listener of liveListeners) listener({ event: 'input.updated', data: { taskId: 't' } }) })
   await waitFor(() => expect(reads()).toBeGreaterThan(before))
   view.unmount()
-  srInputs = jsonResponse(404, { message: 'Not Found' })
+  srInputs = jsonResponse(500, { message: 'fail' })
   renderWithProviders(<MeContext value={me}><MaterialsPanel task={baseTask} /></MeContext>)
   await screen.findByText('같은 태그 대화의 파일이 없습니다.')
   await waitFor(() => expect(calls.filter(([url, init]) => url === '/api/tasks/t/sr-inputs' && (init?.method ?? 'GET') === 'GET').length).toBeGreaterThan(before + 1))
   expect(screen.queryByTestId('materials-sr-bodies')).not.toBeInTheDocument()
-  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  // 연결 SR 본문을 못 읽은 것을 '자료 없음'처럼 숨기지 않는다 — 안내하고 다시 읽게 한다
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('자료를 불러오지 못했습니다.')
+  srInputs = null
+  fireEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))
+  expect(await screen.findByTestId('materials-sr-bodies')).toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
 })
 
 it('S14: 같은 태그 대화가 없으면 대화도 첨부할 수 있다고 짧게 알린다', async () => {
