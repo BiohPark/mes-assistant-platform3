@@ -520,7 +520,7 @@ export const en = {
     picker: { recentTurns: 'Recent turns', selectRecent: 'Select recent N turns',
       description: 'Pins the messages as of now. Files from this conversation and its other reference conversations are not included.', modes: 'Reference conversation mode',
       full: 'Full text', messages: 'Select messages', summary: 'Summary', historyFailed: 'Could not load the original messages.',
-      fullHelp: 'Sends {count} completed user and assistant messages as-is. Team comments and failed replies are excluded.',
+      fullHelp: 'Sends {count} completed user and AI messages using the current answer display mode. Team comments and failed replies are excluded.',
       selection: '{chosen}/{total} · Shift+click to select a range', clear: 'Clear', selectMessage: 'Select message {number}',
       summaryHelp: '{count} messages selected. Change the range under Select messages. Review and edit the draft before applying.',
       resummarize: 'Summarize again', makeSummary: 'Create summary', summaryLabel: 'Reference conversation summary', summaryPlaceholder: 'Create a summary or write your own',
@@ -570,7 +570,7 @@ export const en = {
     complete: {
       done: 'Task completed. The completion report was saved to the files.', title: 'Complete task',
       description: 'Review the report and input sources, then leave feedback. The completion report is saved as an output.',
-      missing: '{count} required items unchecked: {items}.', feedback: 'Assistant feedback', rating: '{value} stars',
+      missing: '{count} required items unchecked: {items}.', feedback: 'AI feedback', rating: '{value} stars',
       comment: 'Feedback comment', commentPlaceholder: 'What helped and what could be better', preview: 'Completion report preview', reportLoading: 'Loading report…',
       reportFailed: 'Could not load the report.', submit: 'Complete',
     },

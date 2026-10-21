@@ -518,7 +518,7 @@ export const ko = {
     picker: { recentTurns: '최근 턴 수', selectRecent: '최근 N턴 선택',
       description: '선택한 시점의 메시지를 고정합니다. 이 대화가 쓴 파일과 다른 참조 대화는 포함하지 않습니다.', modes: '참조 대화 모드',
       full: '전체 원문', messages: '메시지 선택', summary: '요약', historyFailed: '원본 메시지를 불러오지 못했습니다.',
-      fullHelp: '완료된 사용자·assistant 메시지 {count}개를 그대로 보냅니다. 팀 의견과 실패한 답변은 제외합니다.',
+      fullHelp: '완료된 사용자·AI 메시지 {count}개를 지금 답변 표시 방식대로 보냅니다. 팀 의견과 실패한 답변은 제외합니다.',
       selection: '{chosen}/{total}개 · Shift+클릭으로 범위 선택', clear: '해제', selectMessage: '{number}번째 메시지 선택',
       summaryHelp: '{count}개 메시지를 선택했습니다. 범위는 메시지 선택에서 바꿀 수 있습니다. 초안을 확인·수정한 뒤 적용하세요.',
       resummarize: '다시 요약', makeSummary: '요약 만들기', summaryLabel: '참조 대화 요약', summaryPlaceholder: '요약을 만들거나 직접 작성하세요',
@@ -568,7 +568,7 @@ export const ko = {
     complete: {
       done: '업무를 완료했습니다. 완료 리포트가 파일함에 저장되었습니다.', title: '업무 완료',
       description: '리포트와 입력 출처를 확인하고 피드백을 남기세요. 완료 리포트가 산출물로 저장됩니다.',
-      missing: '필수 체크 {count}건 미체크: {items}.', feedback: 'assistant 피드백', rating: '{value}점',
+      missing: '필수 체크 {count}건 미체크: {items}.', feedback: 'AI 피드백', rating: '{value}점',
       comment: '피드백 코멘트', commentPlaceholder: '도움이 된 점과 아쉬운 점', preview: '완료 리포트 미리보기', reportLoading: '리포트를 불러오는 중…',
       reportFailed: '리포트를 불러오지 못했습니다.', submit: '완료 처리',
     },

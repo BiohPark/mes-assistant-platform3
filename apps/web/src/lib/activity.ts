@@ -37,7 +37,7 @@ export function describeActivity(a: ActivityLog): string {
     case 'task.reopened':
       return p.reason ? `사유: ${String(p.reason)}` : ''
     case 'task.completed':
-      return [Number(p.missingRequired ?? 0) > 0 ? `중요 체크 ${String(p.missingRequired)}건 미체크` : '', p.reason ? `사유: ${String(p.reason)}` : '']
+      return [Number(p.missingRequired ?? 0) > 0 ? `필수 체크 ${String(p.missingRequired)}건 미체크` : '', p.reason ? `사유: ${String(p.reason)}` : '']
         .filter(Boolean)
         .join(' · ')
     case 'tag.added':

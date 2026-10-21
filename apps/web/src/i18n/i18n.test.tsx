@@ -49,6 +49,16 @@ describe('typed messages', () => {
     expect(t('task.inputs.help')).toContain('표시 방식')
   })
 
+  it('names the assistant role AI and describes full-text picks with the answer display mode in both locales', () => {
+    for (const locale of ['ko', 'en'] as const) {
+      const t = createT(locale)
+      for (const text of [t('task.picker.fullHelp', { count: 2 }), t('task.complete.feedback')]) expect(text).not.toMatch(/assistant/i)
+      expect(t('task.picker.fullHelp', { count: 2 })).not.toMatch(/그대로|as-is/)
+    }
+    expect(createT('ko')('task.complete.feedback')).toBe('AI 피드백')
+    expect(createT('ko')('task.picker.fullHelp', { count: 2 })).toContain('표시 방식')
+  })
+
   it('substitutes a name as text without recursively replacing its content', () => {
     expect(createT('ko')('common.greeting', { name: 'Kim {count}' })).toBe('안녕하세요, Kim {count}')
     expect(createT('en')('common.greeting', { name: '<Kim>' })).toBe('Hello, <Kim>')
