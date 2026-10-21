@@ -1,0 +1,52 @@
+name: 설치 가이드
+
+# docs/setup/windows.md의 ```powershell ci 블록을 그대로 실행 — 문서와 실제가 어긋나면 실패.
+# ci.yml과 같은 변경(코드)에 더해 docs/setup/** 변경에도 돈다. paths는 위에서부터 적용되고 뒤의 항목이 앞을 덮는다
+# (ci.yml의 paths-ignore 목록과 같게 유지)
+on:
+  push:
+    branches: [main, 'feat/**', 'fix/**', 'docs/**', 'chore/**']
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!**.md'
+      - '!_shared/**'
+      - '!_templates/**'
+      - '!_local/**'
+      - '!tasks/**'
+      - '!NOTICE'
+      - 'docs/setup/**'
+  pull_request:
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!**.md'
+      - '!_shared/**'
+      - '!_templates/**'
+      - '!_local/**'
+      - '!tasks/**'
+      - '!NOTICE'
+      - 'docs/setup/**'
+
+permissions:
+  contents: read
+
+jobs:
+  setup-guide:
+    timeout-minutes: 30
+    # (MariaDB는 문서 4장 (b) "직접 설치" 경로. Windows 러너는 리눅스 컨테이너를 못 돌려 Keycloak·E2E는 제외)
+    name: 설치 가이드 검증 (windows.md)
+    runs-on: windows-latest
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      # root는 비밀번호 없이 뜬다. 문서의 사람용 절차는 4장 (b)의 $env:MYSQL_PWD 줄로 설치 때 정한 비밀번호를 준다.
+      - uses: ankane/setup-mariadb@v1
+        with:
+          mariadb-version: '11.8'
+      - run: mariadb -u root -e "select version()"
+      - run: node scripts/run-doc-commands.mjs docs/setup/windows.md

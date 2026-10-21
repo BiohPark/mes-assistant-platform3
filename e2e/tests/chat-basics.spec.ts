@@ -58,10 +58,14 @@ test('search resets on task switch', async ({ page }) => {
   await page.keyboard.press('Control+k')
   await page.getByRole('menuitem').filter({ hasText: '기본기 둘째 대화' }).click()
   await expect(page).toHaveURL(new RegExp(`/c/${second.id}$`))
-  await expect(search).toHaveCount(0) // 대화를 바꾸면 검색 줄이 닫힌다
-  await page.getByRole('button', { name: '대화 내 검색' }).click()
-  await expect(search).toHaveValue('')
-  await expect(page.getByRole('search').getByRole('status')).toHaveCount(0)
+  // 주소는 이동(전환 렌더)보다 먼저 바뀐다 — 둘째 대화가 실제로 보이는 탭이 된 뒤 그 화면 안에서만 찾는다(앞 탭의 검색 버튼을 누르지 않게)
+  const panel = page.locator('[data-tab-panel]:not([inert])')
+  await expect(panel.getByText('둘째 검색 본문 0', { exact: true })).toBeVisible()
+  const secondSearch = panel.getByRole('searchbox', { name: '대화 내 검색' })
+  await expect(secondSearch).toHaveCount(0) // 대화를 바꾸면 검색 줄이 닫힌다
+  await panel.getByRole('button', { name: '대화 내 검색' }).click()
+  await expect(secondSearch).toHaveValue('')
+  await expect(panel.getByRole('search').getByRole('status')).toHaveCount(0)
 })
 
 test('ctrl+k ignores composing and preserves browser find', async ({ page }) => {

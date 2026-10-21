@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type Response } from '@playwright/test'
 import { linkedMaterialsToggle, materialToggleName, revealMaterials } from './materials.js'
 
 const password = 'e2e-password-1234'
@@ -311,17 +311,16 @@ test('추정 뒤 다른 참여자의 첨부 변경은 409로 막고 재추정 �
     expect(await (await page.request.get(`/api/threads/${task.threadId}/messages`)).json()).toEqual([])
     const selection = await (await page.request.get(`/api/tasks/${task.id}`)).json() as { inputs: Array<{ fileId: string }> }
     expect(selection.inputs.map(item => item.fileId)).toEqual([file.id])
-    const previews = new Map<string, number>()
-    page.on('response', async response => {
-      if (response.url().endsWith(`/threads/${task.threadId}/requests/estimate`) && response.ok()) {
-        const body = await response.json() as { inputSignature: string; bytes: number }
-        previews.set(body.inputSignature, body.bytes)
-      }
+    // 추정 응답은 모으기만 하고 본문은 아래에서 읽는다 — 리스너에서 읽으면 답변이 끝난 뒤 다시 나간 추정의 본문 읽기가 테스트 종료 뒤까지 남아 'Test ended'로 실패한다
+    const estimates: Response[] = []
+    page.on('response', response => {
+      if (response.url().endsWith(`/threads/${task.threadId}/requests/estimate`) && response.ok()) estimates.push(response)
     })
     const accepted = page.waitForResponse(response => response.url().endsWith(`/threads/${task.threadId}/requests`) && response.status() === 201)
     await send(page, '변경된 첨부 확인', task.threadId)
     const post = await accepted
     const signature = post.request().postDataJSON().inputSignature as string
+    const previews = new Map((await Promise.all(estimates.map(response => response.json() as Promise<{ inputSignature: string; bytes: number }>))).map(body => [body.inputSignature, body.bytes]))
     const messages = await (await page.request.get(`/api/threads/${task.threadId}/messages`)).json() as Array<{ requestId?: string }>
     const actual = await (await page.request.get(`/api/requests/${messages.findLast(item => item.requestId)?.requestId}`)).json() as { bytes: number; inputs: Array<{ fileId: string }> }
     expect(actual.inputs.map(item => item.fileId)).toEqual([file.id])
