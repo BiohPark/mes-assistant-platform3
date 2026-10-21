@@ -65,7 +65,8 @@ export function SrIntakePage() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const selectedQuery = useQuery({ queryKey: ['sr', selectedId], queryFn: () => getSr(selectedId), enabled: !!selectedId })
   const selected = selectedQuery.data
-  const { data: messages = [] } = useQuery({ queryKey: ['messages', selected?.threadId], queryFn: ({ signal }) => getMessages(selected!.threadId, signal), enabled: !!selected?.threadId })
+  const messagesQuery = useQuery({ queryKey: ['messages', selected?.threadId], queryFn: ({ signal }) => getMessages(selected!.threadId, signal), enabled: !!selected?.threadId })
+  const { data: messages = [] } = messagesQuery
   const chat = useChat(selected?.threadId, undefined, undefined, () => {
     const sent = sentMaterials.current
     if (!sent) return
@@ -179,7 +180,7 @@ export function SrIntakePage() {
         {(selected || isNew) && <FileDropZone data-testid="sr-dropzone" className="flex min-h-0 flex-1 flex-col gap-4" label={t('dropzone.toAttach')} disabled={!settings?.srIntakeAssistantId || closed || locked} onFiles={files => composer.current?.dropFiles(files)}>
           <header ref={setToolbar} className="flex shrink-0 flex-wrap items-center justify-end gap-2" />
           <section className="min-h-72 flex-1 space-y-4 overflow-y-auto rounded-lg border p-3" aria-label={t('sr.conversation')}>
-            <ChatMessages key={selectedId || 'new'} intake assistantName={settings?.name || t('sr.intakeAgent')} messages={messages} run={chat.run} waitingSince={chat.waitingSince} empty={empty} questionIndexContainer={toolbar} searchContainer={toolbar} actions={message => ({
+            <ChatMessages key={selectedId || 'new'} intake assistantName={settings?.name || t('sr.intakeAgent')} messages={messages} run={chat.run} waitingSince={chat.waitingSince} empty={messagesQuery.isError ? <div role="alert" className="py-8 text-center text-sm">{t('chat.historyLoadFailed')} <button type="button" className="underline" onClick={() => void messagesQuery.refetch()}>{t('common.retry')}</button></div> : selected?.threadId && messagesQuery.isPending ? <p className="py-8 text-center text-sm text-muted-foreground">{t('common.loading')}</p> : empty} questionIndexContainer={toolbar} searchContainer={toolbar} actions={message => ({
               onChoose: !askAgainDisabled ? text => { if (!sending.current) composer.current?.setText(draft ? `${draft}\n${text}` : text) } : undefined,
               onAskAgain: message.role === 'user' && message.kind !== 'discussion' ? () => askAgain(message) : undefined,
               askAgainDisabled,

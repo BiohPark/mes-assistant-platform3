@@ -314,6 +314,7 @@ export const en = {
     retryFailed: 'Retry failed',
     requestLoadFailed: 'Could not load the request record.',
     startConversation: 'Start the conversation.',
+    historyLoadFailed: 'Could not load the conversation history.',
     uploadingProgress: 'Uploading file {index}/{total} · {name}',
     processingProgress: 'Processing file {index}/{total} · {name}',
     toolUse: 'Tool use', codeRun: 'Code execution', sourceUse: 'Reference source', stepInput: 'Input', stepOutput: 'Output',

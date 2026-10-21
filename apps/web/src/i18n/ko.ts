@@ -312,6 +312,7 @@ export const ko = {
     retryFailed: '재시도 실패',
     requestLoadFailed: '요청 기록을 불러오지 못했습니다.',
     startConversation: '대화를 시작하세요.',
+    historyLoadFailed: '대화 기록을 불러오지 못했습니다.',
     uploadingProgress: '파일 올리는 중 {index}/{total} · {name}',
     processingProgress: '파일 처리 대기 {index}/{total} · {name}',
     toolUse: '도구 사용', codeRun: '코드 실행', sourceUse: '참고 출처', stepInput: '입력', stepOutput: '결과',
