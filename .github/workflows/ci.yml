@@ -1,9 +1,27 @@
 name: CI
 
+# 코드와 무관한 변경(문서·작업 기록·오케스트레이션 규칙)만 있으면 돌리지 않는다.
+# 설치 가이드(docs/setup/**)는 setup-guide.yml이 따로 실행한다 — 이 목록을 바꾸면 그쪽 paths도 같이 맞춘다
 on:
   push:
     branches: [main, 'feat/**', 'fix/**', 'docs/**', 'chore/**']
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '_shared/**'
+      - '_templates/**'
+      - '_local/**'
+      - 'tasks/**'
+      - 'NOTICE'
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '_shared/**'
+      - '_templates/**'
+      - '_local/**'
+      - 'tasks/**'
+      - 'NOTICE'
 
 permissions:
   contents: read
@@ -28,26 +46,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
-
-  setup-guide:
-    timeout-minutes: 30
-    # docs/setup/windows.md의 ```powershell ci 블록을 그대로 실행 — 문서와 실제가 어긋나면 실패
-    # (MariaDB는 문서 4장 (b) "직접 설치" 경로. Windows 러너는 리눅스 컨테이너를 못 돌려 Keycloak·E2E는 제외)
-    name: 설치 가이드 검증 (windows.md)
-    runs-on: windows-latest
-    env:
-      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-      # root는 비밀번호 없이 뜬다. 문서의 사람용 절차는 4장 (b)의 $env:MYSQL_PWD 줄로 설치 때 정한 비밀번호를 준다.
-      - uses: ankane/setup-mariadb@v1
-        with:
-          mariadb-version: '11.8'
-      - run: mariadb -u root -e "select version()"
-      - run: node scripts/run-doc-commands.mjs docs/setup/windows.md
 
   db:
     timeout-minutes: 20
@@ -108,11 +106,13 @@ jobs:
           LLM_MODE: ${{ matrix.llm_mode }}
       - if: failure()
         run: docker compose logs --no-color
-      - if: failure()
+      # 재시도로 통과한 실패(flaky)의 trace도 남긴다 — test-results에는 실패한 시도만 있다(retain-on-failure)
+      - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ matrix.llm_mode }}
           path: e2e/test-results
+          if-no-files-found: ignore
 
   e2e-windows:
     timeout-minutes: 30
@@ -140,8 +140,9 @@ jobs:
       - run: pnpm test:e2e
         env:
           LLM_MODE: mock
-      - if: failure()
+      - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-windows-mock
           path: e2e/test-results
+          if-no-files-found: ignore
