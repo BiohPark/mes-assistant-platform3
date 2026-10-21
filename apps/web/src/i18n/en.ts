@@ -421,6 +421,7 @@ export const en = {
     intakeAgent: "Intake agent",
     intakeSummary: "Describe your request in a conversation before submitting it.",
     materialsHelp: 'Attachments go once, with that question. Select [Attach] to send one again.',
+    replaceDraftDescription: 'Only text changes. Current attachments are kept.',
     attachmentHint: "Attach files with 📎 or drag and drop.",
     exampleQuestions: "Example first questions",
     loadFailed: "Could not load requests.",
