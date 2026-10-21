@@ -39,6 +39,16 @@ describe('typed messages', () => {
     expect(placeholders(en)).toEqual(placeholders(ko))
   })
 
+  it('uses one product vocabulary in Korean: required checks are 필수, attach not 담기, rail materials by their tab name', () => {
+    const t = createT('ko')
+    expect([t('reports.signal.missing_required'), t('task.checklist.missingRequired', { count: 1 }), t('task.checklist.required'), t('task.complete.missing', { count: 1, items: 'x' })].join(' ')).not.toContain('중요')
+    expect(t('chat.outputShareHint')).not.toContain('담기')
+    expect(t('tour.steps.tags')).not.toContain('우측')
+    // 참고 대화 첨부는 답변 표시 방식을 적용한다(원문 그대로가 아니다)
+    expect(t('task.inputs.help')).not.toContain('전체 원문')
+    expect(t('task.inputs.help')).toContain('표시 방식')
+  })
+
   it('substitutes a name as text without recursively replacing its content', () => {
     expect(createT('ko')('common.greeting', { name: 'Kim {count}' })).toBe('안녕하세요, Kim {count}')
     expect(createT('en')('common.greeting', { name: '<Kim>' })).toBe('Hello, <Kim>')

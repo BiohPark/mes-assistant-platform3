@@ -97,5 +97,5 @@ export function ConversationPickerDialog({ taskId, candidate, current, initialMo
   </DialogContent></Dialog>
 }
 
-function MessageLine({ message }: { message: Message }) { const locale = useLocale(); const t = useT(); return <div className="min-w-0 text-xs"><span className="font-medium">{message.role === 'user' ? t('task.picker.user') : 'assistant'}</span><span className="ml-2 text-muted-foreground">{new Date(message.createdAt).toLocaleString(locale)}</span><p className="line-clamp-2 whitespace-pre-wrap">{message.content}</p></div> }
+function MessageLine({ message }: { message: Message }) { const locale = useLocale(); const t = useT(); return <div className="min-w-0 text-xs"><span className="font-medium">{message.role === 'user' ? t('task.picker.user') : t('task.picker.ai')}</span><span className="ml-2 text-muted-foreground">{new Date(message.createdAt).toLocaleString(locale)}</span><p className="line-clamp-2 whitespace-pre-wrap">{message.content}</p></div> }
 function Preview({ messages }: { messages: Message[] }) { return <ul className="max-h-64 space-y-2 overflow-y-auto rounded-xl border p-2">{messages.map((item) => <li key={item.id}><MessageLine message={item} /></li>)}</ul> }
