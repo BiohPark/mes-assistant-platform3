@@ -966,3 +966,30 @@ it('appends selected choice text to the current draft, focuses the composer and 
   await user.click(sendButton)
   await waitFor(() => expect(posts).toEqual(['기존 입력\n상세 추가 설명']))
 })
+
+it('shows loading while the conversation history loads, then a retry when it fails instead of an empty conversation', async () => {
+  let fail = true
+  let finish!: () => void
+  const gate = new Promise<void>((resolve) => { finish = resolve })
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/threads/history-thread/messages') {
+      await gate
+      return fail ? Response.json({ message: 'fail' }, { status: 500 }) : Response.json([])
+    }
+    return Response.json(url.endsWith('/estimate') ? { inputs: [], srs: [], srCodes: [], bytes: 0, limitBytes: 100000, overLimit: false } : [])
+  }))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const task = { id: 'history-task', threadId: 'history-thread', status: 'in_progress', inputs: [], tags: [], lastActivityAt: '2026-10-13T00:00:00Z' } as unknown as Task
+  render(<QueryClientProvider client={client}><MeContext value={{ id: 'history-user', name: 'User', role: '', email: null, emailIsDefault: false, roles: ['member'], theme: 'system', locale: 'ko' }}><TooltipProvider><MemoryRouter><ChatView task={task} /></MemoryRouter></TooltipProvider></MeContext></QueryClientProvider>)
+  const scroll = screen.getByTestId('chat-message-scroll')
+  expect(await within(scroll).findByText('불러오는 중…')).toBeInTheDocument()
+  expect(within(scroll).queryByText('대화를 시작하세요.')).not.toBeInTheDocument()
+  finish()
+  const alert = await within(scroll).findByRole('alert')
+  expect(alert).toHaveTextContent('대화 기록을 불러오지 못했습니다.')
+  expect(within(scroll).queryByText('대화를 시작하세요.')).not.toBeInTheDocument()
+  fail = false
+  fireEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))
+  expect(await within(scroll).findByText('대화를 시작하세요.')).toBeInTheDocument()
+  expect(within(scroll).queryByRole('alert')).not.toBeInTheDocument()
+})

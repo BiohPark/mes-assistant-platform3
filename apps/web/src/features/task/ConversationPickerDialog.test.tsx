@@ -126,3 +126,11 @@ it('previews and applies the last N complete user turns as a pinned message sele
   await waitFor(() => expect(calls.some(([, init]) => init?.method === 'PUT')).toBe(true))
   expect(JSON.parse(String(calls.find(([, init]) => init?.method === 'PUT')![1]?.body))).toMatchObject({ mode: 'messages', messageIds: ['m1-last', 'm2-last'] })
 })
+
+it('labels message authors with localized text instead of the raw assistant role', async () => {
+  renderPicker([])
+  fireEvent.click(await screen.findByRole('tab', { name: '메시지 선택' }))
+  await screen.findByRole('checkbox', { name: '2번째 메시지 선택' })
+  expect(screen.getAllByText('AI').length).toBeGreaterThan(0)
+  expect(screen.queryByText('assistant')).not.toBeInTheDocument()
+})

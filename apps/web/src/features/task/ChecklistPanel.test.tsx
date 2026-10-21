@@ -92,8 +92,8 @@ it('uses warning text for required items and a success foreground for checklist 
     { id: 'c1', label: '근거 확인', required: true, checked: false },
     { id: 'c2', label: '승인 확인', required: false, checked: true },
   ] }} />)
-  expect(screen.getByText('중요 1개 미체크')).toHaveClass('text-tone-warning-fg')
-  expect(screen.getByText('중요', { exact: true })).toHaveClass('text-tone-warning-fg')
+  expect(screen.getByText('필수 1개 미체크')).toHaveClass('text-tone-warning-fg')
+  expect(screen.getByText('필수', { exact: true })).toHaveClass('text-tone-warning-fg')
   const bar = screen.getByTestId('checklist-panel').querySelector('div[style]')
   expect(bar).toHaveClass('bg-tone-success-fg')
   expect(bar).toHaveStyle({ width: '50%' })

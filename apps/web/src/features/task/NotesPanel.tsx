@@ -47,9 +47,9 @@ export function NotesPanel({ task }: { task: Task }) {
       {!!item.attachmentIds.length && <ul className="mt-1 text-muted-foreground">{item.attachmentIds.map((fileId) => <li key={fileId}>{files.find((file) => file.id === fileId)?.name ?? fileId}</li>)}</ul>}
     </article>)}
     {task.status !== 'done' && <div className="space-y-2 rounded-lg border p-2">
-      <Textarea aria-label={t('task.notes.body')} value={content} onChange={(event) => setContent(event.target.value)} rows={3} placeholder={t('task.notes.placeholder')} className="text-xs" />
-      {!!files.length && <fieldset><legend className="mb-1 text-muted-foreground">{t('task.notes.attach')}</legend><div className="max-h-24 space-y-1 overflow-y-auto">{files.map((file) => <div key={file.id} className="flex items-center gap-1.5"><Checkbox id={`note-attachment-${task.id}-${file.id}`} checked={attachmentIds.includes(file.id)} onCheckedChange={(checked) => setAttachmentIds(checked === true ? [...attachmentIds, file.id] : attachmentIds.filter((id) => id !== file.id))} /><Label htmlFor={`note-attachment-${task.id}-${file.id}`} className="text-xs font-normal">{file.name} v{file.version}</Label></div>)}</div></fieldset>}
-      <Button size="xs" disabled={busy || (!content.trim() && !attachmentIds.length)} onClick={() => void save()}>{t('task.notes.add')}</Button>
+      <Textarea aria-label={t('task.notes.body')} value={content} onChange={(event) => setContent(event.target.value)} readOnly={busy} rows={3} placeholder={t('task.notes.placeholder')} className="text-xs" />
+      {!!files.length && <fieldset><legend className="mb-1 text-muted-foreground">{t('task.notes.attach')}</legend><div className="max-h-24 space-y-1 overflow-y-auto">{files.map((file) => <div key={file.id} className="flex items-center gap-1.5"><Checkbox id={`note-attachment-${task.id}-${file.id}`} disabled={busy} checked={attachmentIds.includes(file.id)} onCheckedChange={(checked) => setAttachmentIds(checked === true ? [...attachmentIds, file.id] : attachmentIds.filter((id) => id !== file.id))} /><Label htmlFor={`note-attachment-${task.id}-${file.id}`} className="text-xs font-normal">{file.name} v{file.version}</Label></div>)}</div></fieldset>}
+      <Button size="xs" disabled={busy || (!content.trim() && !attachmentIds.length)} onClick={() => void save()}>{busy ? t('common.saving') : t('task.notes.add')}</Button>
     </div>}
   </section>
 }

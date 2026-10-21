@@ -252,7 +252,9 @@ export function ChatView({ task, assistant, onOpenMaterials, headerTools }: { ta
     <div ref={setToolbar} data-testid="chat-question-toolbar" className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b px-4 py-2 empty:hidden" />
     {/* 넓은 화면에서도 메시지·입력창은 같은 최대 폭(CHAT_COLUMN)의 가운데 열 — 스크롤바는 가장자리에 둔다 */}
     <div ref={conversationPanel} data-testid="chat-message-scroll" className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6"><div className={`${CHAT_COLUMN} space-y-4`}>
-    <ChatMessages key={task.id} assistantName={assistant?.name} messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince ?? submissionSince} questionIndexContainer={headerTools ?? toolbar} searchContainer={toolbar} empty={messages.isSuccess && <div className="mx-auto mt-10 max-w-md space-y-2 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p className="text-xs">{t('chat.emptyHint')}</p></div>}
+    <ChatMessages key={task.id} assistantName={assistant?.name} messages={messages.data ?? []} run={visibleRun} waitingSince={chat.waitingSince ?? submissionSince} questionIndexContainer={headerTools ?? toolbar} searchContainer={toolbar} empty={messages.isSuccess ? <div className="mx-auto mt-10 max-w-md space-y-2 text-center text-sm text-muted-foreground"><p>{t('chat.startConversation')}</p><p className="text-xs">{t('chat.emptyHint')}</p></div>
+      : messages.isError ? <div role="alert" className="mx-auto mt-10 max-w-md text-center text-sm">{t('chat.historyLoadFailed')} <button type="button" className="underline" onClick={() => void messages.refetch()}>{t('common.retry')}</button></div>
+      : !!task.threadId && <p className="mx-auto mt-10 max-w-md text-center text-sm text-muted-foreground">{t('common.loading')}</p>}
       actions={(item) => ({
         onChoose: !askAgainDisabled ? text => {
           if (!askAgainDisabled && !sendLock.current) composer.current?.setText(draft ? `${draft}\n${text}` : text)

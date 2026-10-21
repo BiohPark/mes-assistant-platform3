@@ -623,3 +623,28 @@ it.each(['done', 'rejected'])('종료된 SR(%s)은 선택지와 다시 묻기로
   expect(screen.queryByRole('group', { name: '선택지' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '다시 묻기' })).toBeDisabled()
 })
+
+it('접수 대화 기록은 불러오는 동안 안내를 보이고, 실패하면 빈 접수 카드 대신 오류와 다시 시도를 보인다', async () => {
+  let fail = true
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/service-requests/h1') return jsonResponse(200, row('h1', 'submitted'))
+    if (url === '/api/threads/thread-h1/messages') { await gate; return fail ? jsonResponse(500, { message: 'fail' }) : jsonResponse(200, []) }
+    if (url === '/api/service-requests?scope=mine') return jsonResponse(200, [row('h1', 'submitted')])
+    if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, intake)
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<TooltipProvider><MeContext value={me}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=h1' })
+  const area = await screen.findByRole('region', { name: '접수 대화' })
+  expect(await within(area).findByText('불러오는 중…')).toBeInTheDocument()
+  expect(within(area).queryByText('요청을 정리합니다')).not.toBeInTheDocument()
+  release()
+  const alert = await within(area).findByRole('alert')
+  expect(alert).toHaveTextContent('대화 기록을 불러오지 못했습니다.')
+  expect(within(area).queryByText('요청을 정리합니다')).not.toBeInTheDocument()
+  fail = false
+  await userEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))
+  expect(await within(area).findByText('요청을 정리합니다')).toBeInTheDocument()
+  expect(within(area).queryByRole('alert')).not.toBeInTheDocument()
+})

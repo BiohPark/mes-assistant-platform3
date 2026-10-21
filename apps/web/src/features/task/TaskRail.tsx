@@ -85,7 +85,7 @@ export function TaskRail({ task, children }: { task: Task; children: ReactNode }
         {(visited.includes(tab) || (open && state.tab === tab)) && (tab === 'materials' ? <MaterialsPanel task={task} embedded />
           : tab === 'checklist' ? <ChecklistPanel task={task} />
           : tab === 'notes' ? <NotesPanel task={task} />
-          : <><h3 className="mb-2 text-sm font-medium">{t('task.body.history')}</h3>{activity.isError ? <div role="alert" className="text-xs">{t('task.activity.loadFailed')} <button type="button" className="underline" onClick={() => void activity.refetch()}>{t('common.retry')}</button></div> : <ActivityPanel activity={activity.data ?? []} />}</>)}
+          : <><h3 className="mb-2 text-sm font-medium">{t('task.body.history')}</h3>{activity.isError ? <div role="alert" className="text-xs">{t('task.activity.loadFailed')} <button type="button" className="underline" onClick={() => void activity.refetch()}>{t('common.retry')}</button></div> : activity.isSuccess ? <ActivityPanel activity={activity.data} /> : <p role="status" className="p-4 text-center text-xs text-muted-foreground">{t('common.loading')}</p>}</>)}
       </RailPanel>)}
     </aside>
     <nav aria-label={t('task.rail.label')} data-layout={narrow ? 'bottom' : 'right'} className={cn('shrink-0 border-l bg-card', narrow ? 'grid h-16 grid-cols-4 border-t' : 'flex w-14 flex-col items-stretch gap-2 py-2')}>
