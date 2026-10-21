@@ -166,6 +166,24 @@ it('레일·펼친 탭은 키보드로 전환하고 이력 데이터와 포커�
   expect(screen.getByRole('tab', { name: '자료' })).toHaveAttribute('aria-selected', 'true')
 })
 
+it('이력은 조회가 끝나기 전에 빈 상태 대신 불러오는 중을 보인다', async () => {
+  let finish!: (response: Response) => void
+  vi.stubGlobal('fetch', vi.fn((url: string) => {
+    if (url.endsWith('/activity')) return new Promise<Response>((resolve) => { finish = resolve })
+    if (url === '/api/llm/models') return Promise.resolve(jsonResponse(200, { models: [] }))
+    if (url.endsWith('/candidates')) return Promise.resolve(jsonResponse(200, { files: [], conversations: [] }))
+    return Promise.resolve(jsonResponse(200, []))
+  }))
+  renderWithProviders(view(task))
+  fireEvent.click(screen.getByRole('button', { name: '이력' }))
+  const panel = await screen.findByRole('tabpanel')
+  expect(await within(panel).findByText('불러오는 중…')).toBeVisible()
+  expect(within(panel).queryByText('이력이 없습니다.')).not.toBeInTheDocument()
+  finish(jsonResponse(200, []))
+  expect(await within(panel).findByText('이력이 없습니다.')).toBeVisible()
+  expect(within(panel).queryByText('불러오는 중…')).not.toBeInTheDocument()
+})
+
 it.each(['fetch', 'stream'] as const)('AI 응답 대기 중 키보드 탭 전환이 Composer와 입력·전송 상태를 유지한다 (%s)', async (waitingFor) => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTimeAsync })
