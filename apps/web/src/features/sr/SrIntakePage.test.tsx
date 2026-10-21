@@ -6,9 +6,10 @@ import { MeContext } from '@/app/auth'
 import { jsonResponse, renderWithProviders } from '@/test/render'
 import { SrIntakePage } from './SrIntakePage'
 import { I18nProvider } from '@/i18n'
+import { useUiStore } from '@/app/uiStore'
 
 vi.mock('@/app/TopBar', () => ({ TopBar: () => null }))
-afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear() })
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); sessionStorage.clear(); useUiStore.setState({ answerDetails: {} }) })
 
 it.each([
   { roles: ['requester'] as const, theme: 'system' as const, locale: 'ko' as const, link: false },
@@ -244,7 +245,7 @@ it.each([true, false])('SR 대화에 놓은 파일은 같은 업로드·요청 �
   expect(screen.getByText('sr-drop.txt')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '첨부 제거' })).toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: '전송' }))
-  await waitFor(() => expect(requests).toEqual([{ content: '', attachmentIds: ['file-drop'], oneShotFileIds: [] }]))
+  await waitFor(() => expect(requests).toEqual([{ content: '', attachmentIds: ['file-drop'], oneShotFileIds: [], detail: 'answer' }]))
   expect(uploaded).toHaveLength(1)
   expect(uploaded[0]!.name).toBe('sr-drop.txt')
 })
@@ -544,4 +545,81 @@ it('S14: 펼친 상태 이력은 다른 요청으로 바꾸면 다시 접힌다'
   expect(toggle).toHaveAttribute('aria-expanded', 'true')
   await userEvent.click(await screen.findByRole('button', { name: /요청 b/ }))
   await waitFor(() => expect(screen.getByRole('button', { name: '상태 이력' })).toHaveAttribute('aria-expanded', 'false'))
+})
+
+async function intakeConversation(status = 'draft') {
+  const sr = { id: 'convenience', threadId: 'intake-tools', requesterId: 'u', code: '', title: '접수 편의', titleSource: 'manual', body: '', status, attachmentIds: [], candidateAttachmentIds: [], results: [], conversations: [], createdAt: '2026-10-01', updatedAt: '2026-10-01' }
+  const messages = [
+    { id: 'question', threadId: sr.threadId, role: 'user', kind: 'chat', content: '답변 방식을 알려주세요', status: 'done', attachmentIds: [], createdAt: sr.createdAt },
+    { id: 'answer', threadId: sr.threadId, role: 'assistant', requestId: 'private-request', content: '어떤 답변을 원하세요?\n1. 요약\n2. 자세한 설명', reasoning: '비공개 생각', status: 'done', attachmentIds: [], createdAt: sr.createdAt },
+  ]
+  const fetcher = vi.fn(async (url: string) => {
+    if (url === '/api/service-requests/intake-assistant') return jsonResponse(200, { srIntakeAssistantId: 'a', name: '접수 도우미' })
+    if (url === '/api/service-requests?scope=mine') return jsonResponse(200, [sr])
+    if (url === '/api/service-requests/convenience') return jsonResponse(200, sr)
+    if (url === '/api/threads/intake-tools/messages') return jsonResponse(200, messages)
+    return jsonResponse(200, [])
+  })
+  vi.stubGlobal('fetch', fetcher)
+  const view = renderWithProviders(<TooltipProvider><MeContext value={{ id: 'u', name: '사용자', role: '', email: null, emailIsDefault: false, roles: ['requester'], theme: 'system', locale: 'ko' }}><SrIntakePage /></MeContext></TooltipProvider>, { route: '/sr?id=convenience' })
+  await screen.findByText('어떤 답변을 원하세요?')
+  return { ...view, fetcher }
+}
+
+it('SR 선택지는 초안에 덧붙이고 포커스하며 다시 묻기는 확인 후 채우기만 한다', async () => {
+  const { fetcher } = await intakeConversation()
+  const input = screen.getByRole('textbox', { name: '접수 메시지' })
+  await userEvent.type(input, '작성 중')
+  await userEvent.click(screen.getByRole('button', { name: '2. 자세한 설명' }))
+  expect(input).toHaveValue('작성 중\n자세한 설명')
+  expect(input).toHaveFocus()
+  await userEvent.click(screen.getByRole('button', { name: '다시 묻기' }))
+  await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '취소' }))
+  expect(input).toHaveValue('작성 중\n자세한 설명')
+  await userEvent.click(screen.getByRole('button', { name: '다시 묻기' }))
+  await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '텍스트 바꾸기' }))
+  await waitFor(() => expect(input).toHaveFocus())
+  expect(input).toHaveValue('답변 방식을 알려주세요')
+  expect(screen.getAllByRole('button', { name: '복사' })).toHaveLength(2)
+  expect(screen.queryByRole('button', { name: '사용한 자료' })).not.toBeInTheDocument()
+  expect(fetcher.mock.calls.map(([url]) => url).some(url => url.includes('/requests'))).toBe(false)
+})
+
+it('SR은 답변만으로 시작하고 헤더 토글·본문 검색·맨 아래로를 공용 도구로 제공한다', async () => {
+  useUiStore.setState({ answerDetails: { u: 'brief' } })
+  const getStyle = window.getComputedStyle
+  vi.spyOn(window, 'getComputedStyle').mockImplementation(element => {
+    const style = getStyle(element)
+    if (element.getAttribute('aria-label') === '접수 대화') Object.defineProperty(style, 'overflowY', { value: 'auto' })
+    return style
+  })
+  const { container } = await intakeConversation()
+  const toggle = screen.getByTestId('answer-detail-toggle')
+  expect(toggle).toHaveAttribute('data-answer-detail', 'answer')
+  expect(toggle.closest('header')).not.toBeNull()
+  expect(container.querySelector('details')).toBeNull()
+  await userEvent.click(toggle)
+  expect(toggle).toHaveAttribute('data-answer-detail', 'full')
+  expect(container.querySelector('details')).not.toBeNull()
+  expect(useUiStore.getState().answerDetails.u).toBe('brief')
+  await userEvent.click(screen.getByRole('button', { name: '대화 내 검색' }))
+  const search = screen.getByRole('searchbox', { name: '대화 내 검색' })
+  await userEvent.type(search, '답변')
+  expect(screen.getByRole('status')).toHaveTextContent('1/2')
+  await userEvent.keyboard('{Enter}')
+  expect(container.querySelector('[data-search-match="true"]')).toHaveAttribute('data-message-id', 'answer')
+  await userEvent.keyboard('{Escape}')
+  expect(search).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '대화 내 검색' })).toHaveFocus()
+  const scroll = screen.getByRole('region', { name: '접수 대화' })
+  Object.defineProperties(scroll, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 200 }, scrollTop: { configurable: true, writable: true, value: 100 } })
+  fireEvent.scroll(scroll)
+  await userEvent.click(screen.getByRole('button', { name: '맨 아래로' }))
+  expect(container.querySelector('[data-message-id="answer"]')).toHaveFocus()
+})
+
+it.each(['done', 'rejected'])('종료된 SR(%s)은 선택지와 다시 묻기로 초안을 만들 수 없다', async status => {
+  await intakeConversation(status)
+  expect(screen.queryByRole('group', { name: '선택지' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '다시 묻기' })).toBeDisabled()
 })

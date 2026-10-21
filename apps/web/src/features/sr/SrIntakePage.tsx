@@ -1,5 +1,5 @@
 import { FILE_MAX_PER_REQUEST } from '@mes/contracts'
-import { SR_STAGE_FLOW, srStage } from '@mes/domain'
+import { SR_STAGE_FLOW, srStage, type Message } from '@mes/domain'
 import { useT } from '@/i18n'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -50,6 +50,11 @@ export function SrIntakePage() {
   const first = useRef<{ key: string; sr?: SrDetail } | null>(null)
   const sending = useRef(false)
   const composer = useRef<ComposerHandle>(null)
+  const [draft, setDraft] = useState('')
+  const [toolbar, setToolbar] = useState<HTMLElement | null>(null)
+  const [askTarget, setAskTarget] = useState<Message | null>(null)
+  const askOpener = useRef<HTMLElement | null>(null)
+  const confirmedAsk = useRef(false)
   const [staging, setStaging] = useState<{ srId: string; fileIds: string[] }>({ srId: '', fileIds: [] })
   const stagedIds = staging.srId === selectedId ? staging.fileIds : []
   const sentMaterials = useRef<{ srId: string; fileIds: string[] } | null>(null)
@@ -66,7 +71,7 @@ export function SrIntakePage() {
     if (!sent) return
     sentMaterials.current = null
     setStaging(current => current.srId === sent.srId ? { ...current, fileIds: current.fileIds.filter(id => !sent.fileIds.includes(id)) } : current)
-  })
+  }, 'sr')
   // 첫 응답이 시작되기 전(생성·업로드·스트림 대기)에도 요청 전환을 막아 후속 입력이 다른 요청으로 새지 않게 한다.
   const locked = busy || chat.sending
   // started 전에는 입력도 닫는다(ChatView와 같은 규칙) — 열려 있으면 대기 중 attempt가 재사용되어 새 입력이 버려진다.
@@ -113,6 +118,17 @@ export function SrIntakePage() {
     } finally { sending.current = false; setBusy(false) }
   }
   const closed = selected?.status === 'done' || selected?.status === 'rejected'
+  const askAgainDisabled = !!closed || locked || !!chat.run || messages.some(message => message.status === 'streaming') || chat.hasPendingAttempt() || !settings?.srIntakeAssistantId
+  useEffect(() => { setDraft(''); setAskTarget(null) }, [selectedId, isNew])
+  useEffect(() => { if (askAgainDisabled) setAskTarget(null) }, [askAgainDisabled])
+  function askAgain(message: Message) {
+    if (askAgainDisabled || sending.current) return
+    if (draft.length) {
+      askOpener.current = document.activeElement as HTMLElement | null
+      confirmedAsk.current = false
+      setAskTarget(message)
+    } else composer.current?.setText(message.content)
+  }
   const canEdit = selected && (selected.requesterId === me.id || me.roles.includes('system_owner'))
   const hasDetail = !!selectedId || isNew
   const visible = rows.filter(sr => filter === 'complete' ? sr.status === 'done' || sr.status === 'rejected' : sr.status !== 'done' && sr.status !== 'rejected')
@@ -161,14 +177,24 @@ export function SrIntakePage() {
           {selected.status !== 'draft' && <section className="space-y-2 rounded-lg border p-3"><h2 className="font-medium">{t('sr.content')}</h2><p className="whitespace-pre-wrap text-sm">{selected.body}</p>{selected.attachmentIds.length > 0 && <SrAttachments ids={selected.attachmentIds} />}</section>}
         </> : selectedQuery.isError ? <p role="alert">{String(selectedQuery.error)}</p> : !isNew && !intro && <p className="text-sm text-muted-foreground">{t('sr.selectRequest')}</p>}
         {(selected || isNew) && <FileDropZone data-testid="sr-dropzone" className="flex min-h-0 flex-1 flex-col gap-4" label={t('dropzone.toAttach')} disabled={!settings?.srIntakeAssistantId || closed || locked} onFiles={files => composer.current?.dropFiles(files)}>
+          <header ref={setToolbar} className="flex shrink-0 flex-wrap items-center justify-end gap-2" />
           <section className="min-h-72 flex-1 space-y-4 overflow-y-auto rounded-lg border p-3" aria-label={t('sr.conversation')}>
-            <ChatMessages messages={messages} run={chat.run} empty={empty} actions={message => ({ intake: true, assistantName: settings?.name || t('sr.intakeAgent'), onRetry: message.requestId && message.status === 'error' ? () => { void chat.retry(message.requestId!).catch(error => toast.error(String(error))) } : undefined })} />
+            <ChatMessages key={selectedId || 'new'} intake assistantName={settings?.name || t('sr.intakeAgent')} messages={messages} run={chat.run} waitingSince={chat.waitingSince} empty={empty} questionIndexContainer={toolbar} searchContainer={toolbar} actions={message => ({
+              onChoose: !askAgainDisabled ? text => { if (!sending.current) composer.current?.setText(draft ? `${draft}\n${text}` : text) } : undefined,
+              onAskAgain: message.role === 'user' && message.kind !== 'discussion' ? () => askAgain(message) : undefined,
+              askAgainDisabled,
+              onRetry: message.requestId && message.status === 'error' ? () => { void chat.retry(message.requestId!).catch(error => toast.error(String(error))) } : undefined,
+            })} />
           </section>
-          {closed ? <p role="status" className="text-sm text-muted-foreground">{t('sr.closed')}</p> : <Composer ref={composer} key={selectedId || 'new'} attachments={attachments} maxAttachments={settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST} stagedAttachmentCount={stagedIds.length} inputLabel={t('sr.message')} placeholder={t('sr.messagePlaceholder')} disabled={busy || awaitingStart || !settings?.srIntakeAssistantId} streaming={!!chat.run} allowAttachments onSend={send} onStop={() => { void chat.stop() }} suggestions={!messages.length && examples.length > 0 ? examples : undefined} />}
+          {closed ? <p role="status" className="text-sm text-muted-foreground">{t('sr.closed')}</p> : <Composer ref={composer} key={selectedId || 'new'} onDraftChange={setDraft} attachments={attachments} maxAttachments={settings?.fileMaxPerRequest ?? FILE_MAX_PER_REQUEST} stagedAttachmentCount={stagedIds.length} inputLabel={t('sr.message')} placeholder={t('sr.messagePlaceholder')} disabled={busy || awaitingStart || !settings?.srIntakeAssistantId} streaming={!!chat.run} allowAttachments onSend={send} onStop={() => { void chat.stop() }} suggestions={!messages.length && examples.length > 0 ? examples : undefined} />}
           {selected?.status === 'draft' && canEdit && !selected.hasRequests && <Button variant="ghost" className="self-start" onClick={() => setDeleting(true)}>{t('sr.deleteDraft')}</Button>}
         </FileDropZone>}
         {selected && <><SrConvertSheet sr={selected} open={convert} onOpenChange={setConvert} onSaved={refresh} /><ConfirmDialog open={deleting} onOpenChange={setDeleting} title={t('sr.deleteConfirm')} description={t('sr.deleteDescription')} confirmLabel={t('sr.deleteDraft')} onConfirm={async () => { try { await deleteSr(selected.id); setSelectedId(''); refresh() } catch (error) { toast.error(String(error)); throw error } }} /></>}
       </div>
     </div>
+    <ConfirmDialog open={!!askTarget} onOpenChange={open => { if (!open) setAskTarget(null) }} title={t('chat.replaceDraftTitle')}
+      description={t('sr.replaceDraftDescription')} confirmLabel={t('chat.replaceDraftConfirm')} destructive={false}
+      onConfirm={() => { if (askTarget && !askAgainDisabled && !sending.current) { confirmedAsk.current = true; composer.current?.setText(askTarget.content) } }}
+      onCloseAutoFocus={event => { event.preventDefault(); if (confirmedAsk.current) composer.current?.setText(draft); else askOpener.current?.focus() }} />
   </>
 }

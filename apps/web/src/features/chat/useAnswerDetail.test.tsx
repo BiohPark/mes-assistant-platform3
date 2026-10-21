@@ -60,3 +60,23 @@ it('retains existing user modes during settings migration and persists answer-on
   await act(async () => { await useUiStore.persist.rehydrate() })
   expect(useUiStore.getState().answerDetails.u3).toBe('answer')
 })
+
+it('keeps SR answer-only defaults and persisted choices separate from assignee and other users', async () => {
+  useUiStore.setState({ answerDetails: { u1: 'brief' } })
+  const wrapper = ({ children }: { children: ReactNode }) => <MeContext value={{ id: 'u1' } as Me}>{children}</MeContext>
+  const sr = renderHook(() => useAnswerDetail('sr'), { wrapper })
+  const assignee = renderHook(() => useAnswerDetail(), { wrapper })
+  expect(sr.result.current.detail).toBe('answer')
+  act(() => sr.result.current.toggle())
+  expect(sr.result.current.detail).toBe('full')
+  expect(assignee.result.current.detail).toBe('brief')
+  act(() => assignee.result.current.toggle())
+  expect(sr.result.current.detail).toBe('full')
+  const saved = localStorage.getItem('mes-hub-ui')!
+  act(() => useUiStore.setState({ answerDetails: {} }))
+  localStorage.setItem('mes-hub-ui', saved)
+  await act(async () => { await useUiStore.persist.rehydrate() })
+  expect(sr.result.current.detail).toBe('full')
+  const other = renderHook(() => useAnswerDetail('sr'))
+  expect(other.result.current.detail).toBe('answer')
+})

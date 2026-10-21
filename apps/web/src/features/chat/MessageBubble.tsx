@@ -40,7 +40,7 @@ export function MessageBubble({ message, onSaveAsOutput, onRetry, onRetryWithout
   onAskAgain?: () => void; askAgainDisabled?: boolean; intake?: boolean; assistantName?: string; message: Message; onSaveAsOutput?: () => void; onRetry?: () => void; onRetryWithoutFiles?: () => void; onRetryAsText?: () => void; onRequestInfo?: () => void
 }) {
   const t = useT()
-  const { detail } = useAnswerDetail()
+  const { detail } = useAnswerDetail(intake ? 'sr' : undefined)
   const [preview, setPreview] = useState<FileMeta | null>(null)
   const previewOpener = useRef<HTMLButtonElement | null>(null)
   const menuTrigger = useRef<HTMLButtonElement | null>(null)

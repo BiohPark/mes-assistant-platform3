@@ -419,6 +419,7 @@ export const ko = {
     intakeAgent: "접수 에이전트",
     intakeSummary: "요청 내용을 대화로 정리해 접수합니다.",
     materialsHelp: '첨부는 그 질문에 한 번만 갑니다. 다시 보내려면 [첨부]를 누르세요.',
+    replaceDraftDescription: '텍스트만 바꿉니다. 현재 첨부는 유지합니다.',
     attachmentHint: "📎나 끌어 놓기로 파일을 첨부할 수 있어요.",
     exampleQuestions: "첫 질문 예시",
     loadFailed: "요청 목록을 불러오지 못했습니다.",

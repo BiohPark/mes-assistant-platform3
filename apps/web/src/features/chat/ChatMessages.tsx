@@ -32,12 +32,13 @@ export function failedQuestionIds(messages: Message[]) {
  * 업무와 SR 접수에서 공용 메시지 표시·스트리밍·자동 스크롤을 사용한다.
  * 검색 토글·질문 목차 아이콘은 questionIndexContainer로, 펼친 검색 줄은 searchContainer로 포털한다(없으면 메시지 위에 그대로).
  */
-export function ChatMessages({ messages, run, waitingSince, empty, actions, questionIndexContainer, searchContainer, assistantName }: {
+export function ChatMessages({ messages, run, waitingSince, empty, actions, questionIndexContainer, searchContainer, assistantName, intake = false }: {
+  intake?: boolean
   assistantName?: string; messages: Message[]; run?: ChatRun | null; waitingSince?: number; empty?: ReactNode; actions?: (message: Message) => BubbleActions
   questionIndexContainer?: HTMLElement | null; searchContainer?: HTMLElement | null
 }) {
   const t = useT()
-  const { detail, toggle } = useAnswerDetail()
+  const { detail, toggle } = useAnswerDetail(intake ? 'sr' : undefined)
   const detailGuideId = useId()
   const { formatDateTime } = useDates()
   const remoteReply = !run ? messages.find(item => item.role === 'assistant' && item.status === 'streaming') : undefined
@@ -196,7 +197,7 @@ export function ChatMessages({ messages, run, waitingSince, empty, actions, ques
     {!questionIndexContainer ? <div className="flex flex-wrap items-center justify-end gap-2">{inline}</div>
       : !searchContainer || searchContainer === questionIndexContainer ? createPortal(inline, questionIndexContainer)
       : <>{createPortal(tools, questionIndexContainer)}{searchBar && createPortal(searchBar, searchContainer)}</>}
-    {visibleMessages.length ? visibleMessages.map(item => <MessageBubble key={item.id} assistantName={assistantName} searchMatch={item.id === selectedMatch}
+    {visibleMessages.length ? visibleMessages.map(item => <MessageBubble key={item.id} intake={intake} assistantName={assistantName} searchMatch={item.id === selectedMatch}
       message={run?.replyId === item.id ? { ...item, status: 'streaming', content: run.text || item.content, reasoning: run.reasoning || item.reasoning, steps: run.steps ?? item.steps } : item}
       {...(item === currentReply || item.id !== replyId ? actions?.(item) : undefined)}
       onChoose={!active && item === visibleMessages.at(-1) ? actions?.(item).onChoose : undefined}

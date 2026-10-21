@@ -35,9 +35,9 @@ export function queueFirstRequest(threadId: string, body: { content: string; att
   else firstDrafts.delete(threadId)
 }
 
-export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFailure?: (draft: ComposerDraft, error: unknown) => void, onStarted?: () => void) {
+export function useChat(threadId?: string, onAutoStarted?: () => void, onFirstFailure?: (draft: ComposerDraft, error: unknown) => void, onStarted?: () => void, answerDetailScope?: 'sr') {
   const t = useT()
-  const { detail } = useAnswerDetail()
+  const { detail } = useAnswerDetail(answerDetailScope)
   const detailRef = useRef(detail)
   detailRef.current = detail
   const query = useQueryClient()
