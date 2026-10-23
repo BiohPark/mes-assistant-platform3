@@ -28,7 +28,7 @@ describe('tasks HTTP API', () => {
     messages: vi.fn(async () => []), appendMessage: vi.fn(async () => ({ id: 'm', kind: 'discussion' })),
   }
   const srInputs = { list: vi.fn(async () => [{ srId: 'sr', selected: true, used: false }]), select: vi.fn(), remove: vi.fn() }
-  const extras = { review: vi.fn() }
+  const extras = { review: vi.fn(), toggleChecklist: vi.fn(async () => []), renameChecklist: vi.fn(async () => [{ id: 'c1', label: '새 문구' }]) }
   const brief = { get: vi.fn(async () => ({ stats: { questions: 0, participants: [], startedAt: '2026-10-15T00:00:00.000Z' }, generating: false, failed: false, stale: false })) }
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -74,6 +74,18 @@ describe('tasks HTTP API', () => {
     expect(srInputs.remove).toHaveBeenCalledWith('u', 't', 'sr')
     srInputs.select.mockRejectedValueOnce(new ConflictException({ code: 'TASK_DONE' }))
     await request(app.getHttpServer()).put('/api/tasks/t/sr-inputs/sr').set(auth()).expect(409)
+  })
+
+  it('renames a checklist item on its own route, separate from the check toggle', async () => {
+    await request(app.getHttpServer()).patch('/api/tasks/t/checklist/c1/label').send({ label: '새 문구' }).expect(401)
+    const renamed = await request(app.getHttpServer()).patch('/api/tasks/t/checklist/c1/label').set(auth()).send({ label: '  새 문구 ' }).expect(200)
+    expect(renamed.body).toEqual([{ id: 'c1', label: '새 문구' }])
+    expect(extras.renameChecklist).toHaveBeenCalledWith('u', 't', 'c1', '새 문구')
+    for (const body of [{}, { label: '   ' }, { label: 1 }, { label: '문구', checked: true }]) {
+      await request(app.getHttpServer()).patch('/api/tasks/t/checklist/c1/label').set(auth()).send(body).expect(400)
+    }
+    expect(extras.renameChecklist).toHaveBeenCalledTimes(1)
+    expect(extras.toggleChecklist).not.toHaveBeenCalled()
   })
 
   it('serves the display-only brief for the signed-in reader', async () => {

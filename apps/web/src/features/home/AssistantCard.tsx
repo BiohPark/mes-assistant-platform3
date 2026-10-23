@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { OpenWebUiIcon } from '@/components/OpenWebUiIcon'
 import { useMe } from '@/app/auth'
-import { AssistantStatusBadge, IoBadges } from '@/components/StatusBadges'
+import { AssistantStatusBadge } from '@/components/StatusBadges'
 import { UserAvatar } from '@/components/UserAvatar'
 import { assistantLink1 } from '@/lib/links'
 import { cn } from '@/lib/utils'
@@ -49,7 +49,6 @@ export function AssistantCardBody({ row, owner, dimmed, actions }: { row: Assist
           </button>
         </div>}
       </div>
-      <div className="relative z-10 min-w-0"><IoBadges inputs={a.expectedInputs} outputs={a.expectedOutputs} compact /></div>
       {actions}
       <div className="pointer-events-none mt-auto flex items-center justify-between text-xs">
         <span className="inline-flex items-center gap-1 text-muted-foreground">

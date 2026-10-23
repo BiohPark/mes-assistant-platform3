@@ -29,6 +29,13 @@ function renderCard(override: Partial<Assistant> = {}, locale: Locale = 'ko') {
 }
 
 describe('AssistantCard (S9-8 U2)', () => {
+  it('does not show expected inputs or outputs on the hub card', () => {
+    renderCard({ expectedInputs: ['요구사항 문서'], expectedOutputs: ['분석 결과'] })
+    expect(screen.queryByText(/요구사항 문서|분석 결과/)).not.toBeInTheDocument()
+    expect(screen.queryByText('입력')).not.toBeInTheDocument()
+    expect(screen.queryByText('출력')).not.toBeInTheDocument()
+    expect(screen.queryByText('미설정')).not.toBeInTheDocument()
+  })
   it('keeps the active count visible while the hover actions are shown', () => {
     renderCard()
     const stats = screen.getByText('3').closest('div')!

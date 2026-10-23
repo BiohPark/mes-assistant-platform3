@@ -6,7 +6,10 @@ export function describeActivity(a: ActivityLog): string {
   switch (a.type) {
     case 'checklist.checked':
     case 'checklist.unchecked':
+    case 'checklist.removed':
       return String(p.label ?? '')
+    case 'checklist.renamed':
+      return `${String(p.from ?? '')} → ${String(p.to ?? '')}`
     case 'checklist.reviewed':
       return `${String(p.met ?? 0)}/${String(p.total ?? 0)} 달성${p.source === 'rule' ? ' (규칙 판단)' : ''}`
     case 'file.uploaded':

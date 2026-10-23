@@ -2,7 +2,7 @@ import { newId } from '@/lib/ids'
 import { useRef, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, ExternalLink } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import { OpenWebUiIcon } from '@/components/OpenWebUiIcon'
 import { normalizeTag, tagKey } from '@mes/domain'
 import { TopBar } from '@/app/TopBar'
@@ -134,11 +134,6 @@ export function DraftConversationPage() {
               {owner && <span className="mt-2 inline-flex items-center gap-1 text-xs"><UserAvatar user={owner} size="xs" />{owner.name}</span>}
             </div>
           </div>
-          {(assistant.expectedInputs.length > 0 || assistant.expectedOutputs.length > 0) && <div className="flex flex-wrap items-center gap-1.5 rounded-xl border bg-muted/30 p-3 text-xs">
-            {assistant.expectedInputs.map((item) => <span key={item} className="rounded-full border bg-background px-2 py-0.5">{item}</span>)}
-            {assistant.expectedInputs.length > 0 && assistant.expectedOutputs.length > 0 && <ArrowRight className="size-3.5 text-muted-foreground" />}
-            {assistant.expectedOutputs.map((item) => <span key={item} className="rounded-full border bg-tone-violet-bg px-2 py-0.5 text-tone-violet-fg">{item}</span>)}
-          </div>}
           <div className="space-y-1.5"><div className="text-xs font-medium">{t('hub.tags')}</div>
             <TagInput tags={tags} suggest={suggest} srStatus={srStatus} onAdd={(value) => setTags((current) => current.some((item) => tagKey(item) === tagKey(value)) ? current : [...current, value])} onRemove={(value) => setTags((current) => current.filter((item) => item !== value))} placeholder={t('hub.tagPlaceholder')} />
             {/* 첫 전송 전에도 이 태그를 쓰는 대화를 미리 본다 — 조회만, 저장 없음 */}

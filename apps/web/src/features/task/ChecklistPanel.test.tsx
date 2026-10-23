@@ -165,3 +165,76 @@ it('counts review seconds and aborts the request when leaving the panel', async 
     expect(signal.aborted).toBe(true)
   } finally { vi.useRealTimers() }
 })
+
+const editable = [{ id: 'c1', label: '근거 확인', required: true, checked: true, checkedBy: 'u', checkedAt: '2026-01-01T00:00:00.000Z' }]
+
+it('edits an item label inline and saves it on Enter through the label route, not the check toggle', async () => {
+  const calls: { url: string; method?: string; body?: unknown }[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method && init.method !== 'GET') calls.push({ url, method: init.method, body: init.body ? JSON.parse(String(init.body)) : undefined })
+    return jsonResponse(200, [])
+  }))
+  renderWithProviders(<ChecklistPanel task={{ ...task, checklist: editable }} />)
+  fireEvent.click(screen.getByRole('button', { name: '근거 확인 수정' }))
+  const input = screen.getByRole('textbox', { name: '근거 확인 문구' })
+  expect(input).toHaveValue('근거 확인')
+  expect(input).toHaveFocus()
+  expect(screen.queryByRole('button', { name: '근거 확인 삭제' })).not.toBeInTheDocument()
+  fireEvent.change(input, { target: { value: '근거 자료 확인' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  await waitFor(() => expect(screen.queryByRole('textbox', { name: '근거 확인 문구' })).not.toBeInTheDocument())
+  expect(calls).toEqual([{ url: '/api/tasks/t/checklist/c1/label', method: 'PATCH', body: { label: '근거 자료 확인' } }])
+  expect(screen.getByRole('checkbox', { name: '근거 확인' })).toBeChecked()
+})
+
+it.each(['Escape', 'blur'])('cancels the inline edit on %s without a request', async (how) => {
+  const fetch = vi.fn(async (_url: string, _init?: RequestInit) => jsonResponse(200, []))
+  vi.stubGlobal('fetch', fetch)
+  renderWithProviders(<ChecklistPanel task={{ ...task, checklist: editable }} />)
+  fireEvent.click(screen.getByRole('button', { name: '근거 확인 수정' }))
+  const input = screen.getByRole('textbox', { name: '근거 확인 문구' })
+  fireEvent.change(input, { target: { value: '바뀐 문구' } })
+  if (how === 'blur') fireEvent.blur(input)
+  else fireEvent.keyDown(input, { key: 'Escape' })
+  expect(screen.queryByRole('textbox', { name: '근거 확인 문구' })).not.toBeInTheDocument()
+  expect(screen.getByText('근거 확인')).toBeVisible()
+  expect(fetch.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH')).toHaveLength(0)
+})
+
+it('skips the request when the label is blank or unchanged', () => {
+  const fetch = vi.fn(async (_url: string, _init?: RequestInit) => jsonResponse(200, []))
+  vi.stubGlobal('fetch', fetch)
+  renderWithProviders(<ChecklistPanel task={{ ...task, checklist: editable }} />)
+  fireEvent.click(screen.getByRole('button', { name: '근거 확인 수정' }))
+  const input = screen.getByRole('textbox', { name: '근거 확인 문구' })
+  fireEvent.change(input, { target: { value: '   ' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(input).toBeInTheDocument()
+  fireEvent.change(input, { target: { value: ' 근거 확인 ' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(screen.queryByRole('textbox', { name: '근거 확인 문구' })).not.toBeInTheDocument()
+  expect(fetch.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH')).toHaveLength(0)
+})
+
+it('locks the inline edit while saving and keeps the typed label when saving fails', async () => {
+  let fail!: (response: Response) => void
+  const pending = new Promise<Response>((resolve) => { fail = resolve })
+  vi.stubGlobal('fetch', vi.fn((url: string) => url === '/api/tasks/t/checklist/c1/label' ? pending : Promise.resolve(jsonResponse(200, []))))
+  renderWithProviders(<ChecklistPanel task={{ ...task, checklist: editable }} />)
+  fireEvent.click(screen.getByRole('button', { name: '근거 확인 수정' }))
+  const input = screen.getByRole('textbox', { name: '근거 확인 문구' })
+  fireEvent.change(input, { target: { value: '근거 자료 확인' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(input).toBeDisabled()
+  fireEvent.blur(input)
+  expect(input).toBeInTheDocument()
+  fail(jsonResponse(500, { message: '수정 실패' }))
+  await waitFor(() => expect(input).toBeEnabled())
+  expect(input).toHaveValue('근거 자료 확인')
+})
+
+it('hides label editing on a completed task', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [])))
+  renderWithProviders(<ChecklistPanel task={{ ...task, status: 'done', checklist: editable }} />)
+  expect(screen.queryByRole('button', { name: '근거 확인 수정' })).not.toBeInTheDocument()
+})

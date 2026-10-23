@@ -8,7 +8,7 @@ import { useT, type TranslationKey } from '@/i18n'
 /** 시트 안에서 '여기예요'로 짚는 항목 */
 export type EditorPointer = 'name' | 'owner' | 'paths' | 'model'
 
-const ITEMS = ['name', 'paths', 'owner', 'status', 'model', 'docUrl', 'summary', 'io', 'checklist', 'test'] as const
+const ITEMS = ['name', 'paths', 'owner', 'status', 'model', 'docUrl', 'summary', 'checklist', 'test'] as const
 type GuideItem = Extract<TranslationKey, `admin.manage.guide.items.${string}`>
 
 /**

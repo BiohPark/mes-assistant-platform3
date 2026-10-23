@@ -116,7 +116,8 @@ it('shows at most six owned/participating in-progress conversations in one scrol
   expect(await screen.findByRole('link', { name: 'Multi agent 편집' })).toHaveAttribute('href', '/assistants/manage?edit=a')
   const card = screen.getByText('Multi agent').closest('div.group')!
   expect(card).not.toHaveClass('aspect-square')
-  expect(card).toHaveTextContent('Prompt')
+  expect(card).not.toHaveTextContent('Prompt')
+  expect(card).not.toHaveTextContent('Answer')
   expect(card.parentElement).toHaveClass('xl:grid-cols-4')
 })
 it('hides owner edit actions from members', async () => {

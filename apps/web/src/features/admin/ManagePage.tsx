@@ -4,8 +4,7 @@ import { useMe } from '@/app/auth'
 import { ModelSelect } from '@/components/ModelSelect'
 import { EditorGuidePanel, HereMarker, type EditorPointer } from './EditorGuide'
 import { AgentTestChat } from '@/components/AgentTestChat'
-import { SuggestInput } from '@/components/SuggestInput'
-import { AssistantStatusBadge, IoBadges } from '@/components/StatusBadges'
+import { AssistantStatusBadge } from '@/components/StatusBadges'
 import { SortHeader } from '@/components/SortHeader'
 import { SaveStatus } from '@/components/SaveStatus'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -44,7 +43,6 @@ type PathDraft = { key: string; level1: string; level2: string; original?: Class
 const initialPaths = (assistant?: Assistant): PathDraft[] => assistant
   ? (assistant.classifications ?? [assistant]).map(path => ({ key: newId(), level1: path.level1, level2: path.level2, original: path }))
   : [{ key: newId(), level1: '', level2: '' }]
-const noSuggestions = () => []
 /** 바꾸지 않은 경로는 코드 ID로, 바꾼 경로는 이름으로 보낸다. 미완성이면 undefined, 중복이면 'duplicate' */
 function toClassifications(paths: PathDraft[]): NonNullable<AssistantInput['classifications']> | undefined | 'duplicate' {
   if (!paths.length || paths.some(path => !path.level1 || !path.level2)) return undefined
@@ -206,11 +204,7 @@ function AssistantEditorSheet({ assistant, userId, initialPointer, onClose, onDe
         <Field label={t('admin.documentUrl')} status={states.docUrl}><Input value={form.docUrl ?? ''} onChange={(event) => change('docUrl', event.target.value)} onBlur={(event) => commit('docUrl', event.target.value)} /></Field>
         <Field label={t('admin.manage.summary')} status={states.summary}><textarea className="w-full rounded-lg border bg-background p-2" value={form.summary} onChange={(event) => change('summary', event.target.value)} onBlur={(event) => commit('summary', event.target.value)} /></Field>
         <Field label={t('admin.firstQuestionExamples')} status={states.usageExample}><textarea className="w-full rounded-lg border bg-background p-2" value={form.usageExample} onChange={(event) => change('usageExample', event.target.value)} onBlur={(event) => commit('usageExample', event.target.value)} /></Field>
-        {(['expectedInputs', 'expectedOutputs'] as const).map(field => <Field key={field} label={t(field === 'expectedInputs' ? 'admin.manage.expectedInputs' : 'admin.manage.expectedOutputs')} status={states[field]}>
-          <SuggestInput mode="multi" allowCreate source={noSuggestions} disabled={busy} value={form[field].map(value => ({ value, label: value }))}
-            aria-label={t(field === 'expectedInputs' ? 'admin.manage.expectedInputs' : 'admin.manage.expectedOutputs')} onChange={values => commit(field, values.map(value => value.value))} />
-        </Field>)}
-        <fieldset className="space-y-2"><legend>{t('admin.manage.checklistDefaults')}</legend>{form.checklistTemplate.map((item, index) => <div key={item.id} className="flex gap-2"><Field label={t('admin.manage.checklistItem', { number: String(index + 1) })} className="min-w-0 flex-1 [&>label]:sr-only"><Input aria-label={t('admin.manage.checklistItem', { number: String(index + 1) })} value={item.label} onChange={(event) => change('checklistTemplate', form.checklistTemplate.map((entry, i) => i === index ? { ...entry, label: event.target.value } : entry))} onBlur={() => commitChecklist(form.checklistTemplate)} /></Field><Field label={t('admin.checklistRequired')} className="flex-row items-center gap-1 [&>label]:order-last"><Checkbox aria-label={t('admin.requiredItem', { name: item.label || String(index + 1) })} checked={item.required} onCheckedChange={(checked) => commitChecklist(form.checklistTemplate.map((entry, i) => i === index ? { ...entry, required: checked === true } : entry))} /></Field><Button type="button" variant="outline" disabled={index === 0} onClick={() => moveChecklist(index, -1)}>↑</Button><Button type="button" variant="outline" disabled={index === form.checklistTemplate.length - 1} onClick={() => moveChecklist(index, 1)}>↓</Button><Button type="button" variant="outline" onClick={() => commitChecklist(form.checklistTemplate.filter((_, i) => i !== index))}>{t('admin.manage.delete')}</Button></div>)}<Button type="button" variant="outline" onClick={() => change('checklistTemplate', [...form.checklistTemplate, { id: newId(), label: '', required: false }])}>{t('admin.manage.addItem')}</Button>
+        <fieldset className="space-y-2"><legend>{t('admin.manage.checklistDefaults')}</legend>{form.checklistTemplate.map((item, index) => <div key={item.id} className="flex gap-2"><Field label={t('admin.manage.checklistItem', { number: String(index + 1) })} className="min-w-0 flex-1 [&>label]:sr-only"><Input aria-label={t('admin.manage.checklistItem', { number: String(index + 1) })} value={item.label} onChange={(event) => change('checklistTemplate', form.checklistTemplate.map((entry, i) => i === index ? { ...entry, label: event.target.value } : entry))} onBlur={() => commitChecklist(form.checklistTemplate)} /></Field><Field label={t('admin.checklistRequired')} className="flex-row items-center gap-1 [&>label]:order-last"><Checkbox aria-label={t('admin.requiredItem', { name: item.label || String(index + 1) })} checked={item.required} onCheckedChange={(checked) => commitChecklist(form.checklistTemplate.map((entry, i) => i === index ? { ...entry, required: checked === true } : entry))} /></Field><Button type="button" variant="outline" disabled={index === 0} aria-label={t('admin.manage.checklistUp', { name: item.label || t('admin.manage.checklistItem', { number: String(index + 1) }) })} onClick={() => moveChecklist(index, -1)}>↑</Button><Button type="button" variant="outline" disabled={index === form.checklistTemplate.length - 1} aria-label={t('admin.manage.checklistDown', { name: item.label || t('admin.manage.checklistItem', { number: String(index + 1) }) })} onClick={() => moveChecklist(index, 1)}>↓</Button><Button type="button" variant="outline" aria-label={t('admin.manage.checklistDelete', { name: item.label || t('admin.manage.checklistItem', { number: String(index + 1) }) })} onClick={() => commitChecklist(form.checklistTemplate.filter((_, i) => i !== index))}>{t('admin.manage.delete')}</Button></div>)}<Button type="button" variant="outline" onClick={() => change('checklistTemplate', [...form.checklistTemplate, { id: newId(), label: '', required: false }])}>{t('admin.manage.addItem')}</Button>
           <SaveStatus state={states.checklistTemplate} />
         </fieldset>
         {assistant && <ImageDropzone assistant={assistant} onSaved={onSaved} />}
@@ -244,12 +238,11 @@ function AssistantTable({ rows, onEdit, canEdit }: { rows: Assistant[]; onEdit: 
   }, retiredLast)
   const header = (column: Parameters<typeof sorted.toggle>[0], label: string) => <SortHeader column={column} sort={sorted.sort} onToggle={sorted.toggle}>{label}</SortHeader>
   return <div className="overflow-x-auto rounded-xl border bg-card"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/50"><tr>
-    {header('name', t('admin.manage.assistant'))}{header('category', t('admin.manage.category'))}{header('status', t('admin.assistantStatus'))}{header('owner', t('admin.owner'))}{header('model', t('admin.connectedModel'))}<th className="p-2">{t('admin.manage.io')}</th>{header('updatedAt', t('admin.manage.updatedAt'))}{canEdit && <th className="p-2">{t('admin.manage.actions')}</th>}
+    {header('name', t('admin.manage.assistant'))}{header('category', t('admin.manage.category'))}{header('status', t('admin.assistantStatus'))}{header('owner', t('admin.owner'))}{header('model', t('admin.connectedModel'))}{header('updatedAt', t('admin.manage.updatedAt'))}{canEdit && <th className="p-2">{t('admin.manage.actions')}</th>}
   </tr></thead><tbody>{sorted.rows.map(row => <tr key={row.id} className="border-b last:border-0">
     <td className="p-2"><div className="flex items-center gap-2"><AssistantAvatar assistant={row} size="sm" /><span>{row.name}</span></div></td>
     <td className="p-2" title={(row.classifications ?? [row]).map(path => `${path.level1} › ${path.level2}`).join(', ')}>{row.level1} › {row.level2}{(row.classifications?.length ?? 1) > 1 && <Chip label={`+${row.classifications!.length - 1}`} />}</td>
     <td className="p-2"><AssistantStatusBadge status={row.status} /></td><td className="p-2">{users.get(row.ownerId)}</td><td className="p-2"><span className={row.modelId ? 'font-mono' : 'text-muted-foreground'}>{row.modelId || t('admin.manage.defaultModelText')}</span></td>
-    <td className="p-2"><IoBadges inputs={row.expectedInputs} outputs={row.expectedOutputs} /></td>
     <td className="p-2"><time dateTime={row.updatedAt}>{formatDate(row.updatedAt)}</time></td>
     {canEdit && <td className="p-2"><Button size="sm" variant="outline" onClick={() => onEdit(row)}>{t('admin.manage.edit')}</Button></td>}
   </tr>)}</tbody></table></div>

@@ -432,6 +432,8 @@ export type ActivityType =
   | 'task.status_changed'
   | 'checklist.checked'
   | 'checklist.unchecked'
+  | 'checklist.renamed'
+  | 'checklist.removed'
   | 'checklist.reviewed'
   | 'file.uploaded'
   | 'file.tagged_output'

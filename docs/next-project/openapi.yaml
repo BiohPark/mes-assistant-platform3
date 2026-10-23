@@ -387,9 +387,16 @@ paths:
       responses: { '204': { description: 변경 } }
     delete:
       tags: [tasks]
-      summary: 항목 삭제 (저장된 AI 판단 결과는 무효화)
+      summary: 항목 삭제 (저장된 AI 판단 결과는 무효화, 이력 checklist.removed{label})
       parameters: [{ $ref: '#/components/parameters/taskId' }, { name: itemId, in: path, required: true, schema: { type: string } }]
       responses: { '204': { description: 삭제 } }
+  /tasks/{taskId}/checklist/{itemId}/label:
+    patch:
+      tags: [tasks]
+      summary: '항목 문구 수정 (체크 토글과 분리). 체크 상태·체크자·시각·필수·템플릿 ID·순서 유지. 앞뒤 공백 제거 후 실제로 바뀔 때만 저장된 AI 판단 결과 무효화 + 이력 checklist.renamed{from,to}. 진행 중이던 AI 점검은 저장 시 409'
+      parameters: [{ $ref: '#/components/parameters/taskId' }, { name: itemId, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [label], additionalProperties: false, properties: { label: { type: string, minLength: 1, description: '앞뒤 공백 제거 후 비면 400' } } } } } }
+      responses: { '200': { description: '변경 후 체크리스트 전체(ChecklistItem[])' }, '400': { $ref: '#/components/responses/Problem' }, '404': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' } }
   /tasks/{taskId}/brief:
     get:
       tags: [tasks]

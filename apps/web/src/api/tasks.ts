@@ -83,6 +83,12 @@ export async function toggleChecklist(taskId: string, itemId: string): Promise<C
   refresh(taskId)
   return result
 }
+/** 문구만 바꾼다 — 체크 상태는 그대로(체크 토글과 다른 경로) */
+export async function renameChecklistItem(taskId: string, itemId: string, label: string): Promise<ChecklistItem[]> {
+  const result = await request<ChecklistItem[]>(`/tasks/${encodeURIComponent(taskId)}/checklist/${encodeURIComponent(itemId)}/label`, 'PATCH', { label })
+  refresh(taskId)
+  return result
+}
 export async function removeChecklistItem(taskId: string, itemId: string): Promise<void> {
   await request(`/tasks/${encodeURIComponent(taskId)}/checklist/${encodeURIComponent(itemId)}`, 'DELETE')
   refresh(taskId)

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import type { ChecklistReview, ChecklistReviewItem, Task } from '@mes/domain'
-import { addChecklistItem, applyChecklistReview, removeChecklistItem, reviewChecklist, toggleChecklist } from '@/api/tasks'
+import type { ChecklistItem, ChecklistReview, ChecklistReviewItem, Task } from '@mes/domain'
+import { addChecklistItem, applyChecklistReview, removeChecklistItem, renameChecklistItem, reviewChecklist, toggleChecklist } from '@/api/tasks'
 import { useUserMap } from '@/app/hooks'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -23,8 +23,12 @@ export function ChecklistPanel({ task }: { task: Task }) {
   const [reviewItems, setReviewItems] = useState<ChecklistReviewItem[]>([])
   const [savedReview, setSavedReview] = useState<ChecklistReview>()
   const reviewController = useRef<AbortController | null>(null)
+  const [editing, setEditing] = useState<{ id: string; value: string }>()
+  const saving = useRef(false)
+  const editInput = useRef<HTMLInputElement>(null)
   useEffect(() => {
     setBusy(false)
+    setEditing(undefined)
     setReviewSince(undefined)
     setReviewItems([])
     setSavedReview(undefined)
@@ -64,6 +68,20 @@ export function ChecklistPanel({ task }: { task: Task }) {
   const done = task.checklist.filter((item) => item.checked).length
   const missing = task.checklist.filter((item) => item.required && !item.checked).length
   const readOnly = task.status === 'done'
+  async function saveLabel(item: ChecklistItem) {
+    const value = editing?.value.trim()
+    if (!value || saving.current) return
+    if (value === item.label) { setEditing(undefined); return }
+    saving.current = true
+    setBusy(true)
+    try {
+      await renameChecklistItem(task.id, item.id, value)
+      setEditing(undefined)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+      window.setTimeout(() => editInput.current?.focus())
+    } finally { saving.current = false; setBusy(false) }
+  }
   async function run(action: () => Promise<unknown>) {
     setBusy(true)
     try { await action() } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
@@ -74,10 +92,20 @@ export function ChecklistPanel({ task }: { task: Task }) {
     <div className="h-1 rounded-full bg-muted"><div className="h-full rounded-full bg-tone-success-fg" style={{ width: task.checklist.length ? `${done / task.checklist.length * 100}%` : '0%' }} /></div>
     <ul className="space-y-1">{task.checklist.map((item) => <li key={item.id} className="flex items-start gap-2 rounded-xl border p-2">
       <Checkbox className="mt-0.5" aria-label={item.label} checked={item.checked} disabled={readOnly || busy} onCheckedChange={() => void run(() => toggleChecklist(task.id, item.id))} />
-      <div className="min-w-0 flex-1"><div className={item.checked ? 'text-muted-foreground line-through' : ''}>{item.label}{item.required && <span className="ml-1 text-tone-warning-fg">{t('task.checklist.required')}</span>}</div>
+      <div className="min-w-0 flex-1">{editing?.id === item.id
+        ? <Input ref={editInput} autoFocus aria-label={t('task.checklist.labelOf', { label: item.label })} value={editing.value} disabled={busy} className="h-7 text-xs"
+          onChange={(event) => setEditing({ id: item.id, value: event.target.value })}
+          onBlur={() => { if (!saving.current) setEditing(undefined) }}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return
+            if (event.key === 'Enter') { event.preventDefault(); void saveLabel(item) }
+            else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setEditing(undefined) }
+          }} />
+        : <div className={item.checked ? 'text-muted-foreground line-through' : ''}>{item.label}{item.required && <span className="ml-1 text-tone-warning-fg">{t('task.checklist.required')}</span>}</div>}
         {item.checkedAt && <div className="text-xs text-muted-foreground">{users.get(item.checkedBy ?? '')?.name ?? item.checkedBy} · {formatDateTime(item.checkedAt)}</div>}
       </div>
-      {!readOnly && <Button variant="ghost" size="xs" aria-label={t('task.checklist.deleteItem', { label: item.label })} disabled={busy} onClick={() => void run(() => removeChecklistItem(task.id, item.id))}>{t('task.delete')}</Button>}
+      {!readOnly && editing?.id !== item.id && <Button variant="ghost" size="xs" aria-label={t('task.checklist.editItem', { label: item.label })} disabled={busy} onClick={() => setEditing({ id: item.id, value: item.label })}>{t('task.checklist.edit')}</Button>}
+      {!readOnly && editing?.id !== item.id && <Button variant="ghost" size="xs" aria-label={t('task.checklist.deleteItem', { label: item.label })} disabled={busy} onClick={() => void run(() => removeChecklistItem(task.id, item.id))}>{t('task.delete')}</Button>}
     </li>)}</ul>
     {!readOnly && <form className="flex gap-1" onSubmit={(event) => { event.preventDefault(); if (label.trim() && !busy) { const submittedLabel = label; setLabel(''); void run(async () => { try { await addChecklistItem(task.id, submittedLabel) } catch (error) { setLabel(submittedLabel); throw error } }) } }}>
       <Input aria-label={t('task.checklist.newItem')} value={label} onChange={(event) => setLabel(event.target.value)} placeholder={t('task.checklist.addPlaceholder')} className="h-7 text-xs" disabled={busy} />
