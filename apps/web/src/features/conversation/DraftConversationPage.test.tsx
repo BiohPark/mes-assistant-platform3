@@ -443,3 +443,13 @@ it('S16: 첫 전송으로 만든 대화는 "첫 질문 전" 자동 열림 없이
   await screen.findByText('대화로 이동')
   expect(useMaterialsDrawer.getState().byTask['t-started']?.choice).not.toBe('open')
 })
+
+it('새 대화 초안에 에이전트의 기대 입력/출력 칩을 보이지 않는다', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/assistants'
+    ? Response.json([{ ...assistant, expectedInputs: ['요구사항 문서'], expectedOutputs: ['분석 결과'] }])
+    : Response.json([])))
+  mountDraft()
+  await screen.findByText('도우미')
+  expect(screen.queryByText('요구사항 문서')).not.toBeInTheDocument()
+  expect(screen.queryByText('분석 결과')).not.toBeInTheDocument()
+})

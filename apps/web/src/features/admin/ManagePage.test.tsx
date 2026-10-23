@@ -314,7 +314,7 @@ it.each(['즉시', '지연'])('에이전트 목록이 %s 갱신되어도 삭제 
 })
 
 
-it('관리 표는 읽기 전용이며 비대표 경로 검색·I/O 2+N 배지를 지원한다', async () => {
+it('관리 표는 읽기 전용이며 비대표 경로 검색을 지원하고 기대 입력/출력 열은 없다', async () => {
   assistantRows = [{ ...assistant, modelId: 'read-only-model', expectedInputs: ['One', 'Two', 'Three'], classifications: [
     { level1: assistant.level1, level2: assistant.level2, level1CodeId: assistant.level1CodeId, level2CodeId: assistant.level2CodeId },
     { level1: 'Secondary', level2: 'Unique search', level1CodeId: 'secondary', level2CodeId: 'sub' },
@@ -325,7 +325,9 @@ it('관리 표는 읽기 전용이며 비대표 경로 검색·I/O 2+N 배지를
   const table = screen.getByRole('table')
   expect(within(table).queryByRole('textbox')).not.toBeInTheDocument()
   expect(within(table).getByText('read-only-model')).toBeInTheDocument()
-  expect(within(table).getAllByText('+1')).toHaveLength(2)
+  expect(within(table).getAllByText('+1')).toHaveLength(1) // 비대표 경로 칩만
+  expect(within(table).queryByRole('columnheader', { name: '입력 / 출력' })).not.toBeInTheDocument()
+  expect(within(table).queryByText(/One|Two|Three/)).not.toBeInTheDocument()
   const user = userEvent.setup()
   await user.tab()
   await user.tab()
@@ -510,6 +512,7 @@ it('에이전트 편집 가이드: 처음 여는 사용자에게는 펼쳐져 �
   expect(within(guide).getByRole('button', { name: '가이드 접기' })).toHaveAttribute('aria-expanded', 'true')
   expect(within(guide).getByText(/연결 모델\(AI 모델\)/)).toBeInTheDocument()
   expect(within(guide).queryByText(/OpenWebUI 연결 확인 — /)).not.toBeInTheDocument()
+  expect(within(guide).queryByText(/기대 입력/)).not.toBeInTheDocument()
   expect(localStorage.getItem(`tutorial:${me.id}:assistantEditor:v1`)).toBe('asked')
   expect(screen.queryByTestId('here-marker')).not.toBeInTheDocument() // 필수값이 다 있고 모델이 없으면 짚을 것이 없다
   view.unmount()
@@ -556,4 +559,27 @@ it('names checklist template move and delete buttons by item and action', async 
   expect(screen.getByRole('button', { name: '체크리스트 2 위로' })).toBeEnabled()
   expect(screen.getByRole('button', { name: '체크리스트 2 아래로' })).toBeDisabled()
   expect(screen.getByRole('button', { name: '체크리스트 2 삭제' })).toBeVisible()
+})
+
+it('편집 시트에 기대 입력/출력 칸이 없고, 다른 필드를 저장해도 그 값을 보내지 않아 기존 값이 보존된다', async () => {
+  assistantRows = [{ ...assistant, expectedInputs: ['요구사항 문서'], expectedOutputs: ['분석 결과'] }]
+  const bodies: Record<string, unknown>[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/assistants/a' && init?.method === 'PATCH') {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>; bodies.push(body)
+      return jsonResponse(200, { ...assistantRows[0], ...body })
+    }
+    return jsonResponse(200, url === '/api/llm/models' ? { models: [] } : [])
+  }))
+  renderWithProviders(<MeContext value={OWNER_ME()}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  fireEvent.click(screen.getByRole('button', { name: '편집' }))
+  const editor = screen.getByRole('dialog', { name: '에이전트 편집' })
+  expect(within(editor).queryByRole('combobox', { name: '기대 입력' })).not.toBeInTheDocument()
+  expect(within(editor).queryByRole('combobox', { name: '기대 출력' })).not.toBeInTheDocument()
+  expect(within(editor).queryByText(/요구사항 문서|분석 결과/)).not.toBeInTheDocument()
+  fireEvent.change(within(editor).getByLabelText('설명'), { target: { value: '바뀐 설명' } })
+  fireEvent.blur(within(editor).getByLabelText('설명'))
+  fireEvent.click(within(editor).getByRole('button', { name: '닫기' }))
+  await waitFor(() => expect(bodies).toEqual([{ summary: '바뀐 설명' }]))
+  expect(bodies.some(body => 'expectedInputs' in body || 'expectedOutputs' in body)).toBe(false)
 })
