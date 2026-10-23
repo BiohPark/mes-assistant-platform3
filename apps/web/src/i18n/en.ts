@@ -177,7 +177,7 @@ export const en = {
       imageSaved: 'Image saved', imageSaveFailed: 'Failed to save image', imageDrop: 'Choose an image or drop it here', imageRemove: 'Remove image',
       assistantSaved: 'Agent saved', editorLabel: 'Edit agent', editTitle: 'Edit agent', newAssistant: 'New agent', create: 'Create',
       summary: 'Description', expectedInputs: 'Expected inputs', expectedOutputs: 'Expected outputs',
-      checklistDefaults: 'Default checklist', checklistItem: 'Checklist {number}', delete: 'Delete', addItem: 'Add item', checklistLabelRequired: 'Enter a name for every checklist item',
+      checklistDefaults: 'Default checklist', checklistItem: 'Checklist {number}', checklistUp: 'Move {name} up', checklistDown: 'Move {name} down', checklistDelete: 'Delete {name}', delete: 'Delete', addItem: 'Add item', checklistLabelRequired: 'Enter a name for every checklist item',
       deleteConfirm: 'Delete this agent?', deleteFailed: 'Delete failed',
       assistant: 'Agent', category: 'Category', updatedAt: 'Updated', actions: 'Actions', edit: 'Edit',
       editOrder: 'Edit order', orderSaved: 'Order saved', orderConflict: 'Order conflict',
@@ -506,7 +506,7 @@ export const en = {
       other: 'Other activity',
     },
     checklist: {
-      title: 'Checklist {done}/{total}', missingRequired: '{count} required unchecked', required: 'Required', deleteItem: 'Delete {label}',
+      title: 'Checklist {done}/{total}', missingRequired: '{count} required unchecked', required: 'Required', deleteItem: 'Delete {label}', edit: 'Edit', editItem: 'Edit {label}', labelOf: '{label} wording',
       newItem: 'New checklist item', addPlaceholder: 'Add item', add: 'Add', aiReview: 'AI completion check', achieved: '{met}/{total} met', ruleBased: ' · Rule-based',
       ruleFallback: 'An AI response was unavailable, so rules were used to assess completion.',
       deletedItem: 'Deleted item', applyReview: 'Check as assessed', noReview: 'No check results yet.', runReview: 'Run AI completion check',
@@ -758,7 +758,7 @@ export const en = {
     priority: { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' },
     activity: {
       task: { created: 'Conversation started', started: 'Task started', completed: 'Task completed', reopened: 'Task reopened', hold: 'Task put on hold', status_changed: 'Status changed' },
-      checklist: { checked: 'Checklist item completed', unchecked: 'Checklist item unchecked', reviewed: 'AI progress review' },
+      checklist: { checked: 'Checklist item completed', unchecked: 'Checklist item unchecked', renamed: 'Checklist item renamed', removed: 'Checklist item deleted', reviewed: 'AI progress review' },
       file: { uploaded: 'File uploaded', tagged_output: 'Output saved' },
       input: { selected: 'Input selected', removed: 'Input removed' },
       context: { selected: 'Reference conversation selected', removed: 'Reference conversation removed', refreshed: 'Reference conversation refreshed' },

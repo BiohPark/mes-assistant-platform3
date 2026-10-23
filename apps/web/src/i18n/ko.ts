@@ -175,7 +175,7 @@ export const ko = {
       imageSaved: '이미지를 저장했습니다', imageSaveFailed: '이미지 저장 실패', imageDrop: '이미지 선택 또는 여기로 끌기', imageRemove: '이미지 제거',
       assistantSaved: '에이전트를 저장했습니다', editorLabel: '에이전트 편집', editTitle: '에이전트 수정', newAssistant: '새 에이전트', create: '만들기',
       summary: '설명', expectedInputs: '기대 입력', expectedOutputs: '기대 출력',
-      checklistDefaults: '체크리스트 기본값', checklistItem: '체크리스트 {number}', delete: '삭제', addItem: '항목 추가', checklistLabelRequired: '체크리스트 항목 이름을 입력하세요',
+      checklistDefaults: '체크리스트 기본값', checklistItem: '체크리스트 {number}', checklistUp: '{name} 위로', checklistDown: '{name} 아래로', checklistDelete: '{name} 삭제', delete: '삭제', addItem: '항목 추가', checklistLabelRequired: '체크리스트 항목 이름을 입력하세요',
       deleteConfirm: '에이전트를 삭제할까요?', deleteFailed: '삭제 실패',
       assistant: '에이전트', category: '분류', updatedAt: '수정일', actions: '관리', edit: '편집',
       editOrder: '순서 편집', orderSaved: '순서를 저장했습니다', orderConflict: '순서 충돌',
@@ -504,7 +504,7 @@ export const ko = {
       other: '기타 활동',
     },
     checklist: {
-      title: '체크리스트 {done}/{total}', missingRequired: '필수 {count}개 미체크', required: '필수', deleteItem: '{label} 삭제',
+      title: '체크리스트 {done}/{total}', missingRequired: '필수 {count}개 미체크', required: '필수', deleteItem: '{label} 삭제', edit: '수정', editItem: '{label} 수정', labelOf: '{label} 문구',
       newItem: '체크리스트 새 항목', addPlaceholder: '항목 추가', add: '추가', aiReview: 'AI 달성도', achieved: '{met}/{total} 달성', ruleBased: ' · 규칙 판단',
       ruleFallback: 'AI 응답을 사용할 수 없어 규칙으로 판단했습니다.',
       deletedItem: '삭제된 항목', applyReview: '판단대로 체크', noReview: '점검 결과가 없습니다.', runReview: 'AI 달성도 점검',
@@ -756,7 +756,7 @@ export const ko = {
     priority: { low: '낮음', normal: '보통', high: '높음', urgent: '긴급' },
     activity: {
       task: { created: '대화 시작', started: '업무 시작', completed: '업무 완료', reopened: '업무 재개', hold: '업무 보류', status_changed: '상태 변경' },
-      checklist: { checked: '체크리스트 완료', unchecked: '체크리스트 해제', reviewed: 'AI 달성도 점검' },
+      checklist: { checked: '체크리스트 완료', unchecked: '체크리스트 해제', renamed: '체크리스트 문구 수정', removed: '체크리스트 항목 삭제', reviewed: 'AI 달성도 점검' },
       file: { uploaded: '파일 업로드', tagged_output: '산출물 저장' },
       input: { selected: '입력 선택', removed: '입력 해제' },
       context: { selected: '참조 대화 선택', removed: '참조 대화 해제', refreshed: '참조 대화 갱신' },

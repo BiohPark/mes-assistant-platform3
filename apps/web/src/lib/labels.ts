@@ -48,6 +48,8 @@ export const ACTIVITY_KEY = {
   'task.status_changed': 'status.activity.task.status_changed',
   'checklist.checked': 'status.activity.checklist.checked',
   'checklist.unchecked': 'status.activity.checklist.unchecked',
+  'checklist.renamed': 'status.activity.checklist.renamed',
+  'checklist.removed': 'status.activity.checklist.removed',
   'checklist.reviewed': 'status.activity.checklist.reviewed',
   'file.uploaded': 'status.activity.file.uploaded',
   'file.tagged_output': 'status.activity.file.tagged_output',

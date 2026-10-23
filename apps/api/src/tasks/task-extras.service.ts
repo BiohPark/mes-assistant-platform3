@@ -65,9 +65,30 @@ export class TaskExtrasService {
       if (!item) throw new NotFoundException('체크리스트 항목을 찾을 수 없습니다')
       await tx.delete(checklistReview).where(eq(checklistReview.taskId, taskId))
       await tx.delete(checklistItem).where(eq(checklistItem.id, itemId))
+      await tx.insert(activityLog).values({ id: id(), type: 'checklist.removed', userId: actor, taskId, payload: { label: item.label } })
       await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, taskId))
     })
     this.updated(taskId)
+  }
+
+  /** 문구만 바꾼다(체크 상태·체크자·시각·필수·템플릿 ID·순서 유지). 실제로 바뀌면 옛 문구 기준 AI 점검 결과는 무효화한다. */
+  async renameChecklist(actor: string, taskId: string, itemId: string, label: string) {
+    await assertTaskAccess(this.db, actor, taskId)
+    const clean = label.trim()
+    if (!clean) throw new BadRequestException('항목 이름이 필요합니다')
+    const changed = await this.db.transaction(async (tx) => {
+      await this.editable(tx, taskId)
+      const [item] = await tx.select().from(checklistItem).where(and(eq(checklistItem.id, itemId), eq(checklistItem.taskId, taskId)))
+      if (!item) throw new NotFoundException('체크리스트 항목을 찾을 수 없습니다')
+      if (item.label === clean) return false
+      await tx.delete(checklistReview).where(eq(checklistReview.taskId, taskId))
+      await tx.update(checklistItem).set({ label: clean }).where(eq(checklistItem.id, itemId))
+      await tx.insert(activityLog).values({ id: id(), type: 'checklist.renamed', userId: actor, taskId, payload: { from: item.label, to: clean } })
+      await tx.update(task).set({ lastActivityAt: new Date() }).where(eq(task.id, taskId))
+      return true
+    })
+    if (changed) this.updated(taskId)
+    return this.checklist(actor, taskId)
   }
 
   async toggleChecklist(actor: string, taskId: string, itemId: string) {
@@ -101,8 +122,9 @@ export class TaskExtrasService {
     if (options.signal?.aborted) throw new Error('보조 요청 중지')
     await this.db.transaction(async (tx) => {
       await this.editable(tx, taskId)
-      const latest = await tx.select({ id: checklistItem.id }).from(checklistItem).where(eq(checklistItem.taskId, taskId))
-      if (latest.length !== result.total || latest.some((item) => !result.items.some((entry) => entry.itemId === item.id))) throw new ConflictException('체크리스트가 변경되었습니다. 다시 점검하세요')
+      const latest = await tx.select({ id: checklistItem.id, label: checklistItem.label }).from(checklistItem).where(eq(checklistItem.taskId, taskId))
+      const reviewed = new Map(current.checklist.map((item) => [item.id, item.label]))
+      if (latest.length !== result.total || latest.some((item) => !result.items.some((entry) => entry.itemId === item.id) || reviewed.get(item.id) !== item.label)) throw new ConflictException('체크리스트가 변경되었습니다. 다시 점검하세요')
       const reviewId = id()
       await tx.insert(checklistReview).values({ id: reviewId, taskId, byUser: actor, at: new Date(result.at), met: result.met, total: result.total, source: result.source })
       if (result.items.length) await tx.insert(checklistReviewItem).values(result.items.map((item) => ({ reviewId, itemId: item.itemId, met: item.met, note: item.note })))

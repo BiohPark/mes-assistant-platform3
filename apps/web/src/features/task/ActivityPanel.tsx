@@ -1,5 +1,5 @@
 import { useT, type TranslationKey } from '@/i18n'
-import { ArrowRightLeft, ArrowUpDown, Bot, CircleAlert, CircleCheck, CirclePlus, CircleX, ClipboardPlus, Cpu, FileInput, FileMinus, History, ListChecks, MessageSquareX, MessageSquarePlus, MessagesSquare, Pause, Pencil, Play, RefreshCw, RotateCcw, Send, Settings2, Share2, Sparkles, Square, SquareCheck, Star, StickyNote, Tag, Upload, X, type LucideIcon } from 'lucide-react'
+import { ArrowRightLeft, ArrowUpDown, Bot, CircleAlert, CircleCheck, CirclePlus, CircleX, ClipboardPlus, Cpu, FileInput, FileMinus, History, ListChecks, ListX, MessageSquareX, MessageSquarePlus, MessagesSquare, Pause, Pencil, Play, RefreshCw, RotateCcw, Send, Settings2, Share2, Sparkles, Square, SquareCheck, SquarePen, Star, StickyNote, Tag, Upload, X, type LucideIcon } from 'lucide-react'
 import { UserAvatar } from '@/components/UserAvatar'
 import { useUserMap } from '@/app/hooks'
 import type { ActivityLog } from '@mes/domain'
@@ -42,6 +42,8 @@ const ACTIVITY_ICON: Record<PanelActivityType, LucideIcon> = {
   'task.status_changed': ArrowRightLeft,
   'checklist.checked': SquareCheck,
   'checklist.unchecked': Square,
+  'checklist.renamed': SquarePen,
+  'checklist.removed': ListX,
   'checklist.reviewed': ListChecks,
   'file.uploaded': Upload,
   'file.tagged_output': Sparkles,

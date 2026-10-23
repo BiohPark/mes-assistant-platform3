@@ -544,3 +544,16 @@ it('기존 에이전트의 필수값(담당자)이 비어 있으면 열자마자
   expect(marker).toContainElement(screen.getByLabelText('담당자'))
   expect(marker).toHaveTextContent('여기예요 — 담당자를 정해 주세요.')
 })
+
+it('names checklist template move and delete buttons by item and action', async () => {
+  assistantRows = [{ ...assistant, checklistTemplate: [{ id: 'one', label: '검토', required: false }, { id: 'two', label: '', required: false }] }]
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/llm/models' ? jsonResponse(200, { models: [] }) : jsonResponse(200, [])))
+  renderWithProviders(<MeContext value={{ id: 'owner', name: '운영자', role: '', email: null, emailIsDefault: false, roles: ['system_owner'], theme: 'system', locale: 'ko' }}><TooltipProvider><ManagePage /></TooltipProvider></MeContext>)
+  fireEvent.click(screen.getByRole('button', { name: '편집' }))
+  expect(screen.getByRole('button', { name: '검토 위로' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '검토 아래로' })).toHaveTextContent('↓')
+  expect(screen.getByRole('button', { name: '검토 삭제' })).toHaveTextContent('삭제')
+  expect(screen.getByRole('button', { name: '체크리스트 2 위로' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: '체크리스트 2 아래로' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '체크리스트 2 삭제' })).toBeVisible()
+})

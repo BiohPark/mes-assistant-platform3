@@ -13,7 +13,7 @@ afterEach(() => vi.unstubAllGlobals())
 // statuses, seedScale and imported demo fixtures), independently of UI mappings.
 const SERVER_ACTIVITY_TYPES = [
   'task.created', 'task.started', 'task.completed', 'task.reopened', 'task.hold', 'task.status_changed',
-  'checklist.checked', 'checklist.unchecked', 'checklist.reviewed',
+  'checklist.checked', 'checklist.unchecked', 'checklist.renamed', 'checklist.removed', 'checklist.reviewed',
   'file.uploaded', 'file.tagged_output', 'input.selected', 'input.removed',
   'context.selected', 'context.removed', 'context.refreshed', 'note.added', 'message.sent',
   'thread.created', 'model.changed', 'feedback.given', 'tag.added', 'tag.removed',
@@ -58,7 +58,7 @@ it('gives every activity type a decorative Lucide icon without replacing its tex
   const types = Object.keys(ACTIVITY_KEY) as ActivityLog['type'][]
   mount(types)
   const rows = screen.getAllByRole('listitem')
-  expect(rows).toHaveLength(32)
+  expect(rows).toHaveLength(34)
   for (const row of rows) {
     const icon = row.querySelector('svg.lucide')
     expect(icon).not.toBeNull()

@@ -21,6 +21,7 @@ const patchSchema = z.object({
 }).strict()
 const statusSchema = z.object({ status: z.enum(['todo', 'in_progress', 'on_hold', 'done']), reason: z.string().optional() }).strict()
 const checklistSchema = z.object({ label: z.string().trim().min(1), required: z.boolean().optional() }).strict()
+const checklistLabelSchema = z.object({ label: z.string().trim().min(1) }).strict()
 const noteSchema = z.object({ content: z.string(), attachmentIds: z.array(z.string().min(1)).optional() }).strict()
 const feedbackSchema = z.object({ rating: z.number().int().min(1).max(5), comment: z.string().default('') }).strict()
 const completeSchema = z.object({ feedback: feedbackSchema.optional(), reason: z.string().max(500).optional() }).strict()
@@ -110,6 +111,11 @@ export class TasksController {
   @Patch(':id/checklist/:itemId')
   toggleChecklist(@Req() req: AuthedRequest, @Param('id') id: string, @Param('itemId') itemId: string) {
     return this.extras.toggleChecklist(req.user!.id, id, itemId)
+  }
+
+  @Patch(':id/checklist/:itemId/label')
+  renameChecklist(@Req() req: AuthedRequest, @Param('id') id: string, @Param('itemId') itemId: string, @Body() body: unknown) {
+    return this.extras.renameChecklist(req.user!.id, id, itemId, parse(checklistLabelSchema, body).label)
   }
 
   @Delete(':id/checklist/:itemId')

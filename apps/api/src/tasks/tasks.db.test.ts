@@ -129,6 +129,64 @@ describe('tasks DB', () => {
     } finally { await rm(root, { recursive: true, force: true }) }
   })
 
+  it('renames a checklist item keeping its check state, invalidates the AI review and records rename/remove activity', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mes-checklist-rename-'))
+    try {
+      const editing = new TaskExtrasService(db, { kind: 'mock' } as never,
+        { runAuxiliary: async (_actor: string, _kind: string, operation: (signal: AbortSignal) => Promise<unknown>) => operation(new AbortController().signal) } as never,
+        new FileStorageService(root), { publish: () => undefined } as never)
+      const created = (await service.create('member', { assistantId })).task
+      await editing.addChecklist('member', created.id, '근거 확인', true)
+      const target = (await editing.checklist('member', created.id)).find((item) => item.label === '근거 확인')!
+      await editing.toggleChecklist('member', created.id, target.id)
+      await editing.review('member', created.id)
+      const [beforeRow] = await db.select().from(checklistItem).where(eq(checklistItem.id, target.id))
+
+      const renamed = await editing.renameChecklist('member', created.id, target.id, '  근거 자료 확인  ')
+      expect(renamed.find((item) => item.id === target.id)).toMatchObject({ label: '근거 자료 확인', checked: true, checkedBy: 'member', required: true })
+      const [afterRow] = await db.select().from(checklistItem).where(eq(checklistItem.id, target.id))
+      expect(afterRow).toEqual({ ...beforeRow, label: '근거 자료 확인' })
+      expect((await service.get(created.id)).checklistReview).toBeUndefined()
+      expect(await db.select().from(checklistReview).where(eq(checklistReview.taskId, created.id))).toHaveLength(0)
+      const renames = () => service.activity(created.id).then((items) => items.filter((item) => item.type === 'checklist.renamed'))
+      expect((await renames()).map((item) => item.payload)).toEqual([{ from: '근거 확인', to: '근거 자료 확인' }])
+
+      // 같은 문구(앞뒤 공백만 다름)는 변경 아님 — 이력·점검 결과 그대로
+      await editing.review('member', created.id)
+      await editing.renameChecklist('member', created.id, target.id, ' 근거 자료 확인 ')
+      expect(await renames()).toHaveLength(1)
+      expect((await service.get(created.id)).checklistReview).toBeDefined()
+
+      await expect(editing.renameChecklist('member', created.id, target.id, '   ')).rejects.toMatchObject({ status: 400 })
+      await expect(editing.renameChecklist('member', created.id, 'missing', '새 문구')).rejects.toMatchObject({ status: 404 })
+
+      await editing.removeChecklist('member', created.id, target.id)
+      expect((await service.activity(created.id)).filter((item) => item.type === 'checklist.removed').map((item) => item.payload)).toEqual([{ label: '근거 자료 확인' }])
+
+      await editing.addChecklist('member', created.id, '완료 후 항목')
+      const late = (await editing.checklist('member', created.id)).find((item) => item.label === '완료 후 항목')!
+      await db.update(task).set({ status: 'done' }).where(eq(task.id, created.id))
+      await expect(editing.renameChecklist('member', created.id, late.id, '바뀐 문구')).rejects.toMatchObject({ status: 409 })
+      expect((await editing.checklist('member', created.id)).find((item) => item.id === late.id)?.label).toBe('완료 후 항목')
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
+  it('rejects saving an AI review when an item label changed while it was running', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mes-checklist-race-'))
+    try {
+      let rename = async () => undefined as unknown
+      const editing = new TaskExtrasService(db, { kind: 'mock' } as never,
+        { runAuxiliary: async (_actor: string, _kind: string, operation: (signal: AbortSignal) => Promise<unknown>) => { await rename(); return operation(new AbortController().signal) } } as never,
+        new FileStorageService(root), { publish: () => undefined } as never)
+      const created = (await service.create('member', { assistantId })).task
+      await editing.addChecklist('member', created.id, '옛 문구')
+      const target = (await editing.checklist('member', created.id)).find((item) => item.label === '옛 문구')!
+      rename = () => editing.renameChecklist('member', created.id, target.id, '새 문구')
+      await expect(editing.review('member', created.id)).rejects.toMatchObject({ status: 409 })
+      expect(await db.select().from(checklistReview).where(eq(checklistReview.taskId, created.id))).toHaveLength(0)
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
   it.each(['ai', 'error', 'timeout', 'cancelled'] as const)('uses request deadlines and preserves review persistence for %s', async mode => {
     const controller = new AbortController()
     const config = loadConfig({ DATABASE_URL: temp.url, SESSION_SECRET: 's'.repeat(32), APP_ORIGIN: 'http://localhost:5173',
